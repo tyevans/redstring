@@ -1,0 +1,234 @@
+# Technical Documentation Domain Schema
+# For API docs, code tutorials, software guides, and technical references
+
+domain_id: technical_documentation
+display_name: Technical Documentation
+description: API documentation, code tutorials, software guides, and technical references
+
+entity_types:
+  - id: function
+    description: A callable function or method with a specific signature
+    properties:
+      - name: signature
+        type: string
+        description: Function signature including parameters
+      - name: parameters
+        type: array
+        description: List of parameter names and types
+      - name: return_type
+        type: string
+        description: Return type of the function
+      - name: is_async
+        type: boolean
+        description: Whether the function is asynchronous
+      - name: docstring
+        type: string
+        description: Documentation string for the function
+    examples:
+      - extract_entities
+      - create_user
+      - async_fetch_data
+
+  - id: class
+    description: An object-oriented class with attributes and methods
+    properties:
+      - name: base_classes
+        type: array
+        description: Parent classes this class inherits from
+      - name: methods
+        type: array
+        description: List of method names
+      - name: attributes
+        type: array
+        description: List of attribute names
+      - name: docstring
+        type: string
+        description: Class documentation
+    examples:
+      - UserService
+      - DomainEvent
+      - BaseExtractor
+
+  - id: module
+    description: A Python module or package
+    properties:
+      - name: path
+        type: string
+        description: Module import path
+      - name: exports
+        type: array
+        description: Public exports from the module
+    examples:
+      - eventsource.events
+      - app.services.extraction
+
+  - id: pattern
+    description: A design pattern or architectural pattern
+    properties:
+      - name: category
+        type: string
+        description: Pattern category (creational, structural, behavioral)
+      - name: problem
+        type: string
+        description: Problem the pattern solves
+      - name: solution
+        type: string
+        description: How the pattern addresses the problem
+    examples:
+      - Factory Pattern
+      - Observer Pattern
+      - Repository Pattern
+
+  - id: exception
+    description: An exception or error class
+    properties:
+      - name: base_exception
+        type: string
+        description: Parent exception class
+      - name: when_raised
+        type: string
+        description: Conditions that cause this exception
+    examples:
+      - ValidationError
+      - NotFoundError
+      - AuthenticationError
+
+  - id: parameter
+    description: A function or method parameter
+    properties:
+      - name: type
+        type: string
+        description: Parameter type annotation
+      - name: default
+        type: string
+        description: Default value if any
+      - name: required
+        type: boolean
+        description: Whether the parameter is required
+    examples:
+      - user_id
+      - page_size
+      - include_deleted
+
+  - id: return_type
+    description: A function return type or response schema
+    properties:
+      - name: type
+        type: string
+        description: Type annotation
+      - name: nullable
+        type: boolean
+        description: Whether the return can be None
+    examples:
+      - list[Entity]
+      - Optional[User]
+      - ExtractionResult
+
+  - id: concept
+    description: A technical concept or term being defined
+    properties:
+      - name: definition
+        type: string
+        description: Definition of the concept
+    examples:
+      - event sourcing
+      - dependency injection
+      - CQRS
+
+  - id: example
+    description: A code example or usage demonstration
+    properties:
+      - name: language
+        type: string
+        description: Programming language
+      - name: demonstrates
+        type: string
+        description: What the example demonstrates
+    examples:
+      - Basic usage example
+      - Error handling example
+
+relationship_types:
+  - id: uses
+    description: One entity uses or depends on another
+    valid_source_types: [function, class, module]
+    valid_target_types: [function, class, module, concept]
+
+  - id: implements
+    description: A class implements an interface or protocol
+    valid_source_types: [class]
+    valid_target_types: [class, pattern]
+
+  - id: extends
+    description: A class or function extends/inherits from another
+    valid_source_types: [class, exception]
+    valid_target_types: [class, exception]
+
+  - id: calls
+    description: A function calls another function
+    valid_source_types: [function]
+    valid_target_types: [function]
+
+  - id: returns
+    description: A function returns a specific type
+    valid_source_types: [function]
+    valid_target_types: [return_type, class]
+
+  - id: accepts
+    description: A function accepts a parameter
+    valid_source_types: [function]
+    valid_target_types: [parameter]
+
+  - id: raises
+    description: A function can raise an exception
+    valid_source_types: [function]
+    valid_target_types: [exception]
+
+  - id: contains
+    description: A module contains classes or functions
+    valid_source_types: [module]
+    valid_target_types: [function, class, module]
+
+  - id: depends_on
+    description: A module depends on another module
+    valid_source_types: [module]
+    valid_target_types: [module]
+
+  - id: demonstrates
+    description: An example demonstrates a concept or usage
+    valid_source_types: [example]
+    valid_target_types: [function, class, pattern, concept]
+
+  - id: related_to
+    description: General relationship between entities
+    bidirectional: true
+
+extraction_prompt_template: |
+  You are analyzing technical documentation (API docs, code tutorials, software guides).
+
+  Extract the following types of entities:
+  {entity_descriptions}
+
+  Extract the following types of relationships:
+  {relationship_descriptions}
+
+  Focus on:
+  - Function and method signatures with their parameters
+  - Class definitions and inheritance hierarchies
+  - Module structure and dependencies
+  - Code patterns and best practices
+  - Error handling and exceptions
+  - Code examples and their purpose
+
+  For each entity, provide:
+  - A clear, concise name
+  - The entity type from the list above
+  - A brief description
+  - Relevant properties based on the entity type
+  - Confidence score (0.0-1.0)
+
+confidence_thresholds:
+  entity_extraction: 0.7
+  relationship_extraction: 0.6
+
+version: "1.0.0"

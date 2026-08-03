@@ -1,0 +1,75 @@
+[project]
+name = "kg-builder"
+version = "0.1.0"
+description = "Knowledge graph construction: entity extraction, preprocessing, scraping, consolidation, and Neo4j sync."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.12,<3",
+    "pydantic-settings>=2.12,<3",
+    "sqlalchemy[asyncio]>=2.0.45,<3",
+    "asyncpg>=0.31.0",
+    "psycopg2-binary>=2.9.11",
+    "pgvector>=0.2.0",
+    "httpx>=0.25.0",
+    "numpy>=1.26.0",
+    "python-dateutil>=2.9.0",
+    "dateparser>=1.2.0",
+    "pyyaml>=6.0",
+    "cryptography>=45.0",
+    "redis[hiredis]>=5.3,<6",
+]
+
+[project.optional-dependencies]
+neo4j = ["neo4j>=5.27,<6"]
+scraping = [
+    "scrapy>=2.12,<3",
+    "trafilatura>=1.12.0",
+    "extruct>=0.18.0",
+    "beautifulsoup4>=4.12.0",
+]
+openai = ["openai>=1.50.0"]
+anthropic = ["anthropic>=0.42.0"]
+# pinned <1.0: kg_builder.inference.providers uses the pre-1.0
+# `pydantic_ai.models.openai.OpenAIModel` API.
+# pinned to the version knowledge-mapper resolved; kg_builder.extraction and
+# kg_builder.inference use the pre-1.0 pydantic-ai model API.
+llm = ["pydantic-ai==0.0.31"]
+nlp = ["jellyfish>=1.0.0"]
+storage = ["boto3>=1.34.0"]
+# `unstructured` pulls numba/llvmlite, which do not build on Python 3.13 yet,
+# so `documents` is deliberately excluded from `all`.
+documents = ["unstructured>=0.15.0"]
+eventsourcing = ["eventsource-py[all]>=0.5.0"]
+all = [
+    "kg-builder[neo4j,scraping,openai,anthropic,llm,nlp,storage,eventsourcing]",
+]
+dev = [
+    "pytest>=9.0",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov>=7.0",
+    "ruff>=0.14",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kg_builder"]
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "accuracy: extraction accuracy tests",
+]

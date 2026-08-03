@@ -1,0 +1,245 @@
+# Literature & Fiction Domain Schema
+# For novels, plays, short stories, poetry, and narrative works
+
+domain_id: literature_fiction
+display_name: Literature & Fiction
+description: Novels, plays, short stories, poetry, and narrative works
+
+entity_types:
+  - id: character
+    description: A person, being, or personified entity in the narrative
+    properties:
+      - name: role
+        type: string
+        description: "Role in story: protagonist, antagonist, supporting, minor"
+      - name: allegiance
+        type: string
+        description: Faction, family, or group the character belongs to
+      - name: character_arc
+        type: string
+        description: How the character changes through the story
+      - name: first_appearance
+        type: string
+        description: Where the character first appears
+      - name: traits
+        type: array
+        description: Key personality traits
+    examples:
+      - Hamlet
+      - Lady Macbeth
+      - Jay Gatsby
+      - Elizabeth Bennet
+
+  - id: theme
+    description: A central idea, message, or motif in the work
+    properties:
+      - name: significance
+        type: string
+        description: Why this theme is important to the work
+      - name: how_expressed
+        type: string
+        description: How the theme is conveyed in the narrative
+    examples:
+      - revenge
+      - love and loss
+      - social class
+      - mortality
+
+  - id: plot_point
+    description: A significant event that advances the narrative
+    properties:
+      - name: act
+        type: string
+        description: Act or part of the story
+      - name: scene
+        type: string
+        description: Scene or chapter reference
+      - name: significance
+        type: string
+        description: Why this event matters to the plot
+    examples:
+      - The murder of King Duncan
+      - The ball at Netherfield
+      - Gatsby's death
+
+  - id: setting
+    description: A location or time period where events occur
+    properties:
+      - name: time_period
+        type: string
+        description: When the setting exists
+      - name: atmosphere
+        type: string
+        description: The mood or feeling of the place
+    examples:
+      - Elsinore Castle
+      - 1920s New York
+      - Victorian England
+
+  - id: symbol
+    description: An object, character, or event representing something beyond itself
+    properties:
+      - name: represents
+        type: string
+        description: What the symbol represents
+      - name: occurrences
+        type: array
+        description: Where the symbol appears
+    examples:
+      - The green light
+      - Yorick's skull
+      - The scarlet letter
+
+  - id: conflict
+    description: A struggle or opposition in the narrative
+    properties:
+      - name: type
+        type: string
+        description: "Type: man vs man, man vs nature, man vs self, man vs society"
+      - name: resolution
+        type: string
+        description: How the conflict is resolved
+    examples:
+      - Hamlet vs Claudius
+      - Ahab vs the whale
+
+  - id: narrative_device
+    description: A literary technique used in the work
+    properties:
+      - name: purpose
+        type: string
+        description: Why this device is used
+    examples:
+      - unreliable narrator
+      - foreshadowing
+      - dramatic irony
+
+relationship_types:
+  - id: loves
+    description: Romantic love between characters
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: hates
+    description: Animosity or hatred between characters
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: betrays
+    description: One character betrays another
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: allies_with
+    description: Characters who support each other
+    valid_source_types: [character]
+    valid_target_types: [character]
+    bidirectional: true
+
+  - id: opposes
+    description: Characters in opposition or conflict
+    valid_source_types: [character]
+    valid_target_types: [character]
+    bidirectional: true
+
+  - id: parent_of
+    description: Parent-child relationship
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: child_of
+    description: Child-parent relationship
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: sibling_of
+    description: Sibling relationship
+    valid_source_types: [character]
+    valid_target_types: [character]
+    bidirectional: true
+
+  - id: married_to
+    description: Marriage relationship
+    valid_source_types: [character]
+    valid_target_types: [character]
+    bidirectional: true
+
+  - id: serves
+    description: One character serves or works for another
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: rules
+    description: One character has authority over another
+    valid_source_types: [character]
+    valid_target_types: [character, setting]
+
+  - id: murders
+    description: One character kills another
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: saves
+    description: One character rescues another
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: transforms
+    description: A character undergoes transformation
+    valid_source_types: [character]
+    valid_target_types: [character]
+
+  - id: embodies
+    description: A character embodies a theme
+    valid_source_types: [character]
+    valid_target_types: [theme]
+
+  - id: symbolizes
+    description: Something symbolizes a concept
+    valid_source_types: [symbol]
+    valid_target_types: [theme]
+
+  - id: causes
+    description: One event causes another
+    valid_source_types: [plot_point]
+    valid_target_types: [plot_point, conflict]
+
+  - id: occurs_in
+    description: An event occurs in a setting
+    valid_source_types: [plot_point]
+    valid_target_types: [setting]
+
+  - id: related_to
+    description: General relationship
+    bidirectional: true
+
+extraction_prompt_template: |
+  You are analyzing a work of literature (novel, play, short story, poem).
+
+  Extract the following types of entities:
+  {entity_descriptions}
+
+  Extract the following types of relationships:
+  {relationship_descriptions}
+
+  Focus on:
+  - Named characters and their roles in the narrative
+  - Family relationships and alliances
+  - Romantic and antagonistic relationships
+  - Key themes and motifs
+  - Important plot points and events
+  - Settings and their significance
+  - Symbols and what they represent
+  - Character development and arcs
+
+  Pay attention to:
+  - Character dialogue that reveals relationships
+  - Actions that demonstrate loyalty or betrayal
+  - Recurring imagery and its meaning
+  - The emotional journey of characters
+
+confidence_thresholds:
+  entity_extraction: 0.6
+  relationship_extraction: 0.5
+
+version: "1.0.0"

@@ -1,0 +1,235 @@
+# Business & Corporate Domain Schema
+# For annual reports, business news, corporate communications, and financial content
+
+domain_id: business_corporate
+display_name: Business & Corporate
+description: Annual reports, business news, corporate communications, and financial content
+
+entity_types:
+  - id: company
+    description: A business entity or corporation
+    properties:
+      - name: industry
+        type: string
+        description: Industry sector
+      - name: ticker
+        type: string
+        description: Stock ticker symbol
+      - name: headquarters
+        type: string
+        description: Headquarters location
+      - name: founded
+        type: string
+        description: Year founded
+    examples:
+      - Apple Inc.
+      - Amazon
+      - Tesla
+
+  - id: person
+    description: An executive, founder, or business figure
+    properties:
+      - name: title
+        type: string
+        description: Job title
+      - name: company
+        type: string
+        description: Current company
+    examples:
+      - Tim Cook
+      - Elon Musk
+      - Warren Buffett
+
+  - id: product
+    description: A product or service
+    properties:
+      - name: category
+        type: string
+        description: Product category
+      - name: launch_date
+        type: string
+        description: Launch date
+    examples:
+      - iPhone
+      - AWS
+      - Tesla Model 3
+
+  - id: metric
+    description: A business metric or KPI
+    properties:
+      - name: value
+        type: string
+        description: The metric value
+      - name: period
+        type: string
+        description: Time period
+      - name: change
+        type: string
+        description: Change from previous period
+    examples:
+      - "Revenue: $100B"
+      - "Market share: 25%"
+      - "YoY growth: 15%"
+
+  - id: strategy
+    description: A business strategy or initiative
+    properties:
+      - name: goal
+        type: string
+        description: Strategic goal
+      - name: timeline
+        type: string
+        description: Implementation timeline
+    examples:
+      - Digital transformation
+      - Market expansion
+      - Cost reduction
+
+  - id: market
+    description: A market or market segment
+    properties:
+      - name: size
+        type: string
+        description: Market size
+      - name: growth_rate
+        type: string
+        description: Growth rate
+    examples:
+      - Cloud computing market
+      - Electric vehicle market
+      - Asian markets
+
+  - id: competitor
+    description: A competing company or product
+    properties:
+      - name: competitive_position
+        type: string
+        description: Relative market position
+    examples:
+      - Samsung (vs Apple)
+      - Google Cloud (vs AWS)
+
+  - id: partnership
+    description: A business partnership or alliance
+    properties:
+      - name: type
+        type: string
+        description: Type of partnership
+      - name: announced
+        type: string
+        description: Announcement date
+    examples:
+      - Strategic alliance
+      - Joint venture
+      - Distribution agreement
+
+  - id: event
+    description: A business event
+    properties:
+      - name: type
+        type: string
+        description: Type of event
+      - name: date
+        type: string
+        description: Event date
+    examples:
+      - Quarterly earnings
+      - Product launch
+      - Acquisition announcement
+
+relationship_types:
+  - id: competes_with
+    description: Companies compete in same market
+    valid_source_types: [company, product]
+    valid_target_types: [company, product]
+    bidirectional: true
+
+  - id: partners_with
+    description: Business partnership
+    valid_source_types: [company]
+    valid_target_types: [company]
+    bidirectional: true
+
+  - id: acquires
+    description: Company acquires another
+    valid_source_types: [company]
+    valid_target_types: [company]
+
+  - id: leads
+    description: Executive leads company
+    valid_source_types: [person]
+    valid_target_types: [company]
+
+  - id: founded
+    description: Person founded company
+    valid_source_types: [person]
+    valid_target_types: [company]
+
+  - id: produces
+    description: Company produces product
+    valid_source_types: [company]
+    valid_target_types: [product]
+
+  - id: operates_in
+    description: Company operates in market
+    valid_source_types: [company]
+    valid_target_types: [market]
+
+  - id: employs
+    description: Company employs person
+    valid_source_types: [company]
+    valid_target_types: [person]
+
+  - id: invests_in
+    description: Company invests in another
+    valid_source_types: [company, person]
+    valid_target_types: [company, market]
+
+  - id: supplies
+    description: Company supplies another
+    valid_source_types: [company]
+    valid_target_types: [company]
+
+  - id: implements
+    description: Company implements strategy
+    valid_source_types: [company]
+    valid_target_types: [strategy]
+
+  - id: reports
+    description: Company reports metric
+    valid_source_types: [company]
+    valid_target_types: [metric]
+
+  - id: related_to
+    description: General business relationship
+    bidirectional: true
+
+extraction_prompt_template: |
+  You are analyzing business or corporate content (annual reports, business news, financial documents).
+
+  Extract the following types of entities:
+  {entity_descriptions}
+
+  Extract the following types of relationships:
+  {relationship_descriptions}
+
+  Focus on:
+  - Companies and their key details
+  - Executives and their roles
+  - Products and services
+  - Financial metrics and KPIs
+  - Business strategies and initiatives
+  - Market information and trends
+  - Competitive relationships
+  - Partnerships and acquisitions
+
+  For metrics, include:
+  - Specific values with units
+  - Time periods
+  - Comparisons to previous periods
+
+confidence_thresholds:
+  entity_extraction: 0.75
+  relationship_extraction: 0.65
+
+version: "1.0.0"

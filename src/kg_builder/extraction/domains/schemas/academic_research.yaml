@@ -1,0 +1,216 @@
+# Academic Research Domain Schema
+# For research papers, academic journals, scientific studies, and scholarly works
+
+domain_id: academic_research
+display_name: Academic Research
+description: Research papers, academic journals, scientific studies, and scholarly works
+
+entity_types:
+  - id: study
+    description: A research study or paper
+    properties:
+      - name: title
+        type: string
+        description: Title of the study
+      - name: year
+        type: string
+        description: Publication year
+      - name: doi
+        type: string
+        description: Digital Object Identifier
+      - name: type
+        type: string
+        description: Type of study (empirical, meta-analysis, review, etc.)
+    examples:
+      - "Effects of X on Y: A Meta-Analysis"
+      - "Novel Approach to Problem Z"
+
+  - id: author
+    description: An author of the research
+    properties:
+      - name: affiliation
+        type: string
+        description: Institutional affiliation
+      - name: orcid
+        type: string
+        description: ORCID identifier
+    examples:
+      - Smith et al.
+      - Dr. Jane Doe
+
+  - id: institution
+    description: A university, research center, or organization
+    properties:
+      - name: type
+        type: string
+        description: Type of institution
+      - name: location
+        type: string
+        description: Geographic location
+    examples:
+      - Stanford University
+      - MIT
+      - World Health Organization
+
+  - id: finding
+    description: A research finding or conclusion
+    properties:
+      - name: significance
+        type: string
+        description: Statistical significance
+      - name: confidence_interval
+        type: string
+        description: Confidence interval if applicable
+    examples:
+      - "X significantly improves Y (p < 0.05)"
+      - "No significant difference found"
+
+  - id: methodology
+    description: A research method or approach used
+    properties:
+      - name: type
+        type: string
+        description: Type of methodology
+      - name: sample_size
+        type: string
+        description: Sample size if applicable
+    examples:
+      - randomized controlled trial
+      - qualitative interviews
+      - machine learning approach
+
+  - id: hypothesis
+    description: A research hypothesis being tested
+    properties:
+      - name: status
+        type: string
+        description: Supported, rejected, or inconclusive
+    examples:
+      - "H1: X leads to Y"
+      - "Treatment group will show improvement"
+
+  - id: dataset
+    description: A dataset used in the research
+    properties:
+      - name: size
+        type: string
+        description: Size of the dataset
+      - name: source
+        type: string
+        description: Where the data came from
+    examples:
+      - MNIST dataset
+      - Survey of 1,000 participants
+
+  - id: citation
+    description: A reference to another work
+    properties:
+      - name: year
+        type: string
+        description: Publication year of cited work
+      - name: context
+        type: string
+        description: How the citation is used
+    examples:
+      - "[Smith, 2020]"
+      - "As shown by previous research..."
+
+  - id: concept
+    description: A theoretical concept or term
+    properties:
+      - name: definition
+        type: string
+        description: Definition in context
+    examples:
+      - machine learning
+      - cognitive dissonance
+      - statistical significance
+
+relationship_types:
+  - id: authored_by
+    description: Study authored by researchers
+    valid_source_types: [study]
+    valid_target_types: [author]
+
+  - id: affiliated_with
+    description: Author affiliated with institution
+    valid_source_types: [author]
+    valid_target_types: [institution]
+
+  - id: cites
+    description: One study cites another
+    valid_source_types: [study]
+    valid_target_types: [study, citation]
+
+  - id: extends
+    description: Research extends previous work
+    valid_source_types: [study]
+    valid_target_types: [study]
+
+  - id: contradicts
+    description: Findings contradict previous research
+    valid_source_types: [finding]
+    valid_target_types: [finding, study]
+
+  - id: supports
+    description: Findings support a hypothesis or previous research
+    valid_source_types: [finding]
+    valid_target_types: [hypothesis, finding, study]
+
+  - id: uses_method
+    description: Study uses a methodology
+    valid_source_types: [study]
+    valid_target_types: [methodology]
+
+  - id: uses_data
+    description: Study uses a dataset
+    valid_source_types: [study]
+    valid_target_types: [dataset]
+
+  - id: tests
+    description: Study tests a hypothesis
+    valid_source_types: [study]
+    valid_target_types: [hypothesis]
+
+  - id: funded_by
+    description: Research funded by organization
+    valid_source_types: [study]
+    valid_target_types: [institution]
+
+  - id: replicates
+    description: Study replicates previous research
+    valid_source_types: [study]
+    valid_target_types: [study]
+
+  - id: related_to
+    description: General relationship
+    bidirectional: true
+
+extraction_prompt_template: |
+  You are analyzing academic or research content (papers, journals, studies).
+
+  Extract the following types of entities:
+  {entity_descriptions}
+
+  Extract the following types of relationships:
+  {relationship_descriptions}
+
+  Focus on:
+  - Authors and their institutional affiliations
+  - Research methodology and approach
+  - Key findings and their statistical significance
+  - Hypotheses tested and their outcomes
+  - Citations and references to other works
+  - Datasets used in the research
+  - Theoretical concepts and definitions
+
+  For findings, include:
+  - Statistical significance when reported
+  - Effect sizes and confidence intervals
+  - Limitations mentioned by authors
+
+confidence_thresholds:
+  entity_extraction: 0.7
+  relationship_extraction: 0.6
+
+version: "1.0.0"

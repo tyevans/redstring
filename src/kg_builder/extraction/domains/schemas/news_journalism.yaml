@@ -1,0 +1,233 @@
+# News & Journalism Domain Schema
+# For news articles, press releases, current events, and journalistic content
+
+domain_id: news_journalism
+display_name: News & Journalism
+description: News articles, press releases, current events, and journalistic content
+
+entity_types:
+  - id: person
+    description: A named individual mentioned in the article
+    properties:
+      - name: title
+        type: string
+        description: Job title or position
+      - name: affiliation
+        type: string
+        description: Organization they belong to
+      - name: role_in_story
+        type: string
+        description: Their role in the news story
+    examples:
+      - President Biden
+      - CEO Tim Cook
+      - Dr. Anthony Fauci
+
+  - id: organization
+    description: A company, government body, or institution
+    properties:
+      - name: type
+        type: string
+        description: Type of organization (company, government, NGO, etc.)
+      - name: industry
+        type: string
+        description: Industry sector
+      - name: location
+        type: string
+        description: Headquarters location
+    examples:
+      - Apple Inc.
+      - United Nations
+      - Federal Reserve
+
+  - id: event
+    description: A newsworthy occurrence or happening
+    properties:
+      - name: date
+        type: string
+        description: When the event occurred
+      - name: location
+        type: string
+        description: Where the event occurred
+      - name: type
+        type: string
+        description: Type of event (announcement, incident, election, etc.)
+    examples:
+      - G20 Summit
+      - Product launch
+      - Election results
+
+  - id: claim
+    description: A factual assertion or statement made in the article
+    properties:
+      - name: claim_text
+        type: string
+        description: The actual claim being made
+      - name: source_attribution
+        type: string
+        description: Who made the claim
+      - name: verification_status
+        type: string
+        description: Whether the claim is verified, disputed, or unverified
+    examples:
+      - Revenue increased 20%
+      - Policy will create jobs
+      - Investigation ongoing
+
+  - id: quote
+    description: A direct quotation from a source
+    properties:
+      - name: speaker
+        type: string
+        description: Who said the quote
+      - name: context
+        type: string
+        description: Context in which it was said
+    examples:
+      - "This is a historic moment"
+      - "We will continue to fight"
+
+  - id: source
+    description: A source of information cited in the article
+    properties:
+      - name: type
+        type: string
+        description: Type of source (official, anonymous, document, etc.)
+      - name: credibility
+        type: string
+        description: Assessment of source reliability
+    examples:
+      - White House spokesperson
+      - Internal documents
+      - Anonymous official
+
+  - id: location
+    description: A geographic location mentioned in the article
+    properties:
+      - name: type
+        type: string
+        description: Type of location (city, country, region, building)
+    examples:
+      - Washington D.C.
+      - Silicon Valley
+      - United Nations headquarters
+
+  - id: date
+    description: A specific date or time reference
+    properties:
+      - name: precision
+        type: string
+        description: Precision level (exact date, month, year, relative)
+    examples:
+      - January 15, 2025
+      - Last week
+      - Q4 2024
+
+  - id: statistic
+    description: A numerical fact or data point
+    properties:
+      - name: value
+        type: string
+        description: The numerical value
+      - name: context
+        type: string
+        description: What the statistic measures
+      - name: source
+        type: string
+        description: Source of the data
+    examples:
+      - 3.5% unemployment rate
+      - $1.2 trillion deficit
+      - 500,000 affected
+
+relationship_types:
+  - id: quotes
+    description: A person or source provides a quote
+    valid_source_types: [person, source]
+    valid_target_types: [quote]
+
+  - id: claims
+    description: A person or organization makes a claim
+    valid_source_types: [person, organization, source]
+    valid_target_types: [claim]
+
+  - id: reports
+    description: Source reports on an event
+    valid_source_types: [source, organization]
+    valid_target_types: [event, claim]
+
+  - id: contradicts
+    description: One claim contradicts another
+    valid_source_types: [claim]
+    valid_target_types: [claim]
+    bidirectional: true
+
+  - id: supports
+    description: One claim supports another
+    valid_source_types: [claim, statistic]
+    valid_target_types: [claim]
+
+  - id: employs
+    description: Organization employs a person
+    valid_source_types: [organization]
+    valid_target_types: [person]
+
+  - id: leads
+    description: Person leads an organization
+    valid_source_types: [person]
+    valid_target_types: [organization]
+
+  - id: involves
+    description: Event involves a person or organization
+    valid_source_types: [event]
+    valid_target_types: [person, organization]
+
+  - id: occurred_on
+    description: Event occurred on a specific date
+    valid_source_types: [event]
+    valid_target_types: [date]
+
+  - id: occurred_in
+    description: Event occurred in a location
+    valid_source_types: [event]
+    valid_target_types: [location]
+
+  - id: responds_to
+    description: One entity responds to another's actions
+    valid_source_types: [person, organization]
+    valid_target_types: [event, claim]
+
+  - id: related_to
+    description: General relationship
+    bidirectional: true
+
+extraction_prompt_template: |
+  You are analyzing a news article or journalistic content.
+
+  Extract the following types of entities:
+  {entity_descriptions}
+
+  Extract the following types of relationships:
+  {relationship_descriptions}
+
+  Focus on:
+  - Key people mentioned and their roles
+  - Organizations involved in the story
+  - Main events and when/where they occurred
+  - Direct quotes and who said them
+  - Claims and their sources
+  - Statistics and data points
+  - Geographic locations relevant to the story
+
+  For claims, assess whether they are:
+  - Verified facts
+  - Disputed claims
+  - Unverified assertions
+
+  Attribute all quotes and claims to their sources.
+
+confidence_thresholds:
+  entity_extraction: 0.75
+  relationship_extraction: 0.65
+
+version: "1.0.0"

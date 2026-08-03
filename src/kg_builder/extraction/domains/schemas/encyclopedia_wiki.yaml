@@ -1,0 +1,235 @@
+# Encyclopedia & Wiki Domain Schema
+# For encyclopedic articles, Wikipedia content, and reference material
+
+domain_id: encyclopedia_wiki
+display_name: Encyclopedia & Wiki
+description: Encyclopedic articles, Wikipedia content, and reference material
+
+entity_types:
+  - id: concept
+    description: A defined term or concept
+    properties:
+      - name: definition
+        type: string
+        description: Definition of the concept
+      - name: field
+        type: string
+        description: Field or domain the concept belongs to
+    examples:
+      - Machine learning
+      - Photosynthesis
+      - Democracy
+
+  - id: category
+    description: A classification or category
+    properties:
+      - name: parent_category
+        type: string
+        description: Parent category if hierarchical
+    examples:
+      - Computer Science
+      - European History
+      - Marine Biology
+
+  - id: person
+    description: A historical or notable person
+    properties:
+      - name: birth_date
+        type: string
+        description: Date of birth
+      - name: death_date
+        type: string
+        description: Date of death (if applicable)
+      - name: nationality
+        type: string
+        description: Nationality
+      - name: occupation
+        type: string
+        description: Primary occupation
+    examples:
+      - Albert Einstein
+      - Marie Curie
+      - Leonardo da Vinci
+
+  - id: organization
+    description: A company, institution, or group
+    properties:
+      - name: founded
+        type: string
+        description: Founding date
+      - name: type
+        type: string
+        description: Type of organization
+    examples:
+      - United Nations
+      - Apple Inc.
+      - Royal Society
+
+  - id: location
+    description: A geographic location
+    properties:
+      - name: type
+        type: string
+        description: Type (city, country, region, landmark)
+      - name: coordinates
+        type: string
+        description: Geographic coordinates
+      - name: population
+        type: string
+        description: Population if applicable
+    examples:
+      - Paris
+      - Mount Everest
+      - Amazon River
+
+  - id: event
+    description: A historical event
+    properties:
+      - name: date
+        type: string
+        description: Date or date range
+      - name: location
+        type: string
+        description: Where the event occurred
+      - name: significance
+        type: string
+        description: Historical significance
+    examples:
+      - World War II
+      - Moon landing
+      - French Revolution
+
+  - id: date
+    description: A specific date or time period
+    properties:
+      - name: precision
+        type: string
+        description: Precision (year, month, day, era)
+    examples:
+      - July 4, 1776
+      - 19th century
+      - Middle Ages
+
+  - id: work
+    description: A creative work (book, film, art, etc.)
+    properties:
+      - name: type
+        type: string
+        description: Type of work
+      - name: creator
+        type: string
+        description: Creator or author
+      - name: year
+        type: string
+        description: Year of creation
+    examples:
+      - Mona Lisa
+      - War and Peace
+      - Citizen Kane
+
+  - id: fact
+    description: A verifiable factual statement
+    properties:
+      - name: source
+        type: string
+        description: Source of the fact
+    examples:
+      - "The Earth is 4.5 billion years old"
+      - "Water freezes at 0 degrees Celsius"
+
+relationship_types:
+  - id: is_a
+    description: Taxonomic/classification relationship
+    valid_source_types: [concept, category]
+    valid_target_types: [concept, category]
+
+  - id: part_of
+    description: Part-whole relationship
+    valid_source_types: [concept, location, organization]
+    valid_target_types: [concept, location, organization]
+
+  - id: subcategory_of
+    description: Category hierarchy relationship
+    valid_source_types: [category]
+    valid_target_types: [category]
+
+  - id: located_in
+    description: Geographic containment
+    valid_source_types: [location, organization, event]
+    valid_target_types: [location]
+
+  - id: born_in
+    description: Person's birthplace
+    valid_source_types: [person]
+    valid_target_types: [location]
+
+  - id: died_in
+    description: Person's place of death
+    valid_source_types: [person]
+    valid_target_types: [location]
+
+  - id: founded_by
+    description: Organization founded by person
+    valid_source_types: [organization]
+    valid_target_types: [person]
+
+  - id: member_of
+    description: Membership in organization
+    valid_source_types: [person]
+    valid_target_types: [organization]
+
+  - id: occurred_on
+    description: Event occurred on date
+    valid_source_types: [event]
+    valid_target_types: [date]
+
+  - id: created_by
+    description: Work created by person
+    valid_source_types: [work]
+    valid_target_types: [person]
+
+  - id: influenced_by
+    description: One entity influenced by another
+    valid_source_types: [person, concept, work]
+    valid_target_types: [person, concept, work]
+
+  - id: preceded_by
+    description: Temporal ordering
+    valid_source_types: [event, person]
+    valid_target_types: [event, person]
+
+  - id: succeeded_by
+    description: Temporal ordering
+    valid_source_types: [event, person]
+    valid_target_types: [event, person]
+
+  - id: related_to
+    description: General relationship (like wiki links)
+    bidirectional: true
+
+extraction_prompt_template: |
+  You are analyzing encyclopedic or wiki content (Wikipedia, encyclopedias, reference material).
+
+  Extract the following types of entities:
+  {entity_descriptions}
+
+  Extract the following types of relationships:
+  {relationship_descriptions}
+
+  Focus on:
+  - Defined concepts and their definitions
+  - Category hierarchies and classifications
+  - Notable people and their biographical details
+  - Geographic locations and their relationships
+  - Historical events and dates
+  - Organizations and institutions
+  - Creative works mentioned
+
+  Treat internal wiki links as indicators of relationships.
+  Preserve factual accuracy and cite sources when available.
+
+confidence_thresholds:
+  entity_extraction: 0.7
+  relationship_extraction: 0.6
+
+version: "1.0.0"
