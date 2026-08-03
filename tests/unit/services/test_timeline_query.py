@@ -251,7 +251,9 @@ class TestTimelineQueryServiceJobAccess:
         mock_db_session.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_verify_job_access_not_found(self, mock_db_session, sample_job_id, sample_tenant_id):
+    async def test_verify_job_access_not_found(
+        self, mock_db_session, sample_job_id, sample_tenant_id
+    ):
         """Test verifying job access when job doesn't exist."""
         from kg_builder.services.timeline_query import TimelineQueryService
 

@@ -75,6 +75,7 @@ def test_compute_embedding_similarity_zero_vector():
 def test_compute_embedding_similarity_high_dimension():
     """Test with high dimensional embeddings (like bge-m3)."""
     import random
+
     random.seed(42)
 
     # Generate two random 1024-dimensional embeddings

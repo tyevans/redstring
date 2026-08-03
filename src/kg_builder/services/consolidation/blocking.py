@@ -342,9 +342,7 @@ class BlockingEngine:
         """
         results: dict[UUID, BlockingResult] = {}
         for entity in entities:
-            results[entity.id] = await self.find_candidates(
-                session, entity, tenant_id, config
-            )
+            results[entity.id] = await self.find_candidates(session, entity, tenant_id, config)
         return results
 
     def _build_condition(
@@ -368,9 +366,7 @@ class BlockingEngine:
                 return None
             prefix = entity.normalized_name[: self.min_prefix_length]
             if len(prefix) < self.min_prefix_length:
-                logger.debug(
-                    f"Name too short for prefix blocking: '{entity.normalized_name}'"
-                )
+                logger.debug(f"Name too short for prefix blocking: '{entity.normalized_name}'")
                 return None
             return ExtractedEntity.normalized_name.startswith(prefix)
 
@@ -395,9 +391,7 @@ class BlockingEngine:
             if not entity.normalized_name:
                 return None
             # Use pg_trgm % operator for similarity
-            return text(
-                "normalized_name % :name"
-            ).bindparams(name=entity.normalized_name)
+            return text("normalized_name % :name").bindparams(name=entity.normalized_name)
 
         return None
 

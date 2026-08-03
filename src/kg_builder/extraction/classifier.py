@@ -203,8 +203,7 @@ class ContentClassifier:
                 temperature=0.1,  # Low temperature for consistent classification
                 max_tokens=500,  # Short response expected
                 system_prompt=(
-                    "You are a content classifier. "
-                    "Respond with only valid JSON, no other text."
+                    "You are a content classifier. Respond with only valid JSON, no other text."
                 ),
             )
 
@@ -234,9 +233,7 @@ class ContentClassifier:
                         f"{self._confidence_threshold:.2f}). "
                         f"Original: {result.domain}. {result.reasoning or ''}"
                     ),
-                    alternatives=[
-                        {"domain": result.domain, "confidence": result.confidence}
-                    ],
+                    alternatives=[{"domain": result.domain, "confidence": result.confidence}],
                 )
 
             logger.info(
@@ -321,9 +318,7 @@ class ContentClassifier:
         # Build domain list from registry
         registry = self._get_registry()
         domains = registry.list_domains()
-        domain_list = "\n".join(
-            f"- {d.domain_id}: {d.description}" for d in domains
-        )
+        domain_list = "\n".join(f"- {d.domain_id}: {d.description}" for d in domains)
 
         return CLASSIFICATION_PROMPT.format(
             domain_list=domain_list,

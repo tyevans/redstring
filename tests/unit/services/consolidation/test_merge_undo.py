@@ -201,6 +201,7 @@ class TestMergeUndoError:
     def test_merge_undo_error_is_merge_error(self):
         """Test MergeUndoError is subclass of MergeError."""
         from kg_builder.services.consolidation.merge_service import MergeError
+
         error = MergeUndoError("Test error")
         assert isinstance(error, MergeError)
 
@@ -323,9 +324,7 @@ class TestEntityRestoration:
         assert restored.entity_type == EntityType.PERSON
 
     @pytest.mark.asyncio
-    async def test_restore_entity_handles_unknown_type(
-        self, mock_session, tenant_id, entity_alias
-    ):
+    async def test_restore_entity_handles_unknown_type(self, mock_session, tenant_id, entity_alias):
         """Test that unknown entity type defaults to CONCEPT."""
         service = MergeService(mock_session)
 
@@ -481,6 +480,7 @@ class TestFullUndoFlow:
         merge_event_id,
     ):
         """Test successful undo of a merge."""
+
         # Setup mock responses
         def mock_execute_side_effect(*args, **kwargs):
             result = MagicMock()

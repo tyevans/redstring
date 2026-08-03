@@ -34,7 +34,7 @@ import importlib.util
 
 spec = importlib.util.spec_from_file_location(
     "kg_builder.extraction.retry",
-    "/home/ty/workspace/kg-builder/src/kg_builder/extraction/retry.py"
+    "/home/ty/workspace/kg-builder/src/kg_builder/extraction/retry.py",
 )
 retry_module = importlib.util.module_from_spec(spec)
 sys.modules["kg_builder.extraction.retry"] = retry_module
@@ -212,7 +212,7 @@ class TestGetDelay:
 
         # Test multiple attempts
         for attempt in range(5):
-            base_delay = min(1.0 * (2.0 ** attempt), 60.0)
+            base_delay = min(1.0 * (2.0**attempt), 60.0)
             jitter_range = base_delay * 0.2
 
             # Collect samples
@@ -223,8 +223,7 @@ class TestGetDelay:
             max_expected = base_delay + jitter_range
 
             assert all(min_expected <= d <= max_expected for d in delays), (
-                f"Delay for attempt {attempt} should be between "
-                f"{min_expected} and {max_expected}"
+                f"Delay for attempt {attempt} should be between {min_expected} and {max_expected}"
             )
 
     def test_zero_jitter(self):

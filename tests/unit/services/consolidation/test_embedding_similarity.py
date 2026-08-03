@@ -291,9 +291,7 @@ class TestGetEmbedding:
         assert isinstance(result, np.ndarray)
 
     @pytest.mark.asyncio
-    async def test_get_embedding_without_cache(
-        self, mock_embedding_service, mock_entity
-    ):
+    async def test_get_embedding_without_cache(self, mock_embedding_service, mock_entity):
         """Test get_embedding works without cache."""
         service = EmbeddingSimilarityService(
             embedding_service=mock_embedding_service,
@@ -362,9 +360,7 @@ class TestComputeSimilarity:
         identical_embedding = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         mock_embedding_service.encode.return_value = identical_embedding
 
-        result = await service.compute_similarity(
-            entity_a, entity_b, uuid4()
-        )
+        result = await service.compute_similarity(entity_a, entity_b, uuid4())
 
         # Normalized from 1.0 to 1.0 (1.0 + 1) / 2 = 1.0
         assert result == pytest.approx(1.0)
@@ -379,9 +375,7 @@ class TestComputeSimilarity:
         emb_b = np.array([0.0, 1.0, 0.0], dtype=np.float32)
         mock_embedding_service.encode.side_effect = [emb_a, emb_b]
 
-        result = await service.compute_similarity(
-            entity_a, entity_b, uuid4()
-        )
+        result = await service.compute_similarity(entity_a, entity_b, uuid4())
 
         # Cosine = 0, normalized = (0 + 1) / 2 = 0.5
         assert result == pytest.approx(0.5)
@@ -396,9 +390,7 @@ class TestComputeSimilarity:
         emb_b = np.array([-1.0, 0.0, 0.0], dtype=np.float32)
         mock_embedding_service.encode.side_effect = [emb_a, emb_b]
 
-        result = await service.compute_similarity(
-            entity_a, entity_b, uuid4()
-        )
+        result = await service.compute_similarity(entity_a, entity_b, uuid4())
 
         # Cosine = -1, normalized = (-1 + 1) / 2 = 0.0
         assert 0.0 <= result <= 1.0
@@ -411,9 +403,7 @@ class TestComputeSimilarity:
         entity_a, entity_b = mock_entities
         mock_embedding_service.encode.return_value = np.random.randn(1024).astype(np.float32)
 
-        result = await service.compute_similarity_scores(
-            entity_a, entity_b, uuid4()
-        )
+        result = await service.compute_similarity_scores(entity_a, entity_b, uuid4())
 
         assert result.embedding_cosine is not None
         assert result.embedding_euclidean is not None
@@ -470,9 +460,7 @@ class TestBatchSimilarity:
         source = MagicMock()
         source.id = uuid4()
 
-        result = await service.compute_similarities_batch(
-            source, [], uuid4()
-        )
+        result = await service.compute_similarities_batch(source, [], uuid4())
 
         assert result == []
 
@@ -489,16 +477,11 @@ class TestBatchSimilarity:
         mock_embedding_service.encode.return_value = source_emb
 
         # Cache returns embeddings for all candidates
-        cached = {
-            c.id: np.random.randn(1024).astype(np.float32)
-            for c in candidates
-        }
+        cached = {c.id: np.random.randn(1024).astype(np.float32) for c in candidates}
         mock_cache.get.return_value = None  # Source not cached
         mock_cache.get_batch.return_value = cached
 
-        result = await service.compute_similarities_batch(
-            source, candidates, tenant_id
-        )
+        result = await service.compute_similarities_batch(source, candidates, tenant_id)
 
         assert len(result) == 3
         mock_cache.get_batch.assert_called_once()
@@ -523,9 +506,7 @@ class TestBatchSimilarity:
         mock_cache.get.return_value = None
         mock_cache.get_batch.return_value = cached
 
-        result = await service.compute_similarities_batch(
-            source, candidates, tenant_id
-        )
+        result = await service.compute_similarities_batch(source, candidates, tenant_id)
 
         # Should be sorted by similarity descending
         similarities = [sim for _, sim in result]
@@ -572,14 +553,10 @@ class TestGetEmbeddingSimilarityService:
         mock_embedding_service = MagicMock()
         mock_cache = MagicMock()
 
-        with patch(
-            "kg_builder.services.embedding.get_embedding_service"
-        ) as mock_get_emb:
+        with patch("kg_builder.services.embedding.get_embedding_service") as mock_get_emb:
             mock_get_emb.return_value = mock_embedding_service
 
-            with patch(
-                "kg_builder.services.embedding_cache.get_embedding_cache"
-            ) as mock_get_cache:
+            with patch("kg_builder.services.embedding_cache.get_embedding_cache") as mock_get_cache:
                 mock_get_cache.return_value = mock_cache
 
                 result = await get_embedding_similarity_service()
@@ -590,9 +567,7 @@ class TestGetEmbeddingSimilarityService:
     @pytest.mark.asyncio
     async def test_returns_none_on_error(self):
         """Test factory returns None on error."""
-        with patch(
-            "kg_builder.services.embedding.get_embedding_service"
-        ) as mock_get_emb:
+        with patch("kg_builder.services.embedding.get_embedding_service") as mock_get_emb:
             mock_get_emb.side_effect = Exception("Error")
 
             result = await get_embedding_similarity_service()

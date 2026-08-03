@@ -226,9 +226,7 @@ class MergeHistory(Base):
 
         Only ENTITIES_MERGED events that haven't been undone yet can be undone.
         """
-        return (
-            self.event_type == MergeEventType.ENTITIES_MERGED and not self.undone
-        )
+        return self.event_type == MergeEventType.ENTITIES_MERGED and not self.undone
 
     @property
     def affected_entity_count(self) -> int:

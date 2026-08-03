@@ -122,9 +122,7 @@ class SimpleMerger:
             entity.pop("_merged_from", None)
 
         # Merge relationships
-        merged_relationships = self._merge_relationships(
-            relationships_by_chunk, merged_entities
-        )
+        merged_relationships = self._merge_relationships(relationships_by_chunk, merged_entities)
 
         logger.info(
             "Simple merge complete",

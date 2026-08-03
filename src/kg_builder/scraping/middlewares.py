@@ -39,12 +39,8 @@ class TenantContextMiddleware:
     def from_crawler(cls, crawler: Crawler):
         """Create middleware instance from crawler."""
         middleware = cls()
-        crawler.signals.connect(
-            middleware.spider_opened, signal=signals.spider_opened
-        )
-        crawler.signals.connect(
-            middleware.spider_closed, signal=signals.spider_closed
-        )
+        crawler.signals.connect(middleware.spider_opened, signal=signals.spider_opened)
+        crawler.signals.connect(middleware.spider_closed, signal=signals.spider_closed)
         return middleware
 
     def spider_opened(self, spider: Spider) -> None:
@@ -167,8 +163,7 @@ class RequestLoggingMiddleware:
     ) -> Response:
         """Log received response."""
         logger.debug(
-            f"Response: {response.status} {response.url} "
-            f"({len(response.body)} bytes)",
+            f"Response: {response.status} {response.url} ({len(response.body)} bytes)",
             extra={
                 "status": response.status,
                 "url": response.url,

@@ -111,9 +111,7 @@ class CreateScrapingJobRequest(BaseModel):
     def validate_extraction_strategy(self) -> "CreateScrapingJobRequest":
         """Validate content_domain based on extraction_strategy."""
         if self.extraction_strategy == "manual" and self.content_domain is None:
-            raise ValueError(
-                "content_domain is required when extraction_strategy is 'manual'"
-            )
+            raise ValueError("content_domain is required when extraction_strategy is 'manual'")
 
         if self.extraction_strategy == "legacy" and self.content_domain is not None:
             raise ValueError(
@@ -389,7 +387,9 @@ class ExtractedEntitySummary(BaseModel):
     """Summary view of an extracted entity."""
 
     id: UUID = Field(..., description="Entity ID")
-    entity_type: str = Field(..., description="Entity type (e.g., 'person', 'organization', 'character')")
+    entity_type: str = Field(
+        ..., description="Entity type (e.g., 'person', 'organization', 'character')"
+    )
     name: str = Field(..., description="Entity name")
     extraction_method: ExtractionMethod = Field(..., description="Extraction method")
     confidence_score: float = Field(..., description="Confidence score")
@@ -405,8 +405,12 @@ class ExtractedEntityDetail(BaseModel):
     id: UUID = Field(..., description="Entity ID")
     tenant_id: UUID = Field(..., description="Tenant ID")
     source_page_id: UUID = Field(..., description="Source page ID")
-    entity_type: str = Field(..., description="Entity type (e.g., 'person', 'organization', 'character')")
-    original_entity_type: str | None = Field(None, description="Original entity type from LLM before normalization")
+    entity_type: str = Field(
+        ..., description="Entity type (e.g., 'person', 'organization', 'character')"
+    )
+    original_entity_type: str | None = Field(
+        None, description="Original entity type from LLM before normalization"
+    )
     name: str = Field(..., description="Entity name")
     normalized_name: str = Field(..., description="Normalized name")
     description: str | None = Field(None, description="Entity description")
@@ -499,7 +503,9 @@ class GraphNode(BaseModel):
     """A node in the knowledge graph response."""
 
     id: UUID = Field(..., description="Entity ID")
-    entity_type: str = Field(..., description="Entity type (e.g., 'person', 'organization', 'character')")
+    entity_type: str = Field(
+        ..., description="Entity type (e.g., 'person', 'organization', 'character')"
+    )
     name: str = Field(..., description="Entity name")
     properties: dict = Field(default_factory=dict, description="Entity properties")
 

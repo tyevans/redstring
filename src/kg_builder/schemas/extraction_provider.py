@@ -214,7 +214,9 @@ class ProviderTypeInfo(BaseModel):
     description: str = Field(..., description="Provider description")
     requires_api_key: bool = Field(..., description="Whether API key is required")
     default_models: list[str] = Field(..., description="Suggested default models")
-    embedding_models: list[str] = Field(default_factory=list, description="Available embedding models")
+    embedding_models: list[str] = Field(
+        default_factory=list, description="Available embedding models"
+    )
 
 
 # Provider type metadata

@@ -74,9 +74,7 @@ class SimilarityScore(BaseModel):
         computation_time_ms: Time to compute in milliseconds (optional)
     """
 
-    similarity_type: SimilarityType = Field(
-        description="Type of similarity metric"
-    )
+    similarity_type: SimilarityType = Field(description="Type of similarity metric")
     raw_score: float = Field(
         description="Raw similarity score (0.0-1.0)",
         ge=0.0,
@@ -109,9 +107,7 @@ class SimilarityScore(BaseModel):
         """Compute weighted_score if not provided."""
         if self.weighted_score == 0.0 and self.raw_score > 0.0:
             # Use object.__setattr__ to bypass frozen model
-            object.__setattr__(
-                self, "weighted_score", self.raw_score * self.weight
-            )
+            object.__setattr__(self, "weighted_score", self.raw_score * self.weight)
         return self
 
 
@@ -276,10 +272,7 @@ class GraphSimilarityScores(BaseModel):
 
     def has_graph_score(self) -> bool:
         """Check if any graph similarity was computed."""
-        return any(
-            s is not None and s.is_computed
-            for s in [self.neighborhood, self.co_occurrence]
-        )
+        return any(s is not None and s.is_computed for s in [self.neighborhood, self.co_occurrence])
 
 
 class ContextualSignals(BaseModel):
@@ -420,9 +413,7 @@ class SimilarityScores(BaseModel):
         if self.string_scores.levenshtein:
             result["levenshtein"] = self.string_scores.levenshtein.raw_score
         if self.string_scores.damerau_levenshtein:
-            result["damerau_levenshtein"] = (
-                self.string_scores.damerau_levenshtein.raw_score
-            )
+            result["damerau_levenshtein"] = self.string_scores.damerau_levenshtein.raw_score
         if self.string_scores.normalized_exact:
             result["normalized_exact"] = self.string_scores.normalized_exact.raw_score
         if self.string_scores.trigram:
@@ -438,13 +429,9 @@ class SimilarityScores(BaseModel):
 
         # Add semantic scores
         if self.semantic_scores.embedding_cosine:
-            result["embedding_cosine"] = (
-                self.semantic_scores.embedding_cosine.raw_score
-            )
+            result["embedding_cosine"] = self.semantic_scores.embedding_cosine.raw_score
         if self.semantic_scores.embedding_euclidean:
-            result["embedding_euclidean"] = (
-                self.semantic_scores.embedding_euclidean.raw_score
-            )
+            result["embedding_euclidean"] = self.semantic_scores.embedding_euclidean.raw_score
 
         # Add graph scores
         if self.graph_scores.neighborhood:
@@ -468,9 +455,7 @@ class SimilarityScores(BaseModel):
         return result
 
     @classmethod
-    def from_dict(
-        cls, entity_a_id: UUID, entity_b_id: UUID, data: dict
-    ) -> SimilarityScores:
+    def from_dict(cls, entity_a_id: UUID, entity_b_id: UUID, data: dict) -> SimilarityScores:
         """
         Reconstruct SimilarityScores from a flat dictionary.
 
@@ -791,9 +776,7 @@ class SimilarityThresholds(BaseModel):
         """Ensure review threshold is less than auto merge threshold."""
         if hasattr(info, "data") and info.data.get("auto_merge"):
             if v >= info.data["auto_merge"]:
-                raise ValueError(
-                    "review_required must be less than auto_merge threshold"
-                )
+                raise ValueError("review_required must be less than auto_merge threshold")
         return v
 
     @field_validator("reject_below")
@@ -802,9 +785,7 @@ class SimilarityThresholds(BaseModel):
         """Ensure reject threshold is less than review threshold."""
         if hasattr(info, "data") and info.data.get("review_required"):
             if v >= info.data["review_required"]:
-                raise ValueError(
-                    "reject_below must be less than review_required threshold"
-                )
+                raise ValueError("reject_below must be less than review_required threshold")
         return v
 
     def get_decision(self, confidence: float) -> str:

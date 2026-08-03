@@ -203,8 +203,7 @@ IMPORTANT: You MUST respond with valid JSON that conforms to this schema:
             # gpt-5-*, o1-*, o3-*, o4-* models don't support custom temperature
             model_lower = self._model.lower()
             supports_temperature = not any(
-                model_lower.startswith(prefix)
-                for prefix in ("gpt-5", "o1", "o3", "o4")
+                model_lower.startswith(prefix) for prefix in ("gpt-5", "o1", "o3", "o4")
             )
             if supports_temperature:
                 request_kwargs["temperature"] = self._temperature

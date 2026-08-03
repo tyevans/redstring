@@ -205,9 +205,7 @@ class OllamaEmbeddingService:
                 data = response.json()
 
                 if "embedding" not in data:
-                    raise EmbeddingComputationError(
-                        f"No embedding in response: {data.keys()}"
-                    )
+                    raise EmbeddingComputationError(f"No embedding in response: {data.keys()}")
 
                 embedding = np.array(data["embedding"], dtype=np.float32)
 

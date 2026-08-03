@@ -17,7 +17,9 @@ from pydantic import ValidationError
 
 # Direct import from schemas.py file to avoid __init__.py chain
 # that pulls in database-dependent modules
-_schemas_path = Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "extraction" / "schemas.py"
+_schemas_path = (
+    Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "extraction" / "schemas.py"
+)
 _spec = spec_from_file_location("extraction_schemas", _schemas_path)
 _schemas = module_from_spec(_spec)
 _spec.loader.exec_module(_schemas)
@@ -160,11 +162,24 @@ class TestExtractedEntitySchema:
         """Test that all entity types from the literal are valid."""
         entity_types = [
             # General types
-            "person", "organization", "location", "event", "product",
-            "concept", "document", "date", "custom",
+            "person",
+            "organization",
+            "location",
+            "event",
+            "product",
+            "concept",
+            "document",
+            "date",
+            "custom",
             # Documentation-specific types
-            "function", "class", "module", "pattern", "example",
-            "parameter", "return_type", "exception",
+            "function",
+            "class",
+            "module",
+            "pattern",
+            "example",
+            "parameter",
+            "return_type",
+            "exception",
         ]
 
         for entity_type in entity_types:
@@ -264,15 +279,30 @@ class TestExtractedRelationshipSchema:
         """Test that all relationship types from the literal are valid."""
         relationship_types = [
             # Code structure
-            "uses", "implements", "extends", "inherits_from", "contains", "part_of",
+            "uses",
+            "implements",
+            "extends",
+            "inherits_from",
+            "contains",
+            "part_of",
             # Function/method
-            "calls", "returns", "accepts", "raises",
+            "calls",
+            "returns",
+            "accepts",
+            "raises",
             # Dependencies
-            "depends_on", "imports", "requires",
+            "depends_on",
+            "imports",
+            "requires",
             # Documentation
-            "documented_in", "example_of", "demonstrates",
+            "documented_in",
+            "example_of",
+            "demonstrates",
             # Generic
-            "related_to", "references", "defines", "instantiates",
+            "related_to",
+            "references",
+            "defines",
+            "instantiates",
         ]
 
         for rel_type in relationship_types:

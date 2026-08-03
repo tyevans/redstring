@@ -72,9 +72,7 @@ class ProjectTimelineQueryService:
             inference_service: Optional inference service for relationship inference
         """
         self.db = db
-        self._inference_service = (
-            inference_service or get_temporal_relationship_inference_service()
-        )
+        self._inference_service = inference_service or get_temporal_relationship_inference_service()
 
     async def verify_project_access(
         self,
@@ -152,7 +150,9 @@ class ProjectTimelineQueryService:
         # Base query: get entities from pages belonging to jobs in this project
         # Only include canonical entities (not merged aliases)
         query = (
-            select(ExtractedEntity, ScrapingJob.id.label("job_id"), ScrapingJob.name.label("job_name"))
+            select(
+                ExtractedEntity, ScrapingJob.id.label("job_id"), ScrapingJob.name.label("job_name")
+            )
             .join(ScrapedPage, ExtractedEntity.source_page_id == ScrapedPage.id)
             .join(ScrapingJob, ScrapedPage.job_id == ScrapingJob.id)
             .where(
@@ -255,9 +255,7 @@ class ProjectTimelineQueryService:
         time_range = None
         if dated_events:
             min_date = min(e.start_date for e in dated_events if e.start_date)
-            max_date = max(
-                (e.end_date or e.start_date) for e in dated_events if e.start_date
-            )
+            max_date = max((e.end_date or e.start_date) for e in dated_events if e.start_date)
             time_range = TimeRange(start=min_date, end=max_date)
 
         has_more = (offset + len(events)) < total_count
@@ -367,9 +365,7 @@ class ProjectTimelineQueryService:
             # Count by precision
             if entity.date_precision:
                 precision = entity.date_precision.lower()
-                precision_distribution[precision] = (
-                    precision_distribution.get(precision, 0) + 1
-                )
+                precision_distribution[precision] = precision_distribution.get(precision, 0) + 1
 
             # Count by uncertainty
             if entity.uncertainty_marker:
@@ -382,9 +378,7 @@ class ProjectTimelineQueryService:
         time_range = None
         if dated_entities:
             min_date = min(e.start_date for e in dated_entities if e.start_date)
-            max_date = max(
-                (e.end_date or e.start_date) for e in dated_entities if e.start_date
-            )
+            max_date = max((e.end_date or e.start_date) for e in dated_entities if e.start_date)
             time_range = TimeRange(start=min_date, end=max_date)
 
         logger.info(
@@ -502,9 +496,7 @@ class ProjectTimelineQueryService:
                 EntityRelationship.tenant_id == tenant_id,
                 EntityRelationship.source_entity_id.in_(event_ids),
                 EntityRelationship.target_entity_id.in_(event_ids),
-                EntityRelationship.relationship_type.in_(
-                    self.TEMPORAL_RELATIONSHIP_TYPES
-                ),
+                EntityRelationship.relationship_type.in_(self.TEMPORAL_RELATIONSHIP_TYPES),
             )
             .options(
                 joinedload(EntityRelationship.source_entity),

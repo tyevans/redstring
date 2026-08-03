@@ -74,9 +74,7 @@ class TenantScopedNeo4jService:
         Returns:
             Entity properties dict with node_id, or None if not found
         """
-        logger.debug(
-            f"Getting entity {entity_id} for tenant {self._tenant_id}"
-        )
+        logger.debug(f"Getting entity {entity_id} for tenant {self._tenant_id}")
         return await self._service.get_entity_node(entity_id, self._tenant_id)
 
     async def get_entity_by_name(self, name: str) -> dict[str, Any] | None:
@@ -98,9 +96,7 @@ class TenantScopedNeo4jService:
         LIMIT 1
         """
 
-        logger.debug(
-            f"Searching for entity by name '{name}' for tenant {self._tenant_id}"
-        )
+        logger.debug(f"Searching for entity by name '{name}' for tenant {self._tenant_id}")
 
         async with self._service.session() as session:
             result = await session.run(
@@ -319,9 +315,7 @@ class TenantScopedNeo4jService:
         if depth > 3:
             # Limit depth to prevent performance issues
             depth = 3
-            logger.warning(
-                f"Graph depth limited to 3 for entity {entity_id}"
-            )
+            logger.warning(f"Graph depth limited to 3 for entity {entity_id}")
 
         # Build variable-length relationship pattern
         query = f"""
@@ -341,8 +335,7 @@ class TenantScopedNeo4jService:
         """
 
         logger.debug(
-            f"Getting entity graph for {entity_id} "
-            f"(depth={depth}) for tenant {self._tenant_id}"
+            f"Getting entity graph for {entity_id} (depth={depth}) for tenant {self._tenant_id}"
         )
 
         async with self._service.session() as session:
@@ -358,11 +351,10 @@ class TenantScopedNeo4jService:
 
             return {
                 "root": dict(record["root"]) if record["root"] else None,
-                "related_entities": [
-                    dict(node) for node in (record["related_nodes"] or [])
-                ],
+                "related_entities": [dict(node) for node in (record["related_nodes"] or [])],
                 "relationships": [
-                    dict(rel) for rel in (record["relationships"] or [])
+                    dict(rel)
+                    for rel in (record["relationships"] or [])
                     if rel.get("source")  # Filter out null relationships
                 ],
             }

@@ -77,7 +77,7 @@ _RELATIONSHIP_TYPES: list[str] = [
 ]
 
 
-SYSTEM_PROMPT_BASE = '''You are an expert technical documentation analyzer specializing in Python libraries and frameworks.
+SYSTEM_PROMPT_BASE = """You are an expert technical documentation analyzer specializing in Python libraries and frameworks.
 
 Your task is to extract structured information about code entities and their relationships from documentation.
 
@@ -171,10 +171,12 @@ Return a JSON object with:
 Each entity must have: name, entity_type, confidence (0.0-1.0)
 Each relationship must have: source_name, target_name, relationship_type, confidence
 
-Only include relationships where both source and target entities are in the entities list.'''
+Only include relationships where both source and target entities are in the entities list."""
 
 
-SYSTEM_PROMPT_API_REFERENCE = SYSTEM_PROMPT_BASE + '''
+SYSTEM_PROMPT_API_REFERENCE = (
+    SYSTEM_PROMPT_BASE
+    + """
 
 ## API Reference Focus
 
@@ -192,10 +194,13 @@ Be thorough in capturing the API surface. Extract:
 - Method signatures including async/generator status
 - Property definitions
 - Class and instance attributes
-- Dependencies and imports'''
+- Dependencies and imports"""
+)
 
 
-SYSTEM_PROMPT_TUTORIAL = SYSTEM_PROMPT_BASE + '''
+SYSTEM_PROMPT_TUTORIAL = (
+    SYSTEM_PROMPT_BASE
+    + """
 
 ## Tutorial Focus
 
@@ -210,10 +215,13 @@ This is tutorial documentation. Focus on:
 Connect examples to the concepts they demonstrate. Track:
 - The learning progression (basic -> advanced concepts)
 - Prerequisites for understanding each concept
-- Practical applications shown in examples'''
+- Practical applications shown in examples"""
+)
 
 
-SYSTEM_PROMPT_CONCEPTUAL = SYSTEM_PROMPT_BASE + '''
+SYSTEM_PROMPT_CONCEPTUAL = (
+    SYSTEM_PROMPT_BASE
+    + """
 
 ## Conceptual Documentation Focus
 
@@ -228,10 +236,13 @@ This is conceptual/guide documentation. Focus on:
 Capture the "why" behind design decisions:
 - Motivations for architectural choices
 - Problems that patterns solve
-- When to use (and not use) certain approaches'''
+- When to use (and not use) certain approaches"""
+)
 
 
-SYSTEM_PROMPT_EXAMPLE_CODE = SYSTEM_PROMPT_BASE + '''
+SYSTEM_PROMPT_EXAMPLE_CODE = (
+    SYSTEM_PROMPT_BASE
+    + """
 
 ## Example Code Focus
 
@@ -245,7 +256,8 @@ This is code example documentation. Focus on:
 For each example, identify:
 - The main concept or feature being demonstrated
 - Supporting concepts used but not explained
-- How examples build on each other'''
+- How examples build on each other"""
+)
 
 
 def get_system_prompt(doc_type: DocumentationType = DocumentationType.GENERAL) -> str:
@@ -318,7 +330,7 @@ def build_user_prompt(
     if additional_context:
         context_section = f"\nAdditional Context: {additional_context}"
 
-    return f'''Analyze this technical documentation and extract all entities and relationships.
+    return f"""Analyze this technical documentation and extract all entities and relationships.
 
 URL: {page_url}{type_hint}{context_section}
 
@@ -328,7 +340,7 @@ URL: {page_url}{type_hint}{context_section}
 
 Extract all code entities (functions, classes, modules, exceptions, parameters) and conceptual entities (concepts, patterns, examples).
 Identify relationships between entities.
-Focus on accuracy - only include entities and relationships you're confident about (confidence >= 0.7).'''
+Focus on accuracy - only include entities and relationships you're confident about (confidence >= 0.7)."""
 
 
 def get_entity_types() -> list[str]:

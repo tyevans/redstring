@@ -80,7 +80,11 @@ sys.modules["kg_builder.events.scraping"] = mock_scraping_events
 # Import the module directly using importlib to avoid triggering __init__.py
 spec = importlib.util.spec_from_file_location(
     "neo4j_errors",
-    Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "services" / "neo4j_errors.py",
+    Path(__file__).parent.parent.parent.parent
+    / "src"
+    / "kg_builder"
+    / "services"
+    / "neo4j_errors.py",
 )
 neo4j_errors = importlib.util.module_from_spec(spec)
 sys.modules["kg_builder.services.neo4j_errors"] = neo4j_errors
@@ -367,9 +371,7 @@ class TestHandleSyncError:
 
         assert event.aggregate_id == entity_id
 
-    def test_uses_relationship_id_as_aggregate_id(
-        self, database_error, relationship_id, tenant_id
-    ):
+    def test_uses_relationship_id_as_aggregate_id(self, database_error, relationship_id, tenant_id):
         """Test relationship_id is used as aggregate_id when entity_id is None."""
         event = Neo4jErrorHandler.handle_sync_error(
             error=database_error,

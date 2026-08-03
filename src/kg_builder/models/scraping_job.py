@@ -470,10 +470,7 @@ class ScrapingJob(Base):
         Returns:
             True if classification is needed, False otherwise.
         """
-        return (
-            self.extraction_strategy == "auto_detect"
-            and self.content_domain is None
-        )
+        return self.extraction_strategy == "auto_detect" and self.content_domain is None
 
     @property
     def is_domain_resolved(self) -> bool:

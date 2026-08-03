@@ -210,7 +210,12 @@ class TestAcquire:
     async def test_acquire_allows_requests_under_limit(self, rate_limiter, mock_redis, tenant_id):
         """Test acquire allows requests when under rate limit."""
         # Setup mock to return count under limit
-        mock_redis.mock_pipeline.execute_result = [None, 5, None, None]  # 5 requests (under limit of 10)
+        mock_redis.mock_pipeline.execute_result = [
+            None,
+            5,
+            None,
+            None,
+        ]  # 5 requests (under limit of 10)
 
         # Should not raise
         await rate_limiter.acquire(tenant_id)
@@ -267,7 +272,9 @@ class TestAcquire:
         assert seconds == rate_limiter._window
 
     @pytest.mark.asyncio
-    async def test_acquire_retry_after_calculated_correctly(self, rate_limiter, mock_redis, tenant_id):
+    async def test_acquire_retry_after_calculated_correctly(
+        self, rate_limiter, mock_redis, tenant_id
+    ):
         """Test retry_after is calculated based on oldest entry."""
         import time
 

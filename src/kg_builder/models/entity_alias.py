@@ -207,9 +207,7 @@ class EntityAlias(Base):
         if "alias_normalized_name" not in kwargs and "alias_name" in kwargs:
             from kg_builder.models.extracted_entity import ExtractedEntity
 
-            kwargs["alias_normalized_name"] = ExtractedEntity._normalize_name(
-                kwargs["alias_name"]
-            )
+            kwargs["alias_normalized_name"] = ExtractedEntity._normalize_name(kwargs["alias_name"])
         super().__init__(**kwargs)
 
     def __repr__(self) -> str:

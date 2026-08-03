@@ -8,6 +8,7 @@ import pytest
 
 try:
     import jellyfish
+
     JELLYFISH_AVAILABLE = True
 except ImportError:
     JELLYFISH_AVAILABLE = False
@@ -76,8 +77,9 @@ class TestSoundexEncoding:
             ("Tymczak", "Tymczak"),  # Same word
         ]
         for word1, word2 in pairs:
-            assert jellyfish.soundex(word1) == jellyfish.soundex(word2), \
+            assert jellyfish.soundex(word1) == jellyfish.soundex(word2), (
                 f"{word1} and {word2} should have same soundex"
+            )
 
     def test_soundex_different_first_letter(self):
         """Test that different first letters always produce different soundex."""
@@ -114,5 +116,6 @@ class TestSoundexEncoding:
         ]
         for word, expected_first in test_cases:
             result = jellyfish.soundex(word)
-            assert result[0] == expected_first.upper(), \
+            assert result[0] == expected_first.upper(), (
                 f"First char of soundex('{word}') should be '{expected_first.upper()}'"
+            )

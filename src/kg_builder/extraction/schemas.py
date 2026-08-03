@@ -370,9 +370,23 @@ class ExtractedEntitySchema(BaseModel):
             return type_mapping[v_lower]
         # Check if it's a valid literal type
         valid_types = {
-            "person", "organization", "location", "event", "product",
-            "concept", "document", "date", "custom", "function", "class",
-            "module", "pattern", "example", "parameter", "return_type", "exception"
+            "person",
+            "organization",
+            "location",
+            "event",
+            "product",
+            "concept",
+            "document",
+            "date",
+            "custom",
+            "function",
+            "class",
+            "module",
+            "pattern",
+            "example",
+            "parameter",
+            "return_type",
+            "exception",
         }
         if v_lower in valid_types:
             return v_lower
@@ -482,10 +496,26 @@ class ExtractedRelationshipSchema(BaseModel):
         if v_lower in type_mapping:
             return type_mapping[v_lower]
         valid_types = {
-            "uses", "implements", "extends", "inherits_from", "contains",
-            "part_of", "calls", "returns", "accepts", "raises", "depends_on",
-            "imports", "requires", "documented_in", "example_of", "demonstrates",
-            "related_to", "references", "defines", "instantiates"
+            "uses",
+            "implements",
+            "extends",
+            "inherits_from",
+            "contains",
+            "part_of",
+            "calls",
+            "returns",
+            "accepts",
+            "raises",
+            "depends_on",
+            "imports",
+            "requires",
+            "documented_in",
+            "example_of",
+            "demonstrates",
+            "related_to",
+            "references",
+            "defines",
+            "instantiates",
         }
         if v_lower in valid_types:
             return v_lower

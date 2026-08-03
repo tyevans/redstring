@@ -271,7 +271,7 @@ def get_provider_for_config(
     except ValueError as e:
         valid_types = ", ".join(t.value for t in ProviderType)
         raise ValueError(
-            f"Invalid provider type '{provider_type}'. " f"Valid types: {valid_types}"
+            f"Invalid provider type '{provider_type}'. Valid types: {valid_types}"
         ) from e
 
     return ProviderFactory.create(ptype, config)

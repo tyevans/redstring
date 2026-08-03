@@ -68,8 +68,7 @@ class ProjectSettingsSchema(BaseModel):
         """Validate that extraction strategy is one of the allowed values."""
         if v is not None and v not in ("legacy", "auto_detect", "manual"):
             raise ValueError(
-                f"Invalid extraction strategy '{v}'. "
-                "Must be one of: legacy, auto_detect, manual"
+                f"Invalid extraction strategy '{v}'. Must be one of: legacy, auto_detect, manual"
             )
         return v
 
@@ -124,9 +123,7 @@ class CreateProjectRequest(BaseModel):
         """Validate individual tag lengths."""
         for tag in v:
             if len(tag) > 50:
-                raise ValueError(
-                    f"Tag '{tag[:20]}...' exceeds maximum length of 50 characters"
-                )
+                raise ValueError(f"Tag '{tag[:20]}...' exceeds maximum length of 50 characters")
             if len(tag) < 1:
                 raise ValueError("Tags cannot be empty strings")
         return v
@@ -174,9 +171,7 @@ class UpdateProjectRequest(BaseModel):
         if v is not None:
             for tag in v:
                 if len(tag) > 50:
-                    raise ValueError(
-                        f"Tag '{tag[:20]}...' exceeds maximum length of 50 characters"
-                    )
+                    raise ValueError(f"Tag '{tag[:20]}...' exceeds maximum length of 50 characters")
                 if len(tag) < 1:
                     raise ValueError("Tags cannot be empty strings")
         return v
@@ -427,9 +422,7 @@ class ProjectStatsResponse(BaseModel):
     jobs_by_status: dict[str, int] = Field(
         default_factory=dict,
         description="Jobs grouped by status (pending, running, completed, failed)",
-        json_schema_extra={
-            "example": {"pending": 1, "running": 2, "completed": 2, "failed": 0}
-        },
+        json_schema_extra={"example": {"pending": 1, "running": 2, "completed": 2, "failed": 0}},
     )
     page_count: int = Field(
         description="Total scraped pages",
@@ -444,9 +437,7 @@ class ProjectStatsResponse(BaseModel):
     entities_by_type: dict[str, int] = Field(
         default_factory=dict,
         description="Entities grouped by type",
-        json_schema_extra={
-            "example": {"person": 500, "organization": 300, "event": 450}
-        },
+        json_schema_extra={"example": {"person": 500, "organization": 300, "event": 450}},
     )
     relationship_count: int = Field(
         description="Total relationships",

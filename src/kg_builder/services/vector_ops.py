@@ -70,10 +70,7 @@ async def find_similar_entities(
         query = query.where(ExtractedEntity.id.notin_(exclude_ids))
 
     # Order by distance (ascending) and limit results
-    query = (
-        query.order_by(ExtractedEntity.embedding.cosine_distance(embedding))
-        .limit(limit)
-    )
+    query = query.order_by(ExtractedEntity.embedding.cosine_distance(embedding)).limit(limit)
 
     result = await session.execute(query)
     return [(row.ExtractedEntity, row.similarity) for row in result]
@@ -147,9 +144,7 @@ async def update_entity_embedding(
         handle transaction management.
     """
     await session.execute(
-        update(ExtractedEntity)
-        .where(ExtractedEntity.id == entity_id)
-        .values(embedding=embedding)
+        update(ExtractedEntity).where(ExtractedEntity.id == entity_id).values(embedding=embedding)
     )
 
 

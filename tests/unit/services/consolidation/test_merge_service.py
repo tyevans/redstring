@@ -36,6 +36,7 @@ class MockEntityType(str, Enum):
     PERSON = "person"
     ORGANIZATION = "organization"
 
+
 # Use as EntityType for tests
 EntityType = MockEntityType
 
@@ -200,9 +201,7 @@ class TestMergeProperty:
 
     def test_union_with_lists(self):
         """UNION combines lists."""
-        result, details = merge_property(
-            ["a", "b"], ["b", "c"], PropertyMergeStrategy.UNION
-        )
+        result, details = merge_property(["a", "b"], ["b", "c"], PropertyMergeStrategy.UNION)
         assert set(result) == {"a", "b", "c"}
         assert details["union_count"] == 3
         assert details["added"] == 1
@@ -232,25 +231,19 @@ class TestMergeProperty:
 
     def test_deep_merge_lists(self):
         """DEEP_MERGE concatenates and dedupes lists."""
-        result, details = merge_property(
-            ["a", "b"], ["b", "c"], PropertyMergeStrategy.DEEP_MERGE
-        )
+        result, details = merge_property(["a", "b"], ["b", "c"], PropertyMergeStrategy.DEEP_MERGE)
         # Should preserve order with canonical first
         assert result == ["a", "b", "c"]
 
     def test_latest_takes_merged(self):
         """LATEST takes merged value (assuming newer)."""
-        result, details = merge_property(
-            "old_value", "new_value", PropertyMergeStrategy.LATEST
-        )
+        result, details = merge_property("old_value", "new_value", PropertyMergeStrategy.LATEST)
         assert result == "new_value"
         assert details["kept"] == "merged"
 
     def test_latest_with_none_merged(self):
         """LATEST with None merged returns canonical."""
-        result, details = merge_property(
-            "canonical_value", None, PropertyMergeStrategy.LATEST
-        )
+        result, details = merge_property("canonical_value", None, PropertyMergeStrategy.LATEST)
         assert result == "canonical_value"
 
 
@@ -490,9 +483,7 @@ class TestMergeServicePropertyMerging:
 
     def test_merge_properties_updates_description(self, mock_session, tenant_id):
         """_merge_properties adopts description if canonical lacks one."""
-        canonical = create_mock_entity(
-            tenant_id=tenant_id, name="Canonical", description=None
-        )
+        canonical = create_mock_entity(tenant_id=tenant_id, name="Canonical", description=None)
         merged = create_mock_entity(
             tenant_id=tenant_id, name="Merged", description="Has description"
         )
@@ -505,12 +496,8 @@ class TestMergeServicePropertyMerging:
 
     def test_merge_properties_higher_confidence(self, mock_session, tenant_id):
         """_merge_properties takes higher confidence score."""
-        canonical = create_mock_entity(
-            tenant_id=tenant_id, name="Canonical", confidence_score=0.7
-        )
-        merged = create_mock_entity(
-            tenant_id=tenant_id, name="Merged", confidence_score=0.95
-        )
+        canonical = create_mock_entity(tenant_id=tenant_id, name="Canonical", confidence_score=0.7)
+        merged = create_mock_entity(tenant_id=tenant_id, name="Merged", confidence_score=0.95)
 
         service = MergeService(mock_session)
         details = service._merge_properties(canonical, merged)

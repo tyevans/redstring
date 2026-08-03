@@ -473,9 +473,7 @@ class TemporalParserService:
 
                         return (
                             start_dt.replace(tzinfo=UTC),
-                            end_dt.replace(
-                                hour=23, minute=59, second=59, tzinfo=UTC
-                            ),
+                            end_dt.replace(hour=23, minute=59, second=59, tzinfo=UTC),
                         )
 
                     elif range_type == "date_range_same_year":
@@ -488,9 +486,7 @@ class TemporalParserService:
 
                         return (
                             start_dt.replace(tzinfo=UTC),
-                            end_dt.replace(
-                                hour=23, minute=59, second=59, tzinfo=UTC
-                            ),
+                            end_dt.replace(hour=23, minute=59, second=59, tzinfo=UTC),
                         )
 
                     elif range_type == "quarter_range":

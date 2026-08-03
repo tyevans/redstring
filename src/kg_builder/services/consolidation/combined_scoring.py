@@ -124,10 +124,7 @@ class FeatureWeights:
             "graph_neighborhood": self.graph_neighborhood,
         }
 
-        enabled_weights = {
-            k: v for k, v in all_weights.items()
-            if k in enabled_features
-        }
+        enabled_weights = {k: v for k, v in all_weights.items() if k in enabled_features}
 
         if not enabled_weights:
             return {}
@@ -489,10 +486,7 @@ class CombinedScoringPipeline:
                 "graph_neighborhood": result.graph_neighborhood,
             }
 
-            combined = sum(
-                (score_values.get(f) or 0) * w
-                for f, w in weights.items()
-            )
+            combined = sum((score_values.get(f) or 0) * w for f, w in weights.items())
 
             result.combined_score = combined
             result.classification = self._classify_confidence(combined)
@@ -502,9 +496,7 @@ class CombinedScoringPipeline:
         results.sort(key=lambda r: r.combined_score, reverse=True)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
-        logger.debug(
-            f"Batch combined scores: {len(results)} candidates in {elapsed_ms:.2f}ms"
-        )
+        logger.debug(f"Batch combined scores: {len(results)} candidates in {elapsed_ms:.2f}ms")
 
         return results
 
@@ -544,9 +536,7 @@ class CombinedScoringPipeline:
         Returns:
             Tuple of (ScoringResult, decision_action)
         """
-        result = await self.compute_combined_score(
-            entity_a, entity_b, string_scores, tenant_id
-        )
+        result = await self.compute_combined_score(entity_a, entity_b, string_scores, tenant_id)
         decision = self.route_decision(result)
         return result, decision
 

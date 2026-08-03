@@ -124,9 +124,7 @@ class ObjectStorageService:
                         "error": str(e),
                     },
                 )
-                raise ObjectStorageError(
-                    f"Failed to check bucket {bucket}: {e}"
-                ) from e
+                raise ObjectStorageError(f"Failed to check bucket {bucket}: {e}") from e
 
     def upload_file(
         self,
@@ -238,9 +236,7 @@ class ObjectStorageService:
                     "error": str(e),
                 },
             )
-            raise ObjectStorageError(
-                f"Failed to download from {bucket}/{key}: {e}"
-            ) from e
+            raise ObjectStorageError(f"Failed to download from {bucket}/{key}: {e}") from e
 
     def delete_file(self, bucket: str, key: str) -> bool:
         """
@@ -330,9 +326,7 @@ class ObjectStorageService:
                     "error": str(e),
                 },
             )
-            raise ObjectStorageError(
-                f"Failed to generate URL for {bucket}/{key}: {e}"
-            ) from e
+            raise ObjectStorageError(f"Failed to generate URL for {bucket}/{key}: {e}") from e
 
     def file_exists(self, bucket: str, key: str) -> bool:
         """
@@ -380,9 +374,7 @@ class ObjectStorageService:
             error_code = e.response.get("Error", {}).get("Code", "")
             if error_code == "404":
                 raise ObjectStorageError(f"Object not found: {bucket}/{key}") from e
-            raise ObjectStorageError(
-                f"Failed to get info for {bucket}/{key}: {e}"
-            ) from e
+            raise ObjectStorageError(f"Failed to get info for {bucket}/{key}: {e}") from e
 
     def generate_document_key(
         self,

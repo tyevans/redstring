@@ -214,6 +214,7 @@ class TestTemporalRelationshipTypes:
         import typing
 
         from kg_builder.extraction.schemas import RelationshipTypeLiteral
+
         args = typing.get_args(RelationshipTypeLiteral)
 
         temporal_types = {"precedes", "follows", "during", "overlaps", "causes", "concurrent"}

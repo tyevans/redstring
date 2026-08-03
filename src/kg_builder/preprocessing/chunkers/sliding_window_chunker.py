@@ -128,7 +128,9 @@ class SlidingWindowChunker:
 
         # Validate runtime configuration
         if overlap >= chunk_size:
-            raise ChunkSizeError(f"overlap_size ({overlap}) must be < max_chunk_size ({chunk_size})")
+            raise ChunkSizeError(
+                f"overlap_size ({overlap}) must be < max_chunk_size ({chunk_size})"
+            )
 
         # Handle edge cases
         if not text or not text.strip():

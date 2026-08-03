@@ -27,15 +27,9 @@ class MergeDecisionItem(BaseModel):
 
     pair_index: int = Field(description="Index of the candidate pair (0-based)")
     should_merge: bool = Field(description="Whether these entities should be merged")
-    merged_name: str | None = Field(
-        default=None, description="Canonical name to use if merging"
-    )
-    confidence: float = Field(
-        default=0.8, description="Confidence in the decision (0.0-1.0)"
-    )
-    reasoning: str | None = Field(
-        default=None, description="Brief explanation for the decision"
-    )
+    merged_name: str | None = Field(default=None, description="Canonical name to use if merging")
+    confidence: float = Field(default=0.8, description="Confidence in the decision (0.0-1.0)")
+    reasoning: str | None = Field(default=None, description="Brief explanation for the decision")
 
 
 class LLMMergeResponse(BaseModel):
@@ -137,9 +131,7 @@ For each pair, provide:
             model = ollama_model or settings.OLLAMA_MODEL
 
             if base_url:
-                http_client = httpx.AsyncClient(
-                    timeout=httpx.Timeout(timeout, connect=30.0)
-                )
+                http_client = httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=30.0))
 
                 self._model = OpenAIModel(
                     model_name=model,
@@ -155,9 +147,7 @@ For each pair, provide:
                     result_retries=2,
                 )
             else:
-                logger.warning(
-                    "OLLAMA_BASE_URL not configured, LLM merging disabled"
-                )
+                logger.warning("OLLAMA_BASE_URL not configured, LLM merging disabled")
                 self._use_llm = False
                 self._model = None
                 self._agent = None
@@ -222,9 +212,7 @@ For each pair, provide:
                 decisions = await self.resolve_candidates(candidates)
 
                 # Apply LLM decisions
-                merged_entities = self._apply_llm_decisions(
-                    merged_entities, candidates, decisions
-                )
+                merged_entities = self._apply_llm_decisions(merged_entities, candidates, decisions)
 
                 # Re-merge relationships with updated entities
                 merged_rels = self._simple_merger._merge_relationships(
@@ -470,9 +458,7 @@ Pair {idx}:
             if canonical and canonical in merge_groups:
                 # Find all entities in this merge group
                 group_names = merge_groups[canonical]
-                group_entities = [
-                    e for e in entities if e.get("name", "").lower() in group_names
-                ]
+                group_entities = [e for e in entities if e.get("name", "").lower() in group_names]
 
                 # Merge the group
                 merged = self._merge_entity_group(group_entities, canonical)
@@ -504,9 +490,7 @@ Pair {idx}:
             return {}
 
         # Sort by confidence (descending)
-        sorted_group = sorted(
-            group, key=lambda e: e.get("confidence", 0.0), reverse=True
-        )
+        sorted_group = sorted(group, key=lambda e: e.get("confidence", 0.0), reverse=True)
 
         # Start with highest confidence entity
         merged = sorted_group[0].copy()
@@ -532,9 +516,7 @@ Pair {idx}:
         merged["properties"] = merged_props
 
         # Merge descriptions (take longest)
-        descriptions = [
-            e.get("description", "") for e in group if e.get("description")
-        ]
+        descriptions = [e.get("description", "") for e in group if e.get("description")]
         if descriptions:
             merged["description"] = max(descriptions, key=len)
 

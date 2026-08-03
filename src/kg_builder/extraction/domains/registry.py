@@ -118,8 +118,7 @@ class DomainSchemaRegistry:
 
         if self._hot_reload:
             logger.warning(
-                "Domain schema hot reload is enabled. "
-                "This should only be used in development."
+                "Domain schema hot reload is enabled. This should only be used in development."
             )
 
     @classmethod
@@ -199,9 +198,7 @@ class DomainSchemaRegistry:
                 return len(self._schemas)
 
             if not self._schema_dir.exists():
-                raise FileNotFoundError(
-                    f"Schema directory not found: {self._schema_dir}"
-                )
+                raise FileNotFoundError(f"Schema directory not found: {self._schema_dir}")
 
             logger.info("Loading domain schemas from %s", self._schema_dir)
 
@@ -269,8 +266,7 @@ class DomainSchemaRegistry:
         if normalized_id not in self._schemas:
             available = ", ".join(sorted(self._schemas.keys()))
             raise KeyError(
-                f"Unknown domain: '{domain_id}'. "
-                f"Available domains: {available or 'none'}"
+                f"Unknown domain: '{domain_id}'. Available domains: {available or 'none'}"
             )
 
         return self._schemas[normalized_id]

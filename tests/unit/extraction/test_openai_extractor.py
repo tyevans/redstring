@@ -178,9 +178,7 @@ class TestExtraction:
             assert result.relationship_count == 1
 
     @pytest.mark.asyncio
-    async def test_extract_calls_openai_with_json_mode(
-        self, service, mock_openai_response
-    ):
+    async def test_extract_calls_openai_with_json_mode(self, service, mock_openai_response):
         """Test that extract uses JSON mode for structured output."""
         with patch.object(
             service._client.chat.completions, "create", new_callable=AsyncMock
@@ -215,9 +213,7 @@ class TestExtraction:
             assert call_kwargs["model"] == "gpt-4-turbo"
 
     @pytest.mark.asyncio
-    async def test_extract_uses_configured_temperature(
-        self, service, mock_openai_response
-    ):
+    async def test_extract_uses_configured_temperature(self, service, mock_openai_response):
         """Test that extract uses the configured temperature."""
         with patch.object(
             service._client.chat.completions, "create", new_callable=AsyncMock
@@ -233,9 +229,7 @@ class TestExtraction:
             assert call_kwargs["temperature"] == 0.1
 
     @pytest.mark.asyncio
-    async def test_extract_truncates_long_content(
-        self, service, mock_openai_response
-    ):
+    async def test_extract_truncates_long_content(self, service, mock_openai_response):
         """Test that extract truncates content exceeding max length."""
         with patch.object(
             service._client.chat.completions, "create", new_callable=AsyncMock
@@ -258,9 +252,7 @@ class TestExtraction:
             assert "x" * 10000 not in user_message
 
     @pytest.mark.asyncio
-    async def test_extract_includes_system_and_user_messages(
-        self, service, mock_openai_response
-    ):
+    async def test_extract_includes_system_and_user_messages(self, service, mock_openai_response):
         """Test that extract sends both system and user messages."""
         with patch.object(
             service._client.chat.completions, "create", new_callable=AsyncMock
@@ -282,9 +274,7 @@ class TestExtraction:
             assert "https://example.com/docs" in messages[1]["content"]
 
     @pytest.mark.asyncio
-    async def test_extract_with_doc_type_override(
-        self, service, mock_openai_response
-    ):
+    async def test_extract_with_doc_type_override(self, service, mock_openai_response):
         """Test that extract can override default doc_type."""
         with patch.object(
             service._client.chat.completions, "create", new_callable=AsyncMock
@@ -301,9 +291,7 @@ class TestExtraction:
             mock_create.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_extract_with_additional_context(
-        self, service, mock_openai_response
-    ):
+    async def test_extract_with_additional_context(self, service, mock_openai_response):
         """Test that extract includes additional context in prompt."""
         with patch.object(
             service._client.chat.completions, "create", new_callable=AsyncMock
@@ -502,9 +490,7 @@ class TestHealthCheck:
         mock_models = MagicMock()
         mock_models.data = [mock_model]
 
-        with patch.object(
-            service._client.models, "list", new_callable=AsyncMock
-        ) as mock_list:
+        with patch.object(service._client.models, "list", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = mock_models
 
             result = await service.health_check()
@@ -523,9 +509,7 @@ class TestHealthCheck:
         mock_models = MagicMock()
         mock_models.data = [mock_model]
 
-        with patch.object(
-            service._client.models, "list", new_callable=AsyncMock
-        ) as mock_list:
+        with patch.object(service._client.models, "list", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = mock_models
 
             result = await service.health_check()
@@ -536,9 +520,7 @@ class TestHealthCheck:
     @pytest.mark.asyncio
     async def test_health_check_api_error(self, service):
         """Test health check handles API errors."""
-        with patch.object(
-            service._client.models, "list", new_callable=AsyncMock
-        ) as mock_list:
+        with patch.object(service._client.models, "list", new_callable=AsyncMock) as mock_list:
             mock_list.side_effect = APIError(
                 message="Invalid API key",
                 request=MagicMock(),
@@ -554,9 +536,7 @@ class TestHealthCheck:
     @pytest.mark.asyncio
     async def test_health_check_connection_error(self, service):
         """Test health check handles connection errors."""
-        with patch.object(
-            service._client.models, "list", new_callable=AsyncMock
-        ) as mock_list:
+        with patch.object(service._client.models, "list", new_callable=AsyncMock) as mock_list:
             mock_list.side_effect = APIConnectionError(request=MagicMock())
 
             result = await service.health_check()

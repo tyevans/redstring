@@ -308,8 +308,7 @@ class EncryptionService:
                 },
             )
             raise DecryptionError(
-                "Failed to decrypt value - data may be corrupted or encrypted "
-                "with a different key"
+                "Failed to decrypt value - data may be corrupted or encrypted with a different key"
             )
         except Exception as e:
             logger.error(

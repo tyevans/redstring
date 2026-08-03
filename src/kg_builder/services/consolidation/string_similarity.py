@@ -517,8 +517,7 @@ class StringSimilarityService:
         results.sort(key=lambda x: x[1].combined_score, reverse=True)
 
         logger.debug(
-            f"Filtered {len(candidates)} candidates to {len(results)} "
-            f"above threshold {threshold}"
+            f"Filtered {len(candidates)} candidates to {len(results)} above threshold {threshold}"
         )
 
         return results

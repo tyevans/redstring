@@ -258,9 +258,7 @@ class TestGetNeighborhood:
         return GraphSimilarityService(neo4j_driver=mock_driver)
 
     @pytest.mark.asyncio
-    async def test_get_neighborhood_queries_both_directions(
-        self, service, mock_driver
-    ):
+    async def test_get_neighborhood_queries_both_directions(self, service, mock_driver):
         """Test neighborhood query retrieves outgoing and incoming."""
         entity_id = uuid4()
 
@@ -288,9 +286,7 @@ class TestGetNeighborhood:
         assert neighbor_id in result.outgoing_neighbors
 
     @pytest.mark.asyncio
-    async def test_get_neighborhood_handles_invalid_uuid(
-        self, service, mock_driver
-    ):
+    async def test_get_neighborhood_handles_invalid_uuid(self, service, mock_driver):
         """Test neighborhood handles invalid neighbor IDs gracefully."""
         entity_id = uuid4()
 
@@ -299,9 +295,7 @@ class TestGetNeighborhood:
 
         # Return invalid UUID
         mock_result = AsyncMock()
-        mock_result.data.return_value = [
-            {"neighbor_id": "not-a-uuid", "rel_type": "EXTENDS"}
-        ]
+        mock_result.data.return_value = [{"neighbor_id": "not-a-uuid", "rel_type": "EXTENDS"}]
         mock_session.run.side_effect = [mock_result, AsyncMock(data=AsyncMock(return_value=[]))]
 
         result = await service.get_neighborhood(entity_id)
@@ -406,8 +400,7 @@ class TestBatchSimilarity:
 
         mock_result = AsyncMock()
         mock_result.data.return_value = [
-            {"candidate_id": str(cid), "similarity": 0.5}
-            for cid in candidate_ids
+            {"candidate_id": str(cid), "similarity": 0.5} for cid in candidate_ids
         ]
         mock_session.run.return_value = mock_result
 
@@ -428,8 +421,7 @@ class TestBatchSimilarity:
 
         mock_result = AsyncMock()
         mock_result.data.return_value = [
-            {"candidate_id": str(cid), "similarity": 0.5}
-            for cid in candidate_ids
+            {"candidate_id": str(cid), "similarity": 0.5} for cid in candidate_ids
         ]
         mock_session.run.return_value = mock_result
 
@@ -451,9 +443,7 @@ class TestGetGraphSimilarityService:
         mock_client = MagicMock()
         mock_client.get_async_driver.return_value = mock_driver
 
-        with patch(
-            "kg_builder.graph.client.get_neo4j_client"
-        ) as mock_get_client:
+        with patch("kg_builder.graph.client.get_neo4j_client") as mock_get_client:
             mock_get_client.return_value = mock_client
 
             result = await get_graph_similarity_service()
@@ -464,9 +454,7 @@ class TestGetGraphSimilarityService:
     @pytest.mark.asyncio
     async def test_returns_none_when_client_unavailable(self):
         """Test factory returns None when client unavailable."""
-        with patch(
-            "kg_builder.graph.client.get_neo4j_client"
-        ) as mock_get_client:
+        with patch("kg_builder.graph.client.get_neo4j_client") as mock_get_client:
             mock_get_client.return_value = None
 
             result = await get_graph_similarity_service()
@@ -476,9 +464,7 @@ class TestGetGraphSimilarityService:
     @pytest.mark.asyncio
     async def test_returns_none_on_error(self):
         """Test factory returns None on error."""
-        with patch(
-            "kg_builder.graph.client.get_neo4j_client"
-        ) as mock_get_client:
+        with patch("kg_builder.graph.client.get_neo4j_client") as mock_get_client:
             mock_get_client.side_effect = Exception("Connection error")
 
             result = await get_graph_similarity_service()

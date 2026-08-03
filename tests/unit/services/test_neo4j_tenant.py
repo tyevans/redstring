@@ -22,7 +22,11 @@ sys.modules["kg_builder.services.neo4j"] = mock_neo4j_module
 # Import the module directly using importlib to avoid triggering __init__.py
 spec = importlib.util.spec_from_file_location(
     "neo4j_tenant",
-    Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "services" / "neo4j_tenant.py",
+    Path(__file__).parent.parent.parent.parent
+    / "src"
+    / "kg_builder"
+    / "services"
+    / "neo4j_tenant.py",
 )
 neo4j_tenant = importlib.util.module_from_spec(spec)
 sys.modules["kg_builder.services.neo4j_tenant"] = neo4j_tenant
@@ -178,9 +182,7 @@ async def test_get_entity_calls_service_with_tenant_id(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_returns_none_for_wrong_tenant(
-    mock_neo4j_service, tenant_id, entity_id
-):
+async def test_get_entity_returns_none_for_wrong_tenant(mock_neo4j_service, tenant_id, entity_id):
     """Test get_entity returns None when entity doesn't belong to tenant."""
     service, _ = mock_neo4j_service
     # Service returns None because entity doesn't exist for this tenant
@@ -193,9 +195,7 @@ async def test_get_entity_returns_none_for_wrong_tenant(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_returns_none_for_nonexistent_entity(
-    mock_neo4j_service, tenant_id
-):
+async def test_get_entity_returns_none_for_nonexistent_entity(mock_neo4j_service, tenant_id):
     """Test get_entity returns None for entity that doesn't exist."""
     service, _ = mock_neo4j_service
     service.get_entity_node = AsyncMock(return_value=None)
@@ -237,9 +237,7 @@ async def test_get_entity_by_name_includes_tenant_filter(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_by_name_returns_entity(
-    mock_neo4j_service, tenant_id, sample_entity
-):
+async def test_get_entity_by_name_returns_entity(mock_neo4j_service, tenant_id, sample_entity):
     """Test get_entity_by_name returns entity when found."""
     service, session = mock_neo4j_service
 
@@ -254,9 +252,7 @@ async def test_get_entity_by_name_returns_entity(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_by_name_returns_none_when_not_found(
-    mock_neo4j_service, tenant_id
-):
+async def test_get_entity_by_name_returns_none_when_not_found(mock_neo4j_service, tenant_id):
     """Test get_entity_by_name returns None when entity not found."""
     service, session = mock_neo4j_service
 
@@ -343,9 +339,7 @@ async def test_get_related_entities_with_relationship_type(
 
 
 @pytest.mark.asyncio
-async def test_get_related_entities_outgoing_direction(
-    mock_neo4j_service, tenant_id, entity_id
-):
+async def test_get_related_entities_outgoing_direction(mock_neo4j_service, tenant_id, entity_id):
     """Test get_related_entities with outgoing direction."""
     service, session = mock_neo4j_service
 
@@ -363,9 +357,7 @@ async def test_get_related_entities_outgoing_direction(
 
 
 @pytest.mark.asyncio
-async def test_get_related_entities_incoming_direction(
-    mock_neo4j_service, tenant_id, entity_id
-):
+async def test_get_related_entities_incoming_direction(mock_neo4j_service, tenant_id, entity_id):
     """Test get_related_entities with incoming direction."""
     service, session = mock_neo4j_service
 
@@ -383,9 +375,7 @@ async def test_get_related_entities_incoming_direction(
 
 
 @pytest.mark.asyncio
-async def test_get_related_entities_both_direction(
-    mock_neo4j_service, tenant_id, entity_id
-):
+async def test_get_related_entities_both_direction(mock_neo4j_service, tenant_id, entity_id):
     """Test get_related_entities with both directions (default)."""
     service, session = mock_neo4j_service
 
@@ -403,9 +393,7 @@ async def test_get_related_entities_both_direction(
 
 
 @pytest.mark.asyncio
-async def test_get_related_entities_empty_result(
-    mock_neo4j_service, tenant_id, entity_id
-):
+async def test_get_related_entities_empty_result(mock_neo4j_service, tenant_id, entity_id):
     """Test get_related_entities returns empty list when no relations."""
     service, session = mock_neo4j_service
 
@@ -445,9 +433,7 @@ async def test_search_entities_scopes_to_tenant(mock_neo4j_service, tenant_id):
 
 
 @pytest.mark.asyncio
-async def test_search_entities_uses_case_insensitive_search(
-    mock_neo4j_service, tenant_id
-):
+async def test_search_entities_uses_case_insensitive_search(mock_neo4j_service, tenant_id):
     """Test search_entities performs case-insensitive search."""
     service, session = mock_neo4j_service
 
@@ -524,9 +510,7 @@ async def test_search_entities_respects_limit(mock_neo4j_service, tenant_id):
 
 
 @pytest.mark.asyncio
-async def test_search_entities_returns_results(
-    mock_neo4j_service, tenant_id, sample_entity
-):
+async def test_search_entities_returns_results(mock_neo4j_service, tenant_id, sample_entity):
     """Test search_entities returns matching entities."""
     service, session = mock_neo4j_service
 
@@ -567,9 +551,7 @@ async def test_get_entities_by_type_filters_by_tenant(mock_neo4j_service, tenant
 
 
 @pytest.mark.asyncio
-async def test_get_entities_by_type_supports_pagination(
-    mock_neo4j_service, tenant_id
-):
+async def test_get_entities_by_type_supports_pagination(mock_neo4j_service, tenant_id):
     """Test get_entities_by_type supports limit and offset."""
     service, session = mock_neo4j_service
 
@@ -696,9 +678,7 @@ async def test_get_entity_graph_returns_structure(
         return_value={
             "root": sample_entity,
             "related_nodes": [{"id": "123", "name": "Related"}],
-            "relationships": [
-                {"source": "a", "target": "b", "type": "USES", "properties": {}}
-            ],
+            "relationships": [{"source": "a", "target": "b", "type": "USES", "properties": {}}],
         }
     )
     session.run = AsyncMock(return_value=mock_result)
@@ -793,9 +773,7 @@ async def test_different_tenants_get_different_services(
 
 
 @pytest.mark.asyncio
-async def test_tenant_id_consistently_passed_to_queries(
-    mock_neo4j_service, tenant_id, entity_id
-):
+async def test_tenant_id_consistently_passed_to_queries(mock_neo4j_service, tenant_id, entity_id):
     """Test tenant_id is consistently passed to all query methods."""
     service, session = mock_neo4j_service
     service.get_entity_node = AsyncMock(return_value=None)

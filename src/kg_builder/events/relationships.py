@@ -86,12 +86,8 @@ class PendingRelationshipResolutionAttempted(TenantDomainEvent):
     attempt_number: int = Field(description="Attempt number", ge=1)
     source_entity_found: bool = Field(description="Whether source entity was found")
     target_entity_found: bool = Field(description="Whether target entity was found")
-    source_entity_id: UUID | None = Field(
-        description="Source entity ID if found", default=None
-    )
-    target_entity_id: UUID | None = Field(
-        description="Target entity ID if found", default=None
-    )
+    source_entity_id: UUID | None = Field(description="Source entity ID if found", default=None)
+    target_entity_id: UUID | None = Field(description="Target entity ID if found", default=None)
     attempted_at: datetime = Field(description="When attempt was made")
 
 
@@ -134,9 +130,7 @@ class PendingRelationshipResolved(TenantDomainEvent):
         default="deferred_chunk",
     )
     resolution_attempts: int = Field(description="Attempts before resolution", ge=1, default=1)
-    time_to_resolution_ms: int = Field(
-        description="Time to resolution in ms", ge=0, default=0
-    )
+    time_to_resolution_ms: int = Field(description="Time to resolution in ms", ge=0, default=0)
     resolved_at: datetime = Field(description="When resolution occurred")
 
     # Fields for EntityRelationship creation (projection uses these)

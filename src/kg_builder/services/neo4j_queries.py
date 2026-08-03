@@ -186,8 +186,7 @@ class GraphQueryService:
         """
 
         logger.debug(
-            f"Getting neighborhood for entity {entity_id} "
-            f"(depth={depth}) for tenant {tenant_id}"
+            f"Getting neighborhood for entity {entity_id} (depth={depth}) for tenant {tenant_id}"
         )
 
         async with self._service.session() as session:
@@ -202,10 +201,7 @@ class GraphQueryService:
                 return None
 
             # Filter out null entries from neighbors (happens when no neighbors exist)
-            neighbors = [
-                n for n in record["neighbors"]
-                if n and n.get("id") is not None
-            ]
+            neighbors = [n for n in record["neighbors"] if n and n.get("id") is not None]
 
             return {
                 "center": dict(record["center"]),
@@ -253,8 +249,7 @@ class GraphQueryService:
         """
 
         logger.debug(
-            f"Finding entities similar to {entity_id} "
-            f"(limit={limit}) for tenant {tenant_id}"
+            f"Finding entities similar to {entity_id} (limit={limit}) for tenant {tenant_id}"
         )
 
         async with self._service.session() as session:

@@ -270,9 +270,7 @@ class ExtractionStrategyRouter:
             KeyError: If the domain is not found in registry.
         """
         if not job.content_domain:
-            raise ValueError(
-                f"Manual strategy requires content_domain but job {job.id} has none"
-            )
+            raise ValueError(f"Manual strategy requires content_domain but job {job.id} has none")
 
         domain_id = job.content_domain
 

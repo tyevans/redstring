@@ -205,4 +205,6 @@ class ExtractionProvider(Base):
         super().__init__(**kwargs)
 
     def __repr__(self) -> str:
-        return f"<ExtractionProvider(id={self.id}, name={self.name}, type={self.provider_type.value})>"
+        return (
+            f"<ExtractionProvider(id={self.id}, name={self.name}, type={self.provider_type.value})>"
+        )

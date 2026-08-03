@@ -162,6 +162,7 @@ class TestEntitySplitError:
     def test_entity_split_error_is_merge_error(self):
         """Test EntitySplitError is subclass of MergeError."""
         from kg_builder.services.consolidation.merge_service import MergeError
+
         error = EntitySplitError("Test error")
         assert isinstance(error, MergeError)
 

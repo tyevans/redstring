@@ -314,9 +314,7 @@ class TestExtractedEntityTemporalValidEnumValues:
             "start_date": datetime.now(UTC),
         }
 
-    @pytest.mark.parametrize("precision", [
-        "year", "month", "day", "hour", "minute"
-    ])
+    @pytest.mark.parametrize("precision", ["year", "month", "day", "hour", "minute"])
     def test_all_date_precision_values_valid(self, base_entity_kwargs, precision):
         """Test all DatePrecision values work with the model."""
         entity = ExtractedEntity(
@@ -326,9 +324,9 @@ class TestExtractedEntityTemporalValidEnumValues:
         assert entity.date_precision == precision
         assert entity.date_precision_enum == DatePrecision(precision)
 
-    @pytest.mark.parametrize("marker", [
-        "exact", "approximate", "circa", "before", "after", "inferred"
-    ])
+    @pytest.mark.parametrize(
+        "marker", ["exact", "approximate", "circa", "before", "after", "inferred"]
+    )
     def test_all_uncertainty_marker_values_valid(self, base_entity_kwargs, marker):
         """Test all UncertaintyMarker values work with the model."""
         entity = ExtractedEntity(

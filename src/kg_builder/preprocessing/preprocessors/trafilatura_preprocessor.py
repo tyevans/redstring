@@ -189,7 +189,9 @@ class TrafilaturaPreprocessor:
                 extra={
                     "original_length": original_length,
                     "cleaned_length": len(clean_text),
-                    "reduction_pct": round((1 - len(clean_text) / max(original_length, 1)) * 100, 1),
+                    "reduction_pct": round(
+                        (1 - len(clean_text) / max(original_length, 1)) * 100, 1
+                    ),
                     "fallback_used": fallback_used,
                     "url": url,
                 },

@@ -408,7 +408,7 @@ class TestEntitySimilarityComputation:
 
         scores_ab = service.compute_all(entity_a, entity_b)
         # Overlap: {"key1"}, Union: {"key1", "key2", "key3"} -> 1/3
-        assert scores_ab.contextual.property_overlap.raw_score == pytest.approx(1/3)
+        assert scores_ab.contextual.property_overlap.raw_score == pytest.approx(1 / 3)
 
         scores_ac = service.compute_all(entity_a, entity_c)
         # No overlap
@@ -458,8 +458,8 @@ class TestBatchComputation:
         entity = make_entity("DomainEvent")
         candidates = [
             make_entity("AggregateRoot"),  # Low similarity
-            make_entity("DomainEvent"),     # High similarity
-            make_entity("DomainService"),   # Medium similarity
+            make_entity("DomainEvent"),  # High similarity
+            make_entity("DomainService"),  # Medium similarity
         ]
 
         service = StringSimilarityService()
@@ -473,9 +473,9 @@ class TestBatchComputation:
         """Test filtering by threshold."""
         entity = make_entity("DomainEvent")
         candidates = [
-            make_entity("AggregateRoot"),   # Low similarity
-            make_entity("DomainEvent"),     # High similarity
-            make_entity("DomainService"),   # Medium similarity
+            make_entity("AggregateRoot"),  # Low similarity
+            make_entity("DomainEvent"),  # High similarity
+            make_entity("DomainService"),  # Medium similarity
         ]
 
         service = StringSimilarityService()

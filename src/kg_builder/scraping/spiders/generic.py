@@ -52,9 +52,7 @@ class GenericSpider(TenantAwareSpider):
             return
 
         # Only process HTML responses
-        content_type = response.headers.get(
-            "Content-Type", b""
-        ).decode("utf-8", errors="ignore")
+        content_type = response.headers.get("Content-Type", b"").decode("utf-8", errors="ignore")
 
         if "text/html" not in content_type.lower():
             logger.debug(
@@ -152,11 +150,13 @@ class GenericSpider(TenantAwareSpider):
                     # Determine link type
                     link_type = self._classify_link(url, response.url)
 
-                    links.append({
-                        "url": url,
-                        "text": text,
-                        "type": link_type,
-                    })
+                    links.append(
+                        {
+                            "url": url,
+                            "text": text,
+                            "type": link_type,
+                        }
+                    )
 
         return links
 
@@ -207,10 +207,9 @@ class SitemapSpider(TenantAwareSpider):
         # Add sitemap URL from start_url domain
         if self.start_url and not self.sitemap_urls:
             from urllib.parse import urlparse
+
             parsed = urlparse(self.start_url)
-            self.sitemap_urls = [
-                f"{parsed.scheme}://{parsed.netloc}/sitemap.xml"
-            ]
+            self.sitemap_urls = [f"{parsed.scheme}://{parsed.netloc}/sitemap.xml"]
 
     @property
     def start_urls(self) -> list[str]:
@@ -227,9 +226,7 @@ class SitemapSpider(TenantAwareSpider):
         Yields:
             Items or requests
         """
-        content_type = response.headers.get(
-            "Content-Type", b""
-        ).decode("utf-8", errors="ignore")
+        content_type = response.headers.get("Content-Type", b"").decode("utf-8", errors="ignore")
 
         # Check if this is a sitemap
         if "xml" in content_type or response.url.endswith(".xml"):
@@ -249,9 +246,10 @@ class SitemapSpider(TenantAwareSpider):
         """
         # Remove namespace prefixes for easier parsing
         body = response.text
-        body = body.replace('xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"', '')
+        body = body.replace('xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"', "")
 
         from scrapy import Selector
+
         selector = Selector(text=body)
 
         # Check for sitemap index

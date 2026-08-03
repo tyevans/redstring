@@ -164,9 +164,7 @@ class DomainPromptGenerator:
 
         return "\n".join(lines)
 
-    def _format_property_hints(
-        self, properties: list[Any]
-    ) -> str:
+    def _format_property_hints(self, properties: list[Any]) -> str:
         """Format property hints for an entity type.
 
         Args:

@@ -197,9 +197,7 @@ class OllamaCircuitBreaker:
             opened_at = await r.get(self._opened_at_key())
 
             if opened_at is not None:
-                opened_at_value = (
-                    opened_at.decode() if isinstance(opened_at, bytes) else opened_at
-                )
+                opened_at_value = opened_at.decode() if isinstance(opened_at, bytes) else opened_at
                 elapsed = datetime.now(UTC).timestamp() - float(opened_at_value)
 
                 if elapsed >= self.recovery_timeout:
@@ -361,9 +359,7 @@ class OllamaCircuitBreaker:
         if opened_at is None:
             return 0.0
 
-        opened_at_value = (
-            opened_at.decode() if isinstance(opened_at, bytes) else opened_at
-        )
+        opened_at_value = opened_at.decode() if isinstance(opened_at, bytes) else opened_at
         elapsed = datetime.now(UTC).timestamp() - float(opened_at_value)
         remaining = self.recovery_timeout - elapsed
 

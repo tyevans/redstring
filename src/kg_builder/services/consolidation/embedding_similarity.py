@@ -304,9 +304,7 @@ class EmbeddingSimilarityService:
         cached_embeddings: dict[UUID, np.ndarray | None] = {}
         if use_cache and self._embedding_cache is not None:
             candidate_ids = [c.id for c in candidates]
-            cached_embeddings = await self._embedding_cache.get_batch(
-                tenant_id, candidate_ids
-            )
+            cached_embeddings = await self._embedding_cache.get_batch(tenant_id, candidate_ids)
 
         # Compute missing embeddings
         to_compute = []
@@ -385,9 +383,7 @@ class EmbeddingSimilarityService:
         cached_embeddings: dict[UUID, np.ndarray | None] = {}
         if use_cache and self._embedding_cache is not None:
             candidate_ids = [c.id for c in candidates]
-            cached_embeddings = await self._embedding_cache.get_batch(
-                tenant_id, candidate_ids
-            )
+            cached_embeddings = await self._embedding_cache.get_batch(tenant_id, candidate_ids)
 
         # Compute missing embeddings
         to_compute = []
@@ -434,9 +430,7 @@ class EmbeddingSimilarityService:
 
         # Sort by cosine similarity descending
         results.sort(
-            key=lambda x: (
-                x[1].embedding_cosine.raw_score if x[1].embedding_cosine else 0.0
-            ),
+            key=lambda x: x[1].embedding_cosine.raw_score if x[1].embedding_cosine else 0.0,
             reverse=True,
         )
 

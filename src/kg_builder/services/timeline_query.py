@@ -162,8 +162,8 @@ class TimelineQueryService:
         if filters.include_undated:
             # Include entities with either start_date or sequence_position
             query = query.where(
-                (ExtractedEntity.start_date.is_not(None)) |
-                (ExtractedEntity.sequence_position.is_not(None))
+                (ExtractedEntity.start_date.is_not(None))
+                | (ExtractedEntity.sequence_position.is_not(None))
             )
         else:
             # Only include entities with start_date (excludes sequence-only)
@@ -172,14 +172,14 @@ class TimelineQueryService:
         # Apply date range filters
         if filters.start_date:
             query = query.where(
-                (ExtractedEntity.start_date >= filters.start_date) |
-                (ExtractedEntity.end_date >= filters.start_date) |
-                (ExtractedEntity.start_date.is_(None))  # Include undated if allowed
+                (ExtractedEntity.start_date >= filters.start_date)
+                | (ExtractedEntity.end_date >= filters.start_date)
+                | (ExtractedEntity.start_date.is_(None))  # Include undated if allowed
             )
         if filters.end_date:
             query = query.where(
-                (ExtractedEntity.start_date <= filters.end_date) |
-                (ExtractedEntity.start_date.is_(None))  # Include undated if allowed
+                (ExtractedEntity.start_date <= filters.end_date)
+                | (ExtractedEntity.start_date.is_(None))  # Include undated if allowed
             )
 
         # Filter by entity types
@@ -191,8 +191,8 @@ class TimelineQueryService:
         if filters.search:
             search_pattern = f"%{filters.search}%"
             query = query.where(
-                (ExtractedEntity.name.ilike(search_pattern)) |
-                (ExtractedEntity.description.ilike(search_pattern))
+                (ExtractedEntity.name.ilike(search_pattern))
+                | (ExtractedEntity.description.ilike(search_pattern))
             )
 
         # Count total matching events (before pagination)
@@ -242,9 +242,7 @@ class TimelineQueryService:
         time_range = None
         if dated_events:
             min_date = min(e.start_date for e in dated_events if e.start_date)
-            max_date = max(
-                (e.end_date or e.start_date) for e in dated_events if e.start_date
-            )
+            max_date = max((e.end_date or e.start_date) for e in dated_events if e.start_date)
             time_range = TimeRange(start=min_date, end=max_date)
 
         has_more = (offset + len(events)) < total_count
@@ -318,8 +316,8 @@ class TimelineQueryService:
                 ScrapedPage.job_id == job_id,
                 ExtractedEntity.tenant_id == tenant_id,
                 ExtractedEntity.is_canonical == True,  # noqa: E712
-                (ExtractedEntity.start_date.is_not(None)) |
-                (ExtractedEntity.sequence_position.is_not(None)),
+                (ExtractedEntity.start_date.is_not(None))
+                | (ExtractedEntity.sequence_position.is_not(None)),
             )
         )
 
@@ -358,15 +356,15 @@ class TimelineQueryService:
             # Count by uncertainty
             if entity.uncertainty_marker:
                 uncertainty = entity.uncertainty_marker.lower()
-                uncertainty_distribution[uncertainty] = uncertainty_distribution.get(uncertainty, 0) + 1
+                uncertainty_distribution[uncertainty] = (
+                    uncertainty_distribution.get(uncertainty, 0) + 1
+                )
 
         # Calculate overall time range
         time_range = None
         if dated_entities:
             min_date = min(e.start_date for e in dated_entities if e.start_date)
-            max_date = max(
-                (e.end_date or e.start_date) for e in dated_entities if e.start_date
-            )
+            max_date = max((e.end_date or e.start_date) for e in dated_entities if e.start_date)
             time_range = TimeRange(start=min_date, end=max_date)
 
         logger.info(
@@ -506,8 +504,12 @@ class TimelineQueryService:
                     id=db_rel.id,
                     source_event_id=db_rel.source_entity_id,
                     target_event_id=db_rel.target_entity_id,
-                    source_event_name=db_rel.source_entity.name if db_rel.source_entity else "Unknown",
-                    target_event_name=db_rel.target_entity.name if db_rel.target_entity else "Unknown",
+                    source_event_name=db_rel.source_entity.name
+                    if db_rel.source_entity
+                    else "Unknown",
+                    target_event_name=db_rel.target_entity.name
+                    if db_rel.target_entity
+                    else "Unknown",
                     relationship_type=db_rel.relationship_type,  # type: ignore
                     confidence=db_rel.confidence_score,
                     evidence=evidence,
@@ -535,13 +537,10 @@ class TimelineQueryService:
             List of TemporalRelationship objects for inferred relationships
         """
         # Fetch events with temporal data
-        query = (
-            select(ExtractedEntity)
-            .where(
-                ExtractedEntity.tenant_id == tenant_id,
-                ExtractedEntity.id.in_(event_ids),
-                ExtractedEntity.start_date.is_not(None),
-            )
+        query = select(ExtractedEntity).where(
+            ExtractedEntity.tenant_id == tenant_id,
+            ExtractedEntity.id.in_(event_ids),
+            ExtractedEntity.start_date.is_not(None),
         )
 
         result = await self.db.execute(query)

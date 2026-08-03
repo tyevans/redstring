@@ -23,7 +23,11 @@ sys.modules["kg_builder.services.neo4j"] = mock_neo4j_module
 # Import the module directly using importlib to avoid triggering __init__.py
 spec = importlib.util.spec_from_file_location(
     "neo4j_queries",
-    Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "services" / "neo4j_queries.py",
+    Path(__file__).parent.parent.parent.parent
+    / "src"
+    / "kg_builder"
+    / "services"
+    / "neo4j_queries.py",
 )
 neo4j_queries = importlib.util.module_from_spec(spec)
 sys.modules["kg_builder.services.neo4j_queries"] = neo4j_queries
@@ -362,9 +366,7 @@ async def test_get_neighborhood_returns_none_for_missing_entity(
 
 
 @pytest.mark.asyncio
-async def test_get_neighborhood_includes_tenant_filter(
-    mock_neo4j_service, entity_id, tenant_id
-):
+async def test_get_neighborhood_includes_tenant_filter(mock_neo4j_service, entity_id, tenant_id):
     """Test get_neighborhood query includes tenant_id filtering."""
     service, session = mock_neo4j_service
 
@@ -387,9 +389,7 @@ async def test_get_neighborhood_includes_tenant_filter(
 
 
 @pytest.mark.asyncio
-async def test_get_neighborhood_uses_depth_parameter(
-    mock_neo4j_service, entity_id, tenant_id
-):
+async def test_get_neighborhood_uses_depth_parameter(mock_neo4j_service, entity_id, tenant_id):
     """Test get_neighborhood respects depth parameter."""
     service, session = mock_neo4j_service
 
@@ -407,9 +407,7 @@ async def test_get_neighborhood_uses_depth_parameter(
 
 
 @pytest.mark.asyncio
-async def test_get_neighborhood_caps_depth_at_three(
-    mock_neo4j_service, entity_id, tenant_id
-):
+async def test_get_neighborhood_caps_depth_at_three(mock_neo4j_service, entity_id, tenant_id):
     """Test get_neighborhood caps depth at 3 for performance."""
     service, session = mock_neo4j_service
 
@@ -428,9 +426,7 @@ async def test_get_neighborhood_caps_depth_at_three(
 
 
 @pytest.mark.asyncio
-async def test_get_neighborhood_enforces_minimum_depth(
-    mock_neo4j_service, entity_id, tenant_id
-):
+async def test_get_neighborhood_enforces_minimum_depth(mock_neo4j_service, entity_id, tenant_id):
     """Test get_neighborhood enforces minimum depth of 1."""
     service, session = mock_neo4j_service
 
@@ -449,9 +445,7 @@ async def test_get_neighborhood_enforces_minimum_depth(
 
 
 @pytest.mark.asyncio
-async def test_get_neighborhood_filters_null_neighbors(
-    mock_neo4j_service, entity_id, tenant_id
-):
+async def test_get_neighborhood_filters_null_neighbors(mock_neo4j_service, entity_id, tenant_id):
     """Test get_neighborhood filters out null entries from neighbors."""
     service, session = mock_neo4j_service
 
@@ -542,9 +536,7 @@ async def test_find_similar_entities_includes_tenant_filter(
 
 
 @pytest.mark.asyncio
-async def test_find_similar_entities_respects_limit(
-    mock_neo4j_service, entity_id, tenant_id
-):
+async def test_find_similar_entities_respects_limit(mock_neo4j_service, entity_id, tenant_id):
     """Test find_similar_entities respects the limit parameter."""
     service, session = mock_neo4j_service
 
@@ -562,9 +554,7 @@ async def test_find_similar_entities_respects_limit(
 
 
 @pytest.mark.asyncio
-async def test_find_similar_entities_excludes_self(
-    mock_neo4j_service, entity_id, tenant_id
-):
+async def test_find_similar_entities_excludes_self(mock_neo4j_service, entity_id, tenant_id):
     """Test find_similar_entities excludes the source entity itself."""
     service, session = mock_neo4j_service
 
@@ -587,9 +577,7 @@ async def test_find_similar_entities_excludes_self(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_stats_returns_counts(
-    mock_neo4j_service, tenant_id, sample_stats_records
-):
+async def test_get_entity_stats_returns_counts(mock_neo4j_service, tenant_id, sample_stats_records):
     """Test get_entity_stats returns total entities and by_type breakdown."""
     service, session = mock_neo4j_service
 
@@ -615,9 +603,7 @@ async def test_get_entity_stats_returns_counts(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_stats_returns_zeros_when_empty(
-    mock_neo4j_service, tenant_id
-):
+async def test_get_entity_stats_returns_zeros_when_empty(mock_neo4j_service, tenant_id):
     """Test get_entity_stats returns zeros when no entities exist."""
     service, session = mock_neo4j_service
 
@@ -634,9 +620,7 @@ async def test_get_entity_stats_returns_zeros_when_empty(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_stats_includes_tenant_filter(
-    mock_neo4j_service, tenant_id
-):
+async def test_get_entity_stats_includes_tenant_filter(mock_neo4j_service, tenant_id):
     """Test get_entity_stats query includes tenant_id filtering."""
     service, session = mock_neo4j_service
 
@@ -657,9 +641,7 @@ async def test_get_entity_stats_includes_tenant_filter(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_stats_filters_null_types(
-    mock_neo4j_service, tenant_id
-):
+async def test_get_entity_stats_filters_null_types(mock_neo4j_service, tenant_id):
     """Test get_entity_stats filters out null types from by_type."""
     service, session = mock_neo4j_service
 
@@ -768,9 +750,7 @@ async def test_tenant_isolation_in_find_similar_entities(
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_in_get_entity_stats(
-    mock_neo4j_service, tenant_id, other_tenant_id
-):
+async def test_tenant_isolation_in_get_entity_stats(mock_neo4j_service, tenant_id, other_tenant_id):
     """Test that get_entity_stats queries are isolated by tenant."""
     service, session = mock_neo4j_service
 
@@ -878,9 +858,7 @@ async def test_find_similar_entities_orders_by_shared_count(
 
 
 @pytest.mark.asyncio
-async def test_find_similar_entities_uses_distinct_count(
-    mock_neo4j_service, entity_id, tenant_id
-):
+async def test_find_similar_entities_uses_distinct_count(mock_neo4j_service, entity_id, tenant_id):
     """Test find_similar_entities uses DISTINCT count for accuracy."""
     service, session = mock_neo4j_service
 

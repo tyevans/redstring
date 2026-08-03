@@ -18,7 +18,6 @@ SCHEMA_TYPE_MAP = {
     # Person types
     "Person": EntityType.PERSON,
     "Author": EntityType.PERSON,
-
     # Organization types
     "Organization": EntityType.ORGANIZATION,
     "Corporation": EntityType.ORGANIZATION,
@@ -28,7 +27,6 @@ SCHEMA_TYPE_MAP = {
     "GovernmentOrganization": EntityType.ORGANIZATION,
     "NGO": EntityType.ORGANIZATION,
     "SportsOrganization": EntityType.ORGANIZATION,
-
     # Location types
     "Place": EntityType.LOCATION,
     "City": EntityType.LOCATION,
@@ -37,7 +35,6 @@ SCHEMA_TYPE_MAP = {
     "GeoCoordinates": EntityType.LOCATION,
     "PostalAddress": EntityType.LOCATION,
     "Landmark": EntityType.LOCATION,
-
     # Event types
     "Event": EntityType.EVENT,
     "BusinessEvent": EntityType.EVENT,
@@ -60,7 +57,6 @@ SCHEMA_TYPE_MAP = {
     "SportsEvent": EntityType.EVENT,
     "TheaterEvent": EntityType.EVENT,
     "VisualArtsEvent": EntityType.EVENT,
-
     # Product types
     "Product": EntityType.PRODUCT,
     "ProductModel": EntityType.PRODUCT,
@@ -72,7 +68,6 @@ SCHEMA_TYPE_MAP = {
     "Movie": EntityType.PRODUCT,
     "MusicAlbum": EntityType.PRODUCT,
     "VideoGame": EntityType.PRODUCT,
-
     # Document types
     "Article": EntityType.DOCUMENT,
     "NewsArticle": EntityType.DOCUMENT,
@@ -82,11 +77,9 @@ SCHEMA_TYPE_MAP = {
     "Report": EntityType.DOCUMENT,
     "WebPage": EntityType.DOCUMENT,
     "CreativeWork": EntityType.DOCUMENT,
-
     # Date-related
     "Date": EntityType.DATE,
     "DateTime": EntityType.DATE,
-
     # Concept types
     "Thing": EntityType.CONCEPT,
     "Intangible": EntityType.CONCEPT,
@@ -213,14 +206,35 @@ def _extract_properties(item: dict) -> dict:
 
     # Common properties to extract
     property_fields = [
-        "url", "image", "logo", "email", "telephone",
-        "address", "location", "geo", "startDate", "endDate",
-        "datePublished", "dateCreated", "dateModified",
-        "author", "creator", "publisher", "brand",
-        "jobTitle", "worksFor", "memberOf",
-        "price", "priceCurrency", "offers",
-        "aggregateRating", "review", "ratingValue",
-        "category", "genre", "keywords",
+        "url",
+        "image",
+        "logo",
+        "email",
+        "telephone",
+        "address",
+        "location",
+        "geo",
+        "startDate",
+        "endDate",
+        "datePublished",
+        "dateCreated",
+        "dateModified",
+        "author",
+        "creator",
+        "publisher",
+        "brand",
+        "jobTitle",
+        "worksFor",
+        "memberOf",
+        "price",
+        "priceCurrency",
+        "offers",
+        "aggregateRating",
+        "review",
+        "ratingValue",
+        "category",
+        "genre",
+        "keywords",
     ]
 
     for field in property_fields:
@@ -245,10 +259,20 @@ def _extract_nested_entities(item: dict) -> list[dict]:
 
     # Fields that may contain nested entities
     nested_fields = [
-        "author", "creator", "publisher", "brand",
-        "worksFor", "memberOf", "performer", "organizer",
-        "location", "address", "sponsor", "funder",
-        "mentions", "about",
+        "author",
+        "creator",
+        "publisher",
+        "brand",
+        "worksFor",
+        "memberOf",
+        "performer",
+        "organizer",
+        "location",
+        "address",
+        "sponsor",
+        "funder",
+        "mentions",
+        "about",
     ]
 
     for field in nested_fields:

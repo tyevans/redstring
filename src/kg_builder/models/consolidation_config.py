@@ -206,9 +206,7 @@ class ConsolidationConfig(Base):
         Returns:
             Weight value between 0.0 and 1.0
         """
-        return self.feature_weights.get(
-            feature, DEFAULT_FEATURE_WEIGHTS.get(feature, 0.0)
-        )
+        return self.feature_weights.get(feature, DEFAULT_FEATURE_WEIGHTS.get(feature, 0.0))
 
     def set_weight(self, feature: str, weight: float) -> None:
         """Set weight for a specific feature.

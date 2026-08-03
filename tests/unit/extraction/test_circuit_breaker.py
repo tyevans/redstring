@@ -347,9 +347,7 @@ class TestAllowRequestClosed:
     """Tests for allow_request in CLOSED state."""
 
     @pytest.mark.asyncio
-    async def test_allow_request_returns_true_in_closed_state(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_allow_request_returns_true_in_closed_state(self, circuit_breaker, mock_redis):
         """Test allow_request returns True when circuit is CLOSED."""
         # No state set means CLOSED
         allowed = await circuit_breaker.allow_request()
@@ -375,9 +373,7 @@ class TestAllowRequestOpen:
     """Tests for allow_request in OPEN state."""
 
     @pytest.mark.asyncio
-    async def test_allow_request_returns_false_in_open_state(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_allow_request_returns_false_in_open_state(self, circuit_breaker, mock_redis):
         """Test allow_request returns False when circuit is OPEN."""
         now = datetime.now(UTC).timestamp()
         mock_redis.data["test_circuit:state"] = b"open"
@@ -407,9 +403,7 @@ class TestAllowRequestOpen:
         )
 
     @pytest.mark.asyncio
-    async def test_allow_request_stays_open_before_timeout(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_allow_request_stays_open_before_timeout(self, circuit_breaker, mock_redis):
         """Test allow_request returns False before recovery timeout."""
         # Set opened_at to 10 seconds ago (timeout is 30)
         opened_at = datetime.now(UTC).timestamp() - 10
@@ -429,9 +423,7 @@ class TestAllowRequestHalfOpen:
     """Tests for allow_request in HALF_OPEN state."""
 
     @pytest.mark.asyncio
-    async def test_allow_request_allows_first_call_in_half_open(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_allow_request_allows_first_call_in_half_open(self, circuit_breaker, mock_redis):
         """Test allow_request allows first call in HALF_OPEN state."""
         mock_redis.data["test_circuit:state"] = b"half_open"
         mock_redis.data["test_circuit:half_open_calls"] = b"0"
@@ -440,9 +432,7 @@ class TestAllowRequestHalfOpen:
         assert allowed is True
 
     @pytest.mark.asyncio
-    async def test_allow_request_rejects_beyond_max_calls(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_allow_request_rejects_beyond_max_calls(self, circuit_breaker, mock_redis):
         """Test allow_request rejects calls beyond max in HALF_OPEN."""
         mock_redis.data["test_circuit:state"] = b"half_open"
         mock_redis.data["test_circuit:half_open_calls"] = b"1"
@@ -451,9 +441,7 @@ class TestAllowRequestHalfOpen:
         assert allowed is False
 
     @pytest.mark.asyncio
-    async def test_allow_request_increments_half_open_calls(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_allow_request_increments_half_open_calls(self, circuit_breaker, mock_redis):
         """Test allow_request increments call counter in HALF_OPEN."""
         mock_redis.data["test_circuit:state"] = b"half_open"
         mock_redis.data["test_circuit:half_open_calls"] = b"0"
@@ -473,9 +461,7 @@ class TestRecordSuccess:
     """Tests for the record_success method."""
 
     @pytest.mark.asyncio
-    async def test_record_success_closes_circuit_from_half_open(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_record_success_closes_circuit_from_half_open(self, circuit_breaker, mock_redis):
         """Test record_success transitions HALF_OPEN to CLOSED."""
         mock_redis.data["test_circuit:state"] = b"half_open"
 
@@ -489,9 +475,7 @@ class TestRecordSuccess:
         )
 
     @pytest.mark.asyncio
-    async def test_record_success_resets_failures_in_closed(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_record_success_resets_failures_in_closed(self, circuit_breaker, mock_redis):
         """Test record_success resets failure count in CLOSED state."""
         mock_redis.data["test_circuit:state"] = b"closed"
         mock_redis.data["test_circuit:failures"] = b"2"
@@ -510,9 +494,7 @@ class TestRecordFailure:
     """Tests for the record_failure method."""
 
     @pytest.mark.asyncio
-    async def test_record_failure_increments_failure_count(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_record_failure_increments_failure_count(self, circuit_breaker, mock_redis):
         """Test record_failure increments failure count."""
         mock_redis.data["test_circuit:state"] = b"closed"
         mock_redis.data["test_circuit:failures"] = b"0"
@@ -522,9 +504,7 @@ class TestRecordFailure:
         assert mock_redis.data["test_circuit:failures"] == b"1"
 
     @pytest.mark.asyncio
-    async def test_record_failure_opens_circuit_at_threshold(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_record_failure_opens_circuit_at_threshold(self, circuit_breaker, mock_redis):
         """Test record_failure opens circuit when threshold reached."""
         mock_redis.data["test_circuit:state"] = b"closed"
         mock_redis.data["test_circuit:failures"] = b"2"  # Will become 3
@@ -539,9 +519,7 @@ class TestRecordFailure:
         )
 
     @pytest.mark.asyncio
-    async def test_record_failure_reopens_from_half_open(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_record_failure_reopens_from_half_open(self, circuit_breaker, mock_redis):
         """Test record_failure reopens circuit from HALF_OPEN."""
         mock_redis.data["test_circuit:state"] = b"half_open"
 
@@ -555,9 +533,7 @@ class TestRecordFailure:
         )
 
     @pytest.mark.asyncio
-    async def test_record_failure_does_not_open_below_threshold(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_record_failure_does_not_open_below_threshold(self, circuit_breaker, mock_redis):
         """Test record_failure does not open circuit below threshold."""
         mock_redis.data["test_circuit:state"] = b"closed"
         mock_redis.data["test_circuit:failures"] = b"0"
@@ -583,9 +559,7 @@ class TestStateTransitions:
     """Tests for internal state transition methods."""
 
     @pytest.mark.asyncio
-    async def test_transition_to_open_sets_state_and_timestamp(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_transition_to_open_sets_state_and_timestamp(self, circuit_breaker, mock_redis):
         """Test _transition_to_open sets state and timestamp."""
         await circuit_breaker._transition_to_open()
 
@@ -602,17 +576,11 @@ class TestStateTransitions:
         await circuit_breaker._transition_to_half_open()
 
         set_ops = [op for op in mock_redis.mock_pipeline.operations if op[0] == "set"]
-        assert any(
-            op[1] == "test_circuit:state" and op[2] == "half_open" for op in set_ops
-        )
-        assert any(
-            op[1] == "test_circuit:half_open_calls" and op[2] == "0" for op in set_ops
-        )
+        assert any(op[1] == "test_circuit:state" and op[2] == "half_open" for op in set_ops)
+        assert any(op[1] == "test_circuit:half_open_calls" and op[2] == "0" for op in set_ops)
 
     @pytest.mark.asyncio
-    async def test_transition_to_closed_resets_all_state(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_transition_to_closed_resets_all_state(self, circuit_breaker, mock_redis):
         """Test _transition_to_closed resets all state."""
         await circuit_breaker._transition_to_closed()
 
@@ -622,9 +590,7 @@ class TestStateTransitions:
         assert any(op[1] == "test_circuit:failures" and op[2] == "0" for op in set_ops)
 
         # Check delete operations
-        delete_ops = [
-            op for op in mock_redis.mock_pipeline.operations if op[0] == "delete"
-        ]
+        delete_ops = [op for op in mock_redis.mock_pipeline.operations if op[0] == "delete"]
         assert any(op[1] == "test_circuit:opened_at" for op in delete_ops)
         assert any(op[1] == "test_circuit:half_open_calls" for op in delete_ops)
 
@@ -638,9 +604,7 @@ class TestGetRetryAfter:
     """Tests for the get_retry_after method."""
 
     @pytest.mark.asyncio
-    async def test_get_retry_after_returns_zero_when_closed(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_get_retry_after_returns_zero_when_closed(self, circuit_breaker, mock_redis):
         """Test get_retry_after returns 0 when circuit is CLOSED."""
         mock_redis.data["test_circuit:state"] = b"closed"
 
@@ -648,9 +612,7 @@ class TestGetRetryAfter:
         assert retry_after == 0.0
 
     @pytest.mark.asyncio
-    async def test_get_retry_after_returns_remaining_time(
-        self, circuit_breaker, mock_redis
-    ):
+    async def test_get_retry_after_returns_remaining_time(self, circuit_breaker, mock_redis):
         """Test get_retry_after returns remaining time when OPEN."""
         # Opened 10 seconds ago, timeout is 30
         opened_at = datetime.now(UTC).timestamp() - 10
@@ -694,9 +656,7 @@ class TestReset:
 
         await circuit_breaker.reset()
 
-        delete_ops = [
-            op for op in mock_redis.mock_pipeline.operations if op[0] == "delete"
-        ]
+        delete_ops = [op for op in mock_redis.mock_pipeline.operations if op[0] == "delete"]
         assert len(delete_ops) == 4
 
 

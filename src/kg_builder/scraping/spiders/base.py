@@ -25,57 +25,61 @@ logger = logging.getLogger(__name__)
 
 # Wikipedia namespace prefixes that indicate non-article pages
 # These are MediaWiki namespaces that exist across all Wikipedia language editions
-WIKIPEDIA_NON_ARTICLE_PREFIXES = frozenset({
-    "Talk:",
-    "User:",
-    "User_talk:",
-    "Wikipedia:",
-    "Wikipedia_talk:",
-    "WP:",  # Shortcut for Wikipedia:
-    "Project:",  # Alias for Wikipedia:
-    "Project_talk:",
-    "Template:",
-    "Template_talk:",
-    "Category:",
-    "Category_talk:",
-    "Special:",
-    "File:",
-    "File_talk:",
-    "Image:",  # Legacy alias for File:
-    "Image_talk:",
-    "Media:",
-    "Help:",
-    "Help_talk:",
-    "Module:",
-    "Module_talk:",
-    "Portal:",
-    "Portal_talk:",
-    "Draft:",
-    "Draft_talk:",
-    "TimedText:",
-    "TimedText_talk:",
-    "MediaWiki:",
-    "MediaWiki_talk:",
-    "Book:",
-    "Book_talk:",
-    "Education_Program:",
-    "Education_Program_talk:",
-    "Gadget:",
-    "Gadget_talk:",
-    "Gadget_definition:",
-    "Gadget_definition_talk:",
-})
+WIKIPEDIA_NON_ARTICLE_PREFIXES = frozenset(
+    {
+        "Talk:",
+        "User:",
+        "User_talk:",
+        "Wikipedia:",
+        "Wikipedia_talk:",
+        "WP:",  # Shortcut for Wikipedia:
+        "Project:",  # Alias for Wikipedia:
+        "Project_talk:",
+        "Template:",
+        "Template_talk:",
+        "Category:",
+        "Category_talk:",
+        "Special:",
+        "File:",
+        "File_talk:",
+        "Image:",  # Legacy alias for File:
+        "Image_talk:",
+        "Media:",
+        "Help:",
+        "Help_talk:",
+        "Module:",
+        "Module_talk:",
+        "Portal:",
+        "Portal_talk:",
+        "Draft:",
+        "Draft_talk:",
+        "TimedText:",
+        "TimedText_talk:",
+        "MediaWiki:",
+        "MediaWiki_talk:",
+        "Book:",
+        "Book_talk:",
+        "Education_Program:",
+        "Education_Program_talk:",
+        "Gadget:",
+        "Gadget_talk:",
+        "Gadget_definition:",
+        "Gadget_definition_talk:",
+    }
+)
 
 # Query parameters that indicate non-article views (edit mode, history, etc.)
-WIKIPEDIA_NON_ARTICLE_PARAMS = frozenset({
-    "action",  # action=edit, action=history, etc.
-    "oldid",   # Specific revision
-    "diff",    # Diff between revisions
-    "curid",   # Page ID redirect
-    "printable",
-    "mobileaction",
-    "veaction",  # Visual editor
-})
+WIKIPEDIA_NON_ARTICLE_PARAMS = frozenset(
+    {
+        "action",  # action=edit, action=history, etc.
+        "oldid",  # Specific revision
+        "diff",  # Diff between revisions
+        "curid",  # Page ID redirect
+        "printable",
+        "mobileaction",
+        "veaction",  # Visual editor
+    }
+)
 
 
 class TenantAwareSpider(scrapy.Spider):
@@ -233,18 +237,14 @@ class TenantAwareSpider(scrapy.Spider):
 
             # Metadata
             item["title"] = response.xpath("//title/text()").get()
-            item["meta_description"] = response.xpath(
-                "//meta[@name='description']/@content"
-            ).get()
-            item["meta_keywords"] = response.xpath(
-                "//meta[@name='keywords']/@content"
-            ).get()
+            item["meta_description"] = response.xpath("//meta[@name='description']/@content").get()
+            item["meta_keywords"] = response.xpath("//meta[@name='keywords']/@content").get()
 
             # HTTP info
             item["http_status"] = response.status
-            item["content_type"] = response.headers.get(
-                "Content-Type", b"text/html"
-            ).decode("utf-8", errors="ignore")
+            item["content_type"] = response.headers.get("Content-Type", b"text/html").decode(
+                "utf-8", errors="ignore"
+            )
             item["response_headers"] = dict(response.headers.to_unicode_dict())
 
             # Crawl info
@@ -336,9 +336,26 @@ class TenantAwareSpider(scrapy.Spider):
 
         # Skip common non-content URLs
         skip_extensions = {
-            ".css", ".js", ".jpg", ".jpeg", ".png", ".gif", ".svg",
-            ".ico", ".woff", ".woff2", ".ttf", ".eot", ".pdf",
-            ".zip", ".tar", ".gz", ".mp3", ".mp4", ".avi", ".mov",
+            ".css",
+            ".js",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".svg",
+            ".ico",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+            ".pdf",
+            ".zip",
+            ".tar",
+            ".gz",
+            ".mp3",
+            ".mp4",
+            ".avi",
+            ".mov",
         }
         if any(parsed.path.lower().endswith(ext) for ext in skip_extensions):
             return False

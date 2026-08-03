@@ -90,12 +90,8 @@ class TestBaseExtractionServiceInterface:
         docstring = BaseExtractionService.extract.__doc__
 
         assert docstring is not None, "extract method must have a docstring"
-        assert "system_prompt" in docstring, (
-            "docstring must document system_prompt parameter"
-        )
-        assert "json_schema" in docstring, (
-            "docstring must document json_schema parameter"
-        )
+        assert "system_prompt" in docstring, "docstring must document system_prompt parameter"
+        assert "json_schema" in docstring, "docstring must document json_schema parameter"
 
     def test_all_original_parameters_preserved(self) -> None:
         """Test that all original parameters are still present."""
@@ -115,8 +111,7 @@ class TestBaseExtractionServiceInterface:
 
         for param_name in expected_params:
             assert param_name in params, (
-                f"Original parameter '{param_name}' must be preserved "
-                "for backward compatibility"
+                f"Original parameter '{param_name}' must be preserved for backward compatibility"
             )
 
     def test_parameter_order_maintains_backward_compatibility(self) -> None:

@@ -190,9 +190,7 @@ class TestLegacyStrategy:
     """Tests for legacy extraction strategy routing."""
 
     @pytest.mark.asyncio
-    async def test_legacy_returns_non_adaptive_strategy(
-        self, router, mock_job, sample_content
-    ):
+    async def test_legacy_returns_non_adaptive_strategy(self, router, mock_job, sample_content):
         """Test that legacy strategy returns non-adaptive ExtractionStrategy."""
         mock_job.extraction_strategy = "legacy"
 
@@ -289,9 +287,7 @@ class TestManualStrategy:
         mock_classifier.classify.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_manual_without_domain_raises_error(
-        self, router, mock_job, sample_content
-    ):
+    async def test_manual_without_domain_raises_error(self, router, mock_job, sample_content):
         """Test that manual strategy without content_domain raises ValueError."""
         mock_job.extraction_strategy = "manual"
         mock_job.content_domain = None
@@ -312,9 +308,7 @@ class TestManualStrategy:
             await router.route(mock_job, sample_content)
 
     @pytest.mark.asyncio
-    async def test_manual_includes_confidence_thresholds(
-        self, router, mock_job, sample_content
-    ):
+    async def test_manual_includes_confidence_thresholds(self, router, mock_job, sample_content):
         """Test that manual strategy includes confidence thresholds from schema."""
         mock_job.extraction_strategy = "manual"
         mock_job.content_domain = "test_domain"
@@ -347,9 +341,7 @@ class TestAutoDetectStrategy:
         mock_classifier.classify.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_auto_detect_returns_adaptive_strategy(
-        self, router, mock_job, sample_content
-    ):
+    async def test_auto_detect_returns_adaptive_strategy(self, router, mock_job, sample_content):
         """Test that auto_detect returns adaptive strategy."""
         mock_job.extraction_strategy = "auto_detect"
         mock_job.content_domain = None
@@ -415,9 +407,7 @@ class TestAutoDetectStrategy:
 
         await router.route(mock_job, sample_content, tenant_id="tenant-123")
 
-        mock_classifier.classify.assert_called_once_with(
-            sample_content, tenant_id="tenant-123"
-        )
+        mock_classifier.classify.assert_called_once_with(sample_content, tenant_id="tenant-123")
 
 
 # =============================================================================
@@ -430,8 +420,13 @@ class TestJobUpdateCallback:
 
     @pytest.mark.asyncio
     async def test_callback_invoked_on_auto_detect(
-        self, mock_provider, mock_registry, mock_classifier, mock_prompt_generator,
-        mock_job, sample_content
+        self,
+        mock_provider,
+        mock_registry,
+        mock_classifier,
+        mock_prompt_generator,
+        mock_job,
+        sample_content,
     ):
         """Test that callback is invoked for auto_detect classification."""
         callback = AsyncMock()
@@ -456,8 +451,13 @@ class TestJobUpdateCallback:
 
     @pytest.mark.asyncio
     async def test_callback_includes_schema_snapshot(
-        self, mock_provider, mock_registry, mock_classifier, mock_prompt_generator,
-        mock_job, sample_content
+        self,
+        mock_provider,
+        mock_registry,
+        mock_classifier,
+        mock_prompt_generator,
+        mock_job,
+        sample_content,
     ):
         """Test that callback includes schema snapshot."""
         callback = AsyncMock()
@@ -485,8 +485,13 @@ class TestJobUpdateCallback:
 
     @pytest.mark.asyncio
     async def test_callback_not_invoked_for_legacy(
-        self, mock_provider, mock_registry, mock_classifier, mock_prompt_generator,
-        mock_job, sample_content
+        self,
+        mock_provider,
+        mock_registry,
+        mock_classifier,
+        mock_prompt_generator,
+        mock_job,
+        sample_content,
     ):
         """Test that callback is not invoked for legacy strategy."""
         callback = AsyncMock()
@@ -506,8 +511,13 @@ class TestJobUpdateCallback:
 
     @pytest.mark.asyncio
     async def test_callback_not_invoked_for_manual(
-        self, mock_provider, mock_registry, mock_classifier, mock_prompt_generator,
-        mock_job, sample_content
+        self,
+        mock_provider,
+        mock_registry,
+        mock_classifier,
+        mock_prompt_generator,
+        mock_job,
+        sample_content,
     ):
         """Test that callback is not invoked for manual strategy."""
         callback = AsyncMock()
@@ -528,8 +538,13 @@ class TestJobUpdateCallback:
 
     @pytest.mark.asyncio
     async def test_callback_failure_does_not_break_routing(
-        self, mock_provider, mock_registry, mock_classifier, mock_prompt_generator,
-        mock_job, sample_content
+        self,
+        mock_provider,
+        mock_registry,
+        mock_classifier,
+        mock_prompt_generator,
+        mock_job,
+        sample_content,
     ):
         """Test that callback failure does not prevent strategy return."""
         callback = AsyncMock(side_effect=RuntimeError("Callback failed"))
@@ -560,9 +575,7 @@ class TestErrorHandling:
     """Tests for error handling in strategy router."""
 
     @pytest.mark.asyncio
-    async def test_unknown_strategy_falls_back_to_legacy(
-        self, router, mock_job, sample_content
-    ):
+    async def test_unknown_strategy_falls_back_to_legacy(self, router, mock_job, sample_content):
         """Test that unknown strategy type falls back to legacy."""
         mock_job.extraction_strategy = "unknown_strategy_xyz"
 
@@ -597,9 +610,7 @@ class TestClassifyContentMethod:
     """Tests for the classify_content convenience method."""
 
     @pytest.mark.asyncio
-    async def test_classify_content_uses_classifier(
-        self, router, mock_classifier, sample_content
-    ):
+    async def test_classify_content_uses_classifier(self, router, mock_classifier, sample_content):
         """Test that classify_content uses the classifier."""
         result = await router.classify_content(sample_content)
 
@@ -608,15 +619,11 @@ class TestClassifyContentMethod:
         assert result.domain == "test_domain"
 
     @pytest.mark.asyncio
-    async def test_classify_content_passes_tenant_id(
-        self, router, mock_classifier, sample_content
-    ):
+    async def test_classify_content_passes_tenant_id(self, router, mock_classifier, sample_content):
         """Test that classify_content passes tenant_id."""
         await router.classify_content(sample_content, tenant_id="tenant-456")
 
-        mock_classifier.classify.assert_called_once_with(
-            sample_content, tenant_id="tenant-456"
-        )
+        mock_classifier.classify.assert_called_once_with(sample_content, tenant_id="tenant-456")
 
 
 # =============================================================================
@@ -672,15 +679,11 @@ class TestConvenienceFunctions:
         assert router1 is not router2
 
     @pytest.mark.asyncio
-    async def test_route_extraction_strategy_function(
-        self, mock_job, sample_content
-    ):
+    async def test_route_extraction_strategy_function(self, mock_job, sample_content):
         """Test the convenience function for routing."""
         mock_job.extraction_strategy = "legacy"
 
-        with patch(
-            "kg_builder.extraction.strategy_router.ExtractionStrategyRouter"
-        ) as MockRouter:
+        with patch("kg_builder.extraction.strategy_router.ExtractionStrategyRouter") as MockRouter:
             mock_router_instance = AsyncMock()
             mock_router_instance.route.return_value = ExtractionStrategy.legacy()
             MockRouter.return_value = mock_router_instance
@@ -702,9 +705,7 @@ class TestConvenienceFunctions:
         callback = AsyncMock()
         mock_job.extraction_strategy = "legacy"
 
-        with patch(
-            "kg_builder.extraction.strategy_router.ExtractionStrategyRouter"
-        ) as MockRouter:
+        with patch("kg_builder.extraction.strategy_router.ExtractionStrategyRouter") as MockRouter:
             mock_router_instance = AsyncMock()
             mock_router_instance.route.return_value = ExtractionStrategy.legacy()
             MockRouter.return_value = mock_router_instance
@@ -754,8 +755,13 @@ class TestFullRoutingFlow:
 
     @pytest.mark.asyncio
     async def test_full_auto_detect_flow_with_callback(
-        self, mock_provider, mock_registry, mock_classifier, mock_prompt_generator,
-        mock_job, sample_content
+        self,
+        mock_provider,
+        mock_registry,
+        mock_classifier,
+        mock_prompt_generator,
+        mock_job,
+        sample_content,
     ):
         """Test complete auto_detect strategy flow with callback."""
         callback = AsyncMock()
@@ -774,9 +780,7 @@ class TestFullRoutingFlow:
         strategy = await router.route(mock_job, sample_content, tenant_id="tenant-abc")
 
         # Verify classification happened
-        mock_classifier.classify.assert_called_once_with(
-            sample_content, tenant_id="tenant-abc"
-        )
+        mock_classifier.classify.assert_called_once_with(sample_content, tenant_id="tenant-abc")
 
         # Verify strategy is built
         assert strategy.is_adaptive is True
@@ -792,8 +796,7 @@ class TestFullRoutingFlow:
 
     @pytest.mark.asyncio
     async def test_strategy_modes_are_distinct(
-        self, mock_provider, mock_registry, mock_classifier, mock_prompt_generator,
-        sample_content
+        self, mock_provider, mock_registry, mock_classifier, mock_prompt_generator, sample_content
     ):
         """Test that different strategy modes produce distinct results."""
         router = ExtractionStrategyRouter(

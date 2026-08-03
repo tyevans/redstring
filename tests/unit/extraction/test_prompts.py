@@ -16,7 +16,9 @@ import pytest
 
 # Direct import from prompts.py file to avoid __init__.py chain
 # that pulls in database-dependent modules
-_prompts_path = Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "extraction" / "prompts.py"
+_prompts_path = (
+    Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "extraction" / "prompts.py"
+)
 _prompts_spec = spec_from_file_location("extraction_prompts", _prompts_path)
 _prompts = module_from_spec(_prompts_spec)
 _prompts_spec.loader.exec_module(_prompts)
@@ -34,7 +36,9 @@ get_entity_types = _prompts.get_entity_types
 get_relationship_types = _prompts.get_relationship_types
 
 # Direct import from schemas.py file as well
-_schemas_path = Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "extraction" / "schemas.py"
+_schemas_path = (
+    Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "extraction" / "schemas.py"
+)
 _schemas_spec = spec_from_file_location("extraction_schemas", _schemas_path)
 _schemas = module_from_spec(_schemas_spec)
 _schemas_spec.loader.exec_module(_schemas)
@@ -357,6 +361,7 @@ class TestGetEntityTypes:
 
         # Get the valid literal values from the schema
         from typing import get_args
+
         valid_types = set(get_args(EntityTypeLiteral))
 
         for entity_type in entity_types:
@@ -410,6 +415,7 @@ class TestGetRelationshipTypes:
         rel_types = get_relationship_types()
 
         from typing import get_args
+
         valid_types = set(get_args(RelationshipTypeLiteral))
 
         for rel_type in rel_types:
@@ -496,13 +502,16 @@ class TestPromptContentQuality:
 # Try to import OllamaExtractionService, skip tests if database dependencies unavailable
 try:
     from kg_builder.extraction.ollama_extractor import OllamaExtractionService
+
     _OLLAMA_SERVICE_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     _OLLAMA_SERVICE_AVAILABLE = False
     OllamaExtractionService = None
 
 
-@pytest.mark.skipif(not _OLLAMA_SERVICE_AVAILABLE, reason="OllamaExtractionService requires database dependencies")
+@pytest.mark.skipif(
+    not _OLLAMA_SERVICE_AVAILABLE, reason="OllamaExtractionService requires database dependencies"
+)
 class TestPromptsIntegrationWithOllamaService:
     """Tests verifying prompts work correctly with OllamaExtractionService.
 

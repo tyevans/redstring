@@ -375,9 +375,7 @@ class MergeService:
                 issues.append(f"Entity {entity.id} does not belong to this tenant")
 
             if not entity.is_canonical:
-                issues.append(
-                    f"Entity {entity.id} is already an alias of {entity.is_alias_of}"
-                )
+                issues.append(f"Entity {entity.id} is already an alias of {entity.is_alias_of}")
 
             if entity.id == canonical_entity.id:
                 issues.append("Cannot merge an entity with itself")
@@ -429,9 +427,7 @@ class MergeService:
             MergeError: If merge operation fails
         """
         # Validate preconditions
-        self._validate_merge_preconditions(
-            canonical_entity, merged_entities, tenant_id
-        )
+        self._validate_merge_preconditions(canonical_entity, merged_entities, tenant_id)
 
         logger.info(
             f"Starting merge: canonical={canonical_entity.id}, "
@@ -456,9 +452,7 @@ class MergeService:
 
             # 2. Transfer relationships from merged entities
             for entity in merged_entities:
-                count = await self._transfer_relationships(
-                    canonical_entity, entity, tenant_id
-                )
+                count = await self._transfer_relationships(canonical_entity, entity, tenant_id)
                 relationships_transferred += count
 
             # 3. Create EntityAlias records with original properties for undo
@@ -632,9 +626,7 @@ class MergeService:
 
         # Merge the properties JSONB field
         if merged.properties:
-            strategy = self.property_strategies.get(
-                "properties", PropertyMergeStrategy.DEEP_MERGE
-            )
+            strategy = self.property_strategies.get("properties", PropertyMergeStrategy.DEEP_MERGE)
             merged_props, details = merge_property(
                 canonical.properties or {},
                 merged.properties,
@@ -705,12 +697,8 @@ class MergeService:
         transferred = 0
 
         # Get existing relationships on canonical to avoid duplicates
-        existing_outgoing = await self._get_relationship_keys(
-            canonical.id, "outgoing", tenant_id
-        )
-        existing_incoming = await self._get_relationship_keys(
-            canonical.id, "incoming", tenant_id
-        )
+        existing_outgoing = await self._get_relationship_keys(canonical.id, "outgoing", tenant_id)
+        existing_incoming = await self._get_relationship_keys(canonical.id, "incoming", tenant_id)
 
         # Transfer outgoing relationships (merged -> target)
         outgoing_query = select(EntityRelationship).where(
@@ -756,9 +744,7 @@ class MergeService:
                 existing_incoming.add(key)
                 transferred += 1
 
-        logger.debug(
-            f"Transferred {transferred} relationships from {merged.id} to {canonical.id}"
-        )
+        logger.debug(f"Transferred {transferred} relationships from {merged.id} to {canonical.id}")
 
         return transferred
 
@@ -831,9 +817,7 @@ class MergeService:
         Raises:
             MergeUndoError: If merge cannot be undone
         """
-        logger.info(
-            f"Starting undo for merge event {merge_event_id} by user {user_id}"
-        )
+        logger.info(f"Starting undo for merge event {merge_event_id} by user {user_id}")
 
         # Generate IDs for tracking
         undo_event_id = uuid.uuid4()
@@ -857,16 +841,12 @@ class MergeService:
 
             # Get merged entity IDs (excluding canonical)
             merged_entity_ids = [
-                eid for eid in merge_history.affected_entity_ids
-                if eid != canonical_id
+                eid for eid in merge_history.affected_entity_ids if eid != canonical_id
             ]
 
             # Filter to requested entities if partial undo
             if restore_entity_ids:
-                merged_entity_ids = [
-                    eid for eid in merged_entity_ids
-                    if eid in restore_entity_ids
-                ]
+                merged_entity_ids = [eid for eid in merged_entity_ids if eid in restore_entity_ids]
 
             if not merged_entity_ids:
                 raise MergeUndoError("No entities to restore")
@@ -898,9 +878,11 @@ class MergeService:
 
             # Step 4: Restore relationships from snapshot (if available)
             relationships_restored = 0
-            relationship_snapshot = merge_history.details.get(
-                "relationship_snapshot", {}
-            ) if merge_history.details else {}
+            relationship_snapshot = (
+                merge_history.details.get("relationship_snapshot", {})
+                if merge_history.details
+                else {}
+            )
 
             if relationship_snapshot:
                 relationships_restored = await self._restore_relationships_from_snapshot(
@@ -988,9 +970,7 @@ class MergeService:
 
     async def _load_merge_history(self, merge_event_id: UUID) -> MergeHistory | None:
         """Load merge history record by event ID."""
-        query = select(MergeHistory).where(
-            MergeHistory.event_id == merge_event_id
-        )
+        query = select(MergeHistory).where(MergeHistory.event_id == merge_event_id)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
@@ -1133,9 +1113,7 @@ class MergeService:
                     relationships_restored += 1
 
                 except (ValueError, KeyError) as e:
-                    logger.warning(
-                        f"Failed to restore relationship from snapshot: {e}"
-                    )
+                    logger.warning(f"Failed to restore relationship from snapshot: {e}")
                     continue
 
         logger.debug(f"Restored {relationships_restored} relationships from snapshot")
@@ -1195,15 +1173,11 @@ class MergeService:
 
             # Validate split definitions
             if len(split_definitions) < 2:
-                raise EntitySplitError(
-                    "Split requires at least 2 new entity definitions"
-                )
+                raise EntitySplitError("Split requires at least 2 new entity definitions")
 
             for i, defn in enumerate(split_definitions):
                 if "name" not in defn:
-                    raise EntitySplitError(
-                        f"Split definition {i} missing required 'name' field"
-                    )
+                    raise EntitySplitError(f"Split definition {i} missing required 'name' field")
 
             # Step 2: Create new entities from definitions
             new_entities = []
@@ -1267,9 +1241,7 @@ class MergeService:
 
             # Step 6: Create split history record
             # Convert relationship_assignments keys to strings for JSONB
-            relationship_assignments_json = {
-                str(k): v for k, v in relationship_assignments.items()
-            }
+            relationship_assignments_json = {str(k): v for k, v in relationship_assignments.items()}
             property_assignments_json: dict[str, str] = {}
             for i, defn in enumerate(split_definitions):
                 for prop_key in defn.get("properties", {}).keys():
@@ -1304,8 +1276,7 @@ class MergeService:
                 new_entity_names=new_entity_names,
                 property_assignments=property_assignments_json,
                 relationship_assignments={
-                    str(k): str(new_entity_ids[v])
-                    for k, v in relationship_assignments.items()
+                    str(k): str(new_entity_ids[v]) for k, v in relationship_assignments.items()
                 },
                 split_reason=reason,
                 split_by_user_id=user_id,
@@ -1343,9 +1314,7 @@ class MergeService:
 
     async def _load_entity(self, entity_id: UUID) -> ExtractedEntity | None:
         """Load entity by ID."""
-        query = select(ExtractedEntity).where(
-            ExtractedEntity.id == entity_id
-        )
+        query = select(ExtractedEntity).where(ExtractedEntity.id == entity_id)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
@@ -1490,9 +1459,7 @@ def merge_property(
     elif strategy == PropertyMergeStrategy.PREFER_MERGED:
         # Take merged value
         details["kept"] = "merged"
-        details["discarded"] = (
-            canonical_value if canonical_value != merged_value else None
-        )
+        details["discarded"] = canonical_value if canonical_value != merged_value else None
         return merged_value, details
 
     elif strategy == PropertyMergeStrategy.UNION:
@@ -1515,9 +1482,7 @@ def merge_property(
         # Deep merge for nested dicts
         if isinstance(canonical_value, dict) and isinstance(merged_value, dict):
             result = deep_merge_dicts(canonical_value, merged_value)
-            details["merged_keys"] = list(
-                set(canonical_value.keys()) | set(merged_value.keys())
-            )
+            details["merged_keys"] = list(set(canonical_value.keys()) | set(merged_value.keys()))
             return result, details
         elif isinstance(canonical_value, list) and isinstance(merged_value, list):
             # For lists in deep merge, concatenate and dedupe

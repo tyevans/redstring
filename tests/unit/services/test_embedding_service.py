@@ -64,9 +64,7 @@ class TestOllamaEmbeddingServiceEncode:
 
         def create_response(embedding_dim: int = 1024):
             response = MagicMock(spec=httpx.Response)
-            response.json.return_value = {
-                "embedding": [0.1] * embedding_dim
-            }
+            response.json.return_value = {"embedding": [0.1] * embedding_dim}
             response.raise_for_status = MagicMock()
             return response
 
@@ -122,9 +120,7 @@ class TestOllamaEmbeddingServiceEncode:
         """Test connection error is properly raised."""
         with patch.object(service, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(
-                side_effect=httpx.ConnectError("Connection refused")
-            )
+            mock_client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
             mock_get_client.return_value = mock_client
 
             # Set max_retries to 1 for faster test

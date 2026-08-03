@@ -164,9 +164,7 @@ class OpenAIEmbeddingService:
                 # Sort by index to maintain order
                 sorted_data = sorted(response.data, key=lambda x: x.index)
                 for item in sorted_data:
-                    all_embeddings.append(
-                        np.array(item.embedding, dtype=np.float32)
-                    )
+                    all_embeddings.append(np.array(item.embedding, dtype=np.float32))
 
             # Build result array with zeros for empty texts
             result = np.zeros((len(texts), self._embedding_dimension), dtype=np.float32)
@@ -176,7 +174,9 @@ class OpenAIEmbeddingService:
             return result
 
         except APIConnectionError as e:
-            logger.error("Failed to connect to OpenAI for batch embeddings", extra={"error": str(e)})
+            logger.error(
+                "Failed to connect to OpenAI for batch embeddings", extra={"error": str(e)}
+            )
             raise OpenAIEmbeddingError(f"Connection failed: {e}", cause=e)
 
         except APIError as e:

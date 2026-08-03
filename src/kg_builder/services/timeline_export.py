@@ -123,9 +123,7 @@ class TimelineExportService:
             "source_url": event.source_url,
         }
 
-    def _serialize_relationship_json(
-        self, rel: TemporalRelationship
-    ) -> dict[str, Any]:
+    def _serialize_relationship_json(self, rel: TemporalRelationship) -> dict[str, Any]:
         """Serialize a TemporalRelationship to a JSON-compatible dict."""
         return {
             "id": str(rel.id),
@@ -192,42 +190,48 @@ class TimelineExportService:
         if user_id:
             output.write(f"# User: {user_id}\n")
         output.write(f"# Total events: {len(events)}\n")
-        output.write("# WARNING: Cells starting with =, +, -, @, TAB, or CR have been sanitized for security.\n")
+        output.write(
+            "# WARNING: Cells starting with =, +, -, @, TAB, or CR have been sanitized for security.\n"
+        )
         output.write("#\n")
 
         # Write CSV data
         writer = csv.writer(output)
 
         # Header row
-        writer.writerow([
-            "ID",
-            "Name",
-            "Description",
-            "Entity Type",
-            "Start Date",
-            "End Date",
-            "Precision",
-            "Uncertainty",
-            "Original Text",
-            "Sequence Position",
-            "Source URL",
-        ])
+        writer.writerow(
+            [
+                "ID",
+                "Name",
+                "Description",
+                "Entity Type",
+                "Start Date",
+                "End Date",
+                "Precision",
+                "Uncertainty",
+                "Original Text",
+                "Sequence Position",
+                "Source URL",
+            ]
+        )
 
         # Data rows
         for event in events:
-            writer.writerow([
-                str(event.id),
-                self._sanitize_csv_cell(event.name),
-                self._sanitize_csv_cell(event.description or ""),
-                self._sanitize_csv_cell(event.entity_type),
-                self._format_date(event.start_date, date_format),
-                self._format_date(event.end_date, date_format),
-                event.precision.value if event.precision else "",
-                event.uncertainty.value if event.uncertainty else "",
-                self._sanitize_csv_cell(event.original_text or ""),
-                str(event.sequence_position) if event.sequence_position is not None else "",
-                self._sanitize_csv_cell(event.source_url),
-            ])
+            writer.writerow(
+                [
+                    str(event.id),
+                    self._sanitize_csv_cell(event.name),
+                    self._sanitize_csv_cell(event.description or ""),
+                    self._sanitize_csv_cell(event.entity_type),
+                    self._format_date(event.start_date, date_format),
+                    self._format_date(event.end_date, date_format),
+                    event.precision.value if event.precision else "",
+                    event.uncertainty.value if event.uncertainty else "",
+                    self._sanitize_csv_cell(event.original_text or ""),
+                    str(event.sequence_position) if event.sequence_position is not None else "",
+                    self._sanitize_csv_cell(event.source_url),
+                ]
+            )
 
         return output.getvalue()
 
@@ -273,23 +277,27 @@ class TimelineExportService:
             header_output.write(f"# Job ID: {job_id}\n")
         if user_id:
             header_output.write(f"# User: {user_id}\n")
-        header_output.write("# WARNING: Cells starting with =, +, -, @, TAB, or CR have been sanitized for security.\n")
+        header_output.write(
+            "# WARNING: Cells starting with =, +, -, @, TAB, or CR have been sanitized for security.\n"
+        )
         header_output.write("#\n")
 
         writer = csv.writer(header_output)
-        writer.writerow([
-            "ID",
-            "Name",
-            "Description",
-            "Entity Type",
-            "Start Date",
-            "End Date",
-            "Precision",
-            "Uncertainty",
-            "Original Text",
-            "Sequence Position",
-            "Source URL",
-        ])
+        writer.writerow(
+            [
+                "ID",
+                "Name",
+                "Description",
+                "Entity Type",
+                "Start Date",
+                "End Date",
+                "Precision",
+                "Uncertainty",
+                "Original Text",
+                "Sequence Position",
+                "Source URL",
+            ]
+        )
 
         yield header_output.getvalue()
 
@@ -299,19 +307,21 @@ class TimelineExportService:
         event_count = 0
 
         async for event in events_generator:
-            chunk_writer.writerow([
-                str(event.id),
-                self._sanitize_csv_cell(event.name),
-                self._sanitize_csv_cell(event.description or ""),
-                self._sanitize_csv_cell(event.entity_type),
-                self._format_date(event.start_date, date_format),
-                self._format_date(event.end_date, date_format),
-                event.precision.value if event.precision else "",
-                event.uncertainty.value if event.uncertainty else "",
-                self._sanitize_csv_cell(event.original_text or ""),
-                str(event.sequence_position) if event.sequence_position is not None else "",
-                self._sanitize_csv_cell(event.source_url),
-            ])
+            chunk_writer.writerow(
+                [
+                    str(event.id),
+                    self._sanitize_csv_cell(event.name),
+                    self._sanitize_csv_cell(event.description or ""),
+                    self._sanitize_csv_cell(event.entity_type),
+                    self._format_date(event.start_date, date_format),
+                    self._format_date(event.end_date, date_format),
+                    event.precision.value if event.precision else "",
+                    event.uncertainty.value if event.uncertainty else "",
+                    self._sanitize_csv_cell(event.original_text or ""),
+                    str(event.sequence_position) if event.sequence_position is not None else "",
+                    self._sanitize_csv_cell(event.source_url),
+                ]
+            )
             event_count += 1
 
             if event_count % chunk_size == 0:

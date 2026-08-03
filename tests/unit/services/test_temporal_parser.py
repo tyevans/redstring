@@ -299,9 +299,7 @@ class TestHistoricalPeriodParsing:
             ("1st century", 1, 100),
         ],
     )
-    def test_century_parsing(
-        self, input_text, expected_start_century, expected_end_century
-    ):
+    def test_century_parsing(self, input_text, expected_start_century, expected_end_century):
         """Century expressions are parsed correctly."""
         parser = TemporalParserService()
         result = parser.parse(input_text)

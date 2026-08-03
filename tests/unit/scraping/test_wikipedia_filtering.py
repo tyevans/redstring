@@ -207,36 +207,26 @@ class TestShouldFollowUrlWithWikipedia:
 
     def test_follows_article_urls(self, spider):
         """Test that article URLs are followed."""
-        assert spider._should_follow_url(
-            "https://en.wikipedia.org/wiki/Machine_learning"
-        )
+        assert spider._should_follow_url("https://en.wikipedia.org/wiki/Machine_learning")
         assert spider._should_follow_url(
             "https://en.wikipedia.org/wiki/Python_(programming_language)"
         )
 
     def test_skips_talk_pages(self, spider):
         """Test that talk pages are skipped."""
-        assert not spider._should_follow_url(
-            "https://en.wikipedia.org/wiki/Talk:Machine_learning"
-        )
+        assert not spider._should_follow_url("https://en.wikipedia.org/wiki/Talk:Machine_learning")
 
     def test_skips_user_pages(self, spider):
         """Test that user pages are skipped."""
-        assert not spider._should_follow_url(
-            "https://en.wikipedia.org/wiki/User:ExampleUser"
-        )
+        assert not spider._should_follow_url("https://en.wikipedia.org/wiki/User:ExampleUser")
 
     def test_skips_special_pages(self, spider):
         """Test that special pages are skipped."""
-        assert not spider._should_follow_url(
-            "https://en.wikipedia.org/wiki/Special:Random"
-        )
+        assert not spider._should_follow_url("https://en.wikipedia.org/wiki/Special:Random")
 
     def test_skips_edit_views(self, spider):
         """Test that edit views are skipped."""
-        assert not spider._should_follow_url(
-            "https://en.wikipedia.org/wiki/Test?action=edit"
-        )
+        assert not spider._should_follow_url("https://en.wikipedia.org/wiki/Test?action=edit")
 
     def test_allows_non_wikipedia_urls(self, spider):
         """Test that non-Wikipedia URLs are still processed normally."""
@@ -244,9 +234,7 @@ class TestShouldFollowUrlWithWikipedia:
         # The Wikipedia filter should not interfere with non-Wikipedia URLs
         spider.allowed_domains = ["example.com"]
         assert spider._should_follow_url("https://example.com/page")
-        assert not spider._should_follow_url(
-            "https://other.com/page"
-        )  # Domain restriction
+        assert not spider._should_follow_url("https://other.com/page")  # Domain restriction
 
 
 class TestNonArticlePrefixCompleteness:
@@ -291,14 +279,10 @@ class TestNonArticlePrefixCompleteness:
         ]
 
         for ns in standard_namespaces + wikipedia_specific:
-            assert (
-                ns in WIKIPEDIA_NON_ARTICLE_PREFIXES
-            ), f"Missing namespace: {ns}"
+            assert ns in WIKIPEDIA_NON_ARTICLE_PREFIXES, f"Missing namespace: {ns}"
 
     def test_non_article_params_covered(self):
         """Verify common non-article query parameters are filtered."""
         essential_params = ["action", "oldid", "diff"]
         for param in essential_params:
-            assert (
-                param in WIKIPEDIA_NON_ARTICLE_PARAMS
-            ), f"Missing param: {param}"
+            assert param in WIKIPEDIA_NON_ARTICLE_PARAMS, f"Missing param: {param}"

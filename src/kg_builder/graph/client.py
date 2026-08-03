@@ -256,21 +256,25 @@ class Neo4jClient:
                 # Filter by tenant
                 if node.get("tenant_id") != str(tenant_id):
                     continue
-                nodes.append({
-                    "id": node.get("id"),
-                    "name": node.get("name"),
-                    "type": node.get("type"),
-                    "properties": node.get("properties", {}),
-                })
+                nodes.append(
+                    {
+                        "id": node.get("id"),
+                        "name": node.get("name"),
+                        "type": node.get("type"),
+                        "properties": node.get("properties", {}),
+                    }
+                )
 
             edges = []
             for rel in record["relationships"]:
-                edges.append({
-                    "source": rel.start_node.get("id"),
-                    "target": rel.end_node.get("id"),
-                    "type": rel.type,
-                    "confidence": rel.get("confidence_score", 1.0),
-                })
+                edges.append(
+                    {
+                        "source": rel.start_node.get("id"),
+                        "target": rel.end_node.get("id"),
+                        "type": rel.type,
+                        "confidence": rel.get("confidence_score", 1.0),
+                    }
+                )
 
             return {"nodes": nodes, "edges": edges}
 
@@ -318,13 +322,15 @@ class Neo4jClient:
             entities = []
             async for record in result:
                 node = record["e"]
-                entities.append({
-                    "id": node.get("id"),
-                    "name": node.get("name"),
-                    "type": node.get("type"),
-                    "description": node.get("description"),
-                    "confidence": node.get("confidence_score"),
-                })
+                entities.append(
+                    {
+                        "id": node.get("id"),
+                        "name": node.get("name"),
+                        "type": node.get("type"),
+                        "description": node.get("description"),
+                        "confidence": node.get("confidence_score"),
+                    }
+                )
 
             return entities
 
@@ -368,16 +374,18 @@ class Neo4jClient:
             async for record in result:
                 rel = record["r"]
                 other = record["other"]
-                relationships.append({
-                    "id": rel.get("id"),
-                    "type": rel.type,
-                    "confidence": rel.get("confidence_score", 1.0),
-                    "related_entity": {
-                        "id": other.get("id"),
-                        "name": other.get("name"),
-                        "type": other.get("type"),
-                    },
-                })
+                relationships.append(
+                    {
+                        "id": rel.get("id"),
+                        "type": rel.type,
+                        "confidence": rel.get("confidence_score", 1.0),
+                        "related_entity": {
+                            "id": other.get("id"),
+                            "name": other.get("name"),
+                            "type": other.get("type"),
+                        },
+                    }
+                )
 
             return relationships
 
@@ -431,4 +439,5 @@ class Neo4jClient:
 def _serialize_properties(props: dict) -> str:
     """Serialize properties dict to JSON string for Neo4j."""
     import json
+
     return json.dumps(props) if props else "{}"

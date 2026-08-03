@@ -143,9 +143,7 @@ def calculate_precision(
     return true_positives / len(extracted_names)
 
 
-def calculate_recall(
-    extracted_names: set[str], expected_entities: list[ExpectedEntity]
-) -> float:
+def calculate_recall(extracted_names: set[str], expected_entities: list[ExpectedEntity]) -> float:
     """Calculate recall: found expected / total expected.
 
     Recall measures how many of the expected entities were actually found.
@@ -640,9 +638,7 @@ class TestEntityExtractionAccuracy:
         assert recall >= 0.50, f"Recall {recall:.2%} below 50% threshold"
 
     @pytest.mark.asyncio
-    async def test_extraction_precision_recall_tutorial(
-        self, ollama_available, extraction_service
-    ):
+    async def test_extraction_precision_recall_tutorial(self, ollama_available, extraction_service):
         """Test entity extraction precision and recall on tutorial sample."""
         if not ollama_available:
             pytest.skip("Ollama not available")
@@ -757,9 +753,7 @@ class TestEntityTypeAccuracy:
             doc_type=test_case.doc_type,
         )
 
-        expected_functions = [
-            e for e in test_case.expected_entities if e.entity_type == "function"
-        ]
+        expected_functions = [e for e in test_case.expected_entities if e.entity_type == "function"]
 
         correct_type_count = 0
         for expected in expected_functions:
@@ -774,9 +768,7 @@ class TestEntityTypeAccuracy:
                         )
                     break
 
-        type_accuracy = (
-            correct_type_count / len(expected_functions) if expected_functions else 1.0
-        )
+        type_accuracy = correct_type_count / len(expected_functions) if expected_functions else 1.0
 
         print("\n=== Entity Type Accuracy Report ===")
         print(f"Expected functions: {[e.name for e in expected_functions]}")
@@ -807,9 +799,7 @@ class TestRelationshipAccuracy:
     """Tests for relationship extraction accuracy."""
 
     @pytest.mark.asyncio
-    async def test_relationship_accuracy_inheritance(
-        self, ollama_available, extraction_service
-    ):
+    async def test_relationship_accuracy_inheritance(self, ollama_available, extraction_service):
         """Test extraction of inheritance relationships."""
         if not ollama_available:
             pytest.skip("Ollama not available")
@@ -962,10 +952,7 @@ class TestAggregateAccuracy:
                 f"F1: {r['f1']:.2%} | {r['extracted']}/{r['expected']}"
             )
         print("-" * 60)
-        print(
-            f"{'AVERAGE':30s} | P: {avg_precision:.2%} | R: {avg_recall:.2%} | "
-            f"F1: {avg_f1:.2%}"
-        )
+        print(f"{'AVERAGE':30s} | P: {avg_precision:.2%} | R: {avg_recall:.2%} | F1: {avg_f1:.2%}")
         print("=" * 60)
 
         logger.info(

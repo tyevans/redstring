@@ -9,7 +9,6 @@ these tests validate the migration structure and extension availability.
 """
 
 
-
 class TestPgTrigram:
     """Test pg_trgm extension availability and functions."""
 
@@ -174,9 +173,7 @@ class TestMigrationStructure:
 
         downgrade_section = content.split("def downgrade")[1]
         for index_name in expected_drops:
-            assert index_name in downgrade_section, (
-                f"Index {index_name} not dropped in downgrade"
-            )
+            assert index_name in downgrade_section, f"Index {index_name} not dropped in downgrade"
 
 
 class TestBlockingIndexUseCases:

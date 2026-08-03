@@ -302,9 +302,7 @@ class TestDomainPromptGenerator:
 
     # ========== User Prompt Generation Tests ==========
 
-    def test_generate_user_prompt_basic(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_generate_user_prompt_basic(self, generator: DomainPromptGenerator) -> None:
         """Test basic user prompt generation."""
         content = "This is some test content."
         prompt = generator.generate_user_prompt(content)
@@ -361,9 +359,7 @@ class TestDomainPromptGenerator:
     ) -> None:
         """Test generating both system and user prompts."""
         content = "Test content for extraction."
-        system_prompt, user_prompt = generator.generate_full_prompt(
-            sample_schema, content
-        )
+        system_prompt, user_prompt = generator.generate_full_prompt(sample_schema, content)
 
         # System prompt should have entity descriptions
         assert "character" in system_prompt
@@ -372,24 +368,18 @@ class TestDomainPromptGenerator:
         # User prompt should have content
         assert "Test content for extraction." in user_prompt
 
-    def test_generate_full_prompt_with_truncation(
-        self, sample_schema: DomainSchema
-    ) -> None:
+    def test_generate_full_prompt_with_truncation(self, sample_schema: DomainSchema) -> None:
         """Test that full prompt truncates long content."""
         generator = DomainPromptGenerator(max_content_length=50)
         content = "A" * 100
 
-        _, user_prompt = generator.generate_full_prompt(
-            sample_schema, content, truncate=True
-        )
+        _, user_prompt = generator.generate_full_prompt(sample_schema, content, truncate=True)
 
         assert "[Content truncated due to length]" in user_prompt
 
     # ========== Property Hints Tests ==========
 
-    def test_format_property_hints(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_format_property_hints(self, generator: DomainPromptGenerator) -> None:
         """Test property hint formatting."""
         properties = [
             PropertySchema(name="name", type="string", description="The name"),
@@ -401,9 +391,7 @@ class TestDomainPromptGenerator:
         assert "name (The name)" in hints
         assert "age (The age)" in hints
 
-    def test_format_property_hints_no_description(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_format_property_hints_no_description(self, generator: DomainPromptGenerator) -> None:
         """Test property hints without descriptions."""
         properties = [
             PropertySchema(name="name", type="string"),
@@ -413,9 +401,7 @@ class TestDomainPromptGenerator:
 
         assert hints == "name"
 
-    def test_format_property_hints_empty(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_format_property_hints_empty(self, generator: DomainPromptGenerator) -> None:
         """Test empty properties list."""
         hints = generator._format_property_hints([])
 
@@ -469,9 +455,7 @@ class TestConvenienceFunctions:
 
         assert gen1 is not gen2
 
-    def test_generate_extraction_prompt(
-        self, sample_schema: DomainSchema
-    ) -> None:
+    def test_generate_extraction_prompt(self, sample_schema: DomainSchema) -> None:
         """Test convenience function for system prompt."""
         prompt = generate_extraction_prompt(sample_schema)
 
@@ -479,9 +463,7 @@ class TestConvenienceFunctions:
         assert "An entity" in prompt
         assert "relates" in prompt
 
-    def test_generate_output_schema(
-        self, sample_schema: DomainSchema
-    ) -> None:
+    def test_generate_output_schema(self, sample_schema: DomainSchema) -> None:
         """Test convenience function for JSON schema."""
         schema = generate_output_schema(sample_schema)
 
@@ -511,9 +493,7 @@ class TestEdgeCases:
         """Create a generator instance."""
         return DomainPromptGenerator()
 
-    def test_schema_without_examples(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_schema_without_examples(self, generator: DomainPromptGenerator) -> None:
         """Test schema with no examples."""
         schema = DomainSchema(
             domain_id="no_examples",
@@ -541,9 +521,7 @@ class TestEdgeCases:
         # Should not have examples section
         assert "examples:" not in prompt
 
-    def test_relationship_without_constraints(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_relationship_without_constraints(self, generator: DomainPromptGenerator) -> None:
         """Test relationship with no source/target constraints."""
         schema = DomainSchema(
             domain_id="no_constraints",
@@ -576,17 +554,13 @@ class TestEdgeCases:
         assert "from:" not in rel_line
         assert "to:" not in rel_line
 
-    def test_empty_content_user_prompt(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_empty_content_user_prompt(self, generator: DomainPromptGenerator) -> None:
         """Test user prompt with empty content."""
         prompt = generator.generate_user_prompt("")
 
         assert "Extract entities and relationships" in prompt
 
-    def test_whitespace_only_content(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_whitespace_only_content(self, generator: DomainPromptGenerator) -> None:
         """Test user prompt with whitespace-only content."""
         prompt = generator.generate_user_prompt("   \n\t   ")
 
@@ -599,9 +573,7 @@ class TestEdgeCases:
         assert generator.max_content_length == DEFAULT_MAX_CONTENT_LENGTH
         assert generator.max_content_length >= 4000  # Should be large enough for most use cases
 
-    def test_template_without_placeholders(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_template_without_placeholders(self, generator: DomainPromptGenerator) -> None:
         """Test schema with template that has no standard placeholders."""
         schema = DomainSchema(
             domain_id="no_placeholders",
@@ -627,9 +599,7 @@ class TestEdgeCases:
         # Should return template unchanged
         assert prompt == "This is a static template without placeholders."
 
-    def test_multiple_entity_types(
-        self, generator: DomainPromptGenerator
-    ) -> None:
+    def test_multiple_entity_types(self, generator: DomainPromptGenerator) -> None:
         """Test schema with many entity types."""
         entity_types = [
             EntityTypeSchema(

@@ -80,12 +80,15 @@ def mock_registry():
     domain4.description = "Encyclopedia and wiki content"
 
     registry.list_domains.return_value = [domain1, domain2, domain3, domain4]
-    registry.has_domain.side_effect = lambda d: d in [
-        "technical_documentation",
-        "literature_fiction",
-        "news_journalism",
-        "encyclopedia_wiki",
-    ]
+    registry.has_domain.side_effect = lambda d: (
+        d
+        in [
+            "technical_documentation",
+            "literature_fiction",
+            "news_journalism",
+            "encyclopedia_wiki",
+        ]
+    )
 
     return registry
 
@@ -177,9 +180,7 @@ class TestClassification:
             '{"domain": "literature_fiction", "confidence": 0.85}'
         )
 
-        result = await classifier.classify(
-            sample_long_content, tenant_id="tenant-123"
-        )
+        result = await classifier.classify(sample_long_content, tenant_id="tenant-123")
 
         assert result.domain == "literature_fiction"
         # Verify the provider was called
@@ -230,9 +231,7 @@ class TestContentLength:
         assert "too short" in result.reasoning.lower()
 
     @pytest.mark.asyncio
-    async def test_minimum_length_content(
-        self, classifier, mock_provider, mock_inference_response
-    ):
+    async def test_minimum_length_content(self, classifier, mock_provider, mock_inference_response):
         """Test content exactly at minimum length threshold."""
         # Content just at MIN_CONTENT_LENGTH (100 chars)
         content = "A" * MIN_CONTENT_LENGTH
@@ -282,8 +281,7 @@ class TestSanitization:
     ):
         """Test that email addresses are replaced."""
         content = (
-            "Contact john.doe@example.com for support. "
-            "Also admin@company.org is available. " * 5
+            "Contact john.doe@example.com for support. Also admin@company.org is available. " * 5
         )
 
         mock_provider.infer.return_value = mock_inference_response(
@@ -307,8 +305,7 @@ class TestSanitization:
     ):
         """Test that phone numbers are replaced."""
         content = (
-            "Call us at 555-123-4567 or 555.987.6543 for assistance. "
-            "Some more content here. " * 5
+            "Call us at 555-123-4567 or 555.987.6543 for assistance. Some more content here. " * 5
         )
 
         mock_provider.infer.return_value = mock_inference_response(
@@ -325,9 +322,7 @@ class TestSanitization:
         assert "[PHONE]" in request.prompt
 
     @pytest.mark.asyncio
-    async def test_sanitizes_ssn_patterns(
-        self, classifier, mock_provider, mock_inference_response
-    ):
+    async def test_sanitizes_ssn_patterns(self, classifier, mock_provider, mock_inference_response):
         """Test that SSN-like patterns are replaced."""
         content = (
             "SSN: 123-45-6789 is sensitive. Also 987-65-4321 should be hidden. "
@@ -424,9 +419,7 @@ class TestErrorHandling:
     """Tests for error handling in classify method."""
 
     @pytest.mark.asyncio
-    async def test_timeout_returns_fallback(
-        self, classifier, mock_provider, sample_long_content
-    ):
+    async def test_timeout_returns_fallback(self, classifier, mock_provider, sample_long_content):
         """Test timeout handling returns fallback."""
         mock_provider.infer.side_effect = TimeoutError("Request timed out")
 
@@ -488,9 +481,7 @@ class TestErrorHandling:
         self, classifier, mock_provider, mock_inference_response, sample_long_content
     ):
         """Test handling of invalid JSON response."""
-        mock_provider.infer.return_value = mock_inference_response(
-            "Not valid JSON at all"
-        )
+        mock_provider.infer.return_value = mock_inference_response("Not valid JSON at all")
 
         result = await classifier.classify(sample_long_content)
 
@@ -504,9 +495,7 @@ class TestErrorHandling:
         self, classifier, mock_provider, mock_inference_response, sample_long_content
     ):
         """Test handling of JSON without required fields."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"foo": "bar", "baz": 123}'
-        )
+        mock_provider.infer.return_value = mock_inference_response('{"foo": "bar", "baz": 123}')
 
         result = await classifier.classify(sample_long_content)
 
@@ -560,8 +549,7 @@ class TestConfidenceThreshold:
         )
 
         mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "literature_fiction", "confidence": 0.5, '
-            '"reasoning": "Not very sure"}'
+            '{"domain": "literature_fiction", "confidence": 0.5, "reasoning": "Not very sure"}'
         )
 
         result = await classifier.classify(sample_long_content)
@@ -676,9 +664,7 @@ class TestClassifyContentFunction:
     """Tests for the classify_content convenience function."""
 
     @pytest.mark.asyncio
-    async def test_classify_content_function(
-        self, mock_provider, mock_inference_response
-    ):
+    async def test_classify_content_function(self, mock_provider, mock_inference_response):
         """Test the convenience function works correctly."""
         content = "A" * 150  # Long enough content
 
@@ -686,9 +672,7 @@ class TestClassifyContentFunction:
             '{"domain": "encyclopedia_wiki", "confidence": 0.75}'
         )
 
-        with patch(
-            "kg_builder.extraction.classifier.get_domain_registry"
-        ) as mock_get_registry:
+        with patch("kg_builder.extraction.classifier.get_domain_registry") as mock_get_registry:
             mock_registry = MagicMock()
             mock_registry.list_domains.return_value = []
             mock_registry.has_domain.return_value = True
@@ -714,9 +698,7 @@ class TestClassifyContentFunction:
             '{"domain": "literature_fiction", "confidence": 0.4}'
         )
 
-        with patch(
-            "kg_builder.extraction.classifier.get_domain_registry"
-        ) as mock_get_registry:
+        with patch("kg_builder.extraction.classifier.get_domain_registry") as mock_get_registry:
             mock_registry = MagicMock()
             mock_registry.list_domains.return_value = []
             mock_registry.has_domain.return_value = True
@@ -742,9 +724,7 @@ class TestClassifyContentFunction:
             '{"domain": "unknown_xyz", "confidence": 0.9}'
         )
 
-        with patch(
-            "kg_builder.extraction.classifier.get_domain_registry"
-        ) as mock_get_registry:
+        with patch("kg_builder.extraction.classifier.get_domain_registry") as mock_get_registry:
             mock_registry = MagicMock()
             mock_registry.list_domains.return_value = []
             mock_registry.has_domain.return_value = False  # Unknown domain
@@ -774,7 +754,7 @@ class TestJsonExtraction:
     ):
         """Test JSON extraction when LLM includes extra text."""
         mock_provider.infer.return_value = mock_inference_response(
-            'Here is my analysis:\n'
+            "Here is my analysis:\n"
             '{"domain": "technical_documentation", "confidence": 0.88, '
             '"reasoning": "Contains code examples"}\n'
             "That's my classification."
@@ -791,9 +771,7 @@ class TestJsonExtraction:
     ):
         """Test JSON extraction from markdown code blocks."""
         mock_provider.infer.return_value = mock_inference_response(
-            "```json\n"
-            '{"domain": "news_journalism", "confidence": 0.77}\n'
-            "```"
+            '```json\n{"domain": "news_journalism", "confidence": 0.77}\n```'
         )
 
         result = await classifier.classify(sample_long_content)

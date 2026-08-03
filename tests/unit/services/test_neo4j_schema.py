@@ -21,7 +21,11 @@ sys.modules["kg_builder.services.neo4j"] = mock_neo4j_service
 # Import the module directly using importlib to avoid triggering __init__.py
 spec = importlib.util.spec_from_file_location(
     "neo4j_schema",
-    Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "services" / "neo4j_schema.py",
+    Path(__file__).parent.parent.parent.parent
+    / "src"
+    / "kg_builder"
+    / "services"
+    / "neo4j_schema.py",
 )
 neo4j_schema = importlib.util.module_from_spec(spec)
 sys.modules["kg_builder.services.neo4j_schema"] = neo4j_schema
@@ -288,15 +292,11 @@ async def test_verify_schema_invalid_when_indexes_missing(mock_neo4j_service):
 
     # Constraint exists
     constraint_result = AsyncMock()
-    constraint_result.__aiter__ = lambda self: MockAsyncIterator(
-        [{"name": "entity_id_unique"}]
-    )
+    constraint_result.__aiter__ = lambda self: MockAsyncIterator([{"name": "entity_id_unique"}])
 
     # Only some indexes exist
     index_result = AsyncMock()
-    index_result.__aiter__ = lambda self: MockAsyncIterator(
-        [{"name": "entity_tenant_idx"}]
-    )
+    index_result.__aiter__ = lambda self: MockAsyncIterator([{"name": "entity_tenant_idx"}])
 
     session.run = AsyncMock(side_effect=[constraint_result, index_result])
 

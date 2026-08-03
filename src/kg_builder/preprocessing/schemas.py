@@ -115,9 +115,7 @@ class LLMMergeResponse(BaseModel):
     ambiguous entity pairs.
     """
 
-    decisions: list[dict] = Field(
-        description="List of merge decisions for each candidate pair"
-    )
+    decisions: list[dict] = Field(description="List of merge decisions for each candidate pair")
 
 
 @dataclass

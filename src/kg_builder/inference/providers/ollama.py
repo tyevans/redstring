@@ -179,9 +179,7 @@ class OllamaProvider(InferenceProvider):
             )
             # Check for specific error types in message
             error_str = str(e).lower()
-            if "model" in error_str and (
-                "not found" in error_str or "unknown" in error_str
-            ):
+            if "model" in error_str and ("not found" in error_str or "unknown" in error_str):
                 raise ProviderInvalidRequestError(
                     f"Model '{model_name}' not found on Ollama server",
                     provider_type="ollama",
@@ -304,13 +302,9 @@ class OllamaProvider(InferenceProvider):
                 models.append(
                     ModelInfo(
                         name=name,
-                        display_name=(
-                            name.split(":")[0].title() if ":" in name else name.title()
-                        ),
+                        display_name=(name.split(":")[0].title() if ":" in name else name.title()),
                         size_bytes=model_data.get("size"),
-                        parameter_count=model_data.get("details", {}).get(
-                            "parameter_size"
-                        ),
+                        parameter_count=model_data.get("details", {}).get("parameter_size"),
                         capabilities=["chat", "completion"],
                     )
                 )

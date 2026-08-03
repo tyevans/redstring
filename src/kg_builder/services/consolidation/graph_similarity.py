@@ -276,9 +276,7 @@ class GraphSimilarityService:
 
         # Compute similarities
         jaccard = self.compute_jaccard_similarity(neighborhood_a, neighborhood_b)
-        rel_type_sim = self.compute_relationship_type_similarity(
-            neighborhood_a, neighborhood_b
-        )
+        rel_type_sim = self.compute_relationship_type_similarity(neighborhood_a, neighborhood_b)
 
         # Weighted combination
         # Jaccard (actual shared neighbors) is more important

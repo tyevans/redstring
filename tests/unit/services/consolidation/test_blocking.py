@@ -4,7 +4,6 @@ Unit tests for the BlockingEngine service.
 Tests blocking strategies, candidate generation, and tenant isolation.
 """
 
-
 from kg_builder.services.consolidation.blocking import (
     BlockingEngine,
     BlockingResult,

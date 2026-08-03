@@ -90,9 +90,7 @@ class PipelineConfig:
         if self.chunk_size <= 0:
             raise PipelineConfigError(f"chunk_size must be > 0, got {self.chunk_size}")
         if self.chunk_overlap < 0:
-            raise PipelineConfigError(
-                f"chunk_overlap must be >= 0, got {self.chunk_overlap}"
-            )
+            raise PipelineConfigError(f"chunk_overlap must be >= 0, got {self.chunk_overlap}")
         if self.chunk_overlap >= self.chunk_size:
             raise PipelineConfigError(
                 f"chunk_overlap ({self.chunk_overlap}) must be < chunk_size ({self.chunk_size})"
@@ -399,12 +397,8 @@ class PreprocessingPipeline:
                 metrics.chunks_failed += 1
 
         metrics.extraction_time_ms = (time.time() - extract_start) * 1000
-        metrics.entities_before_merge = sum(
-            len(e) for e in entities_by_chunk.values()
-        )
-        metrics.relationships_before_merge = sum(
-            len(r) for r in relationships_by_chunk.values()
-        )
+        metrics.entities_before_merge = sum(len(e) for e in entities_by_chunk.values())
+        metrics.relationships_before_merge = sum(len(r) for r in relationships_by_chunk.values())
 
         logger.info(
             "Extraction complete",
@@ -431,15 +425,9 @@ class PreprocessingPipeline:
         except Exception as e:
             logger.error(f"Merging failed: {e}, returning unmerged entities")
             merged_entities = [
-                entity
-                for entities in entities_by_chunk.values()
-                for entity in entities
+                entity for entities in entities_by_chunk.values() for entity in entities
             ]
-            merged_relationships = [
-                rel
-                for rels in relationships_by_chunk.values()
-                for rel in rels
-            ]
+            merged_relationships = [rel for rels in relationships_by_chunk.values() for rel in rels]
             merging_method = "failed"
 
         # Clean up internal keys from entities

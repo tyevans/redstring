@@ -228,6 +228,4 @@ class MergeReviewItem(Base):
 
     def __repr__(self) -> str:
         """Return string representation."""
-        return (
-            f"<MergeReviewItem {self.id} ({self.status.value}) conf={self.confidence:.2f}>"
-        )
+        return f"<MergeReviewItem {self.id} ({self.status.value}) conf={self.confidence:.2f}>"

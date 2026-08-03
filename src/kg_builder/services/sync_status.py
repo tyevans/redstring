@@ -163,9 +163,7 @@ class SyncStatusService:
             "synced_entities": synced_entities,
             "pending_entities": pending_entities,
             "sync_percentage_entities": (
-                round(synced_entities / total_entities * 100, 2)
-                if total_entities > 0
-                else 100.0
+                round(synced_entities / total_entities * 100, 2) if total_entities > 0 else 100.0
             ),
             "total_relationships": total_relationships,
             "synced_relationships": synced_relationships,

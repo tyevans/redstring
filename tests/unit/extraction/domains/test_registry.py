@@ -148,18 +148,14 @@ class TestDomainSchemaRegistryLoading:
             force_new=True,
         )
 
-    def test_load_schemas_from_directory(
-        self, registry_with_schemas: DomainSchemaRegistry
-    ):
+    def test_load_schemas_from_directory(self, registry_with_schemas: DomainSchemaRegistry):
         """Test loading schemas from a directory."""
         count = registry_with_schemas.load_schemas()
         assert count == 2
         assert registry_with_schemas.is_loaded
         assert len(registry_with_schemas) == 2
 
-    def test_load_schemas_returns_count(
-        self, registry_with_schemas: DomainSchemaRegistry
-    ):
+    def test_load_schemas_returns_count(self, registry_with_schemas: DomainSchemaRegistry):
         """Test that load_schemas returns the count of loaded schemas."""
         count = registry_with_schemas.load_schemas()
         assert count == 2
@@ -173,17 +169,13 @@ class TestDomainSchemaRegistryLoading:
         count = registry_with_schemas.load_schemas()
         assert count == 2
 
-    def test_reload_schemas_forces_reload(
-        self, registry_with_schemas: DomainSchemaRegistry
-    ):
+    def test_reload_schemas_forces_reload(self, registry_with_schemas: DomainSchemaRegistry):
         """Test that reload_schemas forces a reload."""
         registry_with_schemas.load_schemas()
         count = registry_with_schemas.reload_schemas()
         assert count == 2
 
-    def test_ensure_loaded_triggers_loading(
-        self, registry_with_schemas: DomainSchemaRegistry
-    ):
+    def test_ensure_loaded_triggers_loading(self, registry_with_schemas: DomainSchemaRegistry):
         """Test that ensure_loaded triggers loading if not loaded."""
         assert not registry_with_schemas.is_loaded
         registry_with_schemas.ensure_loaded()
@@ -269,9 +261,7 @@ class TestDomainSchemaRegistryAccessors:
             registry.get_schema("unknown_domain")
         assert "unknown_domain" in str(exc_info.value)
         # Should list available domains
-        assert "test_domain" in str(exc_info.value) or "second_domain" in str(
-            exc_info.value
-        )
+        assert "test_domain" in str(exc_info.value) or "second_domain" in str(exc_info.value)
 
     def test_get_schema_or_none_returns_schema(self, registry: DomainSchemaRegistry):
         """Test get_schema_or_none for existing domain."""
@@ -527,9 +517,7 @@ class TestDomainSchemaRegistryEntityTypeSearch:
         assert len(schemas) == 1
         assert schemas[0].domain_id == "test_domain"
 
-    def test_get_schemas_for_entity_type_not_found(
-        self, registry: DomainSchemaRegistry
-    ):
+    def test_get_schemas_for_entity_type_not_found(self, registry: DomainSchemaRegistry):
         """Test finding schemas for unknown entity type."""
         schemas = registry.get_schemas_for_entity_type("unknown_type")
         assert len(schemas) == 0

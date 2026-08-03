@@ -110,9 +110,7 @@ class MergeCandidateResponse(BaseModel):
         le=1.0,
     )
     decision: MergeDecision = Field(description="Recommended decision")
-    similarity_breakdown: SimilarityBreakdown = Field(
-        description="Detailed similarity scores"
-    )
+    similarity_breakdown: SimilarityBreakdown = Field(description="Detailed similarity scores")
     blocking_keys: list[str] = Field(
         default_factory=list, description="Blocking keys that matched this pair"
     )
@@ -148,12 +146,8 @@ class ComputeCandidatesRequest(BaseModel):
         le=1.0,
         description="Minimum confidence threshold",
     )
-    include_embedding: bool = Field(
-        True, description="Include embedding similarity in computation"
-    )
-    include_graph: bool = Field(
-        True, description="Include graph similarity in computation"
-    )
+    include_embedding: bool = Field(True, description="Include embedding similarity in computation")
+    include_graph: bool = Field(True, description="Include graph similarity in computation")
     max_candidates_per_entity: int = Field(
         10, ge=1, le=100, description="Maximum candidates to return per entity"
     )
@@ -437,9 +431,7 @@ class ConsolidationConfigResponse(BaseModel):
         ge=0.0, le=1.0, description="Threshold for queueing human review"
     )
     max_block_size: int = Field(gt=0, description="Maximum entities per blocking group")
-    enable_embedding_similarity: bool = Field(
-        description="Whether to compute embedding similarity"
-    )
+    enable_embedding_similarity: bool = Field(description="Whether to compute embedding similarity")
     enable_graph_similarity: bool = Field(
         description="Whether to compute graph neighborhood similarity"
     )
@@ -479,9 +471,7 @@ class ConsolidationConfigRequest(BaseModel):
     embedding_model: str | None = Field(
         None, description="Embedding model to use", min_length=1, max_length=255
     )
-    feature_weights: dict | None = Field(
-        None, description="Feature weights for scoring"
-    )
+    feature_weights: dict | None = Field(None, description="Feature weights for scoring")
 
     @field_validator("feature_weights")
     @classmethod
@@ -517,9 +507,7 @@ class BatchConsolidationRequest(BaseModel):
     dry_run: bool = Field(
         False, description="If true, only report what would be merged without executing"
     )
-    max_merges: int = Field(
-        1000, ge=1, le=10000, description="Maximum number of merges to execute"
-    )
+    max_merges: int = Field(1000, ge=1, le=10000, description="Maximum number of merges to execute")
 
 
 class BatchConsolidationResponse(BaseModel):

@@ -326,10 +326,7 @@ class TestEmbeddingCacheBatchSet:
         cache, mock_redis, mock_pipeline = cache_with_mock
 
         entity_ids = [uuid4(), uuid4()]
-        embeddings = {
-            eid: np.random.randn(1024).astype(np.float32)
-            for eid in entity_ids
-        }
+        embeddings = {eid: np.random.randn(1024).astype(np.float32) for eid in entity_ids}
 
         result = await cache.set_batch(uuid4(), embeddings)
 

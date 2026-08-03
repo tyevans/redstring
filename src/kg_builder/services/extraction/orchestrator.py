@@ -44,9 +44,7 @@ class ExtractionResult:
 class ExtractorProtocol(Protocol):
     """Protocol for extraction services."""
 
-    async def extract(
-        self, content: str, page_url: str = ""
-    ) -> "ExtractionResult": ...
+    async def extract(self, content: str, page_url: str = "") -> "ExtractionResult": ...
 
 
 class ExtractionOrchestrator:
@@ -168,23 +166,18 @@ class ExtractionOrchestrator:
         """
         # If a provider is specified, use it
         if extraction_provider is not None:
-            return self._extract_with_provider(
-                text, tenant_id, page_url, extraction_provider
-            )
+            return self._extract_with_provider(text, tenant_id, page_url, extraction_provider)
 
         # Check if Ollama is configured for fallback
         if not settings.OLLAMA_BASE_URL:
             logger.warning(
-                "OLLAMA_BASE_URL not configured and no provider specified, "
-                "skipping LLM extraction"
+                "OLLAMA_BASE_URL not configured and no provider specified, skipping LLM extraction"
             )
             return [], []
 
         # Use preprocessing pipeline if enabled
         if settings.PREPROCESSING_ENABLED:
-            return self._extract_with_preprocessing_pipeline(
-                text, tenant_id, page_url
-            )
+            return self._extract_with_preprocessing_pipeline(text, tenant_id, page_url)
         else:
             return self._extract_with_llm_legacy(text, tenant_id, page_url)
 
@@ -242,9 +235,7 @@ class ExtractionOrchestrator:
             elapsed = time.time() - start_time
 
             # Determine extraction method based on provider type
-            method = self._get_extraction_method_for_provider(
-                extraction_provider.provider_type
-            )
+            method = self._get_extraction_method_for_provider(extraction_provider.provider_type)
 
             # Convert ExtractionResult to list of entity dicts
             entities = self._convert_extraction_result_entities(result, method)
@@ -287,8 +278,7 @@ class ExtractionOrchestrator:
         except Exception as e:
             elapsed = time.time() - start_time
             logger.warning(
-                f"Provider extraction failed with unexpected error: "
-                f"{type(e).__name__}: {e}",
+                f"Provider extraction failed with unexpected error: {type(e).__name__}: {e}",
                 extra={
                     "page_url": page_url,
                     "error": str(e),
@@ -471,9 +461,7 @@ class ExtractionOrchestrator:
             elapsed = time.time() - start_time
 
             # Convert ExtractionResult to list of entity dicts
-            entities = self._convert_extraction_result_entities(
-                result, ExtractionMethod.LLM_OLLAMA
-            )
+            entities = self._convert_extraction_result_entities(result, ExtractionMethod.LLM_OLLAMA)
             relationships = self._convert_extraction_result_relationships(result)
 
             logger.info(
@@ -517,9 +505,7 @@ class ExtractionOrchestrator:
             )
             return [], []
 
-    def _convert_extraction_result_entities(
-        self, result, method: ExtractionMethod
-    ) -> list[dict]:
+    def _convert_extraction_result_entities(self, result, method: ExtractionMethod) -> list[dict]:
         """Convert ExtractionResult entities to dict format."""
         entities = []
         for entity in result.entities:

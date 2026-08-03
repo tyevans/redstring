@@ -105,7 +105,7 @@ class TestFeatureWeights:
         normalized = weights.normalize(enabled)
 
         # Should get equal weights
-        assert all(v == pytest.approx(1/3) for v in normalized.values())
+        assert all(v == pytest.approx(1 / 3) for v in normalized.values())
 
     def test_to_dict(self):
         """Test conversion to dictionary."""
@@ -323,9 +323,7 @@ class TestComputeCombinedScore:
         return scores
 
     @pytest.mark.asyncio
-    async def test_combined_score_string_only(
-        self, mock_config, mock_entities, mock_string_scores
-    ):
+    async def test_combined_score_string_only(self, mock_config, mock_entities, mock_string_scores):
         """Test combined score with only string scores."""
         mock_config.enable_embedding_similarity = False
         mock_config.enable_graph_similarity = False
@@ -377,9 +375,7 @@ class TestComputeCombinedScore:
         mock_embedding.compute_similarity.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_combined_score_with_graph(
-        self, mock_config, mock_entities, mock_string_scores
-    ):
+    async def test_combined_score_with_graph(self, mock_config, mock_entities, mock_string_scores):
         """Test combined score includes graph similarity."""
         mock_graph = AsyncMock()
         mock_graph.compute_similarity.return_value = 0.75
@@ -427,9 +423,7 @@ class TestComputeCombinedScore:
         assert result.embedding_cosine is None
 
     @pytest.mark.asyncio
-    async def test_combined_score_range(
-        self, mock_config, mock_entities, mock_string_scores
-    ):
+    async def test_combined_score_range(self, mock_config, mock_entities, mock_string_scores):
         """Test combined score is always in valid range."""
         mock_embedding = AsyncMock()
         mock_embedding.compute_similarity.return_value = 0.95
@@ -513,9 +507,7 @@ class TestBatchScoring:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_batch_scores_sorted_descending(
-        self, mock_config, mock_source_and_candidates
-    ):
+    async def test_batch_scores_sorted_descending(self, mock_config, mock_source_and_candidates):
         """Test batch results are sorted by combined score descending."""
         mock_config.enable_embedding_similarity = False
         mock_config.enable_graph_similarity = False
@@ -535,9 +527,7 @@ class TestBatchScoring:
         assert scores == sorted(scores, reverse=True)
 
     @pytest.mark.asyncio
-    async def test_batch_scores_uses_batch_embedding(
-        self, mock_config, mock_source_and_candidates
-    ):
+    async def test_batch_scores_uses_batch_embedding(self, mock_config, mock_source_and_candidates):
         """Test batch uses batch embedding computation."""
         mock_embedding = AsyncMock()
         mock_embedding.compute_similarities_batch.return_value = [

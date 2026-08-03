@@ -49,9 +49,7 @@ class InferredTemporalRelationship(BaseModel):
     target_event_id: uuid.UUID
     source_event_name: str
     target_event_name: str
-    relationship_type: Literal[
-        "precedes", "follows", "during", "overlaps", "concurrent"
-    ]
+    relationship_type: Literal["precedes", "follows", "during", "overlaps", "concurrent"]
     confidence: float
     evidence: str
     is_inferred: bool = True

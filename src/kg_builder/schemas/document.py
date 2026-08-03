@@ -56,8 +56,12 @@ class UploadedDocumentResponse(BaseModel):
     filename: str = Field(..., description="Original filename")
     content_type: str = Field(..., description="MIME type (text/plain, text/markdown, text/html)")
     file_size_bytes: int = Field(..., description="Size of the file in bytes")
-    extraction_status: str = Field(..., description="Extraction status (pending, processing, completed, failed)")
-    enable_timeline_extraction: bool = Field(..., description="Whether timeline extraction is enabled")
+    extraction_status: str = Field(
+        ..., description="Extraction status (pending, processing, completed, failed)"
+    )
+    enable_timeline_extraction: bool = Field(
+        ..., description="Whether timeline extraction is enabled"
+    )
     entity_count: int = Field(..., description="Number of entities extracted")
     created_at: datetime = Field(..., description="When the document was uploaded")
     updated_at: datetime = Field(..., description="Last update timestamp")

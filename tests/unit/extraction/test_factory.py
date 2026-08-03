@@ -87,9 +87,7 @@ class TestOpenAIServiceCreation:
             mock_encryption.is_encrypted.return_value = False
             mock_enc.return_value = mock_encryption
 
-            service = ExtractionProviderFactory.create_service(
-                openai_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(openai_provider, tenant_id)
 
             from kg_builder.extraction.openai_extractor import OpenAIExtractionService
 
@@ -108,9 +106,7 @@ class TestOpenAIServiceCreation:
             mock_encryption.decrypt.return_value = "sk-decrypted-key"
             mock_enc.return_value = mock_encryption
 
-            service = ExtractionProviderFactory.create_service(
-                openai_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(openai_provider, tenant_id)
 
             mock_encryption.decrypt.assert_called_once_with(
                 "enc:encrypted-key-data",
@@ -129,9 +125,7 @@ class TestOpenAIServiceCreation:
             mock_encryption.is_encrypted.return_value = False
             mock_enc.return_value = mock_encryption
 
-            service = ExtractionProviderFactory.create_service(
-                openai_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(openai_provider, tenant_id)
 
             assert service._model == "gpt-4-turbo"
 
@@ -145,9 +139,7 @@ class TestOpenAIServiceCreation:
             mock_encryption.is_encrypted.return_value = False
             mock_enc.return_value = mock_encryption
 
-            service = ExtractionProviderFactory.create_service(
-                openai_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(openai_provider, tenant_id)
 
             assert service._model == "gpt-4o"
 
@@ -160,15 +152,11 @@ class TestOpenAIServiceCreation:
             mock_encryption.is_encrypted.return_value = False
             mock_enc.return_value = mock_encryption
 
-            service = ExtractionProviderFactory.create_service(
-                openai_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(openai_provider, tenant_id)
 
             assert service._temperature == 0.5
 
-    def test_create_openai_service_missing_api_key_raises(
-        self, openai_provider, tenant_id
-    ):
+    def test_create_openai_service_missing_api_key_raises(self, openai_provider, tenant_id):
         """Test that missing API key raises ProviderConfigError."""
         openai_provider.config = {}
 
@@ -199,9 +187,7 @@ class TestOllamaServiceCreation:
             mock_encryption.is_encrypted.return_value = False
             mock_enc.return_value = mock_encryption
 
-            service = ExtractionProviderFactory.create_service(
-                ollama_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(ollama_provider, tenant_id)
 
             from kg_builder.extraction.ollama_extractor import OllamaExtractionService
 
@@ -218,9 +204,7 @@ class TestOllamaServiceCreation:
             mock_encryption.is_encrypted.return_value = False
             mock_enc.return_value = mock_encryption
 
-            service = ExtractionProviderFactory.create_service(
-                ollama_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(ollama_provider, tenant_id)
 
             assert service._base_url == "http://custom-ollama:11434"
 
@@ -234,9 +218,7 @@ class TestOllamaServiceCreation:
             mock_enc.return_value = mock_encryption
 
             # Should not raise
-            service = ExtractionProviderFactory.create_service(
-                ollama_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(ollama_provider, tenant_id)
 
             from kg_builder.extraction.ollama_extractor import OllamaExtractionService
 
@@ -251,9 +233,7 @@ class TestOllamaServiceCreation:
 class TestAnthropicServiceCreation:
     """Tests for creating Anthropic extraction services."""
 
-    def test_create_anthropic_service_not_implemented(
-        self, anthropic_provider, tenant_id
-    ):
+    def test_create_anthropic_service_not_implemented(self, anthropic_provider, tenant_id):
         """Test that Anthropic provider raises NotImplementedError."""
         with patch("kg_builder.encryption.get_encryption_service") as mock_enc:
             mock_encryption = MagicMock()
@@ -298,9 +278,7 @@ class TestKeyDecryption:
             mock_encryption.is_encrypted.return_value = False
             mock_enc.return_value = mock_encryption
 
-            service = ExtractionProviderFactory.create_service(
-                openai_provider, tenant_id
-            )
+            service = ExtractionProviderFactory.create_service(openai_provider, tenant_id)
 
             mock_encryption.decrypt.assert_not_called()
             assert service._api_key == "sk-plaintext-key"

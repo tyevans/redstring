@@ -240,9 +240,7 @@ class ExtractionProviderRegistry:
             creator_cls: type[ExtractionServiceCreator],
         ) -> type[ExtractionServiceCreator]:
             self._creators[provider_type] = creator_cls()
-            logger.debug(
-                f"Registered extraction service creator for {provider_type.value}"
-            )
+            logger.debug(f"Registered extraction service creator for {provider_type.value}")
             return creator_cls
 
         return decorator
@@ -259,13 +257,9 @@ class ExtractionProviderRegistry:
             creator: The creator instance to register
         """
         self._creators[provider_type] = creator
-        logger.debug(
-            f"Registered extraction service creator for {provider_type.value}"
-        )
+        logger.debug(f"Registered extraction service creator for {provider_type.value}")
 
-    def get_creator(
-        self, provider_type: ExtractionProviderType
-    ) -> ExtractionServiceCreator:
+    def get_creator(self, provider_type: ExtractionProviderType) -> ExtractionServiceCreator:
         """Get the creator for a provider type.
 
         Args:
@@ -396,12 +390,8 @@ class ExtractionProviderRegistry:
 extraction_provider_registry = ExtractionProviderRegistry()
 
 # Register built-in providers
-extraction_provider_registry.register_creator(
-    ExtractionProviderType.OLLAMA, OllamaServiceCreator()
-)
-extraction_provider_registry.register_creator(
-    ExtractionProviderType.OPENAI, OpenAIServiceCreator()
-)
+extraction_provider_registry.register_creator(ExtractionProviderType.OLLAMA, OllamaServiceCreator())
+extraction_provider_registry.register_creator(ExtractionProviderType.OPENAI, OpenAIServiceCreator())
 extraction_provider_registry.register_creator(
     ExtractionProviderType.ANTHROPIC, AnthropicServiceCreator()
 )

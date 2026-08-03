@@ -134,9 +134,7 @@ async def test_get_unsynced_entities_returns_results(mock_session, mock_entity, 
     mock_session.execute.return_value = create_mock_scalars_result([mock_entity])
 
     with patch("kg_builder.services.sync_status.select") as mock_select:
-        mock_select.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value = (
-            MagicMock()
-        )
+        mock_select.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value = MagicMock()
 
         service = SyncStatusService(mock_session)
         entities = await service.get_unsynced_entities(tenant_id=tenant_id)
@@ -154,9 +152,7 @@ async def test_get_unsynced_entities_empty_result(mock_session, tenant_id):
     mock_session.execute.return_value = create_mock_scalars_result([])
 
     with patch("kg_builder.services.sync_status.select") as mock_select:
-        mock_select.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value = (
-            MagicMock()
-        )
+        mock_select.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value = MagicMock()
 
         service = SyncStatusService(mock_session)
         entities = await service.get_unsynced_entities(tenant_id=tenant_id)
@@ -174,9 +170,7 @@ async def test_get_unsynced_relationships_returns_results(
     mock_session.execute.return_value = create_mock_scalars_result([mock_relationship])
 
     with patch("kg_builder.services.sync_status.select") as mock_select:
-        mock_select.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value = (
-            MagicMock()
-        )
+        mock_select.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value = MagicMock()
 
         service = SyncStatusService(mock_session)
         relationships = await service.get_unsynced_relationships(tenant_id=tenant_id)
@@ -199,13 +193,13 @@ async def test_get_sync_stats_calculates_correctly(mock_session, tenant_id):
     # Configure mock to return different results for each call
     mock_session.execute.side_effect = [entity_result, rel_result]
 
-    with patch("kg_builder.services.sync_status.select") as mock_select, patch(
-        "kg_builder.services.sync_status.func"
-    ), patch("kg_builder.services.sync_status.case"):
+    with (
+        patch("kg_builder.services.sync_status.select") as mock_select,
+        patch("kg_builder.services.sync_status.func"),
+        patch("kg_builder.services.sync_status.case"),
+    ):
         mock_select.return_value.select_from.return_value = MagicMock()
-        mock_select.return_value.select_from.return_value.where.return_value = (
-            MagicMock()
-        )
+        mock_select.return_value.select_from.return_value.where.return_value = MagicMock()
 
         service = SyncStatusService(mock_session)
         stats = await service.get_sync_stats(tenant_id=tenant_id)
@@ -231,13 +225,13 @@ async def test_get_sync_stats_handles_zero_entities(mock_session, tenant_id):
 
     mock_session.execute.side_effect = [entity_result, rel_result]
 
-    with patch("kg_builder.services.sync_status.select") as mock_select, patch(
-        "kg_builder.services.sync_status.func"
-    ), patch("kg_builder.services.sync_status.case"):
+    with (
+        patch("kg_builder.services.sync_status.select") as mock_select,
+        patch("kg_builder.services.sync_status.func"),
+        patch("kg_builder.services.sync_status.case"),
+    ):
         mock_select.return_value.select_from.return_value = MagicMock()
-        mock_select.return_value.select_from.return_value.where.return_value = (
-            MagicMock()
-        )
+        mock_select.return_value.select_from.return_value.where.return_value = MagicMock()
 
         service = SyncStatusService(mock_session)
         stats = await service.get_sync_stats(tenant_id=tenant_id)
@@ -263,13 +257,13 @@ async def test_get_sync_stats_handles_none_values(mock_session, tenant_id):
 
     mock_session.execute.side_effect = [entity_result, rel_result]
 
-    with patch("kg_builder.services.sync_status.select") as mock_select, patch(
-        "kg_builder.services.sync_status.func"
-    ), patch("kg_builder.services.sync_status.case"):
+    with (
+        patch("kg_builder.services.sync_status.select") as mock_select,
+        patch("kg_builder.services.sync_status.func"),
+        patch("kg_builder.services.sync_status.case"),
+    ):
         mock_select.return_value.select_from.return_value = MagicMock()
-        mock_select.return_value.select_from.return_value.where.return_value = (
-            MagicMock()
-        )
+        mock_select.return_value.select_from.return_value.where.return_value = MagicMock()
 
         service = SyncStatusService(mock_session)
         stats = await service.get_sync_stats(tenant_id=tenant_id)
@@ -290,13 +284,13 @@ async def test_get_sync_stats_percentage_rounding(mock_session, tenant_id):
 
     mock_session.execute.side_effect = [entity_result, rel_result]
 
-    with patch("kg_builder.services.sync_status.select") as mock_select, patch(
-        "kg_builder.services.sync_status.func"
-    ), patch("kg_builder.services.sync_status.case"):
+    with (
+        patch("kg_builder.services.sync_status.select") as mock_select,
+        patch("kg_builder.services.sync_status.func"),
+        patch("kg_builder.services.sync_status.case"),
+    ):
         mock_select.return_value.select_from.return_value = MagicMock()
-        mock_select.return_value.select_from.return_value.where.return_value = (
-            MagicMock()
-        )
+        mock_select.return_value.select_from.return_value.where.return_value = MagicMock()
 
         service = SyncStatusService(mock_session)
         stats = await service.get_sync_stats(tenant_id=tenant_id)
@@ -419,9 +413,7 @@ async def test_retry_failed_syncs_calls_get_unsynced(mock_session, mock_entity, 
         mock_select.return_value.where.return_value.order_by.return_value.limit.return_value = (
             MagicMock()
         )
-        mock_select.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value = (
-            MagicMock()
-        )
+        mock_select.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value = MagicMock()
 
         service = SyncStatusService(mock_session)
         entities = await service.retry_failed_syncs(batch_size=10, tenant_id=tenant_id)
