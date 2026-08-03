@@ -69,6 +69,27 @@ packages = ["src/kg_builder"]
 
 [tool.ruff]
 target-version = "py313"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kg_builder"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -82,3 +103,41 @@ markers = [
     "integration: integration tests",
     "accuracy: extraction accuracy tests",
 ]
+
+[tool.coverage.run]
+source = ["src/kg_builder"]
+branch = true
+parallel = true
+omit = ["*/__pycache__/*"]
+
+[tool.coverage.paths]
+source = ["src/kg_builder", "*/src/kg_builder"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "\\.\\.\\.",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]
+
+[tool.importlinter]
+root_packages = ["kg_builder"]
+include_external_packages = false
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture"
+type = "layers"
+layers = [
+    "kg_builder.services",
+    "kg_builder.extraction : kg_builder.graph : kg_builder.preprocessing : kg_builder.scraping : kg_builder.schemas",
+    "kg_builder.inference",
+    "kg_builder.models",
+    "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
+]
+exhaustive = false

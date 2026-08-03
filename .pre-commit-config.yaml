@@ -1,0 +1,60 @@
+default_install_hook_types: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+      - id: debug-statements
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # Everything below runs out of the project's uv environment so the versions
+  # match what `uv run` uses locally and in CI.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: bandit
+        name: bandit
+        entry: uv run bandit -c pyproject.toml -q
+        language: system
+        types: [python]
+        exclude: ^tests/
+        require_serial: true
+
+      - id: import-linter
+        name: import-linter
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false
+        files: ^(src/|pyproject\.toml$)
+        require_serial: true
+
+      - id: pytest-coverage-ratchet
+        name: pytest + coverage ratchet
+        entry: uv run python scripts/coverage_ratchet.py
+        language: system
+        pass_filenames: false
+        files: ^(src/|tests/|pyproject\.toml$|scripts/coverage_ratchet\.py$)
+        require_serial: true

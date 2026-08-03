@@ -13,5 +13,12 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+.hypothesis/
+.mutmut-cache
+mutants/
+.cosmic-ray/
+cosmic-ray.sqlite*
 uv.lock
