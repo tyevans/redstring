@@ -123,6 +123,16 @@ exclude_also = [
     "\\.\\.\\.",
 ]
 
+# Mutation testing. Run on demand, not on commit -- see also cosmic-ray.toml,
+# which covers decorated functions that mutmut 3.x refuses to mutate.
+#   uv run mutmut run
+#   uv run mutmut results
+[tool.mutmut]
+paths_to_mutate = ["src/kg_builder/"]
+tests_dir = ["tests/unit/"]
+runner = "uv run pytest -x -q --no-header -p no:randomly"
+also_copy = ["pyproject.toml", "tests/conftest.py"]
+
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "build", "dist"]
 

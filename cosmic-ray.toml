@@ -1,0 +1,17 @@
+# Cosmic Ray mutation testing.
+#
+# Complements mutmut: cosmic-ray mutates decorated functions, which mutmut 3.x
+# skips. Runs on demand, not on commit.
+#
+#   uv run cosmic-ray init cosmic-ray.toml session.sqlite
+#   uv run cosmic-ray exec cosmic-ray.toml session.sqlite
+#   uv run cr-report session.sqlite
+
+[cosmic-ray]
+module-path = "src/kg_builder"
+timeout = 60.0
+test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit"
+excluded-modules = []
+
+[cosmic-ray.distributor]
+name = "local"
