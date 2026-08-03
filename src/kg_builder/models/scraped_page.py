@@ -214,18 +214,18 @@ class ScrapedPage(Base):
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         doc="Tenant this page belongs to",
     )
 
-    job: Mapped["ScrapingJob"] = relationship(
+    job: Mapped[ScrapingJob] = relationship(
         "ScrapingJob",
         back_populates="scraped_pages",
         doc="Job that scraped this page",
     )
 
-    entities: Mapped[list["ExtractedEntity"]] = relationship(
+    entities: Mapped[list[ExtractedEntity]] = relationship(
         "ExtractedEntity",
         back_populates="source_page",
         cascade="all, delete-orphan",

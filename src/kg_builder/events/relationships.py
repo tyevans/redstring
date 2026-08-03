@@ -17,7 +17,6 @@ from pydantic import Field
 
 from kg_builder.events.base import TenantDomainEvent
 
-
 # =============================================================================
 # Pending Relationship Lifecycle Events
 # =============================================================================
@@ -214,8 +213,8 @@ class PendingRelationshipExpired(TenantDomainEvent):
 
 __all__ = [
     "PendingRelationshipCreated",
+    "PendingRelationshipExpired",
+    "PendingRelationshipFailed",
     "PendingRelationshipResolutionAttempted",
     "PendingRelationshipResolved",
-    "PendingRelationshipFailed",
-    "PendingRelationshipExpired",
 ]

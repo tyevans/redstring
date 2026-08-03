@@ -6,12 +6,12 @@ suitable for most websites.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from scrapy.http import Response
 
-from kg_builder.scraping.spiders.base import TenantAwareSpider
 from kg_builder.scraping.items import ScrapedPageItem
+from kg_builder.scraping.spiders.base import TenantAwareSpider
 
 logger = logging.getLogger(__name__)
 

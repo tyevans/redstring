@@ -4,15 +4,16 @@ Unit tests for EmbeddingCache service.
 Tests the Redis-based embedding cache with mocked Redis client.
 """
 
-import pytest
-import numpy as np
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
+import numpy as np
+import pytest
+
 from kg_builder.services.embedding_cache import (
-    EmbeddingCache,
     CACHE_KEY_PREFIX,
     DEFAULT_TTL_SECONDS,
+    EmbeddingCache,
     get_embedding_cache,
 )
 

@@ -18,8 +18,8 @@ from abc import ABC, abstractmethod
 from typing import Any, Protocol
 from uuid import UUID
 
-from kg_builder.extraction.schemas import ExtractionResult
 from kg_builder.extraction.prompts import DocumentationType
+from kg_builder.extraction.schemas import ExtractionResult
 
 
 class ExtractionServiceProtocol(Protocol):

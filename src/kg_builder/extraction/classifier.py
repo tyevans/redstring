@@ -83,7 +83,7 @@ class InferenceProviderProtocol(Protocol):
     can be used with the classifier.
     """
 
-    async def infer(self, request) -> "InferenceResponseProtocol":
+    async def infer(self, request) -> InferenceResponseProtocol:
         """Execute an inference request."""
         ...
 
@@ -123,11 +123,11 @@ class ContentClassifier:
 
     def __init__(
         self,
-        inference_provider: "InferenceProvider",
+        inference_provider: InferenceProvider,
         timeout_seconds: float = 30.0,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         fallback_domain: str = DEFAULT_FALLBACK_DOMAIN,
-        registry: "DomainSchemaRegistry | None" = None,
+        registry: DomainSchemaRegistry | None = None,
     ) -> None:
         """Initialize the classifier.
 
@@ -146,7 +146,7 @@ class ContentClassifier:
         self._fallback_domain = fallback_domain
         self._registry = registry
 
-    def _get_registry(self) -> "DomainSchemaRegistry":
+    def _get_registry(self) -> DomainSchemaRegistry:
         """Get the domain schema registry.
 
         Lazy-loads the registry on first access to avoid import cycles.
@@ -412,7 +412,7 @@ class ContentClassifier:
 
 async def classify_content(
     content: str,
-    inference_provider: "InferenceProvider",
+    inference_provider: InferenceProvider,
     tenant_id: str | None = None,
     confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
     fallback_domain: str = DEFAULT_FALLBACK_DOMAIN,
@@ -454,10 +454,10 @@ async def classify_content(
 
 # Type alias for exported symbols
 __all__ = [
-    "ContentClassifier",
-    "classify_content",
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_FALLBACK_DOMAIN",
-    "MIN_CONTENT_LENGTH",
     "MAX_CONTENT_FOR_CLASSIFICATION",
+    "MIN_CONTENT_LENGTH",
+    "ContentClassifier",
+    "classify_content",
 ]

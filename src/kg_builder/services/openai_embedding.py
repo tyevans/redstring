@@ -6,10 +6,10 @@ for entity consolidation and similarity computation.
 """
 
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
-from openai import AsyncOpenAI, APIError, APIConnectionError
+from openai import APIConnectionError, APIError, AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 

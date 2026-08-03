@@ -236,7 +236,7 @@ class EmbeddingCache:
         except Exception as e:
             logger.error(f"Error in batch get: {e}")
             self._misses += len(entity_ids)
-            return {eid: None for eid in entity_ids}
+            return dict.fromkeys(entity_ids)
 
     async def set_batch(
         self,

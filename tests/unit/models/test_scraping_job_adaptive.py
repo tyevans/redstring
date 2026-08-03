@@ -5,10 +5,11 @@ Tests the uses_adaptive_extraction, needs_classification, and is_domain_resolved
 property methods on the ScrapingJob model.
 """
 
-import pytest
 import uuid
 
-from kg_builder.models.scraping_job import ScrapingJob, JobStatus, JobStage
+import pytest
+
+from kg_builder.models.scraping_job import ScrapingJob
 
 
 class TestScrapingJobAdaptiveProperties:

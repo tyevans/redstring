@@ -16,13 +16,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Import directly from modules to avoid database dependencies
-from kg_builder.extraction.strategy_router import (
-    ExtractionStrategyRouter,
-    get_strategy_router,
-    reset_strategy_router,
-    route_extraction_strategy,
-)
 from kg_builder.extraction.domains.models import (
     ClassificationResult,
     ConfidenceThresholds,
@@ -32,6 +25,13 @@ from kg_builder.extraction.domains.models import (
     RelationshipTypeSchema,
 )
 
+# Import directly from modules to avoid database dependencies
+from kg_builder.extraction.strategy_router import (
+    ExtractionStrategyRouter,
+    get_strategy_router,
+    reset_strategy_router,
+    route_extraction_strategy,
+)
 
 # =============================================================================
 # Fixtures

@@ -183,18 +183,18 @@ class EntityAlias(Base):
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         doc="Tenant this alias belongs to",
     )
 
-    canonical_entity: Mapped["ExtractedEntity"] = relationship(
+    canonical_entity: Mapped[ExtractedEntity] = relationship(
         "ExtractedEntity",
         back_populates="aliases",
         doc="The canonical entity this is an alias of",
     )
 
-    source_page: Mapped["ScrapedPage | None"] = relationship(
+    source_page: Mapped[ScrapedPage | None] = relationship(
         "ScrapedPage",
         doc="Page the original entity was extracted from",
     )

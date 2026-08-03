@@ -22,7 +22,8 @@ Usage:
 """
 
 import logging
-from typing import Any, Callable, Type
+from collections.abc import Callable
+from typing import Any
 
 from kg_builder.inference.providers.base import (
     InferenceProvider,
@@ -74,13 +75,13 @@ class ProviderFactory:
         ```
     """
 
-    _registry: dict[ProviderType, Type[InferenceProvider]] = {}
+    _registry: dict[ProviderType, type[InferenceProvider]] = {}
 
     @classmethod
     def register(
         cls,
         provider_type: ProviderType,
-    ) -> Callable[[Type[InferenceProvider]], Type[InferenceProvider]]:
+    ) -> Callable[[type[InferenceProvider]], type[InferenceProvider]]:
         """Decorator to register a provider implementation.
 
         Args:
@@ -98,8 +99,8 @@ class ProviderFactory:
         """
 
         def decorator(
-            provider_class: Type[InferenceProvider],
-        ) -> Type[InferenceProvider]:
+            provider_class: type[InferenceProvider],
+        ) -> type[InferenceProvider]:
             if provider_type in cls._registry:
                 logger.warning(
                     "Overwriting existing provider registration",
@@ -211,7 +212,7 @@ class ProviderFactory:
     def get_provider_class(
         cls,
         provider_type: ProviderType,
-    ) -> Type[InferenceProvider]:
+    ) -> type[InferenceProvider]:
         """Get the class for a registered provider type.
 
         Args:

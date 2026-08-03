@@ -4,16 +4,17 @@ Unit tests for GraphSimilarityService.
 Tests the graph-based similarity computation with mocked Neo4j driver.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
+from kg_builder.schemas.similarity import SimilarityType
 from kg_builder.services.consolidation.graph_similarity import (
-    GraphSimilarityService,
     GraphNeighborhood,
+    GraphSimilarityService,
     get_graph_similarity_service,
 )
-from kg_builder.schemas.similarity import SimilarityType
 
 
 class TestGraphNeighborhood:

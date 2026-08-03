@@ -4,8 +4,6 @@ Unit tests for the BlockingEngine service.
 Tests blocking strategies, candidate generation, and tenant isolation.
 """
 
-import pytest
-from uuid import uuid4
 
 from kg_builder.services.consolidation.blocking import (
     BlockingEngine,

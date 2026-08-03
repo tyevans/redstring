@@ -12,14 +12,12 @@ isolation and are registered with eventsource-py for persistence.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from eventsource import register_event
 from pydantic import Field
 
 from kg_builder.events.base import TenantDomainEvent
-
 
 # =============================================================================
 # Candidate Identification Events
@@ -115,7 +113,7 @@ class EntitiesMerged(TenantDomainEvent):
         default=0,
         ge=0,
     )
-    merged_by_user_id: Optional[UUID] = Field(
+    merged_by_user_id: UUID | None = Field(
         description="User who approved/triggered merge",
         default=None,
     )
@@ -144,7 +142,7 @@ class AliasCreated(TenantDomainEvent):
     canonical_entity_id: UUID = Field(description="Canonical entity ID")
     alias_name: str = Field(description="Original name being recorded as alias")
     original_entity_id: UUID = Field(description="Original entity ID before merge")
-    merge_event_id: Optional[UUID] = Field(
+    merge_event_id: UUID | None = Field(
         description="Reference to the merge event",
         default=None,
     )
@@ -227,11 +225,11 @@ class MergeReviewDecision(TenantDomainEvent):
         # approve, reject, defer, mark_different
     )
     reviewer_user_id: UUID = Field(description="User who reviewed")
-    reviewer_notes: Optional[str] = Field(
+    reviewer_notes: str | None = Field(
         description="Optional review notes",
         default=None,
     )
-    review_duration_seconds: Optional[int] = Field(
+    review_duration_seconds: int | None = Field(
         description="How long the review took",
         default=None,
         ge=0,
@@ -419,7 +417,7 @@ class BatchConsolidationFailed(TenantDomainEvent):
     job_id: UUID = Field(description="Batch job ID")
     error_message: str = Field(description="Error description")
     entities_processed: int = Field(description="Entities processed before failure", ge=0)
-    failed_at_entity_id: Optional[UUID] = Field(
+    failed_at_entity_id: UUID | None = Field(
         description="Entity where failure occurred",
         default=None,
     )
@@ -479,7 +477,7 @@ class ConsolidationCompleted(TenantDomainEvent):
     entities_processed: int = Field(description="Entities processed", ge=0)
     candidates_found: int = Field(description="Candidates found", ge=0)
     auto_merged: int = Field(description="Auto-merges performed", ge=0)
-    completed_at: Optional[datetime] = Field(
+    completed_at: datetime | None = Field(
         description="Completion timestamp",
         default=None,
     )

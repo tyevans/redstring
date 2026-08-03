@@ -8,7 +8,7 @@ across chunk boundaries. Attempts to respect natural text boundaries
 
 import logging
 import re
-from typing import Iterator
+from collections.abc import Iterator
 
 from kg_builder.preprocessing.exceptions import ChunkSizeError
 from kg_builder.preprocessing.factory import ChunkerFactory, ChunkerType

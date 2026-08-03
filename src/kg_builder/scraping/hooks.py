@@ -7,7 +7,8 @@ dispatcher (e.g. a Celery task's ``.delay``) and the scraping pipelines call it.
 from __future__ import annotations
 
 import logging
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
 

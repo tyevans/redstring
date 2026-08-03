@@ -52,8 +52,8 @@ from kg_builder.models.entity_alias import EntityAlias
 from kg_builder.models.extracted_entity import (
     EntityRelationship,
     EntityType,
-    ExtractionMethod,
     ExtractedEntity,
+    ExtractionMethod,
 )
 from kg_builder.models.merge_history import MergeEventType, MergeHistory
 

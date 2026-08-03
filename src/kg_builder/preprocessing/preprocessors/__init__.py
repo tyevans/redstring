@@ -13,6 +13,6 @@ from kg_builder.preprocessing.preprocessors.passthrough_preprocessor import Pass
 from kg_builder.preprocessing.preprocessors.trafilatura_preprocessor import TrafilaturaPreprocessor
 
 __all__ = [
-    "TrafilaturaPreprocessor",
     "PassthroughPreprocessor",
+    "TrafilaturaPreprocessor",
 ]

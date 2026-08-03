@@ -6,7 +6,7 @@ the pgvector extension for semantic similarity search.
 """
 
 import uuid
-from typing import Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession

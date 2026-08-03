@@ -11,24 +11,24 @@ Exports:
 """
 
 from kg_builder.inference.providers.base import (
-    # Enums
-    ProviderStatus,
-    ProviderType,
     # Models
     InferenceChunk,
+    # Interface
+    InferenceProvider,
     InferenceRequest,
     InferenceResponse,
     ModelInfo,
-    ProviderHealth,
     # Exceptions
     ProviderAuthenticationError,
     ProviderConnectionError,
     ProviderError,
+    ProviderHealth,
     ProviderInvalidRequestError,
     ProviderRateLimitError,
+    # Enums
+    ProviderStatus,
     ProviderTimeoutError,
-    # Interface
-    InferenceProvider,
+    ProviderType,
 )
 from kg_builder.inference.providers.factory import (
     ProviderConfigurationError,

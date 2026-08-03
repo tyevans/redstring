@@ -5,30 +5,29 @@ Tests the Pydantic models used in the project management API endpoints.
 These schemas are defined in app/schemas/project.py as part of P4-001.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
 from kg_builder.schemas.project import (
-    # Settings
-    ProjectSettingsSchema,
+    ArchiveRestoreResponse,
     # Requests
     CreateProjectRequest,
-    UpdateProjectRequest,
-    UpdateProjectSettingsRequest,
+    DeleteProjectResponse,
     MoveJobRequest,
+    MoveJobResponse,
+    PaginatedProjectResponse,
+    ProjectDetail,
+    # Settings
+    ProjectSettingsSchema,
+    ProjectStatsResponse,
     # Responses
     ProjectSummary,
-    ProjectDetail,
-    ProjectStatsResponse,
-    PaginatedProjectResponse,
-    MoveJobResponse,
-    ArchiveRestoreResponse,
-    DeleteProjectResponse,
+    UpdateProjectRequest,
+    UpdateProjectSettingsRequest,
 )
-
 
 # =============================================================================
 # Settings Schema Tests
@@ -310,7 +309,7 @@ class TestProjectSummary:
     def test_minimal_summary(self):
         """Test minimal valid project summary."""
         project_id = uuid4()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         summary = ProjectSummary(
             id=project_id,
             name="Test Project",
@@ -331,7 +330,7 @@ class TestProjectSummary:
     def test_full_summary(self):
         """Test project summary with all fields."""
         project_id = uuid4()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         summary = ProjectSummary(
             id=project_id,
             name="Climate Research",
@@ -356,8 +355,8 @@ class TestProjectSummary:
             slug="archived-project",
             description=None,
             status="archived",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         assert summary.status == "archived"
 
@@ -374,7 +373,7 @@ class TestProjectDetail:
         """Test minimal valid project detail."""
         project_id = uuid4()
         tenant_id = uuid4()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         detail = ProjectDetail(
             id=project_id,
             tenant_id=tenant_id,
@@ -401,8 +400,8 @@ class TestProjectDetail:
         """Test project detail with all fields."""
         project_id = uuid4()
         tenant_id = uuid4()
-        now = datetime.now(timezone.utc)
-        archived_time = datetime(2025, 12, 15, 10, 0, 0, tzinfo=timezone.utc)
+        now = datetime.now(UTC)
+        archived_time = datetime(2025, 12, 15, 10, 0, 0, tzinfo=UTC)
         detail = ProjectDetail(
             id=project_id,
             tenant_id=tenant_id,
@@ -504,7 +503,7 @@ class TestPaginatedProjectResponse:
 
     def test_page_with_items(self):
         """Test paginated response with items."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         items = [
             ProjectSummary(
                 id=uuid4(),
@@ -625,7 +624,7 @@ class TestSerialization:
     def test_project_summary_to_dict(self):
         """Test ProjectSummary serialization."""
         project_id = uuid4()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         summary = ProjectSummary(
             id=project_id,
             name="Test",
@@ -660,7 +659,7 @@ class TestSerialization:
 
     def test_paginated_response_to_dict(self):
         """Test PaginatedProjectResponse serialization."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         response = PaginatedProjectResponse(
             items=[
                 ProjectSummary(

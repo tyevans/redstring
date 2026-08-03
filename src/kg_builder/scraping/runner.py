@@ -6,10 +6,9 @@ in a background task context.
 """
 
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
 
 from kg_builder.models.scraping_job import ScrapingJob
 from kg_builder.scraping.settings import get_scrapy_settings
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 def run_spider_for_job(
     job: ScrapingJob,
     tenant_id: str,
-    on_progress: Optional[Callable[[int, int, int], None]] = None,
+    on_progress: Callable[[int, int, int], None] | None = None,
 ) -> dict:
     """
     Run a Scrapy spider for a scraping job.
@@ -104,7 +103,7 @@ def run_spider_for_job(
 def run_spider_async(
     job: ScrapingJob,
     tenant_id: str,
-    on_progress: Optional[Callable[[int, int, int], None]] = None,
+    on_progress: Callable[[int, int, int], None] | None = None,
 ):
     """
     Run spider asynchronously using Twisted deferred.
@@ -120,7 +119,6 @@ def run_spider_async(
         Deferred that resolves when spider completes
     """
     from scrapy.crawler import CrawlerRunner
-    from twisted.internet import reactor, defer
 
     settings = get_scrapy_settings(job)
     runner = CrawlerRunner(settings=settings)

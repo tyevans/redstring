@@ -4,49 +4,34 @@ Unit tests for consolidation API schemas.
 Tests the Pydantic models used in the consolidation API endpoints.
 """
 
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 from pydantic import ValidationError
 
 from kg_builder.schemas.consolidation import (
-    # Enums
-    MergeDecision,
-    ReviewDecision,
-    ReviewStatus,
-    MergeEventType,
-    # Entity Summary
-    EntitySummary,
-    # Merge Candidates
-    SimilarityBreakdown,
-    MergeCandidateResponse,
-    MergeCandidateListResponse,
-    ComputeCandidatesRequest,
-    ComputeCandidatesResponse,
-    # Merge Operations
-    MergeRequest,
-    MergeResponse,
-    UndoMergeRequest,
-    UndoMergeResponse,
-    SplitEntityRequest,
-    SplitEntityResponse,
-    # Review Queue
-    ReviewQueueItemResponse,
-    ReviewQueueListResponse,
-    ReviewDecisionRequest,
-    ReviewDecisionResponse,
-    ReviewQueueStatsResponse,
-    # Merge History
-    MergeHistoryItemResponse,
-    MergeHistoryListResponse,
-    # Configuration
-    FeatureWeightConfig,
-    ConsolidationConfigResponse,
-    ConsolidationConfigRequest,
     # Batch Operations
     BatchConsolidationRequest,
-    BatchConsolidationResponse,
+    ComputeCandidatesRequest,
+    ConsolidationConfigRequest,
+    EntitySummary,
+    # Configuration
+    MergeCandidateListResponse,
+    MergeDecision,
+    MergeEventType,
+    # Merge History
+    MergeHistoryItemResponse,
+    MergeRequest,
+    MergeResponse,
+    ReviewDecision,
+    ReviewDecisionRequest,
+    ReviewQueueStatsResponse,
+    ReviewStatus,
+    # Merge Candidates
+    SimilarityBreakdown,
+    SplitEntityRequest,
+    UndoMergeRequest,
 )
 
 
@@ -445,7 +430,7 @@ class TestMergeHistoryItemResponse:
             merge_reason="auto_high_confidence",
             similarity_scores={"jaro_winkler": 0.95},
             performed_by_name="admin",
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
             undone=False,
             undone_at=None,
             undone_by_name=None,

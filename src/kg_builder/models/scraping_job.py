@@ -10,13 +10,12 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from typing import Literal
 
 # Type alias for extraction strategy values
 ExtractionStrategyType = Literal["legacy", "auto_detect", "manual"]
@@ -392,19 +391,19 @@ class ScrapingJob(Base):
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         doc="Tenant this job belongs to",
     )
 
-    scraped_pages: Mapped[list["ScrapedPage"]] = relationship(
+    scraped_pages: Mapped[list[ScrapedPage]] = relationship(
         "ScrapedPage",
         back_populates="job",
         cascade="all, delete-orphan",
         doc="Pages scraped by this job",
     )
 
-    extraction_provider: Mapped["ExtractionProvider | None"] = relationship(
+    extraction_provider: Mapped[ExtractionProvider | None] = relationship(
         "ExtractionProvider",
         back_populates="scraping_jobs",
         doc="Extraction provider to use for this job",

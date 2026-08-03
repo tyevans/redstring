@@ -6,13 +6,13 @@ including request validation and response serialization.
 """
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
-from kg_builder.models.scraping_job import JobStatus, JobStage
 from kg_builder.models.extracted_entity import ExtractionMethod
+from kg_builder.models.scraping_job import JobStage, JobStatus
 
 # Type alias for extraction strategy
 ExtractionStrategy = Literal["legacy", "auto_detect", "manual"]
@@ -47,11 +47,11 @@ class CreateScrapingJobRequest(BaseModel):
         default_factory=list,
         description="List of domains to stay within (empty = derived from start_url)",
     )
-    url_patterns: Optional[list[str]] = Field(
+    url_patterns: list[str] | None = Field(
         None,
         description="Regex patterns for URLs to include",
     )
-    excluded_patterns: Optional[list[str]] = Field(
+    excluded_patterns: list[str] | None = Field(
         None,
         description="Regex patterns for URLs to exclude",
     )
@@ -81,7 +81,7 @@ class CreateScrapingJobRequest(BaseModel):
         default=True,
         description="Use LLM for semantic entity extraction",
     )
-    extraction_provider_id: Optional[UUID] = Field(
+    extraction_provider_id: UUID | None = Field(
         None,
         description="Extraction provider to use (null = use tenant default or global)",
     )
@@ -95,7 +95,7 @@ class CreateScrapingJobRequest(BaseModel):
         default="legacy",
         description="Extraction strategy: legacy (existing behavior), auto_detect (classify content), or manual (user-specified domain)",
     )
-    content_domain: Optional[str] = Field(
+    content_domain: str | None = Field(
         default=None,
         max_length=50,
         description="Content domain ID (required for manual strategy, e.g., 'literature_fiction')",
@@ -136,31 +136,31 @@ class UpdateScrapingJobRequest(BaseModel):
     not included in this schema.
     """
 
-    name: Optional[str] = Field(
+    name: str | None = Field(
         None,
         min_length=1,
         max_length=255,
         description="Human-readable job name",
     )
-    crawl_depth: Optional[int] = Field(
+    crawl_depth: int | None = Field(
         None,
         ge=1,
         le=10,
         description="Maximum link depth to follow",
     )
-    max_pages: Optional[int] = Field(
+    max_pages: int | None = Field(
         None,
         ge=1,
         le=10000,
         description="Maximum number of pages to scrape",
     )
-    crawl_speed: Optional[float] = Field(
+    crawl_speed: float | None = Field(
         None,
         ge=0.1,
         le=10.0,
         description="Requests per second limit",
     )
-    use_llm_extraction: Optional[bool] = Field(
+    use_llm_extraction: bool | None = Field(
         None,
         description="Use LLM for semantic entity extraction",
     )
@@ -184,7 +184,7 @@ class ScrapingJobSummary(BaseModel):
         default="legacy",
         description="Extraction strategy being used",
     )
-    content_domain: Optional[str] = Field(
+    content_domain: str | None = Field(
         default=None,
         description="Content domain ID (if using adaptive extraction)",
     )
@@ -212,14 +212,14 @@ class ScrapingJobResponse(BaseModel):
     name: str = Field(..., description="Job name")
     start_url: str = Field(..., description="Starting URL")
     allowed_domains: list[str] = Field(..., description="Allowed domains")
-    url_patterns: Optional[list[str]] = Field(None, description="URL include patterns")
-    excluded_patterns: Optional[list[str]] = Field(None, description="URL exclude patterns")
+    url_patterns: list[str] | None = Field(None, description="URL include patterns")
+    excluded_patterns: list[str] | None = Field(None, description="URL exclude patterns")
     crawl_depth: int = Field(..., description="Max crawl depth")
     max_pages: int = Field(..., description="Max pages to scrape")
     crawl_speed: float = Field(..., description="Requests per second")
     respect_robots_txt: bool = Field(..., description="Honor robots.txt")
     use_llm_extraction: bool = Field(..., description="Use LLM extraction")
-    extraction_provider_id: Optional[UUID] = Field(None, description="Extraction provider ID")
+    extraction_provider_id: UUID | None = Field(None, description="Extraction provider ID")
     custom_settings: dict = Field(..., description="Custom Scrapy settings")
 
     # Adaptive extraction fields
@@ -227,11 +227,11 @@ class ScrapingJobResponse(BaseModel):
         default="legacy",
         description="Extraction strategy: legacy, auto_detect, or manual",
     )
-    content_domain: Optional[str] = Field(
+    content_domain: str | None = Field(
         default=None,
         description="Content domain ID (e.g., 'literature_fiction')",
     )
-    classification_confidence: Optional[float] = Field(
+    classification_confidence: float | None = Field(
         default=None,
         description="Classification confidence score (0.0-1.0, for auto_detect)",
     )
@@ -251,8 +251,8 @@ class ScrapingJobResponse(BaseModel):
     # Status and progress
     status: JobStatus = Field(..., description="Current status")
     stage: JobStage | None = Field(None, description="Current pipeline stage")
-    celery_task_id: Optional[str] = Field(None, description="Celery task ID")
-    consolidation_task_id: Optional[str] = Field(None, description="Consolidation task ID")
+    celery_task_id: str | None = Field(None, description="Celery task ID")
+    consolidation_task_id: str | None = Field(None, description="Consolidation task ID")
     pages_crawled: int = Field(..., description="Pages scraped")
     entities_extracted: int = Field(..., description="Entities extracted")
     errors_count: int = Field(..., description="Error count")
@@ -261,9 +261,9 @@ class ScrapingJobResponse(BaseModel):
     pages_pending_extraction: int = Field(0, description="Pages pending extraction")
     consolidation_candidates_found: int = Field(0, description="Merge candidates found")
     consolidation_auto_merged: int = Field(0, description="Auto-merged entity pairs")
-    started_at: Optional[datetime] = Field(None, description="Start time")
-    completed_at: Optional[datetime] = Field(None, description="Completion time")
-    error_message: Optional[str] = Field(None, description="Error message")
+    started_at: datetime | None = Field(None, description="Start time")
+    completed_at: datetime | None = Field(None, description="Completion time")
+    error_message: str | None = Field(None, description="Error message")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -280,29 +280,29 @@ class JobStatusResponse(BaseModel):
     pages_crawled: int = Field(..., description="Pages scraped")
     entities_extracted: int = Field(..., description="Entities extracted")
     errors_count: int = Field(..., description="Error count")
-    started_at: Optional[datetime] = Field(None, description="Start time")
-    completed_at: Optional[datetime] = Field(None, description="Completion time")
-    error_message: Optional[str] = Field(None, description="Error message if failed")
-    estimated_progress: Optional[float] = Field(
+    started_at: datetime | None = Field(None, description="Start time")
+    completed_at: datetime | None = Field(None, description="Completion time")
+    error_message: str | None = Field(None, description="Error message if failed")
+    estimated_progress: float | None = Field(
         None,
         ge=0.0,
         le=1.0,
         description="Estimated overall progress (0.0-1.0)",
     )
     # Stage-specific progress
-    crawl_progress: Optional[float] = Field(
+    crawl_progress: float | None = Field(
         None,
         ge=0.0,
         le=1.0,
         description="Crawling progress (0.0-1.0)",
     )
-    extraction_progress: Optional[float] = Field(
+    extraction_progress: float | None = Field(
         None,
         ge=0.0,
         le=1.0,
         description="Extraction progress (0.0-1.0)",
     )
-    consolidation_progress: Optional[float] = Field(
+    consolidation_progress: float | None = Field(
         None,
         ge=0.0,
         le=1.0,
@@ -324,7 +324,7 @@ class ScrapedPageSummary(BaseModel):
 
     id: UUID = Field(..., description="Page ID")
     url: str = Field(..., description="Page URL")
-    title: Optional[str] = Field(None, description="Page title")
+    title: str | None = Field(None, description="Page title")
     http_status: int = Field(..., description="HTTP status code")
     depth: int = Field(..., description="Link depth")
     extraction_status: str = Field(..., description="Extraction status")
@@ -340,17 +340,17 @@ class ScrapedPageDetail(BaseModel):
     id: UUID = Field(..., description="Page ID")
     job_id: UUID = Field(..., description="Parent job ID")
     url: str = Field(..., description="Page URL")
-    canonical_url: Optional[str] = Field(None, description="Canonical URL")
-    title: Optional[str] = Field(None, description="Page title")
-    meta_description: Optional[str] = Field(None, description="Meta description")
-    meta_keywords: Optional[str] = Field(None, description="Meta keywords")
+    canonical_url: str | None = Field(None, description="Canonical URL")
+    title: str | None = Field(None, description="Page title")
+    meta_description: str | None = Field(None, description="Meta description")
+    meta_keywords: str | None = Field(None, description="Meta keywords")
     http_status: int = Field(..., description="HTTP status code")
     content_type: str = Field(..., description="Content-Type")
     depth: int = Field(..., description="Link depth")
     crawled_at: datetime = Field(..., description="Crawl timestamp")
     extraction_status: str = Field(..., description="Extraction status")
-    extracted_at: Optional[datetime] = Field(None, description="Extraction timestamp")
-    extraction_error: Optional[str] = Field(None, description="Extraction error")
+    extracted_at: datetime | None = Field(None, description="Extraction timestamp")
+    extraction_error: str | None = Field(None, description="Extraction error")
     schema_org_count: int = Field(
         default=0,
         description="Number of Schema.org items found",
@@ -406,18 +406,18 @@ class ExtractedEntityDetail(BaseModel):
     tenant_id: UUID = Field(..., description="Tenant ID")
     source_page_id: UUID = Field(..., description="Source page ID")
     entity_type: str = Field(..., description="Entity type (e.g., 'person', 'organization', 'character')")
-    original_entity_type: Optional[str] = Field(None, description="Original entity type from LLM before normalization")
+    original_entity_type: str | None = Field(None, description="Original entity type from LLM before normalization")
     name: str = Field(..., description="Entity name")
     normalized_name: str = Field(..., description="Normalized name")
-    description: Optional[str] = Field(None, description="Entity description")
+    description: str | None = Field(None, description="Entity description")
     external_ids: dict = Field(..., description="External identifiers")
     properties: dict = Field(..., description="Entity properties")
     extraction_method: ExtractionMethod = Field(..., description="Extraction method")
     confidence_score: float = Field(..., description="Confidence score")
-    source_text: Optional[str] = Field(None, description="Source text snippet")
-    neo4j_node_id: Optional[str] = Field(None, description="Neo4j node ID")
+    source_text: str | None = Field(None, description="Source text snippet")
+    neo4j_node_id: str | None = Field(None, description="Neo4j node ID")
     synced_to_neo4j: bool = Field(..., description="Neo4j sync status")
-    synced_at: Optional[datetime] = Field(None, description="Neo4j sync timestamp")
+    synced_at: datetime | None = Field(None, description="Neo4j sync timestamp")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -438,10 +438,10 @@ class EntityRelationshipResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
 
     # Expanded entity info (optional)
-    source_entity_name: Optional[str] = Field(None, description="Source entity name")
-    source_entity_type: Optional[str] = Field(None, description="Source entity type")
-    target_entity_name: Optional[str] = Field(None, description="Target entity name")
-    target_entity_type: Optional[str] = Field(None, description="Target entity type")
+    source_entity_name: str | None = Field(None, description="Source entity name")
+    source_entity_type: str | None = Field(None, description="Source entity type")
+    target_entity_name: str | None = Field(None, description="Target entity name")
+    target_entity_type: str | None = Field(None, description="Target entity type")
 
     class Config:
         from_attributes = True
@@ -479,11 +479,11 @@ class GraphQueryRequest(BaseModel):
         le=5,
         description="Relationship depth to traverse",
     )
-    relationship_types: Optional[list[str]] = Field(
+    relationship_types: list[str] | None = Field(
         None,
         description="Filter by relationship types",
     )
-    entity_types: Optional[list[str]] = Field(
+    entity_types: list[str] | None = Field(
         None,
         description="Filter by entity types (e.g., ['person', 'organization', 'character'])",
     )

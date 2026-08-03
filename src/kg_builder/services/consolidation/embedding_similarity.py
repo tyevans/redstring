@@ -29,9 +29,9 @@ import numpy as np
 from numpy.linalg import norm
 
 from kg_builder.schemas.similarity import (
+    SemanticSimilarityScores,
     SimilarityScore,
     SimilarityType,
-    SemanticSimilarityScores,
 )
 
 if TYPE_CHECKING:

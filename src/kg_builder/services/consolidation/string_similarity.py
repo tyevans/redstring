@@ -22,17 +22,16 @@ import logging
 import time
 import unicodedata
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 import jellyfish
 
 from kg_builder.schemas.similarity import (
+    ContextualSignals,
+    PhoneticSimilarityScores,
     SimilarityScore,
     SimilarityScores,
     SimilarityType,
     StringSimilarityScores,
-    PhoneticSimilarityScores,
-    ContextualSignals,
     WeightConfiguration,
 )
 

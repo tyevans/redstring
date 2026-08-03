@@ -5,7 +5,7 @@ Uses pydantic-settings to load configuration from environment variables
 with sensible defaults for development.
 """
 
-from typing import List, Union
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:5173"]
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:5173"]
     CORS_ALLOW_CREDENTIALS: bool = True
-    CORS_ALLOW_METHODS: List[str] = ["*"]
-    CORS_ALLOW_HEADERS: List[str] = ["*"]
+    CORS_ALLOW_METHODS: list[str] = ["*"]
+    CORS_ALLOW_HEADERS: list[str] = ["*"]
 
     # Database Configuration
     # Application runtime uses knowledge_mapper_app_user (NO BYPASSRLS - RLS policies enforced)
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # OAuth Configuration
     OAUTH_ISSUER_URL: str = "http://keycloak:8080/realms/knowledge-mapper-dev"
     OAUTH_AUDIENCE: str = "knowledge-mapper-backend"  # Expected 'aud' claim in tokens
-    OAUTH_ALGORITHMS: List[str] = ["RS256"]  # Supported signing algorithms
+    OAUTH_ALGORITHMS: list[str] = ["RS256"]  # Supported signing algorithms
 
     # JWKS Configuration
     JWKS_CACHE_TTL: int = 3600  # Cache JWKS for 1 hour (seconds)
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     OAUTH_CLIENT_ID: str = "knowledge-mapper-backend"
     OAUTH_CLIENT_SECRET: str = "your-client-secret"  # Set via environment variable in production
     OAUTH_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/callback"
-    OAUTH_SCOPES: List[str] = ["openid", "profile", "email"]
+    OAUTH_SCOPES: list[str] = ["openid", "profile", "email"]
     OAUTH_USE_PKCE: bool = True  # Enable PKCE for enhanced security
 
     # Redis Configuration
@@ -334,7 +334,7 @@ class Settings(BaseSettings):
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+    def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
         """Parse comma-separated CORS origins into a list."""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]

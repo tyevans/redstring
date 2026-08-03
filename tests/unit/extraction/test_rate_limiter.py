@@ -11,7 +11,7 @@ Tests rate limiting functionality including:
 Uses mocking to avoid external Redis dependency.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -22,7 +22,6 @@ from kg_builder.extraction.rate_limiter import (
     get_rate_limiter,
     reset_rate_limiter,
 )
-
 
 # =============================================================================
 # Fixtures

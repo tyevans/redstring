@@ -8,14 +8,14 @@ Provides a tenant-aware interface to Neo4j for:
 """
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 from uuid import UUID
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 from neo4j.exceptions import ServiceUnavailable
 
 from kg_builder.config import settings
-from kg_builder.models.extracted_entity import ExtractedEntity, EntityRelationship
+from kg_builder.models.extracted_entity import EntityRelationship, ExtractedEntity
 
 logger = logging.getLogger(__name__)
 

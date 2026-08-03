@@ -13,7 +13,8 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -188,24 +189,24 @@ class MergeHistory(Base):
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         doc="Tenant this history belongs to",
     )
 
-    canonical_entity: Mapped["ExtractedEntity | None"] = relationship(
+    canonical_entity: Mapped[ExtractedEntity | None] = relationship(
         "ExtractedEntity",
         foreign_keys=[canonical_entity_id],
         doc="The canonical entity (for merges)",
     )
 
-    performer: Mapped["User | None"] = relationship(
+    performer: Mapped[User | None] = relationship(
         "User",
         foreign_keys=[performed_by],
         doc="User who performed the operation",
     )
 
-    undoer: Mapped["User | None"] = relationship(
+    undoer: Mapped[User | None] = relationship(
         "User",
         foreign_keys=[undone_by],
         doc="User who undone the merge",

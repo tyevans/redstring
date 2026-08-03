@@ -12,7 +12,6 @@ from eventsource import register_event
 
 from kg_builder.events.base import TenantDomainEvent
 
-
 # =============================================================================
 # Scraping Job Events
 # =============================================================================

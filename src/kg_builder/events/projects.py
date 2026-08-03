@@ -22,7 +22,7 @@ project_id field provides clearer semantics in the event payload.
 """
 
 from datetime import datetime
-from typing import Annotated, Optional, Union
+from typing import Annotated
 from uuid import UUID
 
 from eventsource import register_event
@@ -31,7 +31,7 @@ from pydantic import BeforeValidator, Field
 from kg_builder.events.base import TenantDomainEvent
 
 
-def coerce_to_str(v: Union[str, UUID]) -> str:
+def coerce_to_str(v: str | UUID) -> str:
     """Coerce UUID-like values to strings."""
     if isinstance(v, UUID):
         return str(v)
@@ -73,7 +73,7 @@ class ProjectCreated(TenantDomainEvent):
     project_id: UUID = Field(description="Unique identifier for the project")
     name: str = Field(description="Human-readable project name")
     slug: str = Field(description="URL-safe identifier for project")
-    description: Optional[str] = Field(default=None, description="Project description")
+    description: str | None = Field(default=None, description="Project description")
     created_by_user_id: CoercedStr = Field(description="User who created the project")
     settings: dict = Field(default_factory=dict, description="Initial project settings")
     tags: list[str] = Field(default_factory=list, description="Project tags")
@@ -242,10 +242,10 @@ class JobMovedBetweenProjects(TenantDomainEvent):
 
 
 __all__ = [
-    "ProjectCreated",
-    "ProjectUpdated",
-    "ProjectSettingsUpdated",
-    "ProjectArchived",
-    "ProjectRestored",
     "JobMovedBetweenProjects",
+    "ProjectArchived",
+    "ProjectCreated",
+    "ProjectRestored",
+    "ProjectSettingsUpdated",
+    "ProjectUpdated",
 ]

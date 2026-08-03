@@ -14,12 +14,13 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     DateTime,
-    Enum as SQLEnum,
     Float,
     ForeignKey,
-    String,
     Text,
     UniqueConstraint,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -179,24 +180,24 @@ class MergeReviewItem(Base):
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         doc="Tenant this review item belongs to",
     )
 
-    entity_a: Mapped["ExtractedEntity"] = relationship(
+    entity_a: Mapped[ExtractedEntity] = relationship(
         "ExtractedEntity",
         foreign_keys=[entity_a_id],
         doc="First entity in the candidate pair",
     )
 
-    entity_b: Mapped["ExtractedEntity"] = relationship(
+    entity_b: Mapped[ExtractedEntity] = relationship(
         "ExtractedEntity",
         foreign_keys=[entity_b_id],
         doc="Second entity in the candidate pair",
     )
 
-    reviewer: Mapped["User | None"] = relationship(
+    reviewer: Mapped[User | None] = relationship(
         "User",
         doc="User who reviewed this item",
     )

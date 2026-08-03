@@ -547,9 +547,8 @@ class TestWithErrorHandling:
         async def failing_operation():
             raise MockServiceUnavailable("Connection refused")
 
-        with caplog.at_level(logging.WARNING):
-            with pytest.raises(Neo4jTransientError):
-                await Neo4jErrorHandler.with_error_handling(failing_operation)
+        with caplog.at_level(logging.WARNING), pytest.raises(Neo4jTransientError):
+            await Neo4jErrorHandler.with_error_handling(failing_operation)
 
         assert "Transient Neo4j error" in caplog.text
 
@@ -560,9 +559,8 @@ class TestWithErrorHandling:
         async def failing_operation():
             raise MockDatabaseError("Constraint violation")
 
-        with caplog.at_level(logging.ERROR):
-            with pytest.raises(Neo4jDataError):
-                await Neo4jErrorHandler.with_error_handling(failing_operation)
+        with caplog.at_level(logging.ERROR), pytest.raises(Neo4jDataError):
+            await Neo4jErrorHandler.with_error_handling(failing_operation)
 
         assert "Neo4j data error" in caplog.text
 
@@ -573,9 +571,8 @@ class TestWithErrorHandling:
         async def failing_operation():
             raise RuntimeError("Something went wrong")
 
-        with caplog.at_level(logging.ERROR):
-            with pytest.raises(Neo4jSyncError):
-                await Neo4jErrorHandler.with_error_handling(failing_operation)
+        with caplog.at_level(logging.ERROR), pytest.raises(Neo4jSyncError):
+            await Neo4jErrorHandler.with_error_handling(failing_operation)
 
         assert "Unexpected Neo4j error" in caplog.text
 

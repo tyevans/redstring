@@ -19,8 +19,9 @@ Example:
 """
 
 import logging
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, Type
+from typing import Any
 
 from kg_builder.preprocessing.base import Chunker, EntityMerger, Preprocessor
 from kg_builder.preprocessing.exceptions import (
@@ -86,13 +87,13 @@ class PreprocessorFactory:
         preprocessor = PreprocessorFactory.create(PreprocessorType.TRAFILATURA)
     """
 
-    _registry: dict[PreprocessorType, Type[Preprocessor]] = {}
+    _registry: dict[PreprocessorType, type[Preprocessor]] = {}
 
     @classmethod
     def register(
         cls,
         preprocessor_type: PreprocessorType,
-    ) -> Callable[[Type[Preprocessor]], Type[Preprocessor]]:
+    ) -> Callable[[type[Preprocessor]], type[Preprocessor]]:
         """Decorator to register a preprocessor implementation.
 
         Args:
@@ -107,7 +108,7 @@ class PreprocessorFactory:
                 ...
         """
 
-        def decorator(preprocessor_class: Type[Preprocessor]) -> Type[Preprocessor]:
+        def decorator(preprocessor_class: type[Preprocessor]) -> type[Preprocessor]:
             cls._registry[preprocessor_type] = preprocessor_class
             logger.debug(f"Registered preprocessor: {preprocessor_type.value}")
             return preprocessor_class
@@ -189,13 +190,13 @@ class ChunkerFactory:
         chunker = ChunkerFactory.create(ChunkerType.SLIDING_WINDOW)
     """
 
-    _registry: dict[ChunkerType, Type[Chunker]] = {}
+    _registry: dict[ChunkerType, type[Chunker]] = {}
 
     @classmethod
     def register(
         cls,
         chunker_type: ChunkerType,
-    ) -> Callable[[Type[Chunker]], Type[Chunker]]:
+    ) -> Callable[[type[Chunker]], type[Chunker]]:
         """Decorator to register a chunker implementation.
 
         Args:
@@ -205,7 +206,7 @@ class ChunkerFactory:
             Decorator function that registers the class
         """
 
-        def decorator(chunker_class: Type[Chunker]) -> Type[Chunker]:
+        def decorator(chunker_class: type[Chunker]) -> type[Chunker]:
             cls._registry[chunker_type] = chunker_class
             logger.debug(f"Registered chunker: {chunker_type.value}")
             return chunker_class
@@ -287,13 +288,13 @@ class EntityMergerFactory:
         merger = EntityMergerFactory.create(EntityMergerType.LLM)
     """
 
-    _registry: dict[EntityMergerType, Type[EntityMerger]] = {}
+    _registry: dict[EntityMergerType, type[EntityMerger]] = {}
 
     @classmethod
     def register(
         cls,
         merger_type: EntityMergerType,
-    ) -> Callable[[Type[EntityMerger]], Type[EntityMerger]]:
+    ) -> Callable[[type[EntityMerger]], type[EntityMerger]]:
         """Decorator to register an entity merger implementation.
 
         Args:
@@ -303,7 +304,7 @@ class EntityMergerFactory:
             Decorator function that registers the class
         """
 
-        def decorator(merger_class: Type[EntityMerger]) -> Type[EntityMerger]:
+        def decorator(merger_class: type[EntityMerger]) -> type[EntityMerger]:
             cls._registry[merger_type] = merger_class
             logger.debug(f"Registered entity merger: {merger_type.value}")
             return merger_class

@@ -63,11 +63,28 @@ from kg_builder.services.consolidation.blocking import (
     BlockingResult,
     BlockingStrategy,
 )
+from kg_builder.services.consolidation.combined_scoring import (
+    CombinedScoringPipeline,
+    FeatureWeights,
+    ScoringResult,
+    create_default_config_for_scoring,
+)
+from kg_builder.services.consolidation.embedding_similarity import (
+    EmbeddingSimilarityService,
+    cosine_similarity,
+    euclidean_similarity,
+    get_embedding_similarity_service,
+)
+from kg_builder.services.consolidation.graph_similarity import (
+    GraphNeighborhood,
+    GraphSimilarityService,
+    get_graph_similarity_service,
+)
 from kg_builder.services.consolidation.merge_service import (
     DEFAULT_PROPERTY_STRATEGIES,
     EntitySplitError,
-    MergeError,
     MergeAuthorizationError,
+    MergeError,
     MergeResult,
     MergeService,
     MergeUndoError,
@@ -80,25 +97,8 @@ from kg_builder.services.consolidation.merge_service import (
 )
 from kg_builder.services.consolidation.string_similarity import (
     StringSimilarityService,
-    compute_string_similarity,
     compute_phonetic_similarity,
-)
-from kg_builder.services.consolidation.embedding_similarity import (
-    EmbeddingSimilarityService,
-    cosine_similarity,
-    euclidean_similarity,
-    get_embedding_similarity_service,
-)
-from kg_builder.services.consolidation.graph_similarity import (
-    GraphSimilarityService,
-    GraphNeighborhood,
-    get_graph_similarity_service,
-)
-from kg_builder.services.consolidation.combined_scoring import (
-    CombinedScoringPipeline,
-    FeatureWeights,
-    ScoringResult,
-    create_default_config_for_scoring,
+    compute_string_similarity,
 )
 
 __all__ = [

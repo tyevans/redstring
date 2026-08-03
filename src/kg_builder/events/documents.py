@@ -15,7 +15,6 @@ from pydantic import Field
 
 from kg_builder.events.base import TenantDomainEvent
 
-
 # =============================================================================
 # Document Upload Events
 # =============================================================================
@@ -263,12 +262,12 @@ class DocumentDeleted(TenantDomainEvent):
 
 
 __all__ = [
-    "DocumentUploaded",
-    "DocumentParsingStarted",
-    "DocumentParsingCompleted",
-    "DocumentParsingFailed",
-    "DocumentExtractionStarted",
+    "DocumentDeleted",
     "DocumentExtractionCompleted",
     "DocumentExtractionFailed",
-    "DocumentDeleted",
+    "DocumentExtractionStarted",
+    "DocumentParsingCompleted",
+    "DocumentParsingFailed",
+    "DocumentParsingStarted",
+    "DocumentUploaded",
 ]

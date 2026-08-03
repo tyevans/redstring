@@ -6,12 +6,11 @@ These tests verify the service's logic for processing database results and
 calculating statistics.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
 
 # =============================================================================
 # Test Fixtures
@@ -75,7 +74,7 @@ def mock_synced_entity(tenant_id):
     entity.entity_type = "organization"
     entity.synced_to_neo4j = True
     entity.neo4j_node_id = "4:abc:123"
-    entity.synced_at = datetime.now(timezone.utc)
+    entity.synced_at = datetime.now(UTC)
     return entity
 
 

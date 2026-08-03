@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.models.extracted_entity import ExtractedEntity, EntityType, ExtractionMethod
+from kg_builder.models.extracted_entity import EntityType, ExtractedEntity, ExtractionMethod
 
 
 @pytest.mark.unit

@@ -28,10 +28,10 @@ Models:
 """
 
 from kg_builder.models.consolidation_config import (
-    ConsolidationConfig,
     DEFAULT_AUTO_MERGE_THRESHOLD,
     DEFAULT_FEATURE_WEIGHTS,
     DEFAULT_REVIEW_THRESHOLD,
+    ConsolidationConfig,
 )
 from kg_builder.models.entity_alias import EntityAlias
 from kg_builder.models.extracted_entity import (
@@ -40,17 +40,19 @@ from kg_builder.models.extracted_entity import (
     ExtractedEntity,
     ExtractionMethod,
 )
-from kg_builder.models.merge_history import MergeEventType, MergeHistory
-from kg_builder.models.merge_review_queue import MergeReviewItem, MergeReviewStatus
 from kg_builder.models.extraction_provider import (
     ExtractionProvider,
     ExtractionProviderType,
 )
 from kg_builder.models.inference_provider import (
     InferenceProvider,
+)
+from kg_builder.models.inference_provider import (
     ProviderType as InferenceProviderType,
 )
 from kg_builder.models.inference_request import InferenceRequest, InferenceStatus
+from kg_builder.models.merge_history import MergeEventType, MergeHistory
+from kg_builder.models.merge_review_queue import MergeReviewItem, MergeReviewStatus
 from kg_builder.models.oauth_provider import OAuthProvider, ProviderType
 from kg_builder.models.scraped_page import ScrapedPage
 from kg_builder.models.scraping_job import JobStatus, ScrapingJob

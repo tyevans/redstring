@@ -10,7 +10,6 @@ Middlewares handle cross-cutting concerns like:
 
 import logging
 import random
-from typing import Optional
 
 from scrapy import Spider, signals
 from scrapy.crawler import Crawler
@@ -129,7 +128,7 @@ class RotatingUserAgentMiddleware:
         self,
         request: Request,
         spider: Spider,
-    ) -> Optional[Request]:
+    ) -> Request | None:
         """Add random user agent to request."""
         if self.user_agents:
             request.headers["User-Agent"] = random.choice(self.user_agents)
@@ -147,7 +146,7 @@ class RequestLoggingMiddleware:
         self,
         request: Request,
         spider: Spider,
-    ) -> Optional[Request]:
+    ) -> Request | None:
         """Log outgoing request."""
         logger.debug(
             f"Request: {request.method} {request.url}",
@@ -184,7 +183,7 @@ class RequestLoggingMiddleware:
         request: Request,
         exception: Exception,
         spider: Spider,
-    ) -> Optional[Response]:
+    ) -> Response | None:
         """Log request exceptions."""
         logger.error(
             f"Request failed: {request.url} - {exception}",

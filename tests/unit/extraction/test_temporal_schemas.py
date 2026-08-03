@@ -209,11 +209,11 @@ class TestTemporalRelationshipTypes:
 
     def test_temporal_relationship_types_in_schema(self):
         """Test that temporal relationship types are in the schema."""
-        from kg_builder.extraction.schemas import RelationshipTypeLiteral
-
         # Get the literal values from the type hint
         # RelationshipTypeLiteral is a Literal type, we can check its args
         import typing
+
+        from kg_builder.extraction.schemas import RelationshipTypeLiteral
         args = typing.get_args(RelationshipTypeLiteral)
 
         temporal_types = {"precedes", "follows", "during", "overlaps", "causes", "concurrent"}

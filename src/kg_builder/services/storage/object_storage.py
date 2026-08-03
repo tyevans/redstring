@@ -6,7 +6,6 @@ in MinIO object storage. Used primarily for document uploads.
 """
 
 import logging
-from functools import lru_cache
 from uuid import UUID
 
 import boto3

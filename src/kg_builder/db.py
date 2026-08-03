@@ -7,8 +7,8 @@ pooling configuration optimized for multi-tenant workloads.
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
-from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, create_engine, event, text
 from sqlalchemy.ext.asyncio import (
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import Pool
 
 from kg_builder.config import settings
@@ -91,13 +91,13 @@ class Base(DeclarativeBase):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 

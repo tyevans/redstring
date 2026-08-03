@@ -5,21 +5,22 @@ These tests verify the Pydantic models used for representing similarity
 scores between entity pairs during entity consolidation.
 """
 
-import pytest
 from uuid import uuid4
 
+import pytest
+
 from kg_builder.schemas.similarity import (
-    SimilarityType,
-    SimilarityScore,
-    StringSimilarityScores,
-    PhoneticSimilarityScores,
-    SemanticSimilarityScores,
-    GraphSimilarityScores,
     ContextualSignals,
-    SimilarityScores,
-    WeightConfiguration,
+    GraphSimilarityScores,
+    PhoneticSimilarityScores,
     ScoreComputation,
+    SemanticSimilarityScores,
+    SimilarityScore,
+    SimilarityScores,
     SimilarityThresholds,
+    SimilarityType,
+    StringSimilarityScores,
+    WeightConfiguration,
 )
 
 

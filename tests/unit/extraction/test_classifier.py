@@ -12,7 +12,6 @@ Tests classification functionality including:
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,7 +31,6 @@ from kg_builder.extraction.classifier import (
     classify_content,
 )
 from kg_builder.extraction.domains.models import ClassificationResult
-
 
 # =============================================================================
 # Fixtures

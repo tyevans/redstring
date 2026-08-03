@@ -11,7 +11,7 @@ import time
 from uuid import UUID
 
 import httpx
-from openai import AsyncOpenAI, APIError, APIConnectionError, RateLimitError
+from openai import APIConnectionError, APIError, AsyncOpenAI, RateLimitError
 from pydantic import ValidationError
 
 from kg_builder.extraction.base import BaseExtractionService, ExtractionError

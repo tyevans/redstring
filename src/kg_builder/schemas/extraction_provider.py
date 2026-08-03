@@ -6,7 +6,7 @@ provider management endpoints.
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -31,12 +31,12 @@ class CreateExtractionProviderRequest(BaseModel):
         default_factory=dict,
         description="Provider configuration. Include 'api_key' for OpenAI/Anthropic, 'base_url' for Ollama.",
     )
-    default_model: Optional[str] = Field(
+    default_model: str | None = Field(
         None,
         max_length=255,
         description="Default model for extraction (e.g., gpt-4o, gemma3:12b)",
     )
-    embedding_model: Optional[str] = Field(
+    embedding_model: str | None = Field(
         None,
         max_length=255,
         description="Model for embeddings (e.g., text-embedding-3-small)",
@@ -79,47 +79,47 @@ class CreateExtractionProviderRequest(BaseModel):
 class UpdateExtractionProviderRequest(BaseModel):
     """Request schema for updating an extraction provider."""
 
-    name: Optional[str] = Field(
+    name: str | None = Field(
         None,
         min_length=1,
         max_length=255,
         description="Display name for the provider",
     )
-    config: Optional[dict[str, Any]] = Field(
+    config: dict[str, Any] | None = Field(
         None,
         description="Provider configuration (replaces existing config)",
     )
-    default_model: Optional[str] = Field(
+    default_model: str | None = Field(
         None,
         max_length=255,
         description="Default model for extraction",
     )
-    embedding_model: Optional[str] = Field(
+    embedding_model: str | None = Field(
         None,
         max_length=255,
         description="Model for embeddings",
     )
-    is_active: Optional[bool] = Field(
+    is_active: bool | None = Field(
         None,
         description="Whether this provider is enabled",
     )
-    is_default: Optional[bool] = Field(
+    is_default: bool | None = Field(
         None,
         description="Whether this is the default provider",
     )
-    rate_limit_rpm: Optional[int] = Field(
+    rate_limit_rpm: int | None = Field(
         None,
         ge=1,
         le=1000,
         description="Requests per minute limit",
     )
-    max_context_length: Optional[int] = Field(
+    max_context_length: int | None = Field(
         None,
         ge=100,
         le=128000,
         description="Maximum context length",
     )
-    timeout_seconds: Optional[int] = Field(
+    timeout_seconds: int | None = Field(
         None,
         ge=10,
         le=3600,
@@ -135,15 +135,15 @@ class ExtractionProviderResponse(BaseModel):
     name: str = Field(..., description="Display name")
     provider_type: ExtractionProviderType = Field(..., description="Provider type")
     config: dict[str, Any] = Field(..., description="Provider configuration (API key masked)")
-    default_model: Optional[str] = Field(None, description="Default model")
-    embedding_model: Optional[str] = Field(None, description="Embedding model")
+    default_model: str | None = Field(None, description="Default model")
+    embedding_model: str | None = Field(None, description="Embedding model")
     is_active: bool = Field(..., description="Whether enabled")
     is_default: bool = Field(..., description="Whether default for tenant")
     rate_limit_rpm: int = Field(..., description="Rate limit RPM")
     max_context_length: int = Field(..., description="Max context length")
     timeout_seconds: int = Field(..., description="Timeout seconds")
     created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    updated_at: datetime | None = Field(None, description="Last update timestamp")
 
     class Config:
         from_attributes = True
@@ -161,7 +161,7 @@ class ExtractionProviderResponse(BaseModel):
         config = dict(provider.config) if provider.config else {}
 
         # Mask API key
-        if "api_key" in config and config["api_key"]:
+        if config.get("api_key"):
             key = str(config["api_key"])
             if key.startswith("enc:"):
                 config["api_key"] = "****encrypted****"
@@ -192,7 +192,7 @@ class TestConnectionRequest(BaseModel):
     """Request for testing provider connection."""
 
     # Optional test content for extraction test
-    test_content: Optional[str] = Field(
+    test_content: str | None = Field(
         None,
         max_length=1000,
         description="Optional content to test extraction with",

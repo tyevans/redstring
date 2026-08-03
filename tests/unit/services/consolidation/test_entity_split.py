@@ -7,20 +7,21 @@ Tests the MergeService.split_entity() method and related helper methods.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone, UTC
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from kg_builder.models.entity_alias import EntityAlias
-from kg_builder.models.extracted_entity import EntityType, ExtractionMethod, ExtractedEntity, EntityRelationship
-from kg_builder.models.merge_history import MergeEventType, MergeHistory
+from kg_builder.models.extracted_entity import (
+    EntityRelationship,
+    EntityType,
+    ExtractedEntity,
+)
 from kg_builder.services.consolidation.merge_service import (
     EntitySplitError,
     MergeService,
     SplitResult,
 )
-
 
 # =============================================================================
 # Fixtures

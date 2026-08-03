@@ -20,13 +20,11 @@ Request Events:
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from eventsource import register_event
 
 from kg_builder.events.base import TenantDomainEvent
-
 
 # =============================================================================
 # Provider Lifecycle Events
@@ -55,7 +53,7 @@ class ProviderCreated(TenantDomainEvent):
     name: str
     provider_type: str
     config: dict
-    default_model: Optional[str] = None
+    default_model: str | None = None
     default_temperature: float = 0.7
     default_max_tokens: int = 1024
     created_by: UUID
@@ -82,12 +80,12 @@ class ProviderUpdated(TenantDomainEvent):
     aggregate_type: str = "InferenceProvider"
 
     provider_id: UUID
-    name: Optional[str] = None
-    config: Optional[dict] = None
-    default_model: Optional[str] = None
-    default_temperature: Optional[float] = None
-    default_max_tokens: Optional[int] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    config: dict | None = None
+    default_model: str | None = None
+    default_temperature: float | None = None
+    default_max_tokens: int | None = None
+    is_active: bool | None = None
     updated_by: UUID
 
 
@@ -267,4 +265,4 @@ class InferenceCancelled(TenantDomainEvent):
     request_id: UUID
     cancelled_by: UUID
     cancelled_at: datetime
-    partial_response: Optional[str] = None
+    partial_response: str | None = None

@@ -270,7 +270,10 @@ class TestGetTimelineQueryService:
 
     def test_returns_service_instance(self, mock_db_session):
         """Test that factory function returns a TimelineQueryService instance."""
-        from kg_builder.services.timeline_query import TimelineQueryService, get_timeline_query_service
+        from kg_builder.services.timeline_query import (
+            TimelineQueryService,
+            get_timeline_query_service,
+        )
 
         service = get_timeline_query_service(mock_db_session)
 

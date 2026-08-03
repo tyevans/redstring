@@ -30,7 +30,6 @@ from kg_builder.extraction.ollama_extractor import (
     reset_ollama_extraction_service,
 )
 from kg_builder.extraction.prompts import DocumentationType
-from kg_builder.extraction.schemas import ExtractionResult
 
 logger = logging.getLogger(__name__)
 
@@ -726,7 +725,7 @@ class TestEntityTypeAccuracy:
 
         type_accuracy = correct_type_count / len(expected_classes) if expected_classes else 1.0
 
-        print(f"\n=== Entity Type Accuracy Report ===")
+        print("\n=== Entity Type Accuracy Report ===")
         print(f"Expected classes: {[e.name for e in expected_classes]}")
         print(f"Correctly typed: {correct_type_count}/{len(expected_classes)}")
         print(f"Type Accuracy: {type_accuracy:.2%}")
@@ -779,7 +778,7 @@ class TestEntityTypeAccuracy:
             correct_type_count / len(expected_functions) if expected_functions else 1.0
         )
 
-        print(f"\n=== Entity Type Accuracy Report ===")
+        print("\n=== Entity Type Accuracy Report ===")
         print(f"Expected functions: {[e.name for e in expected_functions]}")
         print(f"Correctly typed: {correct_type_count}/{len(expected_functions)}")
         print(f"Type Accuracy: {type_accuracy:.2%}")
@@ -879,10 +878,10 @@ class TestRelationshipAccuracy:
         )
 
         print(f"\n=== Relationship Accuracy Report: {test_case.name} ===")
-        print(f"Expected relationships:")
+        print("Expected relationships:")
         for rel in test_case.expected_relationships:
             print(f"  - {rel.source} --[{rel.relationship_type}]--> {rel.target}")
-        print(f"Extracted relationships:")
+        print("Extracted relationships:")
         for rel in result.relationships:
             print(f"  - {rel.source_name} --[{rel.relationship_type}]--> {rel.target_name}")
         print(f"Relationship Precision: {precision:.2%}")

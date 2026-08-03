@@ -4,18 +4,19 @@ Unit tests for the StringSimilarityService.
 Tests string similarity algorithms, phonetic matching, and score computation.
 """
 
-import pytest
 from uuid import uuid4
 
+import pytest
+
+from kg_builder.models.extracted_entity import EntityType, ExtractedEntity, ExtractionMethod
+from kg_builder.schemas.similarity import WeightConfiguration
 from kg_builder.services.consolidation.string_similarity import (
     StringSimilarityService,
-    compute_string_similarity,
     compute_phonetic_similarity,
+    compute_string_similarity,
     normalize_for_comparison,
     tokenize_name,
 )
-from kg_builder.models.extracted_entity import ExtractedEntity, EntityType, ExtractionMethod
-from kg_builder.schemas.similarity import WeightConfiguration
 
 
 def make_entity(

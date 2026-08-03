@@ -32,15 +32,12 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from kg_builder.schemas.similarity import (
-    SemanticSimilarityScores,
-    SimilarityScore,
     SimilarityScores,
-    SimilarityType,
 )
 
 if TYPE_CHECKING:
-    from kg_builder.models.extracted_entity import ExtractedEntity
     from kg_builder.models.consolidation_config import ConsolidationConfig
+    from kg_builder.models.extracted_entity import ExtractedEntity
     from kg_builder.services.consolidation.embedding_similarity import EmbeddingSimilarityService
     from kg_builder.services.consolidation.graph_similarity import GraphSimilarityService
 

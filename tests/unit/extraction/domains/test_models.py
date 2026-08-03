@@ -23,7 +23,6 @@ from kg_builder.extraction.domains.models import (
     RelationshipTypeSchema,
 )
 
-
 # =============================================================================
 # PropertySchema Tests
 # =============================================================================

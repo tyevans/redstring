@@ -7,13 +7,11 @@ to drive the event-sourced extraction architecture.
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from eventsource import register_event
 
 from kg_builder.events.base import TenantDomainEvent
-
 
 # =============================================================================
 # Extraction Lifecycle Events
@@ -112,7 +110,7 @@ class RelationshipDiscovered(TenantDomainEvent):
     target_entity_name: str
     relationship_type: str
     confidence_score: float
-    context: Optional[str] = None
+    context: str | None = None
 
 
 # =============================================================================

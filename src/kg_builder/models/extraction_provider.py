@@ -15,7 +15,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy import Enum as SQLEnum
@@ -109,13 +109,13 @@ class ExtractionProvider(Base):
     )
 
     # Model settings
-    default_model: Mapped[Optional[str]] = mapped_column(
+    default_model: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Default model for extraction (e.g., gpt-4o, gemma3:12b)",
     )
 
-    embedding_model: Mapped[Optional[str]] = mapped_column(
+    embedding_model: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Model for embeddings (e.g., text-embedding-3-small)",
@@ -169,19 +169,19 @@ class ExtractionProvider(Base):
         nullable=False,
     )
 
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         onupdate=func.now(),
         nullable=True,
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         back_populates="extraction_providers",
     )
 
-    scraping_jobs: Mapped[list["ScrapingJob"]] = relationship(
+    scraping_jobs: Mapped[list[ScrapingJob]] = relationship(
         "ScrapingJob",
         back_populates="extraction_provider",
     )

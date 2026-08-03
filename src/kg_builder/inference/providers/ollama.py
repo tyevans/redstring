@@ -21,8 +21,8 @@ Usage:
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import AsyncIterator, Optional
 
 import httpx
 from pydantic_ai import Agent
@@ -80,7 +80,7 @@ class OllamaProvider(InferenceProvider):
         self._default_model = default_model
         self._timeout = timeout
         self._max_retries = max_retries
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""

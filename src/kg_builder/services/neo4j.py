@@ -6,8 +6,9 @@ and querying extracted entities and relationships.
 """
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Optional
+from typing import Any
 from uuid import UUID
 
 from neo4j import AsyncDriver, AsyncGraphDatabase, AsyncSession
@@ -45,10 +46,10 @@ class Neo4jService:
 
     def __init__(
         self,
-        uri: Optional[str] = None,
-        user: Optional[str] = None,
-        password: Optional[str] = None,
-        database: Optional[str] = None,
+        uri: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
     ):
         """Initialize Neo4j service.
 
@@ -62,7 +63,7 @@ class Neo4jService:
         self._user = user or settings.NEO4J_USER
         self._password = password or settings.NEO4J_PASSWORD
         self._database = database or settings.NEO4J_DATABASE
-        self._driver: Optional[AsyncDriver] = None
+        self._driver: AsyncDriver | None = None
 
     async def connect(self) -> None:
         """Establish connection to Neo4j.
@@ -151,7 +152,7 @@ class Neo4jService:
         entity_type: str,
         name: str,
         properties: dict[str, Any],
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> str:
         """Create or merge an entity node in the graph.
 
@@ -198,7 +199,7 @@ class Neo4jService:
         self,
         entity_id: UUID,
         tenant_id: UUID,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get an entity node by ID.
 
         Args:
@@ -264,7 +265,7 @@ class Neo4jService:
         relationship_type: str,
         properties: dict[str, Any],
         confidence_score: float = 1.0,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Create a relationship between two entities.
 
         Args:
@@ -400,7 +401,7 @@ class Neo4jService:
 # Global Service Instance
 # =========================================================================
 
-_neo4j_service: Optional[Neo4jService] = None
+_neo4j_service: Neo4jService | None = None
 
 
 async def get_neo4j_service() -> Neo4jService:

@@ -11,9 +11,6 @@ This verifies task P3-001: Extend BaseExtractionService Interface.
 import inspect
 from typing import Any
 from unittest.mock import AsyncMock
-from uuid import uuid4
-
-import pytest
 
 from kg_builder.extraction.base import (
     BaseExtractionService,

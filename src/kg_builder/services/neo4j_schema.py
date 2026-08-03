@@ -252,7 +252,7 @@ async def drop_schema(service: Neo4jService | None = None) -> dict[str, Any]:
         # =====================================================================
         logger.info("Dropping Neo4j indexes...")
 
-        for index_name in INDEXES.keys():
+        for index_name in INDEXES:
             try:
                 await session.run(f"DROP INDEX {index_name} IF EXISTS")
                 indexes_dropped.append(index_name)
@@ -265,7 +265,7 @@ async def drop_schema(service: Neo4jService | None = None) -> dict[str, Any]:
         # =====================================================================
         logger.info("Dropping Neo4j constraints...")
 
-        for constraint_name in CONSTRAINTS.keys():
+        for constraint_name in CONSTRAINTS:
             try:
                 await session.run(f"DROP CONSTRAINT {constraint_name} IF EXISTS")
                 constraints_dropped.append(constraint_name)

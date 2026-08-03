@@ -12,7 +12,7 @@ Tests cover:
 import asyncio
 import importlib
 import sys
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -31,6 +31,7 @@ sys.modules["kg_builder.config"] = _mock_config
 # Now we need to import retry module directly without going through __init__.py
 # We use importlib to load just the retry module
 import importlib.util
+
 spec = importlib.util.spec_from_file_location(
     "kg_builder.extraction.retry",
     "/home/ty/workspace/kg-builder/src/kg_builder/extraction/retry.py"

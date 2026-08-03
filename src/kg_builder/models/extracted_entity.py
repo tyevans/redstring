@@ -12,9 +12,10 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Float, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 try:
     from pgvector.sqlalchemy import Vector
@@ -85,7 +86,7 @@ class EntityType(str, enum.Enum):
             return False
 
     @classmethod
-    def get_or_none(cls, value: str) -> "EntityType | None":
+    def get_or_none(cls, value: str) -> EntityType | None:
         """Get EntityType enum from string, or None if not a known type.
 
         Args:
@@ -305,19 +306,19 @@ class ExtractedEntity(Base):
         )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         doc="Tenant this entity belongs to",
     )
 
-    source_page: Mapped["ScrapedPage"] = relationship(
+    source_page: Mapped[ScrapedPage] = relationship(
         "ScrapedPage",
         back_populates="entities",
         doc="Page this entity was extracted from",
     )
 
     # Relationships where this entity is the source
-    outgoing_relationships: Mapped[list["EntityRelationship"]] = relationship(
+    outgoing_relationships: Mapped[list[EntityRelationship]] = relationship(
         "EntityRelationship",
         foreign_keys="EntityRelationship.source_entity_id",
         back_populates="source_entity",
@@ -326,7 +327,7 @@ class ExtractedEntity(Base):
     )
 
     # Relationships where this entity is the target
-    incoming_relationships: Mapped[list["EntityRelationship"]] = relationship(
+    incoming_relationships: Mapped[list[EntityRelationship]] = relationship(
         "EntityRelationship",
         foreign_keys="EntityRelationship.target_entity_id",
         back_populates="target_entity",
@@ -335,7 +336,7 @@ class ExtractedEntity(Base):
     )
 
     # Self-referential relationship for canonical entity tracking
-    canonical_entity: Mapped["ExtractedEntity | None"] = relationship(
+    canonical_entity: Mapped[ExtractedEntity | None] = relationship(
         "ExtractedEntity",
         remote_side="ExtractedEntity.id",
         foreign_keys=[is_alias_of],
@@ -343,7 +344,7 @@ class ExtractedEntity(Base):
         doc="The canonical entity this is an alias of",
     )
 
-    alias_entities: Mapped[list["ExtractedEntity"]] = relationship(
+    alias_entities: Mapped[list[ExtractedEntity]] = relationship(
         "ExtractedEntity",
         foreign_keys="ExtractedEntity.is_alias_of",
         back_populates="canonical_entity",
@@ -351,7 +352,7 @@ class ExtractedEntity(Base):
     )
 
     # EntityAlias records tracking merged entity names
-    aliases: Mapped[list["EntityAlias"]] = relationship(
+    aliases: Mapped[list[EntityAlias]] = relationship(
         "EntityAlias",
         back_populates="canonical_entity",
         cascade="all, delete-orphan",
@@ -504,19 +505,19 @@ class EntityRelationship(Base):
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         doc="Tenant this relationship belongs to",
     )
 
-    source_entity: Mapped["ExtractedEntity"] = relationship(
+    source_entity: Mapped[ExtractedEntity] = relationship(
         "ExtractedEntity",
         foreign_keys=[source_entity_id],
         back_populates="outgoing_relationships",
         doc="Source entity of the relationship",
     )
 
-    target_entity: Mapped["ExtractedEntity"] = relationship(
+    target_entity: Mapped[ExtractedEntity] = relationship(
         "ExtractedEntity",
         foreign_keys=[target_entity_id],
         back_populates="incoming_relationships",

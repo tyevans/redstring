@@ -10,14 +10,11 @@ These tests verify that:
 """
 
 import uuid
-from datetime import datetime, timezone
-
-import pytest
 
 from kg_builder.models.extracted_entity import (
     EntityType,
-    ExtractionMethod,
     ExtractedEntity,
+    ExtractionMethod,
 )
 
 

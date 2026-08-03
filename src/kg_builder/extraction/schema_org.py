@@ -8,7 +8,6 @@ Extracts entities from structured data embedded in web pages:
 """
 
 import logging
-from typing import Any, Optional
 
 from kg_builder.models.extracted_entity import EntityType, ExtractionMethod
 
@@ -127,7 +126,7 @@ def extract_entities_from_schema_org(schema_data: list) -> list[dict]:
     return entities
 
 
-def _extract_entity_from_schema_item(item: dict) -> Optional[dict]:
+def _extract_entity_from_schema_item(item: dict) -> dict | None:
     """
     Extract an entity from a single Schema.org item.
 
@@ -187,7 +186,7 @@ def _extract_entity_from_schema_item(item: dict) -> Optional[dict]:
     }
 
 
-def _get_name_from_item(item: dict) -> Optional[str]:
+def _get_name_from_item(item: dict) -> str | None:
     """Get the name from a Schema.org item."""
     # Try various name fields
     for field in ["name", "headline", "title", "alternateName", "legalName"]:

@@ -10,7 +10,7 @@ Tests cover:
 """
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from dateutil.tz import UTC

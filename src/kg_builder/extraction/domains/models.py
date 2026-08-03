@@ -443,7 +443,7 @@ class DomainSchema(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_relationship_type_references(self) -> "DomainSchema":
+    def validate_relationship_type_references(self) -> DomainSchema:
         """Validate that relationship type source/target types reference valid entity types.
 
         Returns:
@@ -617,7 +617,7 @@ class DomainSummary(BaseModel):
     relationship_types: list[str] = Field(..., description="List of relationship type IDs")
 
     @classmethod
-    def from_schema(cls, schema: DomainSchema) -> "DomainSummary":
+    def from_schema(cls, schema: DomainSchema) -> DomainSummary:
         """Create summary from full domain schema.
 
         Args:
@@ -729,7 +729,7 @@ class ExtractionStrategy(BaseModel):
     )
 
     @classmethod
-    def legacy(cls) -> "ExtractionStrategy":
+    def legacy(cls) -> ExtractionStrategy:
         """Create a legacy (non-adaptive) extraction strategy.
 
         Legacy extraction uses the default system prompt and
@@ -752,7 +752,7 @@ class ExtractionStrategy(BaseModel):
         system_prompt: str,
         json_schema: dict | None = None,
         confidence_thresholds: ConfidenceThresholds | None = None,
-    ) -> "ExtractionStrategy":
+    ) -> ExtractionStrategy:
         """Create an adaptive extraction strategy from domain configuration.
 
         Args:

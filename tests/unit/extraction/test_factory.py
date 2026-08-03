@@ -16,7 +16,6 @@ from kg_builder.extraction.factory import (
 )
 from kg_builder.models.extraction_provider import ExtractionProvider, ExtractionProviderType
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================

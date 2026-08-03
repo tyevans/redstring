@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from kg_builder.extraction.base import BaseExtractionService, ExtractionError
@@ -61,7 +62,7 @@ class ExtractionServiceCreator(ABC):
     @abstractmethod
     def create(
         self,
-        provider: "ExtractionProvider",
+        provider: ExtractionProvider,
         config: dict,
         tenant_id: UUID,
     ) -> BaseExtractionService:
@@ -98,7 +99,7 @@ class OllamaServiceCreator(ExtractionServiceCreator):
 
     def create(
         self,
-        provider: "ExtractionProvider",
+        provider: ExtractionProvider,
         config: dict,
         tenant_id: UUID,
     ) -> BaseExtractionService:
@@ -132,7 +133,7 @@ class OpenAIServiceCreator(ExtractionServiceCreator):
 
     def create(
         self,
-        provider: "ExtractionProvider",
+        provider: ExtractionProvider,
         config: dict,
         tenant_id: UUID,
     ) -> BaseExtractionService:
@@ -176,7 +177,7 @@ class AnthropicServiceCreator(ExtractionServiceCreator):
 
     def create(
         self,
-        provider: "ExtractionProvider",
+        provider: ExtractionProvider,
         config: dict,
         tenant_id: UUID,
     ) -> BaseExtractionService:
@@ -283,7 +284,7 @@ class ExtractionProviderRegistry:
 
     def create_service(
         self,
-        provider: "ExtractionProvider",
+        provider: ExtractionProvider,
         tenant_id: UUID,
     ) -> BaseExtractionService:
         """Create an extraction service from a provider configuration.
@@ -346,7 +347,7 @@ class ExtractionProviderRegistry:
 
     def _decrypt_config(
         self,
-        provider: "ExtractionProvider",
+        provider: ExtractionProvider,
         tenant_id: UUID,
     ) -> dict:
         """Decrypt sensitive fields in provider configuration.
@@ -361,7 +362,7 @@ class ExtractionProviderRegistry:
         config = provider.config.copy() if provider.config else {}
 
         # Decrypt API key if present and encrypted
-        if "api_key" in config and config["api_key"]:
+        if config.get("api_key"):
             from kg_builder.encryption import get_encryption_service
 
             encryption = get_encryption_service()

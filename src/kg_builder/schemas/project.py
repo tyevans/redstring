@@ -14,11 +14,10 @@ All schemas use Pydantic v2 patterns with Field() for validation and documentati
 """
 
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # =============================================================================
 # Settings Schema
@@ -41,23 +40,23 @@ class ProjectSettingsSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    default_extraction_provider_id: Optional[UUID] = Field(
+    default_extraction_provider_id: UUID | None = Field(
         default=None,
         description="Default extraction provider for new jobs",
         json_schema_extra={"example": "550e8400-e29b-41d4-a716-446655440000"},
     )
-    default_extraction_strategy: Optional[str] = Field(
+    default_extraction_strategy: str | None = Field(
         default=None,
         description="Default extraction strategy: legacy, auto_detect, manual",
         json_schema_extra={"example": "auto_detect"},
     )
-    default_content_domain: Optional[str] = Field(
+    default_content_domain: str | None = Field(
         default=None,
         description="Default content domain for manual strategy",
         max_length=100,
         json_schema_extra={"example": "literature_fiction"},
     )
-    enable_timeline_extraction: Optional[bool] = Field(
+    enable_timeline_extraction: bool | None = Field(
         default=None,
         description="Whether to extract timeline data by default",
         json_schema_extra={"example": True},
@@ -65,7 +64,7 @@ class ProjectSettingsSchema(BaseModel):
 
     @field_validator("default_extraction_strategy")
     @classmethod
-    def validate_extraction_strategy(cls, v: Optional[str]) -> Optional[str]:
+    def validate_extraction_strategy(cls, v: str | None) -> str | None:
         """Validate that extraction strategy is one of the allowed values."""
         if v is not None and v not in ("legacy", "auto_detect", "manual"):
             raise ValueError(
@@ -102,13 +101,13 @@ class CreateProjectRequest(BaseModel):
             json_schema_extra={"example": "Climate Research"},
         ),
     ]
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         max_length=2000,
         description="Optional project description",
         json_schema_extra={"example": "Research on climate change data sources"},
     )
-    settings: Optional[ProjectSettingsSchema] = Field(
+    settings: ProjectSettingsSchema | None = Field(
         default=None,
         description="Optional initial settings (extraction defaults)",
     )
@@ -148,20 +147,20 @@ class UpdateProjectRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         min_length=1,
         max_length=255,
         description="New project name",
         json_schema_extra={"example": "Updated Project Name"},
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         max_length=2000,
         description="New project description",
         json_schema_extra={"example": "Updated description for the project"},
     )
-    tags: Optional[list[str]] = Field(
+    tags: list[str] | None = Field(
         default=None,
         max_length=20,
         description="New tags (replaces all existing tags)",
@@ -170,7 +169,7 @@ class UpdateProjectRequest(BaseModel):
 
     @field_validator("tags")
     @classmethod
-    def validate_tags(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+    def validate_tags(cls, v: list[str] | None) -> list[str] | None:
         """Validate individual tag lengths if provided."""
         if v is not None:
             for tag in v:
@@ -252,7 +251,7 @@ class ProjectSummary(BaseModel):
         description="URL-safe identifier",
         json_schema_extra={"example": "climate-research"},
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         description="Project description",
         json_schema_extra={"example": "Research on climate change data sources"},
     )
@@ -334,7 +333,7 @@ class ProjectDetail(BaseModel):
         description="URL-safe identifier",
         json_schema_extra={"example": "climate-research"},
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         description="Project description",
         json_schema_extra={"example": "Research on climate change data sources"},
     )
@@ -357,7 +356,7 @@ class ProjectDetail(BaseModel):
         description="Project tags",
         json_schema_extra={"example": ["research", "climate"]},
     )
-    archived_at: Optional[datetime] = Field(
+    archived_at: datetime | None = Field(
         default=None,
         description="Archive timestamp",
         json_schema_extra={"example": None},
@@ -595,7 +594,7 @@ class ProjectEntitySummary(BaseModel):
         description="Entity type (person, organization, concept, etc.)",
         json_schema_extra={"example": "person"},
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Entity description",
         json_schema_extra={"example": "German-born theoretical physicist"},
@@ -706,7 +705,7 @@ class ProjectJobSummary(BaseModel):
         description="Current status: pending, queued, running, paused, completed, failed, cancelled",
         json_schema_extra={"example": "running"},
     )
-    stage: Optional[str] = Field(
+    stage: str | None = Field(
         default=None,
         description="Current pipeline stage: crawling, extracting, consolidating, done",
         json_schema_extra={"example": "extracting"},
@@ -728,7 +727,7 @@ class ProjectJobSummary(BaseModel):
         description="Extraction strategy: legacy, auto_detect, manual",
         json_schema_extra={"example": "auto_detect"},
     )
-    content_domain: Optional[str] = Field(
+    content_domain: str | None = Field(
         default=None,
         description="Content domain ID",
         json_schema_extra={"example": "technical_docs"},
@@ -746,12 +745,12 @@ class ProjectJobSummary(BaseModel):
         description="Last update timestamp",
         json_schema_extra={"example": "2025-12-17T15:30:00Z"},
     )
-    started_at: Optional[datetime] = Field(
+    started_at: datetime | None = Field(
         default=None,
         description="Start timestamp",
         json_schema_extra={"example": "2025-12-17T10:05:00Z"},
     )
-    completed_at: Optional[datetime] = Field(
+    completed_at: datetime | None = Field(
         default=None,
         description="Completion timestamp",
         json_schema_extra={"example": None},

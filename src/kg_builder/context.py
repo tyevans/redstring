@@ -11,18 +11,22 @@ from eventsource.multitenancy import (
     clear_tenant_context,
     get_current_tenant,
     get_required_tenant,
-    set_current_tenant as _set_current_tenant,
-    tenant_context as current_tenant_id,
     tenant_scope,
     tenant_scope_sync,
 )
+from eventsource.multitenancy import (
+    set_current_tenant as _set_current_tenant,
+)
+from eventsource.multitenancy import (
+    tenant_context as current_tenant_id,
+)
 
 __all__ = [
+    "clear_current_tenant",
     "current_tenant_id",
     "get_current_tenant",
     "get_required_tenant",
     "set_current_tenant",
-    "clear_current_tenant",
     "tenant_scope",
     "tenant_scope_sync",
 ]

@@ -1,9 +1,7 @@
 """Unit tests for EntityAlias model."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
-
-import pytest
 
 from kg_builder.models.entity_alias import EntityAlias
 
@@ -22,7 +20,7 @@ class TestEntityAliasCreation:
             canonical_entity_id=canonical_entity_id,
             alias_name="Domain Event",
             original_entity_id=original_entity_id,
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
 
         assert alias.tenant_id == tenant_id
@@ -38,7 +36,7 @@ class TestEntityAliasCreation:
             canonical_entity_id=uuid4(),
             alias_name="Test Entity",
             original_entity_id=uuid4(),
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         assert alias.id is not None
 
@@ -49,7 +47,7 @@ class TestEntityAliasCreation:
             canonical_entity_id=uuid4(),
             alias_name="Domain Event",
             original_entity_id=uuid4(),
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         assert alias.alias_normalized_name == "domain event"
 
@@ -60,7 +58,7 @@ class TestEntityAliasCreation:
             canonical_entity_id=uuid4(),
             alias_name="Cafe Latte",  # Note: e without accent
             original_entity_id=uuid4(),
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         # Should be lowercase with no special characters
         assert alias.alias_normalized_name == "cafe latte"
@@ -72,7 +70,7 @@ class TestEntityAliasCreation:
             canonical_entity_id=uuid4(),
             alias_name="  Domain   Event  ",
             original_entity_id=uuid4(),
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         assert alias.alias_normalized_name == "domain event"
 
@@ -84,7 +82,7 @@ class TestEntityAliasCreation:
             alias_name="Domain Event",
             alias_normalized_name="custom_normalized",
             original_entity_id=uuid4(),
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         assert alias.alias_normalized_name == "custom_normalized"
 
@@ -101,7 +99,7 @@ class TestEntityAliasOptionalFields:
             alias_name="Test",
             original_entity_id=uuid4(),
             source_page_id=source_page_id,
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         assert alias.source_page_id == source_page_id
 
@@ -114,7 +112,7 @@ class TestEntityAliasOptionalFields:
             alias_name="Test",
             original_entity_id=uuid4(),
             merge_event_id=merge_event_id,
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         assert alias.merge_event_id == merge_event_id
 
@@ -126,7 +124,7 @@ class TestEntityAliasOptionalFields:
             alias_name="Test",
             original_entity_id=uuid4(),
             merge_reason="auto_high_confidence",
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         assert alias.merge_reason == "auto_high_confidence"
 
@@ -141,7 +139,7 @@ class TestEntityAliasOptionalFields:
                 alias_name="Test",
                 original_entity_id=uuid4(),
                 merge_reason=reason,
-                merged_at=datetime.now(timezone.utc),
+                merged_at=datetime.now(UTC),
             )
             assert alias.merge_reason == reason
 
@@ -157,7 +155,7 @@ class TestEntityAliasRepr:
             canonical_entity_id=canonical_id,
             alias_name="Test Entity",
             original_entity_id=uuid4(),
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         repr_str = repr(alias)
         assert "EntityAlias" in repr_str
@@ -171,7 +169,7 @@ class TestEntityAliasRepr:
             canonical_entity_id=uuid4(),
             alias_name="Test 'Entity' with \"quotes\"",
             original_entity_id=uuid4(),
-            merged_at=datetime.now(timezone.utc),
+            merged_at=datetime.now(UTC),
         )
         # Should not raise an exception
         repr_str = repr(alias)

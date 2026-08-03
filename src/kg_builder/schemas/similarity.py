@@ -19,7 +19,6 @@ These schemas are used throughout the consolidation pipeline:
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -99,14 +98,14 @@ class SimilarityScore(BaseModel):
         description="Whether this score was computed (vs skipped/unavailable)",
         default=True,
     )
-    computation_time_ms: Optional[float] = Field(
+    computation_time_ms: float | None = Field(
         description="Computation time in milliseconds",
         default=None,
         ge=0.0,
     )
 
     @model_validator(mode="after")
-    def compute_weighted_score(self) -> "SimilarityScore":
+    def compute_weighted_score(self) -> SimilarityScore:
         """Compute weighted_score if not provided."""
         if self.weighted_score == 0.0 and self.raw_score > 0.0:
             # Use object.__setattr__ to bypass frozen model
@@ -131,28 +130,28 @@ class StringSimilarityScores(BaseModel):
         trigram: Trigram similarity (q-gram based)
     """
 
-    jaro_winkler: Optional[SimilarityScore] = Field(
+    jaro_winkler: SimilarityScore | None = Field(
         description="Jaro-Winkler similarity score",
         default=None,
     )
-    levenshtein: Optional[SimilarityScore] = Field(
+    levenshtein: SimilarityScore | None = Field(
         description="Normalized Levenshtein similarity",
         default=None,
     )
-    damerau_levenshtein: Optional[SimilarityScore] = Field(
+    damerau_levenshtein: SimilarityScore | None = Field(
         description="Damerau-Levenshtein similarity (handles transpositions)",
         default=None,
     )
-    normalized_exact: Optional[SimilarityScore] = Field(
+    normalized_exact: SimilarityScore | None = Field(
         description="Exact match on normalized strings",
         default=None,
     )
-    trigram: Optional[SimilarityScore] = Field(
+    trigram: SimilarityScore | None = Field(
         description="Trigram (q-gram) similarity",
         default=None,
     )
 
-    def get_best_score(self) -> Optional[SimilarityScore]:
+    def get_best_score(self) -> SimilarityScore | None:
         """Return the highest scoring string similarity metric."""
         scores = [
             s
@@ -196,15 +195,15 @@ class PhoneticSimilarityScores(BaseModel):
         nysiis: NYSIIS phonetic encoding match
     """
 
-    soundex: Optional[SimilarityScore] = Field(
+    soundex: SimilarityScore | None = Field(
         description="Soundex phonetic similarity",
         default=None,
     )
-    metaphone: Optional[SimilarityScore] = Field(
+    metaphone: SimilarityScore | None = Field(
         description="Metaphone phonetic similarity",
         default=None,
     )
-    nysiis: Optional[SimilarityScore] = Field(
+    nysiis: SimilarityScore | None = Field(
         description="NYSIIS phonetic similarity",
         default=None,
     )
@@ -229,11 +228,11 @@ class SemanticSimilarityScores(BaseModel):
         embedding_euclidean: Euclidean distance converted to similarity
     """
 
-    embedding_cosine: Optional[SimilarityScore] = Field(
+    embedding_cosine: SimilarityScore | None = Field(
         description="Cosine similarity between embeddings",
         default=None,
     )
-    embedding_euclidean: Optional[SimilarityScore] = Field(
+    embedding_euclidean: SimilarityScore | None = Field(
         description="Euclidean similarity between embeddings",
         default=None,
     )
@@ -245,7 +244,7 @@ class SemanticSimilarityScores(BaseModel):
             for s in [self.embedding_cosine, self.embedding_euclidean]
         )
 
-    def get_primary_score(self) -> Optional[SimilarityScore]:
+    def get_primary_score(self) -> SimilarityScore | None:
         """Get primary embedding score (prefer cosine)."""
         if self.embedding_cosine and self.embedding_cosine.is_computed:
             return self.embedding_cosine
@@ -266,11 +265,11 @@ class GraphSimilarityScores(BaseModel):
         co_occurrence: Co-occurrence frequency on same pages/contexts
     """
 
-    neighborhood: Optional[SimilarityScore] = Field(
+    neighborhood: SimilarityScore | None = Field(
         description="Graph neighborhood Jaccard similarity",
         default=None,
     )
-    co_occurrence: Optional[SimilarityScore] = Field(
+    co_occurrence: SimilarityScore | None = Field(
         description="Co-occurrence similarity score",
         default=None,
     )
@@ -296,15 +295,15 @@ class ContextualSignals(BaseModel):
         property_overlap: Overlap in entity properties
     """
 
-    same_page: Optional[SimilarityScore] = Field(
+    same_page: SimilarityScore | None = Field(
         description="Same source page signal (1.0 if same, 0.0 otherwise)",
         default=None,
     )
-    type_match: Optional[SimilarityScore] = Field(
+    type_match: SimilarityScore | None = Field(
         description="Entity type match signal (1.0 if same, 0.0 otherwise)",
         default=None,
     )
-    property_overlap: Optional[SimilarityScore] = Field(
+    property_overlap: SimilarityScore | None = Field(
         description="Property key overlap ratio",
         default=None,
     )
@@ -400,7 +399,7 @@ class SimilarityScores(BaseModel):
         description="Blocking keys that matched this pair",
         default_factory=list,
     )
-    computation_time_ms: Optional[float] = Field(
+    computation_time_ms: float | None = Field(
         description="Total computation time in milliseconds",
         default=None,
         ge=0.0,
@@ -471,7 +470,7 @@ class SimilarityScores(BaseModel):
     @classmethod
     def from_dict(
         cls, entity_a_id: UUID, entity_b_id: UUID, data: dict
-    ) -> "SimilarityScores":
+    ) -> SimilarityScores:
         """
         Reconstruct SimilarityScores from a flat dictionary.
 
@@ -681,12 +680,12 @@ class WeightConfiguration(BaseModel):
     type_match_bonus: float = Field(default=0.2, ge=0.0, le=1.0)
 
     @classmethod
-    def default(cls) -> "WeightConfiguration":
+    def default(cls) -> WeightConfiguration:
         """Return default weight configuration."""
         return cls()
 
     @classmethod
-    def for_person_entities(cls) -> "WeightConfiguration":
+    def for_person_entities(cls) -> WeightConfiguration:
         """Return weight configuration optimized for person entities."""
         return cls(
             jaro_winkler=0.4,  # Names benefit from Jaro-Winkler
@@ -695,7 +694,7 @@ class WeightConfiguration(BaseModel):
         )
 
     @classmethod
-    def for_organization_entities(cls) -> "WeightConfiguration":
+    def for_organization_entities(cls) -> WeightConfiguration:
         """Return weight configuration optimized for organization entities."""
         return cls(
             normalized_exact=0.5,  # Org names often have exact matches
@@ -704,7 +703,7 @@ class WeightConfiguration(BaseModel):
         )
 
     @classmethod
-    def for_technical_entities(cls) -> "WeightConfiguration":
+    def for_technical_entities(cls) -> WeightConfiguration:
         """Return weight configuration optimized for technical entities (classes, functions)."""
         return cls(
             normalized_exact=0.6,  # Technical names are often exact
@@ -748,7 +747,7 @@ class ScoreComputation(BaseModel):
         description="Compute graph neighborhood similarity",
         default=False,
     )
-    weight_config: Optional[WeightConfiguration] = Field(
+    weight_config: WeightConfiguration | None = Field(
         description="Weight configuration (uses defaults if not provided)",
         default=None,
     )

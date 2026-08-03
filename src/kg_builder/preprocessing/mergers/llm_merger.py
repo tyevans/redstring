@@ -15,7 +15,6 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
 from kg_builder.config import settings
-from kg_builder.preprocessing.exceptions import EntityResolutionError
 from kg_builder.preprocessing.factory import EntityMergerFactory, EntityMergerType
 from kg_builder.preprocessing.mergers.simple_merger import SimpleMerger
 from kg_builder.preprocessing.schemas import EntityMergeCandidate, EntityMergeDecision
@@ -328,7 +327,7 @@ For each pair, provide:
                 EntityMergeDecision(
                     should_merge=False,
                     confidence=0.0,
-                    reasoning=f"llm_error: {str(e)}",
+                    reasoning=f"llm_error: {e!s}",
                 )
                 for _ in batch
             ]

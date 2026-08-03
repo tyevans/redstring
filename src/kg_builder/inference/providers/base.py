@@ -18,13 +18,11 @@ Usage:
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from datetime import datetime
 from enum import Enum
-from typing import AsyncIterator, Optional
-from uuid import UUID
 
 from pydantic import BaseModel, Field
-
 
 # =============================================================================
 # Enums
@@ -95,7 +93,7 @@ class InferenceRequest(BaseModel):
         default_factory=list,
         description="Stop generation at these sequences",
     )
-    system_prompt: Optional[str] = Field(
+    system_prompt: str | None = Field(
         default=None,
         description="System prompt to prepend",
     )
@@ -160,11 +158,11 @@ class InferenceChunk(BaseModel):
         default=False,
         description="Is this the final chunk",
     )
-    error: Optional[str] = Field(
+    error: str | None = Field(
         default=None,
         description="Error message if failed",
     )
-    token_count: Optional[int] = Field(
+    token_count: int | None = Field(
         default=None,
         description="Tokens in this chunk",
     )
@@ -184,15 +182,15 @@ class ProviderHealth(BaseModel):
     status: ProviderStatus = Field(
         description="Health status",
     )
-    latency_ms: Optional[float] = Field(
+    latency_ms: float | None = Field(
         default=None,
         description="Response latency",
     )
-    available_models: Optional[list[str]] = Field(
+    available_models: list[str] | None = Field(
         default=None,
         description="Available models",
     )
-    error: Optional[str] = Field(
+    error: str | None = Field(
         default=None,
         description="Error details if unhealthy",
     )
@@ -216,15 +214,15 @@ class ModelInfo(BaseModel):
     name: str = Field(
         description="Model identifier",
     )
-    display_name: Optional[str] = Field(
+    display_name: str | None = Field(
         default=None,
         description="Human-readable name",
     )
-    size_bytes: Optional[int] = Field(
+    size_bytes: int | None = Field(
         default=None,
         description="Model file size",
     )
-    parameter_count: Optional[str] = Field(
+    parameter_count: str | None = Field(
         default=None,
         description="Parameter count (e.g., '12B')",
     )
@@ -242,7 +240,7 @@ class ModelInfo(BaseModel):
 class ProviderError(Exception):
     """Base exception for provider errors."""
 
-    def __init__(self, message: str, provider_type: Optional[str] = None):
+    def __init__(self, message: str, provider_type: str | None = None):
         self.message = message
         self.provider_type = provider_type
         super().__init__(message)
@@ -266,8 +264,8 @@ class ProviderRateLimitError(ProviderError):
     def __init__(
         self,
         message: str,
-        retry_after: Optional[float] = None,
-        provider_type: Optional[str] = None,
+        retry_after: float | None = None,
+        provider_type: str | None = None,
     ):
         super().__init__(message, provider_type)
         self.retry_after = retry_after

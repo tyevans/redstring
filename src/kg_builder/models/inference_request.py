@@ -15,7 +15,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SQLEnum
@@ -85,7 +85,7 @@ class InferenceRequest(Base):
         comment="Tenant (RLS enforced)",
     )
 
-    provider_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    provider_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("inference_providers.id", ondelete="SET NULL"),
         nullable=True,
@@ -93,7 +93,7 @@ class InferenceRequest(Base):
         comment="Provider used (null if provider deleted)",
     )
 
-    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,  # No FK to users table to avoid coupling
         index=True,
@@ -112,7 +112,7 @@ class InferenceRequest(Base):
         comment="Input prompt",
     )
 
-    response: Mapped[Optional[str]] = mapped_column(
+    response: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Generated response",
@@ -131,31 +131,31 @@ class InferenceRequest(Base):
     )
 
     # Metadata
-    prompt_tokens: Mapped[Optional[int]] = mapped_column(
+    prompt_tokens: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Number of prompt tokens",
     )
 
-    completion_tokens: Mapped[Optional[int]] = mapped_column(
+    completion_tokens: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Number of completion tokens",
     )
 
-    total_tokens: Mapped[Optional[int]] = mapped_column(
+    total_tokens: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Total tokens used",
     )
 
-    duration_ms: Mapped[Optional[int]] = mapped_column(
+    duration_ms: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Request duration in milliseconds",
     )
 
-    error: Mapped[Optional[str]] = mapped_column(
+    error: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Error message if failed",
@@ -178,18 +178,18 @@ class InferenceRequest(Base):
         comment="When request was created",
     )
 
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
+    completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="When request completed",
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
     )
 
-    provider: Mapped[Optional["InferenceProvider"]] = relationship(
+    provider: Mapped[InferenceProvider | None] = relationship(
         "InferenceProvider",
         back_populates="inference_requests",
     )

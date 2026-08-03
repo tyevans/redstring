@@ -10,8 +10,7 @@ Pipelines handle:
 
 import hashlib
 import logging
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 from uuid import UUID
 
 from scrapy import Spider
@@ -140,8 +139,9 @@ class DatabaseStoragePipeline:
 
     def open_spider(self, spider: Spider) -> None:
         """Open database session when spider starts."""
-        from kg_builder.db import SyncSessionLocal
         from sqlalchemy import text
+
+        from kg_builder.db import SyncSessionLocal
 
         self._session = SyncSessionLocal()
 
@@ -201,7 +201,7 @@ class DatabaseStoragePipeline:
                 http_status=item.get("http_status", 200),
                 content_type=item.get("content_type", "text/html"),
                 response_headers=item.get("response_headers", {}),
-                crawled_at=item.get("crawled_at", datetime.now(timezone.utc)),
+                crawled_at=item.get("crawled_at", datetime.now(UTC)),
                 depth=item.get("depth", 0),
                 extraction_status="pending",
             )

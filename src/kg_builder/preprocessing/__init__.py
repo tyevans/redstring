@@ -14,6 +14,13 @@ Example:
     result = await pipeline.process(content=html, extractor=extractor, url=url)
 """
 
+# Import implementations to trigger factory registration
+# These must be imported AFTER the factories are defined
+from kg_builder.preprocessing import (
+    chunkers,  # noqa: F401
+    mergers,  # noqa: F401
+    preprocessors,  # noqa: F401
+)
 from kg_builder.preprocessing.base import Chunker, EntityMerger, Preprocessor
 from kg_builder.preprocessing.exceptions import (
     ChunkerError,
@@ -32,6 +39,9 @@ from kg_builder.preprocessing.factory import (
     PreprocessorFactory,
     PreprocessorType,
 )
+
+# Import pipeline after all factories are populated
+from kg_builder.preprocessing.pipeline import PipelineConfig, PipelineResult, PreprocessingPipeline
 from kg_builder.preprocessing.schemas import (
     Chunk,
     ChunkingResult,
@@ -39,15 +49,6 @@ from kg_builder.preprocessing.schemas import (
     EntityMergeDecision,
     PreprocessingResult,
 )
-
-# Import implementations to trigger factory registration
-# These must be imported AFTER the factories are defined
-from kg_builder.preprocessing import chunkers  # noqa: E402, F401
-from kg_builder.preprocessing import mergers  # noqa: E402, F401
-from kg_builder.preprocessing import preprocessors  # noqa: E402, F401
-
-# Import pipeline after all factories are populated
-from kg_builder.preprocessing.pipeline import PipelineConfig, PipelineResult, PreprocessingPipeline
 
 __all__ = [
     # Protocols

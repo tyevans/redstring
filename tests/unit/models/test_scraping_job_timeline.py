@@ -5,10 +5,11 @@ Tests the enable_timeline_extraction column and default behavior
 added in ADR-025 for the Timeline and Chronology Extraction feature.
 """
 
-import pytest
 import uuid
 
-from kg_builder.models.scraping_job import ScrapingJob, JobStatus, JobStage
+import pytest
+
+from kg_builder.models.scraping_job import JobStage, JobStatus, ScrapingJob
 
 
 class TestScrapingJobTimelineExtraction:

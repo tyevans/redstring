@@ -13,11 +13,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # =============================================================================
 # Enums
@@ -68,9 +66,9 @@ class EntitySummary(BaseModel):
 
     id: UUID = Field(description="Entity UUID")
     name: str = Field(description="Entity name")
-    normalized_name: Optional[str] = Field(None, description="Normalized entity name")
+    normalized_name: str | None = Field(None, description="Normalized entity name")
     entity_type: str = Field(description="Entity type (e.g., 'person', 'organization')")
-    description: Optional[str] = Field(None, description="Entity description")
+    description: str | None = Field(None, description="Entity description")
     is_canonical: bool = Field(True, description="Whether this is a canonical entity")
 
     class Config:
@@ -85,15 +83,15 @@ class EntitySummary(BaseModel):
 class SimilarityBreakdown(BaseModel):
     """Breakdown of similarity scores for transparency."""
 
-    jaro_winkler: Optional[float] = Field(None, ge=0.0, le=1.0)
-    levenshtein: Optional[float] = Field(None, ge=0.0, le=1.0)
-    trigram: Optional[float] = Field(None, ge=0.0, le=1.0)
-    soundex_match: Optional[bool] = None
-    metaphone_match: Optional[bool] = None
-    embedding_cosine: Optional[float] = Field(None, ge=0.0, le=1.0)
-    graph_neighborhood: Optional[float] = Field(None, ge=0.0, le=1.0)
-    type_match: Optional[bool] = None
-    same_page: Optional[bool] = None
+    jaro_winkler: float | None = Field(None, ge=0.0, le=1.0)
+    levenshtein: float | None = Field(None, ge=0.0, le=1.0)
+    trigram: float | None = Field(None, ge=0.0, le=1.0)
+    soundex_match: bool | None = None
+    metaphone_match: bool | None = None
+    embedding_cosine: float | None = Field(None, ge=0.0, le=1.0)
+    graph_neighborhood: float | None = Field(None, ge=0.0, le=1.0)
+    type_match: bool | None = None
+    same_page: bool | None = None
 
 
 class MergeCandidateResponse(BaseModel):
@@ -118,7 +116,7 @@ class MergeCandidateResponse(BaseModel):
     blocking_keys: list[str] = Field(
         default_factory=list, description="Blocking keys that matched this pair"
     )
-    review_item_id: Optional[UUID] = Field(
+    review_item_id: UUID | None = Field(
         None, description="ID of associated review queue item if queued"
     )
     computed_at: datetime = Field(description="When similarity was computed")
@@ -141,7 +139,7 @@ class MergeCandidateListResponse(BaseModel):
 class ComputeCandidatesRequest(BaseModel):
     """Request to compute merge candidates."""
 
-    entity_ids: Optional[list[UUID]] = Field(
+    entity_ids: list[UUID] | None = Field(
         None, description="Specific entity IDs to compute candidates for (all if not specified)"
     )
     min_confidence: float = Field(
@@ -168,7 +166,7 @@ class ComputeCandidatesResponse(BaseModel):
     status: str = Field(description="Job status (queued, processing, completed, failed)")
     entities_processed: int = Field(0, description="Number of entities processed")
     candidates_found: int = Field(0, description="Number of candidate pairs found")
-    message: Optional[str] = Field(None, description="Status message")
+    message: str | None = Field(None, description="Status message")
 
 
 # =============================================================================
@@ -188,7 +186,7 @@ class MergeRequest(BaseModel):
         "manual",
         description="Reason for merge (manual, auto_high_confidence, user_approved, batch)",
     )
-    similarity_scores: Optional[dict] = Field(
+    similarity_scores: dict | None = Field(
         None, description="Similarity scores from candidate computation"
     )
 
@@ -211,7 +209,7 @@ class MergeResponse(BaseModel):
     relationships_transferred: int = Field(description="Number of relationships transferred")
     merge_history_id: UUID = Field(description="ID of the merge history record")
     event_id: UUID = Field(description="Domain event ID for the merge")
-    message: Optional[str] = Field(None, description="Additional information")
+    message: str | None = Field(None, description="Additional information")
 
 
 class UndoMergeRequest(BaseModel):
@@ -222,7 +220,7 @@ class UndoMergeRequest(BaseModel):
         min_length=5,
         max_length=500,
     )
-    restore_entity_ids: Optional[list[UUID]] = Field(
+    restore_entity_ids: list[UUID] | None = Field(
         None, description="Specific entity IDs to restore (all if not specified)"
     )
 
@@ -236,7 +234,7 @@ class UndoMergeResponse(BaseModel):
     aliases_removed: int = Field(description="Number of alias records removed")
     relationships_restored: int = Field(description="Number of relationships restored")
     undo_history_id: UUID = Field(description="ID of the undo history record")
-    message: Optional[str] = Field(None, description="Additional information")
+    message: str | None = Field(None, description="Additional information")
 
 
 class SplitEntityRequest(BaseModel):
@@ -246,10 +244,10 @@ class SplitEntityRequest(BaseModel):
         description="Definitions for new entities to create",
         min_length=2,
     )
-    relationship_assignments: Optional[dict[str, int]] = Field(
+    relationship_assignments: dict[str, int] | None = Field(
         None, description="Mapping of relationship IDs to new entity index"
     )
-    alias_assignments: Optional[dict[str, int]] = Field(
+    alias_assignments: dict[str, int] | None = Field(
         None, description="Mapping of alias IDs to new entity index"
     )
     reason: str = Field(
@@ -279,7 +277,7 @@ class SplitEntityResponse(BaseModel):
     relationships_redistributed: int = Field(description="Number of relationships redistributed")
     aliases_redistributed: int = Field(description="Number of aliases redistributed")
     split_history_id: UUID = Field(description="ID of the split history record")
-    message: Optional[str] = Field(None, description="Additional information")
+    message: str | None = Field(None, description="Additional information")
 
 
 # =============================================================================
@@ -299,9 +297,9 @@ class ReviewQueueItemResponse(BaseModel):
     )
     similarity_scores: dict = Field(description="Detailed similarity breakdown")
     status: ReviewStatus = Field(description="Current review status")
-    reviewed_by_name: Optional[str] = Field(None, description="Name of reviewer")
-    reviewed_at: Optional[datetime] = Field(None, description="When review occurred")
-    reviewer_notes: Optional[str] = Field(None, description="Notes from reviewer")
+    reviewed_by_name: str | None = Field(None, description="Name of reviewer")
+    reviewed_at: datetime | None = Field(None, description="When review occurred")
+    reviewer_notes: str | None = Field(None, description="Notes from reviewer")
     created_at: datetime = Field(description="When item was queued")
 
     class Config:
@@ -326,12 +324,12 @@ class ReviewDecisionRequest(BaseModel):
     """Request to submit a review decision."""
 
     decision: ReviewDecision = Field(description="The review decision")
-    notes: Optional[str] = Field(
+    notes: str | None = Field(
         None,
         description="Optional notes explaining the decision",
         max_length=1000,
     )
-    select_canonical: Optional[UUID] = Field(
+    select_canonical: UUID | None = Field(
         None,
         description="If approving, optionally specify which entity should be canonical",
     )
@@ -346,10 +344,10 @@ class ReviewDecisionResponse(BaseModel):
     merge_executed: bool = Field(
         False, description="Whether merge was immediately executed (for approvals)"
     )
-    merge_result: Optional[MergeResponse] = Field(
+    merge_result: MergeResponse | None = Field(
         None, description="Merge result if merge was executed"
     )
-    message: Optional[str] = Field(None, description="Additional information")
+    message: str | None = Field(None, description="Additional information")
 
 
 class ReviewQueueStatsResponse(BaseModel):
@@ -361,7 +359,7 @@ class ReviewQueueStatsResponse(BaseModel):
     total_deferred: int = Field(description="Total items deferred")
     total_expired: int = Field(description="Total items expired")
     avg_confidence: float = Field(description="Average confidence of pending items")
-    oldest_pending_age_hours: Optional[float] = Field(
+    oldest_pending_age_hours: float | None = Field(
         None, description="Age of oldest pending item in hours"
     )
     by_entity_type: dict[str, int] = Field(
@@ -380,18 +378,18 @@ class MergeHistoryItemResponse(BaseModel):
     id: UUID = Field(description="History record ID")
     event_id: UUID = Field(description="Domain event ID")
     event_type: MergeEventType = Field(description="Type of merge operation")
-    canonical_entity: Optional[EntitySummary] = Field(
+    canonical_entity: EntitySummary | None = Field(
         None, description="Canonical entity (for merges)"
     )
     affected_entity_ids: list[UUID] = Field(description="All entities involved")
-    merge_reason: Optional[str] = Field(None, description="Reason for the operation")
-    similarity_scores: Optional[dict] = Field(None, description="Similarity scores at time of merge")
-    performed_by_name: Optional[str] = Field(None, description="User who performed operation")
+    merge_reason: str | None = Field(None, description="Reason for the operation")
+    similarity_scores: dict | None = Field(None, description="Similarity scores at time of merge")
+    performed_by_name: str | None = Field(None, description="User who performed operation")
     performed_at: datetime = Field(description="When operation occurred")
     undone: bool = Field(description="Whether this merge has been undone")
-    undone_at: Optional[datetime] = Field(None, description="When merge was undone")
-    undone_by_name: Optional[str] = Field(None, description="User who undid merge")
-    undo_reason: Optional[str] = Field(None, description="Reason for undoing")
+    undone_at: datetime | None = Field(None, description="When merge was undone")
+    undone_by_name: str | None = Field(None, description="User who undid merge")
+    undo_reason: str | None = Field(None, description="Reason for undoing")
     can_undo: bool = Field(description="Whether this operation can be undone")
 
     class Config:
@@ -451,7 +449,7 @@ class ConsolidationConfigResponse(BaseModel):
     embedding_model: str = Field(description="Embedding model to use")
     feature_weights: dict = Field(description="Feature weights for scoring")
     created_at: datetime = Field(description="When config was created")
-    updated_at: Optional[datetime] = Field(None, description="When config was last updated")
+    updated_at: datetime | None = Field(None, description="When config was last updated")
 
     class Config:
         from_attributes = True
@@ -460,34 +458,34 @@ class ConsolidationConfigResponse(BaseModel):
 class ConsolidationConfigRequest(BaseModel):
     """Request to update consolidation configuration."""
 
-    auto_merge_threshold: Optional[float] = Field(
+    auto_merge_threshold: float | None = Field(
         None, ge=0.0, le=1.0, description="Threshold for automatic merging"
     )
-    review_threshold: Optional[float] = Field(
+    review_threshold: float | None = Field(
         None, ge=0.0, le=1.0, description="Threshold for queueing human review"
     )
-    max_block_size: Optional[int] = Field(
+    max_block_size: int | None = Field(
         None, gt=0, description="Maximum entities per blocking group"
     )
-    enable_embedding_similarity: Optional[bool] = Field(
+    enable_embedding_similarity: bool | None = Field(
         None, description="Whether to compute embedding similarity"
     )
-    enable_graph_similarity: Optional[bool] = Field(
+    enable_graph_similarity: bool | None = Field(
         None, description="Whether to compute graph neighborhood similarity"
     )
-    enable_auto_consolidation: Optional[bool] = Field(
+    enable_auto_consolidation: bool | None = Field(
         None, description="Whether to run consolidation on new entity extraction"
     )
-    embedding_model: Optional[str] = Field(
+    embedding_model: str | None = Field(
         None, description="Embedding model to use", min_length=1, max_length=255
     )
-    feature_weights: Optional[dict] = Field(
+    feature_weights: dict | None = Field(
         None, description="Feature weights for scoring"
     )
 
     @field_validator("feature_weights")
     @classmethod
-    def validate_feature_weights(cls, v: Optional[dict]) -> Optional[dict]:
+    def validate_feature_weights(cls, v: dict | None) -> dict | None:
         """Validate feature weight values."""
         if v is None:
             return v
@@ -507,7 +505,7 @@ class ConsolidationConfigRequest(BaseModel):
 class BatchConsolidationRequest(BaseModel):
     """Request to run batch consolidation."""
 
-    entity_type: Optional[str] = Field(
+    entity_type: str | None = Field(
         None, description="Filter by entity type (all types if not specified)"
     )
     min_confidence: float = Field(
@@ -533,4 +531,4 @@ class BatchConsolidationResponse(BaseModel):
     merges_executed: int = Field(0, description="Number of merges executed")
     merges_skipped: int = Field(0, description="Number of merges skipped")
     errors: list[str] = Field(default_factory=list, description="Any errors encountered")
-    message: Optional[str] = Field(None, description="Status message")
+    message: str | None = Field(None, description="Status message")

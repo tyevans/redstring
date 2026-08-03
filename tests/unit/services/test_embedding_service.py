@@ -4,18 +4,19 @@ Unit tests for OllamaEmbeddingService.
 Tests the embedding service functionality with mocked HTTP responses.
 """
 
-import pytest
-import numpy as np
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
+import numpy as np
+import pytest
 
 from kg_builder.services.embedding import (
-    OllamaEmbeddingService,
-    EmbeddingServiceFactory,
-    EmbeddingConnectionError,
-    EmbeddingComputationError,
-    DEFAULT_MODEL,
     DEFAULT_DIMENSION,
+    DEFAULT_MODEL,
+    EmbeddingComputationError,
+    EmbeddingConnectionError,
+    EmbeddingServiceFactory,
+    OllamaEmbeddingService,
     get_embedding_service,
 )
 

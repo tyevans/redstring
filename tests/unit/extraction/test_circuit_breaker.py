@@ -17,7 +17,7 @@ Uses mocking to avoid external Redis dependency.
 import importlib.util
 import sys
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

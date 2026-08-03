@@ -5,12 +5,12 @@ from uuid import uuid4
 import pytest
 
 from kg_builder.models.consolidation_config import (
-    ConsolidationConfig,
     DEFAULT_AUTO_MERGE_THRESHOLD,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_FEATURE_WEIGHTS,
     DEFAULT_MAX_BLOCK_SIZE,
     DEFAULT_REVIEW_THRESHOLD,
+    ConsolidationConfig,
 )
 
 

@@ -1,9 +1,7 @@
 """Unit tests for MergeReviewItem model."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
-
-import pytest
 
 from kg_builder.models.merge_review_queue import MergeReviewItem, MergeReviewStatus
 
@@ -252,7 +250,7 @@ class TestMergeReviewItemOptionalFields:
     def test_item_with_reviewer_info(self):
         """Test item with reviewer information."""
         reviewer_id = uuid4()
-        reviewed_at = datetime.now(timezone.utc)
+        reviewed_at = datetime.now(UTC)
         notes = "These are clearly the same entity based on context."
 
         item = MergeReviewItem(

@@ -10,20 +10,20 @@ Tests the prompt generation functionality including:
 
 import pytest
 
+from kg_builder.extraction.domains.models import (
+    DomainSchema,
+    EntityTypeSchema,
+    PropertySchema,
+    RelationshipTypeSchema,
+)
 from kg_builder.extraction.prompt_generator import (
+    DEFAULT_MAX_CONTENT_LENGTH,
     DomainPromptGenerator,
     generate_extraction_prompt,
     generate_output_schema,
     generate_user_prompt,
     get_prompt_generator,
     reset_prompt_generator,
-    DEFAULT_MAX_CONTENT_LENGTH,
-)
-from kg_builder.extraction.domains.models import (
-    DomainSchema,
-    EntityTypeSchema,
-    PropertySchema,
-    RelationshipTypeSchema,
 )
 
 

@@ -304,7 +304,7 @@ class TestTimelineExportServiceExportCsv:
         for char in FORMULA_INJECTION_CHARS:
             test_value = f"{char}test"
             sanitized = service._sanitize_csv_cell(test_value)
-            assert sanitized.startswith("'"), f"Character {repr(char)} not sanitized"
+            assert sanitized.startswith("'"), f"Character {char!r} not sanitized"
 
     def test_export_csv_empty_value_not_sanitized(self):
         """Test empty values are not modified."""

@@ -7,9 +7,10 @@ Tests the timeline/chronology extraction features added in ADR-025:
 - DatePrecision and UncertaintyMarker enums
 """
 
-import pytest
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+import pytest
 
 from kg_builder.models.extracted_entity import (
     DatePrecision,
@@ -104,15 +105,15 @@ class TestExtractedEntityTemporalColumns:
 
     def test_start_date_can_be_set(self, base_entity_kwargs):
         """Test start_date can be set to a datetime."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entity = ExtractedEntity(**base_entity_kwargs, start_date=now)
 
         assert entity.start_date == now
 
     def test_end_date_can_be_set(self, base_entity_kwargs):
         """Test end_date can be set for date ranges."""
-        start = datetime(2020, 1, 1, tzinfo=timezone.utc)
-        end = datetime(2020, 12, 31, tzinfo=timezone.utc)
+        start = datetime(2020, 1, 1, tzinfo=UTC)
+        end = datetime(2020, 12, 31, tzinfo=UTC)
 
         entity = ExtractedEntity(
             **base_entity_kwargs,
@@ -127,7 +128,7 @@ class TestExtractedEntityTemporalColumns:
         """Test date_precision can be set as a string."""
         entity = ExtractedEntity(
             **base_entity_kwargs,
-            start_date=datetime(1999, 1, 1, tzinfo=timezone.utc),
+            start_date=datetime(1999, 1, 1, tzinfo=UTC),
             date_precision="year",
         )
 
@@ -137,7 +138,7 @@ class TestExtractedEntityTemporalColumns:
         """Test uncertainty_marker can be set as a string."""
         entity = ExtractedEntity(
             **base_entity_kwargs,
-            start_date=datetime(1500, 1, 1, tzinfo=timezone.utc),
+            start_date=datetime(1500, 1, 1, tzinfo=UTC),
             uncertainty_marker="circa",
         )
 
@@ -148,7 +149,7 @@ class TestExtractedEntityTemporalColumns:
         original_text = "in the late 1990s"
         entity = ExtractedEntity(
             **base_entity_kwargs,
-            start_date=datetime(1997, 1, 1, tzinfo=timezone.utc),
+            start_date=datetime(1997, 1, 1, tzinfo=UTC),
             date_precision="year",
             uncertainty_marker="approximate",
             original_temporal_text=original_text,
@@ -168,8 +169,8 @@ class TestExtractedEntityTemporalColumns:
 
     def test_publication_date_separate_from_event_date(self, base_entity_kwargs):
         """Test publication_date is separate from event start_date."""
-        event_date = datetime(1776, 7, 4, tzinfo=timezone.utc)
-        pub_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
+        event_date = datetime(1776, 7, 4, tzinfo=UTC)
+        pub_date = datetime(2024, 1, 15, tzinfo=UTC)
 
         entity = ExtractedEntity(
             **base_entity_kwargs,
@@ -207,7 +208,7 @@ class TestExtractedEntityTemporalProperties:
         """Test is_temporal is True when start_date is set."""
         entity = ExtractedEntity(
             **base_entity_kwargs,
-            start_date=datetime.now(timezone.utc),
+            start_date=datetime.now(UTC),
         )
         assert entity.is_temporal is True
 
@@ -223,7 +224,7 @@ class TestExtractedEntityTemporalProperties:
         """Test is_temporal is True when both date and sequence are set."""
         entity = ExtractedEntity(
             **base_entity_kwargs,
-            start_date=datetime.now(timezone.utc),
+            start_date=datetime.now(UTC),
             sequence_position=1,
         )
         assert entity.is_temporal is True
@@ -283,7 +284,7 @@ class TestExtractedEntityTemporalProperties:
         """Test has_date_range is False with only start_date."""
         entity = ExtractedEntity(
             **base_entity_kwargs,
-            start_date=datetime.now(timezone.utc),
+            start_date=datetime.now(UTC),
         )
         assert entity.has_date_range is False
 
@@ -291,8 +292,8 @@ class TestExtractedEntityTemporalProperties:
         """Test has_date_range is True with both dates."""
         entity = ExtractedEntity(
             **base_entity_kwargs,
-            start_date=datetime(2020, 1, 1, tzinfo=timezone.utc),
-            end_date=datetime(2020, 12, 31, tzinfo=timezone.utc),
+            start_date=datetime(2020, 1, 1, tzinfo=UTC),
+            end_date=datetime(2020, 12, 31, tzinfo=UTC),
         )
         assert entity.has_date_range is True
 
@@ -310,7 +311,7 @@ class TestExtractedEntityTemporalValidEnumValues:
             "name": "Test Event",
             "normalized_name": "test event",
             "extraction_method": ExtractionMethod.LLM_OPENAI,
-            "start_date": datetime.now(timezone.utc),
+            "start_date": datetime.now(UTC),
         }
 
     @pytest.mark.parametrize("precision", [

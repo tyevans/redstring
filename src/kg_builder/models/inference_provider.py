@@ -15,7 +15,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy import Enum as SQLEnum
@@ -107,7 +107,7 @@ class InferenceProvider(Base):
     )
 
     # Default inference parameters
-    default_model: Mapped[Optional[str]] = mapped_column(
+    default_model: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Default model to use",
@@ -138,7 +138,7 @@ class InferenceProvider(Base):
     )
 
     # Rate limiting
-    rate_limit_preset: Mapped[Optional[str]] = mapped_column(
+    rate_limit_preset: Mapped[str | None] = mapped_column(
         String(50),
         default="balanced",
         insert_default="balanced",
@@ -153,19 +153,19 @@ class InferenceProvider(Base):
         nullable=False,
     )
 
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         onupdate=func.now(),
         nullable=True,
     )
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship(
+    tenant: Mapped[Tenant] = relationship(
         "Tenant",
         back_populates="inference_providers",
     )
 
-    inference_requests: Mapped[list["InferenceRequest"]] = relationship(
+    inference_requests: Mapped[list[InferenceRequest]] = relationship(
         "InferenceRequest",
         back_populates="provider",
         cascade="all, delete-orphan",

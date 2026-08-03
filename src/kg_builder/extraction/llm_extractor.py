@@ -6,10 +6,9 @@ from unstructured text content.
 """
 
 import asyncio
-import json
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from kg_builder.config import settings
 from kg_builder.models.extracted_entity import EntityType, ExtractionMethod
@@ -162,7 +161,7 @@ class RateLimiter:
 
 
 # Global rate limiter instance
-_rate_limiter: Optional[RateLimiter] = None
+_rate_limiter: RateLimiter | None = None
 
 
 def get_rate_limiter() -> RateLimiter:
@@ -318,7 +317,7 @@ def _parse_extraction_response(response: Any) -> list[dict]:
     return entities
 
 
-def _convert_llm_entity(raw_entity: dict) -> Optional[dict]:
+def _convert_llm_entity(raw_entity: dict) -> dict | None:
     """
     Convert LLM-extracted entity to our format.
 

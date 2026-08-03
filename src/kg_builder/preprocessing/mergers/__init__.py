@@ -13,6 +13,6 @@ from kg_builder.preprocessing.mergers.llm_merger import LLMMerger
 from kg_builder.preprocessing.mergers.simple_merger import SimpleMerger
 
 __all__ = [
-    "SimpleMerger",
     "LLMMerger",
+    "SimpleMerger",
 ]

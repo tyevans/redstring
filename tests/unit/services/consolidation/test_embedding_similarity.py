@@ -4,18 +4,19 @@ Unit tests for EmbeddingSimilarityService.
 Tests the embedding-based similarity computation with mocked services.
 """
 
-import pytest
-import numpy as np
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import numpy as np
+import pytest
+
+from kg_builder.schemas.similarity import SimilarityType
 from kg_builder.services.consolidation.embedding_similarity import (
     EmbeddingSimilarityService,
     cosine_similarity,
     euclidean_similarity,
     get_embedding_similarity_service,
 )
-from kg_builder.schemas.similarity import SimilarityType
 
 
 class TestCosineSimilarity:

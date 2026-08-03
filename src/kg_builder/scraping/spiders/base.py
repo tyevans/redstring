@@ -10,8 +10,9 @@ Provides common functionality for all Knowledge Mapper spiders:
 
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID
 
@@ -88,9 +89,9 @@ class TenantAwareSpider(scrapy.Spider):
     name = "tenant_aware"
 
     # These will be set from job configuration
-    job_id: Optional[UUID] = None
-    tenant_id: Optional[UUID] = None
-    start_url: Optional[str] = None
+    job_id: UUID | None = None
+    tenant_id: UUID | None = None
+    start_url: str | None = None
     allowed_domains: list[str] = []
     url_patterns: list[str] = []
     excluded_patterns: list[str] = []
@@ -100,7 +101,7 @@ class TenantAwareSpider(scrapy.Spider):
 
     # Progress tracking
     pages_crawled: int = 0
-    progress_callback: Optional[Callable[[int, int, int], None]] = None
+    progress_callback: Callable[[int, int, int], None] | None = None
 
     def __init__(
         self,
@@ -204,7 +205,7 @@ class TenantAwareSpider(scrapy.Spider):
         # Extract and follow links
         yield from self._follow_links(response)
 
-    def _extract_page_data(self, response: Response) -> Optional[ScrapedPageItem]:
+    def _extract_page_data(self, response: Response) -> ScrapedPageItem | None:
         """
         Extract page data from response.
 
@@ -247,7 +248,7 @@ class TenantAwareSpider(scrapy.Spider):
             item["response_headers"] = dict(response.headers.to_unicode_dict())
 
             # Crawl info
-            item["crawled_at"] = datetime.now(timezone.utc)
+            item["crawled_at"] = datetime.now(UTC)
             item["depth"] = response.meta.get("depth", 0)
 
             logger.debug(

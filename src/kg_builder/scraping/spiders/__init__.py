@@ -10,6 +10,6 @@ from kg_builder.scraping.spiders.base import TenantAwareSpider
 from kg_builder.scraping.spiders.generic import GenericSpider
 
 __all__ = [
-    "TenantAwareSpider",
     "GenericSpider",
+    "TenantAwareSpider",
 ]

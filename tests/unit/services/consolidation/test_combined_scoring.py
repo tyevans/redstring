@@ -4,22 +4,23 @@ Unit tests for CombinedScoringPipeline.
 Tests the combined similarity scoring with mocked services.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
+
+from kg_builder.schemas.similarity import (
+    ContextualSignals,
+    SimilarityScore,
+    SimilarityScores,
+    SimilarityType,
+    StringSimilarityScores,
+)
 from kg_builder.services.consolidation.combined_scoring import (
     CombinedScoringPipeline,
     FeatureWeights,
     ScoringResult,
     create_default_config_for_scoring,
-)
-from kg_builder.schemas.similarity import (
-    SimilarityScore,
-    SimilarityScores,
-    SimilarityType,
-    StringSimilarityScores,
-    ContextualSignals,
 )
 
 

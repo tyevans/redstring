@@ -8,7 +8,6 @@ The actual index creation is tested during migration application;
 these tests validate the migration structure and extension availability.
 """
 
-import pytest
 
 
 class TestPgTrigram:

@@ -12,15 +12,13 @@ tests/integration/consolidation/test_merge_integration.py
 """
 
 import uuid
-from datetime import datetime, timezone
 from enum import Enum
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from kg_builder.services.consolidation.merge_service import (
     DEFAULT_PROPERTY_STRATEGIES,
-    MergeError,
     MergeResult,
     MergeService,
     MergeValidationError,

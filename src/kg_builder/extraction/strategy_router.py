@@ -104,7 +104,7 @@ class ExtractionStrategyRouter:
 
     def __init__(
         self,
-        inference_provider: "InferenceProvider | None" = None,
+        inference_provider: InferenceProvider | None = None,
         *,
         classifier: ContentClassifier | None = None,
         prompt_generator: DomainPromptGenerator | None = None,
@@ -180,7 +180,7 @@ class ExtractionStrategyRouter:
 
     async def route(
         self,
-        job: "ScrapingJob",
+        job: ScrapingJob,
         content: str,
         *,
         tenant_id: str | None = None,
@@ -250,7 +250,7 @@ class ExtractionStrategyRouter:
 
     def _handle_manual(
         self,
-        job: "ScrapingJob",
+        job: ScrapingJob,
         tenant_id: str | None,
     ) -> ExtractionStrategy:
         """Handle manual extraction strategy.
@@ -289,7 +289,7 @@ class ExtractionStrategyRouter:
 
     async def _handle_auto_detect(
         self,
-        job: "ScrapingJob",
+        job: ScrapingJob,
         content: str,
         tenant_id: str | None,
     ) -> ExtractionStrategy:
@@ -488,7 +488,7 @@ class ExtractionStrategyRouterFactory:
 
     def create(
         self,
-        inference_provider: "InferenceProvider | None" = None,
+        inference_provider: InferenceProvider | None = None,
         *,
         classifier: ContentClassifier | None = None,
         prompt_generator: DomainPromptGenerator | None = None,
@@ -533,10 +533,10 @@ def get_strategy_router_factory() -> ExtractionStrategyRouterFactory:
 
 
 async def route_extraction_strategy(
-    job: "ScrapingJob",
+    job: ScrapingJob,
     content: str,
     *,
-    inference_provider: "InferenceProvider | None" = None,
+    inference_provider: InferenceProvider | None = None,
     tenant_id: str | None = None,
     job_update_callback: JobUpdateCallback | None = None,
 ) -> ExtractionStrategy:

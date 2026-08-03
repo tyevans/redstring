@@ -7,20 +7,19 @@ Tests the MergeService.undo_merge() method and related helper methods.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone, UTC
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from kg_builder.models.entity_alias import EntityAlias
-from kg_builder.models.extracted_entity import EntityType, ExtractionMethod, ExtractedEntity
+from kg_builder.models.extracted_entity import EntityType, ExtractedEntity
 from kg_builder.models.merge_history import MergeEventType, MergeHistory
 from kg_builder.services.consolidation.merge_service import (
     MergeService,
     MergeUndoError,
     UndoResult,
 )
-
 
 # =============================================================================
 # Fixtures

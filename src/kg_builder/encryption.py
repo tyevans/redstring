@@ -25,11 +25,7 @@ Security Considerations:
 """
 
 import base64
-import hashlib
 import logging
-import secrets
-from functools import lru_cache
-from typing import Optional
 from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -75,7 +71,7 @@ class EncryptionService:
 
     def __init__(
         self,
-        master_key: Optional[str] = None,
+        master_key: str | None = None,
         enabled: bool = True,
     ):
         """
@@ -89,8 +85,8 @@ class EncryptionService:
             EncryptionKeyError: If master_key is invalid and encryption is enabled
         """
         self._enabled = enabled
-        self._master_key: Optional[bytes] = None
-        self._master_fernet: Optional[Fernet] = None
+        self._master_key: bytes | None = None
+        self._master_fernet: Fernet | None = None
         self._tenant_ciphers: dict[UUID, Fernet] = {}
 
         if enabled:
@@ -154,7 +150,7 @@ class EncryptionService:
 
         # Use HKDF to derive a tenant-specific key
         # Salt includes the tenant_id for uniqueness
-        salt = f"knowledge-mapper:tenant:{tenant_id}".encode("utf-8")
+        salt = f"knowledge-mapper:tenant:{tenant_id}".encode()
 
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
@@ -194,7 +190,7 @@ class EncryptionService:
         self,
         plaintext: str,
         tenant_id: UUID,
-        field_name: Optional[str] = None,
+        field_name: str | None = None,
     ) -> str:
         """
         Encrypt a plaintext value for a specific tenant.
@@ -251,7 +247,7 @@ class EncryptionService:
         self,
         ciphertext: str,
         tenant_id: UUID,
-        field_name: Optional[str] = None,
+        field_name: str | None = None,
     ) -> str:
         """
         Decrypt a ciphertext value for a specific tenant.
@@ -420,7 +416,7 @@ class EncryptionService:
 
         return result
 
-    def clear_tenant_cache(self, tenant_id: Optional[UUID] = None) -> None:
+    def clear_tenant_cache(self, tenant_id: UUID | None = None) -> None:
         """
         Clear cached tenant ciphers.
 
@@ -469,7 +465,7 @@ class EncryptionService:
 
 
 # Global service instance (lazy initialization)
-_encryption_service: Optional[EncryptionService] = None
+_encryption_service: EncryptionService | None = None
 
 
 def get_encryption_service() -> EncryptionService:

@@ -7,7 +7,6 @@ Redis is unavailable - services will fall back to database queries.
 """
 
 import logging
-from typing import Optional
 
 import redis.asyncio as redis
 
@@ -16,10 +15,10 @@ from kg_builder.config import settings
 logger = logging.getLogger(__name__)
 
 # Global Redis client instance (singleton)
-_redis_client: Optional[redis.Redis] = None
+_redis_client: redis.Redis | None = None
 
 
-async def get_redis_client() -> Optional[redis.Redis]:
+async def get_redis_client() -> redis.Redis | None:
     """
     Get Redis client with lazy initialization.
 
@@ -74,7 +73,7 @@ async def get_redis_client() -> Optional[redis.Redis]:
     except Exception as e:
         logger.error(
             f"Redis connection failed: redis_url={settings.REDIS_URL.split('@')[-1]}, "  # Hide credentials
-            f"error={str(e)}, error_type={type(e).__name__}"
+            f"error={e!s}, error_type={type(e).__name__}"
         )
         # Don't raise - allow graceful degradation
         return None

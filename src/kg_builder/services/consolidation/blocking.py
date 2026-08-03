@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 import jellyfish
-from sqlalchemy import or_, select, func, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -240,7 +240,7 @@ class BlockingEngine:
         session: Session,
         entity: ExtractedEntity,
         tenant_id: UUID,
-        config: "ConsolidationConfig | None" = None,
+        config: ConsolidationConfig | None = None,
     ) -> BlockingResult:
         """
         Find merge candidates for an entity using blocking (sync version).

@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from kg_builder.preprocessing.base import Chunker, EntityMerger, Preprocessor
-from kg_builder.preprocessing.exceptions import PipelineConfigError, PipelineError
+from kg_builder.preprocessing.exceptions import PipelineConfigError
 from kg_builder.preprocessing.factory import (
     ChunkerFactory,
     ChunkerType,
@@ -395,7 +395,7 @@ class PreprocessingPipeline:
                 entities_by_chunk[chunk.chunk_index] = []
                 relationships_by_chunk[chunk.chunk_index] = []
                 entities_per_chunk.append(0)
-                chunk_errors.append(f"Chunk {chunk.chunk_index}: {str(e)}")
+                chunk_errors.append(f"Chunk {chunk.chunk_index}: {e!s}")
                 metrics.chunks_failed += 1
 
         metrics.extraction_time_ms = (time.time() - extract_start) * 1000

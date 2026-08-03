@@ -1,9 +1,7 @@
 """Unit tests for MergeHistory model."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
-
-import pytest
 
 from kg_builder.models.merge_history import MergeEventType, MergeHistory
 
@@ -32,7 +30,7 @@ class TestMergeHistoryCreation:
         event_id = uuid4()
         canonical_id = uuid4()
         merged_id = uuid4()
-        performed_at = datetime.now(timezone.utc)
+        performed_at = datetime.now(UTC)
 
         history = MergeHistory(
             tenant_id=tenant_id,
@@ -58,7 +56,7 @@ class TestMergeHistoryCreation:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.id is not None
 
@@ -69,7 +67,7 @@ class TestMergeHistoryCreation:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.undone is False
 
@@ -84,7 +82,7 @@ class TestMergeHistoryCanUndo:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4(), uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.can_undo is True
 
@@ -95,7 +93,7 @@ class TestMergeHistoryCanUndo:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
             undone=True,
         )
         assert history.can_undo is False
@@ -107,7 +105,7 @@ class TestMergeHistoryCanUndo:
             event_id=uuid4(),
             event_type=MergeEventType.MERGE_UNDONE,
             affected_entity_ids=[uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.can_undo is False
 
@@ -118,7 +116,7 @@ class TestMergeHistoryCanUndo:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITY_SPLIT,
             affected_entity_ids=[uuid4(), uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.can_undo is False
 
@@ -133,7 +131,7 @@ class TestMergeHistoryAffectedEntityCount:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.affected_entity_count == 1
 
@@ -144,7 +142,7 @@ class TestMergeHistoryAffectedEntityCount:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4(), uuid4(), uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.affected_entity_count == 3
 
@@ -160,7 +158,7 @@ class TestMergeHistoryOptionalFields:
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
             merge_reason="auto_high_confidence",
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.merge_reason == "auto_high_confidence"
 
@@ -177,7 +175,7 @@ class TestMergeHistoryOptionalFields:
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
             similarity_scores=scores,
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.similarity_scores == scores
 
@@ -192,7 +190,7 @@ class TestMergeHistoryOptionalFields:
             event_type=MergeEventType.ENTITY_SPLIT,
             affected_entity_ids=[uuid4(), uuid4()],
             details=details,
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.details == details
 
@@ -205,21 +203,21 @@ class TestMergeHistoryOptionalFields:
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
             performed_by=user_id,
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         assert history.performed_by == user_id
 
     def test_history_with_undo_info(self):
         """Test history with undo information."""
         undoer_id = uuid4()
-        undone_at = datetime.now(timezone.utc)
+        undone_at = datetime.now(UTC)
 
         history = MergeHistory(
             tenant_id=uuid4(),
             event_id=uuid4(),
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
             undone=True,
             undone_at=undone_at,
             undone_by=undoer_id,
@@ -241,7 +239,7 @@ class TestMergeHistoryRepr:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITIES_MERGED,
             affected_entity_ids=[uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         repr_str = repr(history)
         assert "MergeHistory" in repr_str
@@ -254,7 +252,7 @@ class TestMergeHistoryRepr:
             event_id=uuid4(),
             event_type=MergeEventType.ENTITY_SPLIT,
             affected_entity_ids=[uuid4(), uuid4()],
-            performed_at=datetime.now(timezone.utc),
+            performed_at=datetime.now(UTC),
         )
         repr_str = repr(history)
         assert "entity_split" in repr_str
