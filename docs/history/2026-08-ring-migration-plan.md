@@ -1,4 +1,18 @@
-# kg-builder re-architecture plan
+# kg-builder re-architecture plan (historical)
+
+> **This is history, not a plan.** Every slice below is done, and it is written
+> in the future tense about work that has been finished, re-scoped, or
+> abandoned. Do not read it as a description of the library — read
+> [`docs/ring-migration.md`](../ring-migration.md) for what actually happened
+> and the ADRs in [`docs/adr/`](../adr/) for the decisions that outlived it.
+>
+> It is kept for two things. **Global Constraints** below is what all eleven
+> slices were held to, and it is reusable for the next campaign of this kind.
+> And the "What kg-builder is not" and "Input contract" sections record scope
+> boundaries that are still enforced, which is why proposals to widen them keep
+> arriving without knowing what was already argued.
+>
+> Archived unchanged in slice 11, from `docs/plans/ring-migration.md`.
 
 Turn kg-builder into a library that constructs knowledge graphs, with
 pluggable graph and vector storage — and nothing else. Clean breaks only:
