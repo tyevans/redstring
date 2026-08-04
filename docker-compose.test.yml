@@ -3,6 +3,11 @@
 #     docker compose -f docker-compose.test.yml up -d
 #     KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest -m integration
 #
+# Or name one service -- no integration test needs both:
+#
+#     docker compose -f docker-compose.test.yml up -d neo4j
+#     docker compose -f docker-compose.test.yml up -d postgres
+#
 # Ports avoid 7687/5432/5433 so nothing collides with a local install or with
 # another project's containers.
 #
@@ -10,8 +15,7 @@
 # property rather than a label, so `apoc.create.addLabels` is not needed, and
 # traversal is a variable-length path rather than `apoc.path.subgraphAll`.
 # Requiring a plugin would narrow which managed Neo4j offerings can host this
-# library. `graph/client.py` still calls apoc, but it is being deleted and is
-# not covered by these tests.
+# library.
 services:
   neo4j:
     image: neo4j:5-community

@@ -1,0 +1,225 @@
+---
+paths:
+  - "src/**/*.py"
+  - "tests/**/*.py"
+  - "docs/**/*.md"
+---
+
+# Definition of Done
+
+## Deferred work (applies to ALL work)
+
+Nothing is complete while something you noticed sits only in your head, a TODO
+comment, or a chat message. It goes in `BACKLOG.md`, in the same commit that
+passes it by, written so someone picking it up cold does not have to
+rediscover what you already know. See `CLAUDE.md` — this is the project's
+hardest rule and it has no exceptions.
+
+## Architectural decisions (applies to ALL work)
+
+No work is complete if the decisions it made or changed are not documented:
+
+1. **No design spec or plan is complete** until it has been run against the
+   existing ADRs in `docs/adr/`. A spec should say, for each related ADR,
+   whether it **stands**, is **amended**, or is **superseded**.
+2. If work amends or supersedes an ADR, that is part of the work, not a
+   follow-up: write the new ADR (or amend the old one's Consequences), and
+   update the old ADR's **Status** with an "Amended by" / "Superseded by"
+   pointer. ADR bodies are immutable records — never rewrite a Decision
+   retroactively; supersede it.
+3. New architecturally significant decisions get their own ADR in
+   `docs/adr/`, numbered after the current highest. For this project that
+   means: changes to the layered import contract in `pyproject.toml`; the
+   entity/graph data model; consolidation and merge semantics; anything that
+   changes a public contract or a persistence format; and **the shape of the
+   `LlmProvider` port in `src/kg_builder/ports/llm_provider.py` or of the
+   plug-in protocols in `src/kg_builder/extraction/protocols.py`**. That last
+   one is what "extraction strategy selection" now means: there is no
+   selectable backend to choose between. Extraction calls one narrow port —
+   `LlmProvider.extract(text, schema, *, system_prompt)` — and everything a
+   chat API makes you think about stops at the adapter in
+   `kg_builder/llm/adapters/`. The only shape extraction itself plugs in is
+   `Chunker`; `Preprocessor` and `EntityMerger` were both removed, with the
+   reasoning recorded in that module. So widening the port, adding a second
+   protocol beside `Chunker`, or bringing a removed one back is an
+   architectural decision and needs an ADR; writing a new adapter behind the
+   unchanged port is not — see "New port adapter or extraction strategy"
+   below.
+4. **ADR bodies carry no counts and no file tables.** Those go in the commit
+   message, which is immutable and scoped to a moment. See
+   `.claude/rules/recurring-defects.md` §5.
+5. **ADR numbers are allocated at merge, not at drafting.** Draft under a
+   provisional name; re-check `docs/adr/` on current `main` before merging.
+   ADRs `0001` through `0006` exist, so the next number is allocated against
+   the highest already on `main` at the moment the work merges — not against
+   the highest you saw when you started drafting. Parallel branches routinely
+   draft the same next number; the one that merges second renumbers.
+
+**The ADRs a spec has to be run against.** Item 1 is only actionable if you
+know what is already decided, so here is the set, by what each one settles:
+
+| ADR | Settles |
+|---|---|
+| [`0001` event log schema and granularity](../../docs/adr/0001-event-log-schema-and-granularity.md) | What the persisted events are, at what granularity, and which aggregates own them. The one irreversible decision in the migration — a log already written cannot be refactored. |
+| [`0002` two store ports](../../docs/adr/0002-two-store-ports.md) | `GraphStore` and `VectorStore` are the only store ports; why there is no `delete_entity`; the alias surface (`upsert_alias`, `remove_alias`, `find_aliases`, `resolve_entity_ids`) that makes the absence safe. |
+| [`0003` blocking keys as nodes](../../docs/adr/0003-blocking-keys-as-nodes.md) | Blocking keys are Neo4j nodes rather than a list property — settled by measurement, and the cheaper-looking alternative is recorded as already tried. |
+| [`0004` consolidation emits events](../../docs/adr/0004-consolidation-emits-events.md) | Consolidation decides and emits; a projection writes. Records what collapsing the two back together would cost in auditability. |
+| [`0005` temporal inference on read](../../docs/adr/0005-temporal-inference-on-read.md) | Inferred temporal edges are computed on read, never emitted into `DocumentExtracted`. |
+| [`0006` the public surface is gated](../../docs/adr/0006-the-public-surface-is-gated.md) | `__all__` is the whole promise, held by three tests each blind to what the other two catch. |
+
+Anything touching an event payload, a store port, consolidation, temporal
+relations, or `__all__` has a related ADR by construction — say for each one
+whether it **stands**, is **amended**, or is **superseded**, rather than
+leaving the reader to infer it from silence.
+
+`docs/adr/` also holds several drafts still numbered `0007`, which is item 5
+in action rather than a numbering bug: they are provisional until one of them
+merges. Run a spec against their content the same way — a draft that is about
+to become `0007` constrains you as much as an accepted one — but do not cite a
+`0007` number as though it were allocated.
+
+## Recurring defect check (applies to ALL work)
+
+`.claude/rules/recurring-defects.md` lists six defect shapes. No work is
+complete without a pass against its quick checklist. The two that gate most
+often:
+
+- **A method with sibling implementations changed or added** — the semantics
+  belong in one shared test body exercised by every implementation, not in a
+  test module named after one of them. A test that names a single adapter
+  cannot catch the next one, which is the whole defect shape.
+
+  The multi-implementation contracts in this project are the three port
+  compliance suites under `tests/compliance/`, and they are where such a test
+  goes:
+
+  | Suite | Port | Implementations that run it |
+  |---|---|---|
+  | `tests/compliance/graph_store.py` (`GraphStoreCompliance`) | `GraphStore` | `tests/unit/graph/test_memory_store.py`, `tests/integration/graph/test_neo4j_store.py` |
+  | `tests/compliance/vector_store.py` (`VectorStoreCompliance`) | `VectorStore` | `tests/unit/vector/test_memory_store.py`, `tests/integration/vector/test_pgvector_store.py` |
+  | `tests/compliance/cache.py` (`CacheCompliance`) | `Cache` | `tests/unit/llm/test_memory_cache.py` — `RedisCache` does not yet run it; see `BACKLOG.md` B41 |
+
+  An adapter opts in by subclassing and supplying one hook (`new_store` for
+  the store suites, a `cache` fixture for `CacheCompliance`); the suite is
+  then run **unchanged**. Editing the shared body to make one adapter pass is
+  the defect, not the fix — if the port genuinely permits both behaviours,
+  say so in the port and state the weaker contract for everyone.
+
+- **A read method added to `GraphStore` or `VectorStore`** — this one is
+  enforced rather than advised, and the enforcement is what makes it worth
+  knowing before you write the method. `tests/unit/graph/test_compliance_coverage.py`
+  and `tests/unit/vector/test_compliance_coverage.py` derive the read-method
+  list **from the Protocol by introspection** and fail until each method has
+  both a mutation-isolation test and a tenant-isolation test on the
+  compliance class. Follow the naming convention —
+  `test_<method>_returns_copies` and `test_<method>_never_crosses_tenants` —
+  and neither gate module needs editing at all. (`GraphStore`'s gate carries
+  a closed legacy registry for eight pre-convention names; it is checked both
+  ways, so an entry naming a method the port no longer has fails too. Do not
+  add to it.)
+
+  Behavioural tests do not imply the isolation test: handing back the live
+  internal object is correct on every read and wrong only afterwards, so no
+  assertion about the returned value can see it. Four read methods shipped
+  that way in slice 3 and a mutation run, not review, found each one.
+
+- **New counter, stat, or metric field** — a test asserts it non-zero under
+  the condition it counts.
+
+## Quality gates
+
+Do not run ruff, bandit, `lint-imports`, or pytest as separate steps. They are
+wired into `pre-commit` and run on `git commit`; running them by hand
+duplicates the work. Write the change, then commit; the hook reports what is
+wrong and often fixes it in place (re-`git add` and commit again when it
+does). See `CLAUDE.md`.
+
+Work is not done until the commit passes the gate — not until it passes
+"except for the hook", and not with a check disabled. A rule you ignored is a
+deferral: it goes in `BACKLOG.md` with why ignoring it was correct.
+
+## New feature
+
+1. Implementation under `src/kg_builder/`, in the correct layer — the
+   `lint-imports` contract in `pyproject.toml` is the authority, and a
+   cross-layer import means either the code is in the wrong layer or the
+   contract needs an explicit, argued change (which is an ADR).
+2. Unit tests in `tests/unit/`, mirroring the package path, covering happy
+   path and edge cases.
+3. `hypothesis` properties wherever a property is easier to state than a table
+   of examples.
+4. New dependencies added with `uv add` / `uv add --optional <extra>` — never
+   by hand-editing `pyproject.toml`.
+5. Commit passes the gate, including the coverage ratchet.
+
+## Bug fix
+
+1. A failing test that reproduces the bug, **proved red against the pre-fix
+   source** via `git checkout HEAD~1 -- <paths>` (not `git stash`).
+2. The fix.
+3. All existing tests pass.
+4. **If the bug was a divergence between two implementations of one
+   contract**, the regression test lives in the shared/parametrised suite and
+   the per-implementation duplicates it subsumes are deleted.
+5. **The assertion is written from the documented contract, not from observed
+   output.** A test written from what the code currently prints encodes the
+   bug as the spec.
+6. If a `BACKLOG.md` entry described this bug, it is deleted in the same
+   commit.
+
+## Refactor
+
+1. No behaviour change — existing tests pass **without modification**. A
+   refactor that requires editing assertions is not a refactor; say so and
+   treat it as a behaviour change.
+2. No public API changes unless explicitly intended.
+3. Commit passes the gate.
+
+## New port adapter or extraction strategy
+
+There are no extraction "backends" to subclass any more. A new implementation
+is an **adapter behind a port**: `GraphStore`, `VectorStore`, `Cache` or
+`LlmProvider`, each a Protocol in `src/kg_builder/ports/`. See
+`docs/how-to/implement-a-store-adapter.md` for the walkthrough; this list is
+what makes one *done*.
+
+1. **Implements the relevant Protocol in `src/kg_builder/ports/`**, and lives
+   under that port's sibling package (`graph/`, `vector/`, `llm/`) — not under
+   `extraction/`. The Protocol is the contract; nothing else is. Widening the
+   port to fit an adapter is an architectural decision and needs an ADR (see
+   above) — the adapter is supposed to absorb the awkwardness of its backend,
+   which is the whole reason `LlmProvider.extract` says nothing about chat
+   turns.
+2. **Optional dependency guarded with `try`/`except ImportError`** if it pulls
+   a heavy or optional package, re-raised with a message naming the extra to
+   install. `RedisCache.from_url` and `LangChainProvider` both do this; copy
+   the shape rather than letting a bare `ImportError` reach the caller.
+3. **Subclasses the parametrised compliance suite in `tests/compliance/` and
+   runs it unchanged** — `GraphStoreCompliance`, `VectorStoreCompliance` or
+   `CacheCompliance`. Opting in is one hook: `new_store` for the store suites,
+   a `cache` fixture for `CacheCompliance`. An adapter with only bespoke tests
+   diverges silently from its siblings; that is defect shape §1 and the single
+   most expensive shape in this list. Editing the shared body to make your
+   adapter pass is the defect, not the fix.
+
+   For `GraphStore` and `VectorStore` this is *enforced*: if the change also
+   adds a read method to the Protocol, the coverage gates
+   (`tests/unit/graph/test_compliance_coverage.py`,
+   `tests/unit/vector/test_compliance_coverage.py`) derive the read-method
+   list by introspection and fail until that method has both a
+   mutation-isolation test (`test_<method>_returns_copies`) and a
+   tenant-isolation test (`test_<method>_never_crosses_tenants`) on the
+   compliance class. Follow the naming convention and neither gate module
+   needs touching. `Cache` has no such gate, and `RedisCache` does not yet run
+   `CacheCompliance` at all — `BACKLOG.md` B41.
+
+   Note that the two store compliance suites must be run in **separate pytest
+   invocations** (`BACKLOG.md` B10m).
+
+4. **There is no accuracy step, and its absence is a known gap rather than a
+   licence.** `tests/accuracy/` holds only `__init__.py`, and `-m accuracy`
+   collects zero tests, so nothing in this repo can tell you whether a change
+   made extraction *better* or *worse* — only whether it stayed correct. If
+   your adapter or strategy changes extraction quality, say so in the commit
+   body and add what you observed to `BACKLOG.md` B12, which tracks building
+   the suite that would have measured it.
