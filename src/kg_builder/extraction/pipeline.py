@@ -264,9 +264,16 @@ class ExtractionPipeline:
                 `extract` and then this method, and pay the model twice for
                 one document; the second run produces the same entities, so
                 nothing about the resulting graph would show it and only the
-                bill would. Passing a result for a *different* document is
-                the one way to misuse this, and it is why the parameter is
-                keyword-only and documented rather than convenient.
+                bill would.
+
+                Passing a result for a *different* document is the one way to
+                misuse this, and it does not need a guard here:
+                `DocumentExtracted` validates that every entity's `source_id`
+                matches the event's, so the aggregate refuses the event with a
+                `ValueError` naming both documents. Checked, not assumed --
+                `TestRecordRefusesAResultFromAnotherDocument`. The parameter
+                is still keyword-only, because a caller should have to mean
+                it.
 
         Returns:
             The `DocumentExtracted`, or `None` when this document has already

@@ -329,3 +329,78 @@ class TestPromptIsExtractionsBusiness:
     def test_there_is_a_default_prompt_and_it_is_not_empty(self):
         """A blank system prompt gets shapeless output from every real model."""
         assert ExtractionPipeline(FakeLlmProvider(script=[{}])).system_prompt.strip()
+
+
+ONE_ENTITY = {"entities": [{"name": "Ada", "entity_type": "P"}]}
+
+
+class TestRecordRefusesAResultFromAnotherDocument:
+    """The one misuse `result=` admits is already refused, one layer down.
+
+    Slice 10's review asked for a guard in `record`, on the premise that
+    passing document B's extraction while recording document A would write B's
+    entities into A's stream with nothing raising. **That premise is wrong,
+    and these tests are what establish it.** `DocumentExtracted` has carried
+    `_payloads_belong_to_this_document_and_tenant` since slice 5b:
+
+        ValidationError: entities must be attributed to the document they were
+        extracted from; found source_id ['doc-2'] in an event for 'doc-1'
+
+    which is a `ValueError`, because pydantic's is. So the misuse is caught,
+    and caught in the better place: the invariant belongs to the event, where
+    it also holds for a caller who builds one directly, rather than to the one
+    method that happens to have an argument admitting the mistake.
+
+    Adding a second check in `record` would have been a duplicate invariant
+    that can drift from the first -- the shape this codebase has removed twice
+    already, in `prompt_generator`'s JSON schema and in `prompts.py`'s
+    hand-synchronised vocabulary lists. What was missing was not the guard but
+    the test, so `record`'s docstring could say "the aggregate refuses it"
+    instead of "do not do this".
+    """
+
+    async def test_a_result_for_a_different_document_is_refused(self, tenant_id) -> None:
+        pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={"Ada": ONE_ENTITY}))
+        other = await pipeline.extract(SourceDocument(id="doc-2", text="Ada."), tenant_id)
+
+        with pytest.raises(ValueError, match="doc-2"):
+            await pipeline.record(
+                Document(document_stream(tenant_id=tenant_id, source_id="doc-1").aggregate_id),
+                SourceDocument(id="doc-1", text="Ada."),
+                tenant_id,
+                result=other,
+            )
+
+    async def test_the_matching_result_is_accepted(self, tenant_id) -> None:
+        pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={"Ada": ONE_ENTITY}))
+        document = SourceDocument(id="doc-1", text="Ada.")
+        result = await pipeline.extract(document, tenant_id)
+
+        event = await pipeline.record(
+            Document(document_stream(tenant_id=tenant_id, source_id="doc-1").aggregate_id),
+            document,
+            tenant_id,
+            result=result,
+        )
+
+        assert event is not None
+        assert [entity.name for entity in event.entities] == ["Ada"]
+
+    async def test_an_empty_result_is_accepted_for_any_document(self, tenant_id) -> None:
+        # There is no entity to carry a `source_id`, so there is nothing to
+        # check against -- and an extraction that found nothing is a finding,
+        # not an error. The guard must not turn it into one.
+        pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={}, default={}))
+        document = SourceDocument(id="doc-1", text="Nothing here.")
+        result = await pipeline.extract(document, tenant_id)
+
+        assert result.entities == []
+        assert (
+            await pipeline.record(
+                Document(document_stream(tenant_id=tenant_id, source_id="doc-1").aggregate_id),
+                document,
+                tenant_id,
+                result=result,
+            )
+            is not None
+        )
