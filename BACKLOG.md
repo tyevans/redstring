@@ -955,9 +955,9 @@ disagrees with a hand check should suspect this first.
 
 ### B31. The `eventsourcing` extra no longer pulls `eventsource-py[all]`
 
-`pyproject.toml` declares `eventsourcing = ["eventsource-py>=0.9.1"]`. It used
-to be `eventsource-py[all]>=0.5.0`, and the `[all]` was dropped in slice 5b,
-not by preference but because it cannot currently resolve:
+`pyproject.toml` declares `eventsourcing = ["eventsource-py>=0.9.1,<0.11"]`.
+It used to be `eventsource-py[all]>=0.5.0`, and the `[all]` was dropped in
+slice 5b, not by preference but because it cannot currently resolve:
 
 ```
 eventsource-py[all]>=0.9.1  requires  redis>=8.0,<9.0
@@ -972,7 +972,15 @@ aggregates. It costs something the moment a Kafka, RabbitMQ, Redis or
 PostgreSQL adapter is wanted (slices beyond 10), because each lives behind an
 extra.
 
-To fix, in order of preference: widen kg-builder's `redis` pin to `<9` and
+The `<0.11` cap is separate and deliberate: this is a pre-1.0 library whose
+entire API changed between 0.5 and 0.9, and the slice 5b bump is the evidence.
+Without a cap the version under test drifts from the version pinned -- 0.10.0
+was already resolving under a bare `>=0.9.1` -- and 0.11 would arrive with no
+one deciding to take it. Raise the cap deliberately, with the suite green
+under the new version, rather than discovering it in a failed CI run.
+
+To fix the extra, in order of preference: widen kg-builder's `redis` pin to
+`<9` and
 verify `cache.py` and `embedding_cache.py` against redis-py 8 (the 5->8 API is
 largely source-compatible, but neither module is covered against a real
 server, so this needs the integration suite that B10 asks for); or take the

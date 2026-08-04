@@ -31,7 +31,7 @@ anthropic = ["anthropic>=0.42.0"]
 llm = ["pydantic-ai==0.0.31"]
 nlp = ["jellyfish>=1.0.0"]
 eventsourcing = [
-    "eventsource-py>=0.9.1",
+    "eventsource-py>=0.9.1,<0.11",
 ]
 all = [
     "kg-builder[neo4j,openai,anthropic,llm,nlp,eventsourcing]",
