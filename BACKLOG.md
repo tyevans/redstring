@@ -3,7 +3,7 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **2364 tests pass, 0 fail, 0 skipped**
+Status of the tree as of the last update: **2373 tests pass, 0 fail, 0 skipped**
 in the default gate, plus **185 `integration` tests** — 106 against a real Neo4j
 (slice 4), 63 against real pgvector (slice 5), and 8 against a live
 `qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`). The first two need
