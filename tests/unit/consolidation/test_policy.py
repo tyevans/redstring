@@ -233,6 +233,26 @@ class TestAdjudication:
         assert verdicts == []
         assert provider.prompts == []
 
+    async def test_a_batch_size_of_one_is_legal(self):
+        """The boundary the guard sits on. `batch_size=1` is a real
+        configuration -- one pair per call, the most expensive and most
+        reliable setting -- and a `<= 1` guard would reject it while still
+        rejecting zero, so nothing else here would notice. cosmic-ray found
+        that `<` rewritten as `<=` survived."""
+        tenant = uuid4()
+        candidates = [_candidate(tenant, "Ada"), _candidate(tenant, "A. Lovelace")]
+        provider = FakeProvider(
+            answers=[
+                AdjudicationBatch(verdicts=[_verdict(True)]),
+                AdjudicationBatch(verdicts=[_verdict(False)]),
+            ]
+        )
+
+        verdicts = await Adjudicator(provider, batch_size=1).adjudicate(entity(tenant), candidates)
+
+        assert len(provider.prompts) == 2
+        assert [v.same for v in verdicts] == [True, False]
+
     async def test_a_batch_size_below_one_is_refused(self):
         """Zero would make the batching loop produce no calls and no verdicts
         for any input, which reads as a model that answered nothing."""
