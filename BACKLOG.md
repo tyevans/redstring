@@ -3,7 +3,7 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **2351 tests pass, 0 fail** in the
+Status of the tree as of the last update: **2375 tests pass, 0 fail** in the
 default gate, plus **177 `integration` tests** — 106 against a real Neo4j
 (slice 4) and 63 against real pgvector (slice 5) — from
 `docker-compose.test.yml`. Coverage baseline 70.12. Slice 5b added the event
