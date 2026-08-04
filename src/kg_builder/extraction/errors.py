@@ -11,13 +11,20 @@ registry left for a lookup to miss), and `PipelineError` /
 `EntityMergerError` followed them: `kg_builder.extraction.merging` is a total
 function over already-mapped results and has no failure mode to name.
 
-These stay separate from `KgBuilderError` deliberately: they are raised by
-extraction's own machinery, not by a port, and the domain's error hierarchy is
-what callers catch across the port boundary.
+These used to sit outside `KgBuilderError` deliberately, on the argument that
+they were "raised by extraction's own machinery, not by a port". Slice 10's
+fix round moved them under it, because that argument stopped being true the
+moment `Chunker` became part of the public API: a caller who implements or
+calls one can now be handed a `ChunkSizeError`, and `KgBuilderError` is
+documented as the base of every error this library raises deliberately. An
+exception a caller cannot catch under the promised base is a hole in the
+promise -- `tests/unit/test_public_surface_is_self_contained.py` now says so.
 """
 
+from kg_builder.domain.exceptions import KgBuilderError
 
-class ChunkingError(Exception):
+
+class ChunkingError(KgBuilderError):
     """Base class for failures in splitting a document or merging its results."""
 
     def __init__(self, message: str, cause: Exception | None = None) -> None:

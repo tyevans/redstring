@@ -47,6 +47,11 @@ schemas, or `domain=AUTO` to have the content classifier choose (one extra model
 Anything reached through a dotted path is internal and may change. The module docstring
 is the reference, and it says what is deliberately left out.
 
+The surface is **closed**: every type an exported signature names is either exported too
+or recorded with the package it comes from, and every `KgBuilderError` is either exported
+or recorded as belonging to a capability that is not. That is a test
+(`tests/unit/test_public_surface_is_self_contained.py`), not an intention.
+
 ## How it fits together
 
 ```

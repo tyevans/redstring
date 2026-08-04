@@ -71,8 +71,15 @@ if TYPE_CHECKING:
     from kg_builder.ports.llm_provider import LlmProvider
 
 
-class _Auto:
-    """Sentinel: let the classifier pick the domain."""
+class AutoDomain:
+    """The type of `AUTO`. Public only because `build_graph`'s signature names it.
+
+    A private `_Auto` would leave `domain: str | DomainSchema | AutoDomain | None`
+    on the public surface, telling a caller who reads the signature that there
+    is a type they cannot have -- see
+    `tests/unit/test_public_surface_is_self_contained.py`. Nobody should
+    construct one; use `AUTO`.
+    """
 
     def __repr__(self) -> str:
         return "AUTO"
@@ -84,7 +91,7 @@ class _Auto:
 #: takes domain ids and a real schema called "auto" would then be
 #: unreachable -- the same trap `ScrapingJob.extraction_strategy` fell into,
 #: where a magic string in a free-form field decided control flow.
-AUTO: Final = _Auto()
+AUTO: Final = AutoDomain()
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +125,7 @@ async def build_graph(
     provider: LlmProvider,
     store: GraphStore,
     tenant_id: TenantId,
-    domain: str | DomainSchema | _Auto | None = None,
+    domain: str | DomainSchema | AutoDomain | None = None,
     chunker: Chunker | None = None,
     skip_failed_chunks: bool = False,
     allow_partial: bool = False,
@@ -188,14 +195,14 @@ async def build_graph(
 
 
 async def _resolve_prompt(
-    domain: str | DomainSchema | _Auto | None,
+    domain: str | DomainSchema | AutoDomain | None,
     document: SourceDocument,
     provider: LlmProvider,
 ) -> tuple[str | None, str]:
     """The domain id that was chosen, and the prompt to ask with."""
     if domain is None:
         return None, DEFAULT_SYSTEM_PROMPT
-    if isinstance(domain, _Auto):
+    if isinstance(domain, AutoDomain):
         classification = await ContentClassifier(provider).classify(document.text)
         return classification.domain, domain_system_prompt(classification.domain)
     if isinstance(domain, str):
