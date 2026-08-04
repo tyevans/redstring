@@ -56,25 +56,54 @@ score later.
 
 `metadata` is opaque to the store with exactly one exception: the key
 `entity_type`. `search(entity_types=[...])` keeps a record whose
-`metadata["entity_type"]` is one of those values, and a record carrying no
-such key never matches a type filter. It is a convention rather than a field
-because the alternative -- a typed column for every attribute a caller might
-filter on -- puts the caller's schema into the port.
+`metadata["entity_type"]` is one of those values. It is a convention rather
+than a field because the alternative -- a typed column for every attribute a
+caller might filter on -- puts the caller's schema into the port.
+
+Because it is a convention over free-form JSON, the key can hold **anything**,
+and the port has to say what a non-string means rather than leaving each
+adapter to find out. It means *not a type name*: a record whose
+`entity_type` is absent, `None`, a number, a list or an object matches no type
+filter, and asking never raises. Adapters must not decide this for themselves
+-- the natural implementations disagree loudly, a `text` column simply cannot
+hold a list while a Python `in` against a `set` raises `TypeError` -- so
+`entity_type_of` below is the single reading of the convention and every
+adapter calls it.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from typing import Any
 
     from kg_builder.domain.ids import EntityId, TenantId
     from kg_builder.domain.vector import VectorMatch, VectorRecord
 
 #: The metadata key `search(entity_types=...)` filters on. See the docstring.
 ENTITY_TYPE_KEY = "entity_type"
+
+
+def entity_type_of(metadata: dict[str, Any]) -> str | None:
+    """The entity type a record answers to, or `None` if it has none.
+
+    The single reading of the `entity_type` convention, deliberately living
+    with the port rather than in either adapter. `None` unless the metadata
+    carries a **string** under `ENTITY_TYPE_KEY`; see the module docstring for
+    why a non-string is "no type" rather than an error or a coercion.
+
+    This is not a helper that happened to be shared. The two adapters wrote
+    their own readings and diverged: pgvector nulled every non-string, because
+    its column is `text`, while the in-memory store compared the raw value
+    against a `set` and raised `TypeError: unhashable type: 'list'` for a
+    stored `{"entity_type": ["person"]}`. Same call, two outcomes. A rule that
+    lives in one function cannot be half-applied.
+    """
+    value = metadata.get(ENTITY_TYPE_KEY)
+    # `str` and not `isinstance(value, str) or ...`: coercing `7` to `"7"`
+    # would invent a match for `entity_types=["7"]` that no caller asked for.
+    return value if isinstance(value, str) else None
 
 
 @runtime_checkable

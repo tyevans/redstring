@@ -24,10 +24,12 @@ import inspect
 import typing
 from collections.abc import Sequence
 from typing import Any
+from uuid import uuid4
 
 from kg_builder.domain.ids import EntityId, TenantId
 from kg_builder.domain.vector import VectorMatch, VectorRecord
 from kg_builder.ports.vector_store import VectorStore
+from tests.compliance import strategies
 from tests.compliance.vector_store import VectorStoreCompliance
 
 # The port annotates under `if TYPE_CHECKING`, so resolving its hints at
@@ -115,6 +117,62 @@ class TestEveryReadMethodIsCovered:
     def test_exemptions_carry_a_reason(self):
         for method, reason in ISOLATION_EXEMPT.items():
             assert reason.strip(), f"{method!r} is exempt with no reason given"
+
+
+class TestTheMetadataStrategyReachesTheReservedKey:
+    """Guard the guard: a strategy that cannot generate the interesting value
+    makes every property over it vacuous.
+
+    `metadata_dicts` was built on `property_dicts`, which draws keys from
+    `st.text(max_size=6)`. `entity_type` is eleven characters, so **the one
+    key the port reads could never be generated** -- and a real divergence
+    lived in that blind spot: the in-memory store raised
+    `TypeError: unhashable type: 'list'` for a stored
+    `{"entity_type": ["person"]}` where pgvector returned `[]`.
+
+    The fix was to draw the key deliberately. This test is what stops the
+    blind spot reopening the next time the strategy is refactored, because
+    nothing else would fail if it did -- the properties would simply go quiet.
+    """
+
+    @staticmethod
+    def _sample(count: int = 300) -> list[dict[str, Any]]:
+        from hypothesis import HealthCheck, given, settings
+
+        drawn: list[dict[str, Any]] = []
+
+        @settings(max_examples=count, suppress_health_check=list(HealthCheck), deadline=None)
+        @given(metadata=strategies.metadata_dicts())
+        def collect(metadata: dict[str, Any]) -> None:
+            drawn.append(metadata)
+
+        collect()
+        return drawn
+
+    def test_the_reserved_key_is_generated(self):
+        drawn = self._sample()
+        with_key = [m for m in drawn if "entity_type" in m]
+        assert with_key, (
+            "metadata_dicts never generates an 'entity_type' key, so every "
+            "property test over stored metadata is silent about the only key "
+            "the port actually reads."
+        )
+
+    def test_both_string_and_non_string_values_are_generated(self):
+        """A filter is only exercised by values on both sides of it."""
+        values = [m["entity_type"] for m in self._sample() if "entity_type" in m]
+        assert any(isinstance(value, str) for value in values), "no matchable type name generated"
+        assert any(not isinstance(value, str) for value in values), "no non-string generated"
+        # The unhashable shapes specifically: these are the ones that made the
+        # in-memory adapter raise rather than return nothing.
+        assert any(isinstance(value, (list, dict)) for value in values), (
+            "no unhashable entity_type generated; the TypeError divergence would slip through again"
+        )
+
+    def test_generated_metadata_is_always_storable(self):
+        """Whatever it draws must still satisfy `VectorRecord`."""
+        for metadata in self._sample(100):
+            VectorRecord(entity_id=uuid4(), tenant_id=uuid4(), vector=[1.0], metadata=metadata)
 
 
 class TestTheSuiteIsTunable:

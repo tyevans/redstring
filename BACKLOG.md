@@ -512,6 +512,38 @@ comment recording the measurement — or moving the clamp into a single shared
 helper both call, so one test covers both. Do **not** resolve it by deleting a
 clamp.
 
+### B10o. `min_score` evaluates the distance operator twice per row, and no plan test covers it
+
+`src/kg_builder/vector/adapters/pgvector.py::_search_sql` inlines `_SCORE`
+in both the `SELECT` list and the `min_score` predicate, because SQL cannot
+reference a select alias from `WHERE`:
+
+```
+SELECT entity_id, metadata, 1 - (embedding <=> $2::vector) / 2 AS score
+...
+  AND ($5::float8 IS NULL OR 1 - (embedding <=> $2::vector) / 2 >= $5)
+```
+
+So a query with `min_score` set computes `<=>` twice for every row in the
+tenant. Postgres does not common-subexpression-eliminate this.
+
+**Not fixed, and the reason is scale, not difficulty.** A `LATERAL (SELECT …)`
+or a subselect with the predicate on the outer query evaluates it once, and is
+about four lines. At the corpus sizes anything here has been measured against
+it is invisible, and the rewrite makes the statement materially harder to read
+against a port rule (`WHERE` before `LIMIT`) that a reader currently checks by
+looking at it. Doing it on suspicion, before a profile says the distance
+operator is hot, trades clarity for nothing.
+
+**The part that is worth doing sooner is the test, not the fix.** Both plan
+assertions in `tests/integration/vector/test_pgvector_store.py` run with
+`min_score=None`, so the second `<=>` never appears in any plan that is
+asserted on. A later change to that branch — including a well-meant rewrite
+of exactly the kind above — would not be caught by anything. Add an `EXPLAIN`
+case with `min_score` set before touching it, and make the assertion count
+occurrences of the operator so a rewrite that claims to evaluate it once has
+to prove it.
+
 ### B10b. Model blocking keys as nodes — decided, scheduled for slice 7
 
 **The design is decided; do not re-litigate it. Implement in slice 7.**

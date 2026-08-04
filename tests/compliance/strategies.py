@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from hypothesis import assume
 from hypothesis import strategies as st
 
 from kg_builder.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
@@ -208,8 +209,53 @@ def _has_no_nul(mapping: dict[str, Any]) -> bool:
     return True
 
 
-#: Metadata for the `VectorStore` suite: `property_dicts` minus what
-#: `VectorRecord` rejects. Postgres `jsonb` cannot store a NUL in text while a
-#: Python dict can, and an adapter accepting what another refuses is the
-#: divergence the shared suite exists to prevent.
-metadata_dicts = property_dicts.filter(_has_no_nul)
+#: The one key `VectorStore.search` reads. Its values are drawn deliberately
+#: rather than left to chance, and the reason is worth keeping.
+#:
+#: `property_dicts` alone **can never generate this key**: it draws keys from
+#: `st.text(max_size=6)` and `entity_type` is eleven characters. So every
+#: property test that claimed to exercise arbitrary metadata was silently
+#: exercising metadata with no `entity_type` in it, and a real divergence hid
+#: there -- the in-memory adapter raised `TypeError: unhashable type: 'list'`
+#: for a stored `{"entity_type": ["person"]}` where pgvector returned `[]`.
+#: A property test is only as good as the values that reach it, and a
+#: *reserved* key is exactly the value a general-purpose generator misses.
+#:
+#: The values mix plausible type names with the shapes a caller can
+#: legitimately put in JSON and a store cannot treat as a type name.
+_entity_type_values = (
+    entity_types
+    | st.none()
+    | st.booleans()
+    | st.integers()
+    | st.lists(entity_types, max_size=2)
+    | st.dictionaries(st.text(max_size=4), entity_types, max_size=2)
+)
+
+
+@st.composite
+def metadata_dicts(draw: st.DrawFn) -> dict[str, Any]:
+    """Metadata a `VectorStore` must accept, including the reserved key.
+
+    `property_dicts` plus, about half the time, an `entity_type` entry (see
+    `_entity_type_values`), with the whole result filtered to what
+    `VectorRecord` accepts -- Postgres `jsonb` cannot store a NUL in text
+    while a Python dict can, and an adapter accepting what another refuses is
+    the divergence the shared suite exists to prevent.
+
+    Two details, both of which this got wrong first time round and
+    `TestTheMetadataStrategyReachesTheReservedKey` caught:
+
+    - the NUL filter runs on the **finished** mapping. Filtering the base and
+      then adding the reserved key lets a NUL in through the added value:
+      `_entity_type_values` can draw a nested dict whose keys come from
+      `st.text`, and `st.text` generates NUL.
+    - the base draw is **copied, not mutated**. Hypothesis reuses drawn
+      objects while shrinking, so writing into one can leak a key into an
+      unrelated example and make a failure irreproducible.
+    """
+    metadata = dict(draw(property_dicts))
+    if draw(st.booleans()):
+        metadata["entity_type"] = draw(_entity_type_values)
+    assume(_has_no_nul(metadata))
+    return metadata

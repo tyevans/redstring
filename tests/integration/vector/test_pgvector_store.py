@@ -341,11 +341,30 @@ class TestPgVectorSpecifics:
         plan rather than inferred from results. It is what an ANN index would
         break: the planner would push the ordering into an index scan that
         knows nothing about `tenant_id` or `entity_type` and cut to `k` first.
+
+        The table is **seeded rather than left at the single row the earlier
+        version used**, and `ANALYZE`d. On a one-row relation `assert
+        conditions` leans on the planner still preferring the primary key over
+        a sequential scan of nothing, which is the same order-sensitivity that
+        already produced one bug here: it is not that the assertion was wrong,
+        it is that on an empty table it was not testing anything the planner
+        had to decide.
         """
-        await store.upsert(
-            uuid4(), [1.0, *([0.0] * (DIMENSION - 1))], uuid4(), metadata={"entity_type": "person"}
+        tenant = uuid4()
+        await store.upsert_many(
+            [
+                VectorRecord(
+                    entity_id=uuid4(),
+                    tenant_id=uuid4() if index % 5 else tenant,
+                    vector=[float(index % 7) + 1.0, *([0.0] * (DIMENSION - 1))],
+                    metadata={"entity_type": "person" if index % 2 else "place"},
+                )
+                for index in range(500)
+            ]
         )
-        plan = await self._explain(store, pool, uuid4(), entity_types=["person"])
+        await pool.execute(f"ANALYZE {TABLE}")
+
+        plan = await self._explain(store, pool, tenant, entity_types=["person"])
 
         assert plan.splitlines()[0].strip() == "Limit", (
             f"the top of the plan is not the Limit, so something runs *after* "

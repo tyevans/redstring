@@ -41,14 +41,9 @@ import pytest
 
 from kg_builder.domain.exceptions import DimensionMismatchError
 from kg_builder.domain.vector import VectorRecord
-from kg_builder.ports.vector_store import VectorStore
+from kg_builder.ports.vector_store import VectorStore, entity_type_of
 from kg_builder.vector.adapters import pgvector as adapter
-from kg_builder.vector.adapters.pgvector import (
-    PgVectorStore,
-    deduplicate,
-    encode_vector,
-    entity_type_of,
-)
+from kg_builder.vector.adapters.pgvector import PgVectorStore, deduplicate, encode_vector
 
 DIMENSION = 8
 
@@ -300,11 +295,15 @@ class TestEncoding:
         ],
     )
     def test_a_non_string_entity_type_becomes_null(self, metadata: dict[str, Any]):
-        """The column is `text`.
+        """The column is `text`, and the rule now lives on the port.
 
-        Coercing `7` to `"7"` would invent a match the in-memory adapter --
-        which compares the raw value -- would never make, so the two adapters
-        would answer the same `entity_types=["7"]` query differently.
+        This test used to cover a private copy of the rule in this adapter,
+        and that copy is exactly why the divergence went unnoticed: the list
+        case was parametrised *here*, where it is null-safe, while the
+        in-memory store compared the raw value against a `set` and raised
+        `TypeError`. The reading moved to `ports.vector_store.entity_type_of`;
+        this stays because the pgvector column is what makes a non-string
+        unstorable in the first place.
         """
         assert entity_type_of(metadata) is None
 

@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from kg_builder.domain.exceptions import DimensionMismatchError
 from kg_builder.domain.vector import VectorMatch, VectorRecord, cosine_score, is_zero_vector
-from kg_builder.ports.vector_store import ENTITY_TYPE_KEY
+from kg_builder.ports.vector_store import entity_type_of
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -116,7 +116,10 @@ class InMemoryVectorStore:
                 metadata=dict(record.metadata),
             )
             for record in self._records.get(tenant_id, {}).values()
-            if wanted is None or record.metadata.get(ENTITY_TYPE_KEY) in wanted
+            # `entity_type_of`, not `metadata.get(...)`: the stored value may
+            # be any JSON, and comparing it raw against a `set` raises
+            # `TypeError` for a list or a dict. The port owns that rule.
+            if wanted is None or entity_type_of(record.metadata) in wanted
         ]
         # Filters are applied to the whole tenant *before* `k` is taken. Taking
         # `k` first and filtering after returns fewer than `k` while matching

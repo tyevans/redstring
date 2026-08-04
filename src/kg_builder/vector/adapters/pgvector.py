@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 from kg_builder.domain.exceptions import DimensionMismatchError
 from kg_builder.domain.vector import VectorMatch, VectorRecord, is_zero_vector
-from kg_builder.ports.vector_store import ENTITY_TYPE_KEY
+from kg_builder.ports.vector_store import entity_type_of
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -209,9 +209,17 @@ class PgVectorStore:
         )
 
     async def upsert_many(self, items: Sequence[VectorRecord]) -> None:
-        rows = deduplicate(items)
-        for record in rows:
+        # Validate `items`, **not** the deduplicated rows. Collapsing first
+        # would let a rejected record vanish because a later one happened to
+        # replace its key, so the same call would raise here and succeed
+        # in-memory -- the divergence the shared compliance suite exists to
+        # catch, and it did not, because its earlier test used two distinct
+        # keys. `test_upsert_many_validates_every_element_including_superseded_ones`
+        # now pins the order.
+        for record in items:
             self._check(record.vector)
+
+        rows = deduplicate(items)
         if not rows:
             return
 
@@ -403,19 +411,6 @@ def encode_vector(vector: Sequence[float]) -> str:
     asymmetry is real and the round-trip property is what found it.
     """
     return "[" + ",".join(repr(float(value)) for value in vector) + "]"
-
-
-def entity_type_of(metadata: dict[str, Any]) -> str | None:
-    """The value the `entity_type` column is derived from.
-
-    `None` unless the metadata carries a **string** under that key: the column
-    is `text`, and the port says a record without an `entity_type` never
-    matches a type filter. A non-string value there is not an entity type, so
-    coercing it with `str()` would invent a match that the in-memory adapter --
-    which compares the raw value -- would not make.
-    """
-    value = metadata.get(ENTITY_TYPE_KEY)
-    return value if isinstance(value, str) else None
 
 
 def deduplicate(items: Sequence[VectorRecord]) -> list[VectorRecord]:

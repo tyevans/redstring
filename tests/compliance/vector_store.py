@@ -187,7 +187,7 @@ class VectorStoreCompliance:
         async with self._store() as store:
             entity_id, tenant_id = data.draw(st.uuids()), data.draw(st.uuids())
             vector = data.draw(self._vectors())
-            metadata = data.draw(gen.metadata_dicts)
+            metadata = data.draw(gen.metadata_dicts())
 
             await store.upsert(entity_id, vector, tenant_id, metadata=metadata)
 
@@ -204,7 +204,7 @@ class VectorStoreCompliance:
                 entity_id=data.draw(st.uuids()),
                 tenant_id=data.draw(st.uuids()),
                 vector=data.draw(self._vectors()),
-                metadata=data.draw(gen.metadata_dicts),
+                metadata=data.draw(gen.metadata_dicts()),
             )
 
             await store.upsert_many([record])
@@ -237,7 +237,7 @@ class VectorStoreCompliance:
         async with self._store() as store:
             entity_id, tenant = data.draw(st.uuids()), data.draw(st.uuids())
             first, second = data.draw(self._vectors()), data.draw(self._vectors())
-            metadata = data.draw(gen.metadata_dicts)
+            metadata = data.draw(gen.metadata_dicts())
 
             await store.upsert(entity_id, first, tenant, metadata={"first": True})
             await store.upsert(entity_id, second, tenant, metadata=metadata)
@@ -404,6 +404,37 @@ class VectorStoreCompliance:
 
         with pytest.raises(DimensionMismatchError):
             await store.upsert_many([good, bad])
+
+    async def test_upsert_many_validates_every_element_including_superseded_ones(
+        self, store: VectorStore
+    ) -> None:
+        """A bad record is rejected even when a later one replaces its key.
+
+        `upsert_many` has to collapse repeated `(tenant_id, entity_id)` keys
+        before it writes -- a database upsert cannot touch one row twice in a
+        single statement -- and the order of *collapse* and *validate* is
+        observable. Deduplicating first makes a rejected record disappear
+        before anything looks at it, so the batch succeeds; validating first
+        raises. Both are defensible in isolation and they cannot both be the
+        contract.
+
+        The port validates. A caller retrying after `DimensionMismatchError`
+        must be able to conclude that *nothing* in the batch was written, and
+        "the bad one happened to be superseded" is not a distinction any
+        caller can make in advance.
+
+        The earlier test uses two distinct keys, so it passes under either
+        order and could not see this. `CLAUDE.md`: when a test's input makes
+        two candidate implementations agree, it is not testing the difference.
+        """
+        entity_id, tenant = uuid4(), uuid4()
+        superseded = VectorRecord(entity_id=entity_id, tenant_id=tenant, vector=[1.0, 2.0])
+        replacement = VectorRecord(entity_id=entity_id, tenant_id=tenant, vector=self._unit(0))
+
+        with pytest.raises(DimensionMismatchError):
+            await store.upsert_many([superseded, replacement])
+
+        assert await store.get(entity_id, tenant) is None
 
     async def test_a_rejected_write_leaves_no_trace(self, store: VectorStore) -> None:
         """Validation happens before the write, not alongside it."""
@@ -598,7 +629,7 @@ class VectorStoreCompliance:
         async with self._store() as store:
             entity_id, tenant = data.draw(st.uuids()), data.draw(st.uuids())
             vector = data.draw(self._vectors())
-            metadata = data.draw(gen.metadata_dicts)
+            metadata = data.draw(gen.metadata_dicts())
             await store.upsert(entity_id, vector, tenant, metadata=metadata)
             pristine = VectorRecord(
                 entity_id=entity_id, tenant_id=tenant, vector=vector, metadata=metadata
@@ -616,7 +647,7 @@ class VectorStoreCompliance:
         async with self._store() as store:
             entity_id, tenant = data.draw(st.uuids()), data.draw(st.uuids())
             vector = data.draw(self._vectors())
-            metadata = data.draw(gen.metadata_dicts)
+            metadata = data.draw(gen.metadata_dicts())
             await store.upsert(entity_id, vector, tenant, metadata=metadata)
             pristine = dict(metadata)
 
@@ -748,6 +779,73 @@ class VectorStoreCompliance:
         found = await store.search(self._unit(0), tenant, k=10, entity_types=[built])
         assert [match.entity_id for match in found] == [entity_id]
 
+    @pytest.mark.parametrize(
+        "stored",
+        [
+            pytest.param(["person"], id="list"),
+            pytest.param({"person": True}, id="dict"),
+            pytest.param(7, id="int"),
+            pytest.param(True, id="bool"),
+            pytest.param(None, id="null"),
+        ],
+    )
+    async def test_a_non_string_entity_type_never_matches_a_filter(
+        self, store: VectorStore, stored: Any
+    ) -> None:
+        """`metadata["entity_type"]` is a convention, not a validated field.
+
+        Callers put arbitrary JSON in `metadata`, so the reserved key can hold
+        anything, and the two adapters have very different natural failure
+        modes for it: a `text` column simply cannot hold a list, while a
+        Python `in` against a `set` raises `TypeError: unhashable type` on
+        one. The port therefore has to say what a non-string means, and it
+        says: it is not a type name, so it matches no type filter -- and never
+        raises.
+
+        The `list` and `dict` cases are the ones that matter; the scalars are
+        here so a store that special-cased only the unhashable ones still
+        fails.
+        """
+        tenant, typed = uuid4(), uuid4()
+        await store.upsert(uuid4(), self._unit(0), tenant, metadata={"entity_type": stored})
+        await store.upsert(typed, self._unit(0), tenant, metadata={"entity_type": "person"})
+
+        found = await store.search(self._unit(0), tenant, k=10, entity_types=["person"])
+        assert [match.entity_id for match in found] == [typed]
+        # Unfiltered, both records are still there: the record is stored and
+        # readable, it merely does not answer to a type.
+        assert len(await store.search(self._unit(0), tenant, k=10)) == 2
+
+    @compliance_settings
+    @given(data=st.data())
+    async def test_a_type_filter_tolerates_any_stored_metadata(self, data: st.DataObject) -> None:
+        """Searching with a type filter never raises, whatever is stored.
+
+        This is the property that would have caught the `TypeError` above, and
+        it only bites once the metadata strategy can actually generate the
+        reserved key -- which for a while it could not, because it drew keys
+        from `st.text(max_size=6)` and `entity_type` is eleven characters. A
+        property test is only as good as the values reaching it.
+        """
+        async with self._store() as store:
+            tenant = data.draw(st.uuids())
+            stored = [data.draw(gen.metadata_dicts()) for _ in range(3)]
+            for metadata in stored:
+                await store.upsert(data.draw(st.uuids()), self._unit(0), tenant, metadata=metadata)
+            wanted = data.draw(st.lists(st.text(max_size=12), max_size=3))
+
+            found = await store.search(self._unit(0), tenant, k=10, entity_types=wanted)
+
+            expected = sum(
+                1
+                for metadata in stored
+                # The port's rule, restated: a string equal to one of the
+                # wanted values, and nothing else.
+                if isinstance(metadata.get("entity_type"), str)
+                and metadata["entity_type"] in wanted
+            )
+            assert len(found) == expected
+
     async def test_min_score_drops_results_below_it(self, store: VectorStore) -> None:
         tenant = uuid4()
         identical, orthogonal, opposite = uuid4(), uuid4(), uuid4()
@@ -828,6 +926,21 @@ class VectorStoreCompliance:
     # The honest weaker contract. An approximate index may reorder the middle
     # of the list or drop a mid-ranked neighbour; what it may not do is lose
     # the *true* nearest one.
+    #
+    # **This tier currently passes trivially, and you should know that before
+    # you trust it.** Every adapter in this tree is exact: the in-memory one
+    # scans brute-force, and the pgvector one has no ANN index on purpose
+    # (BACKLOG B10k explains why, and what it costs). So nothing here has ever
+    # been exercised against a store that can actually miss a neighbour, and
+    # "it passes" is currently evidence about the tests, not about recall.
+    #
+    # If you are adding an approximate adapter -- Qdrant, or pgvector once
+    # B10k is taken on -- **strengthen this tier first**, before the adapter
+    # exists to be judged by it. It is one test over one corpus with one
+    # query; a real recall claim needs many queries, a stated recall@k target,
+    # and a failure message that reports the measured rate rather than the
+    # single miss that tripped it. Writing that after the adapter exists means
+    # tuning the test until the adapter passes, which is not a test.
     # ------------------------------------------------------------------
 
     async def test_the_true_nearest_neighbour_is_within_the_top_k(self, store: VectorStore) -> None:
