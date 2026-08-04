@@ -94,8 +94,16 @@ Every quality gate — ruff, mypy `--strict`, bandit, the layered import contrac
 pytest under a coverage ratchet — runs on `git commit`. Do not run them separately.
 
 ```
-uv run pytest -m integration              # needs docker-compose.test.yml
-uv run pytest -m accuracy tests/accuracy/ # needs a live LLM
+uv run pytest -m integration    # needs docker-compose.test.yml, and a live LLM
 ```
 
+Run that serially — no `-n auto` (`BACKLOG.md` B10f), and not in the same
+invocation as the unit suite (B10m).
+
+There is no accuracy suite. The `accuracy` marker is declared and nothing uses
+it; B12 says what building one would take.
+
 `BACKLOG.md` carries every known gap, each with enough context to pick up cold.
+`docs/ring-migration.md` says what this library used to be and where the
+deleted parts can be recovered from; `docs/adr/` holds the decisions that are
+expensive to revisit.

@@ -64,188 +64,11 @@ uv sync --all-extras && uv run pre-commit install
 ```
 
 **`--all-extras`, not `--extra dev`.** The `dev` extra holds only the tooling;
-`neo4j`, `llm` and `eventsourcing` are separate, and a venv without them fails
-*collection* on 17 test modules rather than skipping them. Slice 7 lost a
+`neo4j` and `llm` are separate, and a venv without them fails *collection* on
+the modules that import them rather than skipping them. Slice 7 lost a
 cosmic-ray run to a near-miss of this: a worktree synced with `--extra dev`
 reported 0 survivors out of 426 mutants, every one "killed" by an import
 error.
-
-## Coverage ratchet
-
-`scripts/coverage_ratchet.py` runs the suite and compares total coverage against
-`.coverage-baseline`. Coverage may never fall; when it rises, the baseline is
-raised and staged automatically. The baseline file is created on the first run
-where the suite is green.
-
-To accept a deliberate drop, edit `.coverage-baseline` in the same commit and say
-why in the message.
-
-Deleting well-covered legacy code lowers the ratio while removing nothing that
-was tested — slices 7, 8 and 9 all hit this. Justify the movement in the commit
-message rather than adding tests to paper over it. Slice 9's two drops were
-declarative ORM columns (which execute at import, so they scored high while
-proving nothing) and a router whose 826-line test file supplied every input as
-a `MagicMock`.
-
-## An exemption list must fail when what it exempts is gone
-
-**A per-file lint or type exemption that matches no file passes silently.**
-ruff and mypy both accept a pattern for a deleted path without complaint, so a
-shrinking-exemption ratchet stops shrinking and nobody is told.
-
-Slice 9 ran the experiment by accident and got both answers at once. Deleting
-`models/extracted_entity.py` **failed the gate** — because one exemption list
-lived in a test that asserts every entry still names a real file. The ruff and
-mypy ignore lists in `pyproject.toml` carried three deleted paths for one and
-two commits, and nothing said a word. Same hazard, same commit, opposite
-outcomes, decided entirely by whether someone had written the staleness check
-as a test.
-
-**Both legacy exemption lists are now empty, and the empty one is deleted.**
-As of slice 10, ruff's `per-file-ignores` carries no legacy entry and mypy
-carries no `exclude` at all — `--strict` covers every module in the package.
-The mypy key was deleted rather than kept empty, per the paragraph below: an
-exclusion over an empty set excludes nothing, and a staleness guard written
-over it would pass vacuously. Re-adding either is now a visible decision in
-review rather than an edit to an existing list.
-
-So: **every exemption list needs a test that its entries still match something.**
-And when a list empties, decide deliberately between two different things —
-keeping it empty (no exceptions admitted, and adding one is visible in review)
-or deleting it. An *exclusion* over an empty set is the one to delete: it
-excludes nothing, and any guard written over it passes vacuously.
-
-The same reasoning applies to a check that finds nothing. `exhaustive = true`
-on the import contract caught zero violations, which is indistinguishable from
-the option being inert — slice 9 proved it bites by adding a throwaway package,
-watching the contract break, and removing it. **A passing check you have never
-seen fail is not yet evidence.**
-
-### The command that measures an exemption must not be subject to it
-
-Before deleting an exemption you have to know what it hides, and the obvious
-way to find out is silently wrong:
-
-```
-$ uv run ruff check --select ANN,TC src/kg_builder/events/
-All checks passed!
-```
-
-That result was **unconditional**. `per-file-ignores` applies on top of
-`--select`, and the ignore for that path was exactly `["ANN", "TC"]`, so the
-command could not have reported a finding whatever the code said. Deleting the
-entry for real surfaced ten. Same for mypy: naming files explicitly on the
-command line bypasses `exclude`, so it answers a different question than the
-configured run does.
-
-**Delete the entry and run the configured gate.** That is the only measurement
-that means anything — it is the failure-shape rule applied to a lint
-invocation rather than a test, and the two spellings of "prove it can fail"
-are the same instruction.
-
-What the ten findings turned out to be is its own lesson. Nine were false
-positives from a *misconfiguration*, not from strictness: ruff's
-`runtime-evaluated-base-classes` exists to stop TC00x moving pydantic field
-annotations into a type-checking block, but ruff matches the base class **as
-written in the file**, not through the MRO — and every event here declares
-`TenantDomainEvent`, not `pydantic.BaseModel`. Applying ruff's own suggested
-fix left the module importable and broke 23 tests with
-`PydanticUserError: not fully defined`, because pydantic resolves field
-annotations at schema-build time. **An import smoke test passes; only using the
-model catches it.** The fix was to name the real base in that setting.
-
-So an exemption can hide a misconfiguration rather than debt, and then it
-absorbs that misconfiguration indefinitely — which is a better argument for
-removing exemptions promptly than any amount of accumulated strictness debt.
-
-## The public API is gated, not curated
-
-`kg_builder.__all__` is the whole promise; anything reached by a dotted path is
-internal. Three tests keep that honest, and each exists because the other two
-cannot see its failure:
-
-1. **Every exported name's signature mentions only exported types.** Ruff's
-   F822 catches unresolvable `__all__` entries and is blind to this.
-2. **Every `KgBuilderError` subclass is exported or listed** against the
-   capability whose export would bring it. A *signature* gate cannot see
-   exceptions — removing `MissingEntityError` from `__all__` passes check 1.
-3. **The end-to-end example imports nothing but `kg_builder`.** Without it the
-   example can reach into an adapter module and pass while the surface is
-   empty.
-
-Two things learned building check 1, both of which will recur:
-
-- **It must walk the MRO.** `GraphProjection` declares no `__init__`, so a
-  body-only check reported it clean while the constructor a caller actually
-  calls — `StoreProjection`'s — took five foreign types.
-- **Exporting one name pulls its closure.** `Entity` obliges `TemporalExtent`,
-  which obliges `DatePrecision`. Exporting `DomainSchema` alone would have
-  satisfied the letter of the finding and left it unconstructible. Expect the
-  next capability exported to bring its own closure; the gate makes that
-  visible at the moment it happens, which is the point of it.
-
-## Architecture contract
-
-`lint-imports` enforces a layered contract declared in `pyproject.toml`, highest
-to lowest:
-
-```
-composition
-extraction : consolidation : temporal : graph : vector : llm   (siblings)
-projections
-aggregates
-events
-ports
-domain
-```
-
-**`composition` is the top layer and holds one module.** `extraction` may not
-import `projections` — that is what keeps a store reference out of the
-pipeline — but something has to hold both or the library ships two halves and
-a diagram. `build_graph` is that something. A second module wanting in here
-should have to say what it composes.
-
-`cache`, `config` and `context` left the line in slice 10 with their modules:
-a settings object, a Redis singleton and a re-export shim, none with a caller.
-
-`containers = ["kg_builder"]` with **`exhaustive = true`**: a new top-level
-package is a contract failure until it is placed deliberately. That is the
-point — decide where it sits, or argue the contract should change.
-
-**There is no `services` layer, and adding one back needs an argument.** It was
-the top layer until slice 9 deleted it: the write model is `aggregates` +
-`events`, the read model is `projections`, and persistence is the two ports.
-`models`, `db` and `schemas` went with it — there is no ORM and no session for
-a layer to be built around.
-
-Lower layers must not import higher ones, and the sibling layers must not import
-each other. Adding a cross-layer import means either the code is in the wrong
-layer or the contract needs an explicit, argued change.
-
-The sibling band is where the real work happens, and each membership is
-load-bearing:
-
-- `llm` sits *beside* `extraction`, not beneath it, so extraction can reach
-  only `ports.llm_provider` and never the LangChain adapter.
-- `consolidation` is a sibling rather than above extraction. It needs nothing
-  from extraction — the tie-break both use moved down to `domain.preference`
-  when consolidation became its third caller — and placing it above would let
-  it reach `mapping.py`, which is how a second entity-id scheme gets born.
-- `temporal` likewise. Above `extraction` it could reach `mapping.py`, and the
-  temptation there is specific: inferred edges would acquire a path into
-  `DocumentExtracted`, which is exactly the persistence decision
-  `temporal/inference.py` argues against.
-
-`pyproject.toml` carries the full reasoning inline. Keep this block in step
-with it — a stale layer diagram in binding instructions sends the next author
-to a package that does not exist.
-
-**`lint-imports` only sees first-party imports**, so it cannot catch a
-`langchain*` import appearing where it should not. That is what
-`tests/unit/llm/test_port_does_not_leak.py` is for — it parses every module
-under `src/` and fails on a third-party leak outside the adapter package.
-Any dependency the architecture deliberately confines to one module needs
-that second kind of check; the contract alone will not do it.
 
 ## Mutation testing
 
@@ -513,3 +336,180 @@ reading the code:
 - `hypothesis` is available for property-based tests — prefer it wherever a
   property is easier to state than a table of examples.
 - Markers: `unit`, `integration`, `accuracy`.
+
+## Coverage ratchet
+
+`scripts/coverage_ratchet.py` runs the suite and compares total coverage against
+`.coverage-baseline`. Coverage may never fall; when it rises, the baseline is
+raised and staged automatically. The baseline file is created on the first run
+where the suite is green.
+
+To accept a deliberate drop, edit `.coverage-baseline` in the same commit and say
+why in the message.
+
+Deleting well-covered legacy code lowers the ratio while removing nothing that
+was tested — slices 7, 8 and 9 all hit this. Justify the movement in the commit
+message rather than adding tests to paper over it. Slice 9's two drops were
+declarative ORM columns (which execute at import, so they scored high while
+proving nothing) and a router whose 826-line test file supplied every input as
+a `MagicMock`.
+
+## An exemption list must fail when what it exempts is gone
+
+**A per-file lint or type exemption that matches no file passes silently.**
+ruff and mypy both accept a pattern for a deleted path without complaint, so a
+shrinking-exemption ratchet stops shrinking and nobody is told.
+
+Slice 9 ran the experiment by accident and got both answers at once. Deleting
+`models/extracted_entity.py` **failed the gate** — because one exemption list
+lived in a test that asserts every entry still names a real file. The ruff and
+mypy ignore lists in `pyproject.toml` carried three deleted paths for one and
+two commits, and nothing said a word. Same hazard, same commit, opposite
+outcomes, decided entirely by whether someone had written the staleness check
+as a test.
+
+**Both legacy exemption lists are now empty, and the empty one is deleted.**
+As of slice 10, ruff's `per-file-ignores` carries no legacy entry and mypy
+carries no `exclude` at all — `--strict` covers every module in the package.
+The mypy key was deleted rather than kept empty, per the paragraph below: an
+exclusion over an empty set excludes nothing, and a staleness guard written
+over it would pass vacuously. Re-adding either is now a visible decision in
+review rather than an edit to an existing list.
+
+So: **every exemption list needs a test that its entries still match something.**
+And when a list empties, decide deliberately between two different things —
+keeping it empty (no exceptions admitted, and adding one is visible in review)
+or deleting it. An *exclusion* over an empty set is the one to delete: it
+excludes nothing, and any guard written over it passes vacuously.
+
+The same reasoning applies to a check that finds nothing. `exhaustive = true`
+on the import contract caught zero violations, which is indistinguishable from
+the option being inert — slice 9 proved it bites by adding a throwaway package,
+watching the contract break, and removing it. **A passing check you have never
+seen fail is not yet evidence.**
+
+### The command that measures an exemption must not be subject to it
+
+Before deleting an exemption you have to know what it hides, and the obvious
+way to find out is silently wrong:
+
+```
+$ uv run ruff check --select ANN,TC src/kg_builder/events/
+All checks passed!
+```
+
+That result was **unconditional**. `per-file-ignores` applies on top of
+`--select`, and the ignore for that path was exactly `["ANN", "TC"]`, so the
+command could not have reported a finding whatever the code said. Deleting the
+entry for real surfaced ten. Same for mypy: naming files explicitly on the
+command line bypasses `exclude`, so it answers a different question than the
+configured run does.
+
+**Delete the entry and run the configured gate.** That is the only measurement
+that means anything — it is the failure-shape rule applied to a lint
+invocation rather than a test, and the two spellings of "prove it can fail"
+are the same instruction.
+
+What the ten findings turned out to be is its own lesson. Nine were false
+positives from a *misconfiguration*, not from strictness: ruff's
+`runtime-evaluated-base-classes` exists to stop TC00x moving pydantic field
+annotations into a type-checking block, but ruff matches the base class **as
+written in the file**, not through the MRO — and every event here declares
+`TenantDomainEvent`, not `pydantic.BaseModel`. Applying ruff's own suggested
+fix left the module importable and broke 23 tests with
+`PydanticUserError: not fully defined`, because pydantic resolves field
+annotations at schema-build time. **An import smoke test passes; only using the
+model catches it.** The fix was to name the real base in that setting.
+
+So an exemption can hide a misconfiguration rather than debt, and then it
+absorbs that misconfiguration indefinitely — which is a better argument for
+removing exemptions promptly than any amount of accumulated strictness debt.
+
+## The public API is gated, not curated
+
+`kg_builder.__all__` is the whole promise; anything reached by a dotted path is
+internal. Three tests keep that honest, and each exists because the other two
+cannot see its failure:
+
+1. **Every exported name's signature mentions only exported types.** Ruff's
+   F822 catches unresolvable `__all__` entries and is blind to this.
+2. **Every `KgBuilderError` subclass is exported or listed** against the
+   capability whose export would bring it. A *signature* gate cannot see
+   exceptions — removing `MissingEntityError` from `__all__` passes check 1.
+3. **The end-to-end example imports nothing but `kg_builder`.** Without it the
+   example can reach into an adapter module and pass while the surface is
+   empty.
+
+Two things learned building check 1, both of which will recur:
+
+- **It must walk the MRO.** `GraphProjection` declares no `__init__`, so a
+  body-only check reported it clean while the constructor a caller actually
+  calls — `StoreProjection`'s — took five foreign types.
+- **Exporting one name pulls its closure.** `Entity` obliges `TemporalExtent`,
+  which obliges `DatePrecision`. Exporting `DomainSchema` alone would have
+  satisfied the letter of the finding and left it unconstructible. Expect the
+  next capability exported to bring its own closure; the gate makes that
+  visible at the moment it happens, which is the point of it.
+
+## Architecture contract
+
+`lint-imports` enforces a layered contract declared in `pyproject.toml`, highest
+to lowest:
+
+```
+composition
+extraction : consolidation : temporal : graph : vector : llm   (siblings)
+projections
+aggregates
+events
+ports
+domain
+```
+
+**`composition` is the top layer and holds one module.** `extraction` may not
+import `projections` — that is what keeps a store reference out of the
+pipeline — but something has to hold both or the library ships two halves and
+a diagram. `build_graph` is that something. A second module wanting in here
+should have to say what it composes.
+
+`cache`, `config` and `context` left the line in slice 10 with their modules:
+a settings object, a Redis singleton and a re-export shim, none with a caller.
+
+`containers = ["kg_builder"]` with **`exhaustive = true`**: a new top-level
+package is a contract failure until it is placed deliberately. That is the
+point — decide where it sits, or argue the contract should change.
+
+**There is no `services` layer, and adding one back needs an argument.** It was
+the top layer until slice 9 deleted it: the write model is `aggregates` +
+`events`, the read model is `projections`, and persistence is the two ports.
+`models`, `db` and `schemas` went with it — there is no ORM and no session for
+a layer to be built around.
+
+Lower layers must not import higher ones, and the sibling layers must not import
+each other. Adding a cross-layer import means either the code is in the wrong
+layer or the contract needs an explicit, argued change.
+
+The sibling band is where the real work happens, and each membership is
+load-bearing:
+
+- `llm` sits *beside* `extraction`, not beneath it, so extraction can reach
+  only `ports.llm_provider` and never the LangChain adapter.
+- `consolidation` is a sibling rather than above extraction. It needs nothing
+  from extraction — the tie-break both use moved down to `domain.preference`
+  when consolidation became its third caller — and placing it above would let
+  it reach `mapping.py`, which is how a second entity-id scheme gets born.
+- `temporal` likewise. Above `extraction` it could reach `mapping.py`, and the
+  temptation there is specific: inferred edges would acquire a path into
+  `DocumentExtracted`, which is exactly the persistence decision
+  `temporal/inference.py` argues against.
+
+`pyproject.toml` carries the full reasoning inline. Keep this block in step
+with it — a stale layer diagram in binding instructions sends the next author
+to a package that does not exist.
+
+**`lint-imports` only sees first-party imports**, so it cannot catch a
+`langchain*` import appearing where it should not. That is what
+`tests/unit/llm/test_port_does_not_leak.py` is for — it parses every module
+under `src/` and fails on a third-party leak outside the adapter package.
+Any dependency the architecture deliberately confines to one module needs
+that second kind of check; the contract alone will not do it.

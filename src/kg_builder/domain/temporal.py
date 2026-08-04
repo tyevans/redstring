@@ -1,9 +1,8 @@
 """Temporal value objects for the domain model.
 
-`DatePrecision` and `UncertaintyMarker` are copied here from
-`models/extracted_entity.py` (re-exported from `schemas/timeline.py`).
-The duplication is intentional and temporary — see BACKLOG.md item B26,
-which tracks moving the originals to this module in slice 9.
+`DatePrecision` and `UncertaintyMarker` live here and nowhere else. They were
+briefly duplicated against the ORM models this package replaced; slice 9
+deleted those, so this module is the single definition. Both are public API.
 """
 
 from __future__ import annotations
