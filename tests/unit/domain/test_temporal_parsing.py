@@ -116,6 +116,59 @@ class TestPrecision:
         assert parsed.start_date == utc(year, 1, 1)
 
 
+class TestPartialDatesResolveToTheRightMoment:
+    """Precision and start date are two different claims, and the suite
+    checked only the first. Every mutation of the quarter arithmetic --
+    `quarter % 1`, `quarter >> 1`, `quarter & 1`, `* 3 + 2` -- left "Q3 2024"
+    at MONTH precision while moving it to January, April or August, and
+    nothing failed."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Q1 2024", utc(2024, 1, 1)),
+            ("Q2 2024", utc(2024, 4, 1)),
+            ("Q3 2024", utc(2024, 7, 1)),
+            ("Q4 2024", utc(2024, 10, 1)),
+        ],
+    )
+    def test_a_quarter_starts_where_it_should(self, text, expected):
+        assert parse_temporal(text, reference_date=REF).start_date == expected
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("January 2024", utc(2024, 1, 1)),
+            ("Jun 2024", utc(2024, 6, 1)),
+            ("December 2024", utc(2024, 12, 1)),
+        ],
+    )
+    def test_a_month_and_year_resolves_to_the_first_of_that_month(self, text, expected):
+        assert parse_temporal(text, reference_date=REF).start_date == expected
+
+    @pytest.mark.parametrize(
+        ("text", "first", "last"),
+        [("the 1850s", 1850, 1859), ("1990s", 1990, 1999), ("the 2000s", 2000, 2009)],
+    )
+    def test_a_decade_spans_its_ten_years(self, text, first, last):
+        parsed = parse_temporal(text, reference_date=REF)
+        assert parsed is not None
+        assert parsed.start_date == utc(first, 1, 1)
+        assert parsed.end_date == utc(last, 1, 1)
+
+    @pytest.mark.parametrize(
+        ("text", "first", "last"),
+        [
+            ("Q1-Q2 2024", utc(2024, 1, 1), utc(2024, 4, 1)),
+            ("Q2-Q4 2024", utc(2024, 4, 1), utc(2024, 10, 1)),
+        ],
+    )
+    def test_a_quarter_range_spans_from_one_quarter_to_the_other(self, text, first, last):
+        parsed = parse_temporal(text, reference_date=REF)
+        assert parsed is not None
+        assert (parsed.start_date, parsed.end_date) == (first, last)
+
+
 class TestUncertainty:
     @pytest.mark.parametrize(
         ("text", "expected"),
