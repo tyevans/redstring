@@ -1,308 +1,185 @@
-# Ring migration plan — kg-builder
+# kg-builder re-architecture plan
 
-Dissolve the current flat package layout into bounded contexts, each with
-DDD rings. Clean breaks only: no deprecation shims, no re-export bridges
-left behind after a slice completes. History preserved with `git mv`.
+Turn kg-builder into a library that constructs knowledge graphs, with
+pluggable graph and vector storage — and nothing else. Clean breaks only:
+no deprecation shims, no compatibility re-exports left behind.
 
-Adapted from the `eventsource-py` `migrating-modules-to-rings` skill. The
-differences from that campaign are called out in "Deviations" at the end.
+This supersedes the original ring-migration plan (commits `edced18`,
+`cf64765`), which assumed the existing package set was worth relocating.
+Slices 0 and 0b from that plan are done and still stand; everything after
+them is replaced.
 
-## Decisions taken up front
+## What kg-builder is
 
-1. **Bounded contexts, each with rings** — not one global ring set.
-2. **Stabilize before moving** — slice 0 makes the suite green so every later
-   slice has a trustworthy gate.
-3. **Strip auth vestiges** — `User`, `UserTenantMembership`, `OAuthProvider`,
-   OAuth/JWT settings, and FastAPI-shaped session helpers go. `tenant_id`
-   survives as a plain scoping column, not a foreign key into an auth model.
+**Given content, produce a knowledge graph.** Entity and relationship
+extraction, entity consolidation, temporal enrichment, embeddings — written
+through a `GraphStore` port and a `VectorStore` port.
+
+## What kg-builder is not
+
+Three scope cuts, decided deliberately:
+
+| Not this | Why | Consequence |
+|---|---|---|
+| **A document sourcer** | Fetching, crawling, and cleaning source content is a different problem set | `scraping/` deleted; HTML preprocessors deleted; document parsing and object storage deleted |
+| **An application** | Job tracking, review queues, and credential storage belong to the caller | `models/` deleted; SQLAlchemy leaves the core; provider config is passed in, not read from a DB |
+| **An auth boundary** | It never was one | `User`/`Tenant`/`OAuthProvider` and the `OAUTH_*`/`APP_JWT_*` config deleted; `tenant_id` survives as a scoping key |
+
+The library does not fetch anything. Callers hand it content they already
+have.
+
+## Input contract
+
+A caller-supplied value object, not a row the library owns:
+
+```python
+SourceDocument(
+    id: str,                    # caller's identifier, used for provenance
+    text: str,                  # already extracted and cleaned
+    uri: str | None = None,
+    title: str | None = None,
+    published_at: datetime | None = None,
+    metadata: dict = {},
+)
+```
+
+Provenance becomes graph structure — `(:Entity)-[:EXTRACTED_FROM]->(:Source)`
+— built from `SourceDocument`, never fetched.
+
+## Ports
+
+Two that matter. Both are defined at the level the library actually uses, so
+they stay implementable by something that is not Neo4j.
+
+```
+GraphStore
+  upsert_entity / upsert_entities
+  upsert_relationship / upsert_relationships
+  get_entity, find_entities(name?, type?, tenant)
+  neighbors(entity_id, depth, rel_types?)
+  merge_entities(canonical, others)      # alias edges + provenance
+  delete_by_tenant(tenant)
+
+VectorStore
+  upsert(entity_id, vector, tenant, metadata)
+  search(vector, k, tenant, filter?)     # ANN
+  get(entity_id, tenant)
+  delete(entity_id | tenant)
+```
+
+Supporting ports, each with a default that needs no infrastructure:
+`LlmProvider`, `EmbeddingProvider`, `Cache` (in-memory default; Redis
+optional), `Clock`.
+
+**The port must not leak Cypher.** `graph/queries.py` is Cypher templates
+today; they become Neo4j adapter internals, never port vocabulary.
+
+## Adapters
+
+| Port | First | Then | Later |
+|---|---|---|---|
+| `GraphStore` | in-memory | Neo4j | SQL (sqlite/postgres) |
+| `VectorStore` | in-memory | pgvector | Qdrant |
+
+In-memory is the reference implementation and comes first, because it keeps
+the port honest and gives the test suite a real backend for the first time
+(BACKLOG B10). Every adapter runs the **same port-compliance test suite** —
+that shared suite is the deliverable, not any one adapter.
+
+SQLAlchemy does not vanish entirely: it survives *inside*
+`vector/adapters/pgvector.py` and a future `graph/adapters/sql.py`, as an
+optional extra. It stops being the library's persistence layer.
 
 ## Target layout
 
 ```
 src/kg_builder/
-  shared/          shared kernel + cross-cutting infrastructure
-  llm/             supporting: LLM/inference provider access
-  embedding/       supporting: embedding generation, cache, vector ops
-  preprocessing/   core: chunk / clean / merge source content
-  extraction/      core: entity + relationship extraction from content
-  consolidation/   core: entity resolution, similarity, merge
-  graph/           core: Neo4j projection and query
-  scraping/        core: web acquisition
-  documents/       core: uploaded-document acquisition and parsing
-  temporal/        core: temporal parsing, inference, timelines
-  pipelines/       cross-context orchestration (the only place contexts meet)
+  domain/           Entity, Relationship, Alias, SourceDocument, temporal
+                    value objects, domain events. Pure; no I/O, no ORM.
+  ports/            GraphStore, VectorStore, LlmProvider, EmbeddingProvider,
+                    Cache, Clock.
+  graph/adapters/   memory, neo4j, (sql)
+  vector/adapters/  memory, pgvector, (qdrant)
+  llm/              provider adapters, retry, rate limiting, circuit breaker
+  extraction/       entity/relationship extraction; chunking and chunk-merge
+  consolidation/    blocking, similarity, merge
+  temporal/         parsing, inference, timelines
+  pipelines/        the composed use cases; the public API
 ```
 
-Each context carries the rings it needs:
+`preprocessing/` splits: HTML preprocessors are sourcing and go; the
+sliding-window chunker and the entity mergers serve extraction and move into
+`extraction/`.
 
-```
-<context>/
-  domain/       entities, value objects, exceptions, pure policy. stdlib + pydantic only.
-  ports/        Protocols / ABCs. interface only, zero implementation.
-  application/  use-case orchestration. depends on domain + ports, never adapters.
-  adapters/     drivers, wire formats, storage formats, ORM rows, HTTP clients.
-```
+## What gets deleted
 
-Small supporting contexts (`llm`, `embedding`) may have only `ports/` and
-`adapters/`. A context with no `domain/` is a signal worth questioning, not a
-rule violation.
+| Path | LOC | Why |
+|---|---|---|
+| `scraping/` | 1,707 | Sourcing |
+| `models/` | 3,992 | The library owns no relational state |
+| `services/document_parser.py`, `services/storage/` | 630 | Sourcing |
+| `preprocessing/preprocessors/` | ~400 | HTML boilerplate removal is sourcing |
+| `db.py`, most of `config.py` and `encryption.py` | ~1,074 | No DB, no stored secrets |
+| `services/sync_status.py` | — | Nothing to sync; the graph store is the store |
 
-### Dependency rules
+Roughly **7,800 lines deleted outright**, before counting what `services/`
+sheds. Dependencies dropped from the core: `scrapy`, `trafilatura`,
+`extruct`, `beautifulsoup4`, `boto3`, `unstructured`, `asyncpg`,
+`psycopg2-binary`, and `sqlalchemy` (demoted to an optional extra).
 
-- Within a context: `adapters` → `application` → `ports` → `domain`.
-- `shared` sits below every context; nothing in `shared` may import a context.
-- Core and supporting contexts are **independent siblings** — they must not
-  import each other. Where one genuinely needs another's capability, it
-  declares a narrow Protocol in its own `ports/` and `pipelines/` wires the
-  concrete implementation in.
-- `pipelines` sits above everything and may import any context's `ports`,
-  `application`, and `adapters`.
-
-That last rule is the load-bearing one. Today `services/consolidation`
-imports embeddings directly, `scraping.pipelines` reaches into extraction via
-a hook, and `services/extraction/orchestrator` pulls preprocessing. Each of
-those becomes a port + a wiring line in `pipelines`.
-
-## Ring assignment
-
-Signals used: interface-only → `ports`; stdlib/pydantic only → `domain`;
-touches a driver, wire format, or storage format → `adapters`; use-case
-orchestration → `application`.
-
-### `shared/`
-
-| Current | Destination |
-|---|---|
-| `config.py` (minus OAuth/JWT settings) | `shared/adapters/config.py` |
-| `context.py` | `shared/domain/context.py` |
-| `db.py` (reshaped, FastAPI helpers dropped) | `shared/adapters/db.py` |
-| `cache.py` | `shared/adapters/cache.py` |
-| `encryption.py` | `shared/adapters/encryption.py` |
-| `events/base.py` | `shared/domain/events.py` |
-| `models/tenant.py`, `models/project.py` | `shared/adapters/orm/` |
-| `schemas/project.py` | `shared/domain/project.py` |
-| `events/projects.py` | `shared/domain/events_projects.py` |
-| new: `CachePort`, `ClockPort`, `UnitOfWorkPort` | `shared/ports/` |
-
-Deleted outright: `models/user.py`, `models/user_tenant_membership.py`,
-`models/oauth_provider.py`, and the OAuth/JWT half of `config.py`.
-
-### `llm/`
-
-| Current | Destination |
-|---|---|
-| `inference/providers/base.py` (7 abstract methods) | `llm/ports/provider.py` |
-| `inference/providers/ollama.py` | `llm/adapters/ollama.py` |
-| `inference/providers/factory.py` | `llm/adapters/factory.py` |
-| `models/inference_provider.py`, `models/inference_request.py` | `llm/adapters/orm/` |
-| `events/inference.py` | `llm/domain/events.py` |
-| `extraction/rate_limiter.py`, `extraction/circuit_breaker.py` (redis) | `llm/adapters/` |
-| `extraction/retry.py` | `llm/domain/retry.py` |
-
-Rate limiting, retry, and the circuit breaker are LLM-transport concerns, not
-extraction concerns — moving them here is the one non-obvious reassignment in
-this plan and is worth challenging during slice 3.
-
-### `embedding/`
-
-| Current | Destination |
-|---|---|
-| `services/embedding.py` | `embedding/ports/provider.py` + `embedding/adapters/http.py` |
-| `services/openai_embedding.py` | `embedding/adapters/openai.py` |
-| `services/embedding_cache.py` | `embedding/adapters/cache.py` |
-| `services/vector_ops.py` | `embedding/adapters/pgvector.py` |
-
-### `extraction/`
-
-| Current | Destination |
-|---|---|
-| `extraction/base.py`, `extraction/registry.py` | `extraction/ports/` |
-| `extraction/schemas.py`, `extraction/schema_org.py`, `extraction/classifier.py`, `extraction/prompts.py`, `extraction/prompt_generator.py`, `extraction/strategy_router.py` | `extraction/domain/` |
-| `extraction/domains/**` (models, loader, registry, YAML schemas) | `extraction/domain/domains/` |
-| `extraction/ollama_extractor.py`, `openai_extractor.py`, `llm_extractor.py` | `extraction/adapters/` |
-| `extraction/factory.py` | `extraction/adapters/factory.py` |
-| `services/extraction/orchestrator.py` | `extraction/application/orchestrator.py` |
-| `models/extracted_entity.py`, `models/extraction_provider.py` | `extraction/adapters/orm/` |
-| `schemas/extraction_provider.py` | `extraction/domain/provider.py` |
-| `events/extraction.py`, `events/relationships.py` | `extraction/domain/events.py` |
-
-`services/extraction/temporal_enrichment.py` is resolved in slice 0 — it does
-not import today. If it survives, it lands in `temporal/application/`.
-
-### `preprocessing/`
-
-| Current | Destination |
-|---|---|
-| `preprocessing/base.py`, `preprocessing/pipeline.py` (Protocols) | `preprocessing/ports/` |
-| `preprocessing/schemas.py`, `preprocessing/exceptions.py` | `preprocessing/domain/` |
-| `preprocessing/pipeline.py` (orchestration half) | `preprocessing/application/pipeline.py` |
-| `preprocessing/chunkers/**` | `preprocessing/domain/chunkers/` (pure) |
-| `preprocessing/preprocessors/trafilatura_preprocessor.py` | `preprocessing/adapters/` |
-| `preprocessing/preprocessors/passthrough_preprocessor.py` | `preprocessing/domain/` |
-| `preprocessing/mergers/simple_merger.py` (jellyfish) | `preprocessing/adapters/` |
-| `preprocessing/mergers/llm_merger.py` | `preprocessing/adapters/` (consumes `llm` port) |
-| `preprocessing/factory.py` | `preprocessing/adapters/factory.py` |
-
-`pipeline.py` is split — it holds both a Protocol and the orchestration loop.
-
-### `scraping/`
-
-| Current | Destination |
-|---|---|
-| `scraping/items.py`, `middlewares.py`, `pipelines.py`, `runner.py`, `settings.py`, `spiders/**` | `scraping/adapters/` (all Scrapy) |
-| `scraping/hooks.py` (dispatcher Protocol) | `scraping/ports/dispatcher.py` |
-| `models/scraping_job.py`, `models/scraped_page.py` | `scraping/adapters/orm/` |
-| `schemas/scraping.py` | `scraping/domain/` |
-| `events/scraping.py` | `scraping/domain/events.py` |
-
-The `set_extraction_dispatcher` hook is replaced by a real port that
-`pipelines` satisfies.
-
-### `documents/`
-
-| Current | Destination |
-|---|---|
-| `services/document_parser.py` | `documents/application/parser.py` + `documents/ports/parser.py` |
-| `services/storage/object_storage.py` | `documents/adapters/s3.py` (behind `documents/ports/storage.py`) |
-| `models/uploaded_document.py` | `documents/adapters/orm/` |
-| `schemas/document.py` | `documents/domain/` |
-| `events/documents.py` | `documents/domain/events.py` |
-
-### `consolidation/`
-
-| Current | Destination |
-|---|---|
-| `services/consolidation/string_similarity.py`, `combined_scoring.py`, `graph_similarity.py` | `consolidation/domain/` |
-| `services/consolidation/embedding_similarity.py` | `consolidation/application/` (consumes `EmbeddingPort`) |
-| `services/consolidation/blocking.py` | split: SQL half → `adapters/`, policy half → `domain/` |
-| `services/consolidation/merge_service.py` | `consolidation/application/merge.py` + `adapters/orm` |
-| `models/entity_alias.py`, `merge_history.py`, `merge_review_queue.py`, `consolidation_config.py` | `consolidation/adapters/orm/` |
-| `schemas/consolidation.py`, `schemas/similarity.py` | `consolidation/domain/` |
-| `events/consolidation.py` | `consolidation/domain/events.py` |
-
-### `graph/`
-
-| Current | Destination |
-|---|---|
-| `graph/client.py` (neo4j driver) | `graph/adapters/neo4j_client.py` |
-| `graph/queries.py` | `graph/domain/queries.py` (Cypher templates, no driver) |
-| `services/neo4j.py`, `neo4j_errors.py`, `neo4j_schema.py`, `neo4j_tenant.py`, `neo4j_queries.py` | `graph/adapters/` |
-| `services/sync_status.py` | `graph/application/sync_status.py` |
-| new: `GraphPort` | `graph/ports/graph.py` |
-
-### `temporal/`
-
-| Current | Destination |
-|---|---|
-| `services/temporal_parser.py` (dateparser) | `temporal/adapters/parser.py` behind `temporal/ports/parser.py` |
-| `services/temporal_relationship_inference.py` | `temporal/domain/inference.py` |
-| `services/timeline_query.py`, `project_timeline_query.py` | `temporal/adapters/` (SQL) + `temporal/application/` |
-| `services/timeline_cache.py` | `temporal/adapters/cache.py` |
-| `services/timeline_export.py` | `temporal/application/export.py` |
-| `schemas/timeline.py` | `temporal/domain/timeline.py` |
+`extraction/llm_extractor.py` imports `unstructured` — document parsing
+inside extraction. Same boundary violation; extraction takes text.
 
 ## Slices
 
-Dispatch one at a time. Foundation first — later slices import its output.
-Targeted tests per slice; full gate at slice end, not after every edit.
+Slices 0 and 0b are complete. Dispatch the rest one at a time.
 
 | # | Slice | Gate |
 |---|---|---|
-| 0 | **Stabilize.** ✅ Done. Triaged the 42 failures to seven root causes and fixed all of them. 1798 passed, coverage baseline 60.79 recorded. | Full suite green ✅ |
-| 0b | **Land the temporal/strategy-router WIP.** ✅ Done. All four modules implemented, `collect_ignore` emptied. 1928 passed. | Full suite green, zero collection skips ✅ |
-| 1 | **Strip auth.** Delete `models/user.py`, `user_tenant_membership.py`, `oauth_provider.py`; rewrite relationships onto plain `tenant_id`; strip OAuth/JWT from `config.py`; reshape `db.py` into a library session provider. | Full suite green |
-| 2 | **Foundation: `shared/`.** Create the ring tree, move shared-kernel modules, write `shared/ports/`, rewrite the import-linter contract to the per-context form. | `lint-imports` + full suite |
-| 3 | **`llm/` + `embedding/`.** Define both ports; move providers, retry/rate-limit/breaker, embedding adapters. Add identity tests before the move, retarget after. | targeted + `lint-imports` |
-| 4 | **`preprocessing/`.** Split `pipeline.py`. | targeted + `lint-imports` |
-| 5 | **`extraction/`.** Largest single slice (7.5k LOC). | targeted + `lint-imports` |
-| 6 | **`consolidation/`.** Split `blocking.py` and `merge_service.py`. | targeted + `lint-imports` |
-| 7 | **`graph/`.** Introduce `GraphPort`. | targeted + `lint-imports` |
-| 8 | **`scraping/` + `documents/`.** Replace the `hooks` dispatcher with a port. | targeted + `lint-imports` |
-| 9 | **`temporal/`.** | targeted + `lint-imports` |
-| 10 | **`pipelines/`.** Wire the cross-context composition that the port extractions in slices 3–9 deferred. Delete the now-empty `services/`, `models/`, `schemas/`, `events/`, `inference/` packages. | full gate |
-| 11 | **Docs & meta.** ADR 0001 (ring architecture), `docs/adrs/index.md`, README rewrite, `CLAUDE.md` structure + contract block, CHANGELOG `**BREAKING:**` entry naming every retired path. | `sweep.sh` clean |
+| 0 | **Stabilize.** ✅ 1798 passed, coverage baseline 60.79. | ✅ |
+| 0b | **Land the temporal/strategy-router work.** ✅ 1930 passed, nothing skipped. | ✅ |
+| 1 | **Scope cut.** Delete `scraping/`, document parsing, object storage, HTML preprocessors, and their tests and dependencies. Remove `unstructured` from `llm_extractor`. Pure deletion — no new abstractions. | Full suite green; coverage baseline reset with justification |
+| 2 | **Domain model.** `Entity`, `Relationship`, `Alias`, `SourceDocument`, temporal value objects as pure types. `DatePrecision`/`UncertaintyMarker` land here (BACKLOG B26). | Unit tests; no I/O in `domain/` |
+| 3 | **`GraphStore` port + in-memory adapter + compliance suite.** The compliance suite is the real artifact. | Compliance suite green against memory |
+| 4 | **Neo4j adapter.** Same compliance suite, no new tests of its own beyond Cypher specifics. | Compliance suite green against Neo4j |
+| 5 | **`VectorStore` port + in-memory + pgvector adapters.** | Compliance suite green against both |
+| 6 | **Extraction onto the domain model.** Absorb chunkers and mergers. Provider config passed in, not loaded. | Targeted + `lint-imports` |
+| 7 | **Consolidation onto the ports.** Blocking is rebuilt on ANN + normalized-name keys (see Risks). | Targeted + `lint-imports` |
+| 8 | **Temporal onto the ports.** | Targeted + `lint-imports` |
+| 9 | **Delete the relational layer.** `models/`, `db.py`, `sync_status`, SQL in `timeline_query`/`vector_ops`; trim `config.py` and `encryption.py`. | Full gate |
+| 10 | **`pipelines/` + public API.** The composed use cases and a deliberate `kg_builder/__init__.py`. | Full gate |
+| 11 | **Docs & meta.** ADR 0001 (this architecture), README rewrite, CHANGELOG with the breaking paths, `CLAUDE.md` structure block, import-linter contract rewrite. | Sweep clean |
 
-Slices 3–9 are independent of each other once slice 2 lands, but each one
-touches `pyproject.toml`'s import-linter contract and the root `__init__.py`.
-Those two files are the shared seam: re-read immediately before each edit and
-keep edits surgical and single-line.
-
-## Temporal work
-
-Temporal is a first-class core context in this plan, not a small supporting
-one — it is a capability the project wants, so the `temporal/` ring set is
-built to be extended rather than merely relocated.
-
-Four test modules were skipped at collection because the code they exercise
-was never finished. All four now pass (slice 0b); the table records what was
-built:
-
-| Module | Tests | Missing |
-|---|---|---|
-| `unit/extraction/test_temporal_schemas.py` | 14 | `TemporalEventProperties`, `is_temporal_relationship_type` in `extraction/schemas.py` |
-| `unit/models/test_extracted_entity_temporal.py` | 31 | Temporal columns on `ExtractedEntity` (none exist today) plus `DatePrecision`/`UncertaintyMarker` re-exports |
-| `unit/services/extraction/test_temporal_enrichment.py` | 19 | The enrichment service itself; the module does not import |
-| `unit/extraction/test_strategy_router.py` | 35 | `get_strategy_router`, `reset_strategy_router`, `route_extraction_strategy` — only `get_strategy_router_factory` exists |
-
-Two findings from building it that shape the `temporal/` slice:
-
-- `DatePrecision` and `UncertaintyMarker` had to be defined in
-  `models/extracted_entity.py`, not `schemas/timeline.py`, because `models`
-  sits *below* `schemas` in the layer contract and the ORM columns need them.
-  `schemas/timeline.py` re-exports them. Their real home is
-  `temporal/domain/` — move them there in this slice (BACKLOG B26).
-- `services/extraction/temporal_enrichment.py` was already complete; it only
-  failed to import because `TemporalEventProperties` did not exist. Nothing
-  in it needed rewriting.
-
-The temporal columns are declared in the ORM but have no migration path —
-this repo has no Alembic at all (BACKLOG B24). Resolve that before anyone
-points this library at a real database.
-
-## Per-slice mechanics
-
-1. Extract ports/domain/adapters pieces **while the old package stays put**
-   and re-exports them. Add identity tests (`new.X is old.X`) now.
-2. `git mv` whole files. Verify `git status` shows `R` renames, not
-   delete+add. Mirror the unit-test tree; retarget the identity tests.
-3. Add a `pytest.raises(ModuleNotFoundError)` guard for the retired path,
-   using `importlib.import_module(...)` so the sweep doesn't flag it.
-4. Run the sweep for the retired package before closing the slice.
-
-Commit small and often — every quality gate runs in `pre-commit`, so smaller
-commits mean faster hook runs. Do not run ruff/bandit/lint-imports/pytest as
-separate pre-commit steps; write the change and commit.
-
-## Sweep
-
-`.claude/skills/migrating-modules-to-rings/sweep.sh` hardcodes `eventsource`
-as the root package. Slice 2 parameterises it for `kg_builder` (and drops the
-`docs/superpowers/` allowlist entry, which does not exist here). Sweep the
-whole repo, denylist not allowlist. In `pyproject.toml` check three spots:
-the import-linter contract module lists, `[tool.mutmut] paths_to_mutate`, and
-pytest test-selection args. Also check `cosmic-ray.toml`.
-
-## Deviations from the eventsource-py skill
-
-| Skill assumes | Here |
-|---|---|
-| One global ring set | Per-context rings (see decisions) |
-| Existing `docs/adrs/` with numbers to increment | None; this campaign creates ADR 0001 |
-| mkdocs nav to update | No mkdocs; README + `CLAUDE.md` only |
-| `make check`, `validate_examples.py`, Docker integration suite | None exist; gate is `pre-commit` + `uv run pytest` |
-| Sibling ring campaigns to coordinate with | Single-branch campaign, no open PRs |
-| Green baseline | Red baseline — hence slice 0 |
+Slice 1 is pure deletion and should land first — every later slice is
+cheaper against a smaller tree.
 
 ## Risks
 
-- **Slice 0 is the whole schedule's risk.** The 42 failures have never been
-  diffed against a knowledge-mapper baseline, so it is unknown whether they
-  are extraction damage or pre-existing. If they turn out to be deep, slice 0
-  grows and everything after it slips.
-- **The coverage ratchet.** Deleting auth models and broken WIP changes total
-  coverage, possibly downward. Slices 0 and 1 will need a deliberate
-  `.coverage-baseline` edit with the reason in the commit message.
-- **`extraction/` at 7.5k LOC** is the one slice that may need splitting
-  again once its internals are read closely.
-- **Reassigning retry / rate-limit / circuit-breaker into `llm/`** is a
-  judgement call, not a mechanical classification. Revisit at slice 3.
+- **Blocking is the one thing that does not port for free.**
+  `consolidation/blocking.py` generates merge candidates with SQL soundex and
+  trigram indexes. Over a graph store that has to become ANN from the vector
+  store plus normalized-name keys. Prototype this before committing to slice
+  7 — it is the only place where "just use a port" might not survive contact.
+- **Merge undo needs a record.** `merge_service` supports undo, which
+  requires knowing what was merged. Either it becomes graph structure
+  (aliases already are) or it is returned to the caller. Decide in slice 7;
+  do not let it silently resurrect a history table.
+- **Port leakage.** If the in-memory adapter turns out to be much harder than
+  Neo4j, the port is shaped like Cypher. That is the signal to redesign, and
+  it is why in-memory comes first.
+- **Coverage ratchet.** Slice 1 deletes ~7,800 lines; total coverage will
+  move sharply and the baseline needs a deliberate edit with reasoning in the
+  commit message.
+- **`tenant_id` scoping** moves into the store ports (namespace, label, or
+  collection per tenant). Every port method takes it; the compliance suite
+  must prove isolation.
+
+## Backlog interaction
+
+The scope cuts resolve several open entries by deletion rather than repair:
+B6 (auth vestiges), B7 (`db.py` shape), B24 (no migration path — there will
+be no relational schema to migrate), B3 (`mark_sync_failed`), and most of
+B10 (no database in tests — the in-memory adapters become the test backend).
+Delete each entry in the slice that actually removes the code, not before.
+
+B2 (Anthropic provider stub), B5, B11, B13–B23, B25, B27 are unaffected.
