@@ -19,7 +19,7 @@ def _entity(**overrides):
         "name": "Ada Lovelace",
         "normalized_name": "ada lovelace",
         "entity_type": "person",
-        "extraction_method": ExtractionMethod.LLM_CLAUDE,
+        "extraction_method": ExtractionMethod.LLM,
         "confidence": 0.9,
     }
     fields.update(overrides)
@@ -27,14 +27,42 @@ def _entity(**overrides):
 
 
 def test_extraction_method_members():
+    assert ExtractionMethod.LLM == "llm"
+    assert ExtractionMethod.PATTERN == "pattern"
     assert ExtractionMethod.SCHEMA_ORG == "schema_org"
     assert ExtractionMethod.OPEN_GRAPH == "open_graph"
-    assert ExtractionMethod.LLM_CLAUDE == "llm_claude"
-    assert ExtractionMethod.LLM_OLLAMA == "llm_ollama"
-    assert ExtractionMethod.LLM_OPENAI == "llm_openai"
-    assert ExtractionMethod.PATTERN == "pattern"
-    assert ExtractionMethod.SPACY == "spacy"
     assert ExtractionMethod.HYBRID == "hybrid"
+    assert ExtractionMethod.MANUAL == "manual"
+
+
+def test_extraction_method_names_no_vendors():
+    """Vendor identity is adapter detail; the domain records only *how*."""
+    assert {m.value for m in ExtractionMethod} == {
+        "llm",
+        "pattern",
+        "schema_org",
+        "open_graph",
+        "hybrid",
+        "manual",
+    }
+
+
+def test_model_defaults_to_none():
+    assert _entity().model is None
+
+
+def test_model_carries_llm_provenance():
+    assert _entity(model="qwen3.6-27b-mtp").model == "qwen3.6-27b-mtp"
+
+
+def test_blocking_keys_defaults_to_none():
+    assert _entity().blocking_keys is None
+
+
+def test_blocking_keys_is_a_frozenset():
+    entity = _entity(blocking_keys={"person:ada", "A430"})
+    assert entity.blocking_keys == frozenset({"person:ada", "A430"})
+    assert isinstance(entity.blocking_keys, frozenset)
 
 
 def test_minimal_entity_construction():

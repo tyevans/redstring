@@ -12,16 +12,20 @@ from kg_builder.domain.temporal import TemporalExtent
 
 
 class ExtractionMethod(str, Enum):
-    """How the entity was extracted."""
+    """How the entity was derived — not which vendor answered.
 
+    Vendor identity is adapter detail and belongs in `Entity.model`, which
+    survives model upgrades and makes "re-extract everything the old model
+    touched" a query. These values become persisted event payloads, so a
+    vendor name here would outlive that vendor's presence in the codebase.
+    """
+
+    LLM = "llm"
+    PATTERN = "pattern"
     SCHEMA_ORG = "schema_org"
     OPEN_GRAPH = "open_graph"
-    LLM_CLAUDE = "llm_claude"
-    LLM_OLLAMA = "llm_ollama"
-    LLM_OPENAI = "llm_openai"
-    PATTERN = "pattern"
-    SPACY = "spacy"
     HYBRID = "hybrid"
+    MANUAL = "manual"
 
 
 class Entity(BaseModel):
@@ -44,8 +48,13 @@ class Entity(BaseModel):
     external_ids: dict[str, str] = {}
     properties: dict[str, Any] = {}
     extraction_method: ExtractionMethod
+    model: str | None = None
     confidence: float
     temporal: TemporalExtent | None = None
+    # Consolidation blocks candidates by a pure key function (prefix, entity
+    # type, soundex). The entity carries the keys; the store only groups by
+    # them and computes nothing.
+    blocking_keys: frozenset[str] | None = None
 
     @field_validator("name")
     @classmethod
