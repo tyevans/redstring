@@ -1047,6 +1047,336 @@ class GraphStoreCompliance:
         assert len(await store.find_by_blocking_key("new", tenant)) == 1
 
     # ------------------------------------------------------------------
+    # Batch reads
+    #
+    # Consolidation is set-shaped: block a tenant by many keys, fetch many
+    # candidates, enumerate a whole group's edges. Each of these exists so
+    # that is one query rather than a loop over the singular form -- free
+    # in-memory, one round trip versus a thousand against a database.
+    #
+    # A batch read is also a fresh place for a tenant leak to hide, so each
+    # has an isolation property, not just an example.
+    # ------------------------------------------------------------------
+
+    @compliance_settings
+    @given(tenants=gen.distinct_tenant_pairs, data=st.data())
+    async def test_get_entities_never_crosses_tenants(
+        self, tenants: tuple[UUID, UUID], data: st.DataObject
+    ) -> None:
+        tenant_a, tenant_b = tenants
+        async with self._store() as store:
+            a_one, a_two = await self._two_entities(store, tenant_a, data)
+            b_entity = data.draw(gen.entities(tenant_id=tenant_b))
+            await store.upsert_entity(b_entity)
+
+            wanted = [a_one.id, a_two.id, b_entity.id]
+            under_a = await store.get_entities(wanted, tenant_a)
+            assert {e.tenant_id for e in under_a} == {tenant_a}
+            assert {e.id for e in under_a} == {a_one.id, a_two.id} | (
+                {b_entity.id} & {a_one.id, a_two.id}
+            )
+
+            under_b = await store.get_entities(wanted, tenant_b)
+            assert under_b == [b_entity]
+
+    async def test_get_entities_returns_what_exists(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        one, two = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([one, two])
+        absent = uuid4()
+
+        found = await store.get_entities([one.id, absent, two.id], tenant)
+
+        # Unknown ids are skipped, not represented by a None placeholder: the
+        # caller asked which of these exist, and a hole would just be re-filtered.
+        assert {e.id for e in found} == {one.id, two.id}
+        assert await store.get_entities([], tenant) == []
+        assert await store.get_entities([absent], tenant) == []
+
+    async def test_get_entities_deduplicates_repeated_ids(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        entity = _example_entity(tenant=tenant)
+        await store.upsert_entity(entity)
+
+        assert await store.get_entities([entity.id, entity.id, entity.id], tenant) == [entity]
+
+    async def test_get_entities_agrees_with_get_entity(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        entities = [_example_entity(tenant=tenant) for _ in range(3)]
+        await store.upsert_entities(entities)
+
+        batched = {e.id: e for e in await store.get_entities([e.id for e in entities], tenant)}
+        for entity in entities:
+            assert batched[entity.id] == await store.get_entity(entity.id, tenant)
+
+    async def test_mutating_a_batch_result_does_not_change_the_store(
+        self, store: GraphStore
+    ) -> None:
+        tenant = uuid4()
+        entity = _example_entity(tenant=tenant, properties={"nested": {"k": "v"}})
+        await store.upsert_entity(entity)
+        pristine = entity.model_copy(deep=True)
+
+        for found in await store.get_entities([entity.id], tenant):
+            _mutate(found)
+
+        assert await store.get_entity(entity.id, tenant) == pristine
+
+    async def test_find_by_blocking_keys_groups_by_key(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        both = _example_entity(tenant=tenant, blocking_keys=frozenset({"A430", "B123"}))
+        only_a = _example_entity(tenant=tenant, blocking_keys=frozenset({"A430"}))
+        await store.upsert_entities([both, only_a])
+
+        found = await store.find_by_blocking_keys(["A430", "B123", "absent"], tenant)
+
+        assert {e.id for e in found["A430"]} == {both.id, only_a.id}
+        assert {e.id for e in found["B123"]} == {both.id}
+        # Every requested key is present, so a caller can iterate the result
+        # without re-checking membership against what it asked for.
+        assert found["absent"] == []
+        assert set(found) == {"A430", "B123", "absent"}
+
+    async def test_find_by_blocking_keys_agrees_with_the_singular_form(
+        self, store: GraphStore
+    ) -> None:
+        tenant = uuid4()
+        await store.upsert_entities(
+            [
+                _example_entity(tenant=tenant, blocking_keys=frozenset({"A430"})),
+                _example_entity(tenant=tenant, blocking_keys=frozenset({"B123"})),
+            ]
+        )
+
+        batched = await store.find_by_blocking_keys(["A430", "B123"], tenant)
+        for key in ("A430", "B123"):
+            assert batched[key] == await store.find_by_blocking_key(key, tenant)
+
+    async def test_find_by_blocking_keys_with_no_keys_is_empty(self, store: GraphStore) -> None:
+        assert await store.find_by_blocking_keys([], uuid4()) == {}
+
+    async def test_mutating_a_grouped_result_does_not_change_the_store(
+        self, store: GraphStore
+    ) -> None:
+        tenant = uuid4()
+        entity = _example_entity(
+            tenant=tenant, blocking_keys=frozenset({"A430"}), properties={"nested": {"k": "v"}}
+        )
+        await store.upsert_entity(entity)
+        pristine = entity.model_copy(deep=True)
+
+        for group in (await store.find_by_blocking_keys(["A430"], tenant)).values():
+            for found in group:
+                _mutate(found)
+
+        assert await store.find_by_blocking_keys(["A430"], tenant) == {"A430": [pristine]}
+
+    @compliance_settings
+    @given(tenants=gen.distinct_tenant_pairs, data=st.data())
+    async def test_find_by_blocking_keys_never_crosses_tenants(
+        self, tenants: tuple[UUID, UUID], data: st.DataObject
+    ) -> None:
+        tenant_a, tenant_b = tenants
+        async with self._store() as store:
+            a_entity = data.draw(gen.entities(tenant_id=tenant_a))
+            await store.upsert_entity(a_entity)
+
+            for key in a_entity.blocking_keys or frozenset():
+                assert await store.find_by_blocking_keys([key], tenant_b) == {key: []}
+
+    async def test_get_relationships_for_covers_a_whole_group(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        a, b, c, outside = (_example_entity(tenant=tenant) for _ in range(4))
+        await store.upsert_entities([a, b, c, outside])
+        ab = _example_relationship(tenant, source=a.id, target=b.id)
+        bc = _example_relationship(tenant, source=b.id, target=c.id)
+        far = _example_relationship(tenant, source=c.id, target=outside.id)
+        await store.upsert_relationships([ab, bc, far])
+
+        found = await store.get_relationships_for([a.id, b.id], tenant)
+
+        # ab touches both endpoints and must appear once, not twice: the result
+        # is a set of edges, not a concatenation of per-entity answers.
+        assert sorted(r.id.hex for r in found) == sorted((ab.id.hex, bc.id.hex))
+
+    async def test_get_relationships_for_honours_direction_and_type(
+        self, store: GraphStore
+    ) -> None:
+        tenant = uuid4()
+        a, b, c = (_example_entity(tenant=tenant) for _ in range(3))
+        await store.upsert_entities([a, b, c])
+        out_knows = _example_relationship(tenant, source=a.id, target=c.id, kind="knows")
+        out_works = _example_relationship(tenant, source=a.id, target=c.id, kind="works_at")
+        incoming = _example_relationship(tenant, source=c.id, target=b.id, kind="knows")
+        await store.upsert_relationships([out_knows, out_works, incoming])
+
+        assert await store.get_relationships_for(
+            [a.id, b.id], tenant, direction="out", relationship_types=["knows"]
+        ) == [out_knows]
+        assert await store.get_relationships_for([a.id, b.id], tenant, direction="in") == [incoming]
+
+    async def test_get_relationships_for_agrees_with_the_singular_form(
+        self, store: GraphStore
+    ) -> None:
+        tenant = uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        await store.upsert_relationship(_example_relationship(tenant, source=a.id, target=b.id))
+
+        assert await store.get_relationships_for([a.id], tenant) == await store.get_relationships(
+            a.id, tenant
+        )
+
+    async def test_get_relationships_for_with_no_ids_is_empty(self, store: GraphStore) -> None:
+        assert await store.get_relationships_for([], uuid4()) == []
+
+    @compliance_settings
+    @given(tenants=gen.distinct_tenant_pairs, data=st.data())
+    async def test_get_relationships_for_never_crosses_tenants(
+        self, tenants: tuple[UUID, UUID], data: st.DataObject
+    ) -> None:
+        tenant_a, tenant_b = tenants
+        async with self._store() as store:
+            a_source, a_target = await self._two_entities(store, tenant_a, data)
+            await store.upsert_relationship(
+                data.draw(
+                    gen.relationships(
+                        tenant_id=tenant_a,
+                        source_entity_id=a_source.id,
+                        target_entity_id=a_target.id,
+                    )
+                )
+            )
+
+            ids = [a_source.id, a_target.id]
+            assert await store.get_relationships_for(ids, tenant_b) == []
+            assert len(await store.get_relationships_for(ids, tenant_a)) == 1
+
+    # ------------------------------------------------------------------
+    # Pagination
+    # ------------------------------------------------------------------
+
+    async def test_find_entities_paginates_in_the_documented_order(self, store: GraphStore) -> None:
+        """The port promises ascending canonical-string id order.
+
+        A cursor without a defined total order is not resumable, so the order
+        is part of the contract and asserted here rather than left to the
+        adapter.
+        """
+        tenant = uuid4()
+        entities = [_example_entity(tenant=tenant) for _ in range(7)]
+        await store.upsert_entities(entities)
+        expected = sorted((e.id for e in entities), key=str)
+
+        assert [e.id for e in await store.find_entities(tenant)] == expected
+
+        page_size = 3
+        seen: list[UUID] = []
+        cursor: UUID | None = None
+        # Bounded rather than `while True`: a cursor that fails to advance --
+        # inclusive instead of exclusive, or ignored entirely -- otherwise
+        # loops forever, and a hung test is a far worse failure report than an
+        # assertion. The bound is one page per entity, which no correct
+        # adapter can reach.
+        for _ in range(len(entities) + 1):
+            page = await store.find_entities(tenant, limit=page_size, after=cursor)
+            if not page:
+                break
+            assert len(page) <= page_size
+            seen.extend(e.id for e in page)
+            cursor = page[-1].id
+        else:
+            pytest.fail("pagination did not terminate: the cursor is not advancing")
+
+        assert seen == expected
+
+    async def test_find_entities_cursor_is_exclusive(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        entities = [_example_entity(tenant=tenant) for _ in range(4)]
+        await store.upsert_entities(entities)
+        ordered = sorted((e.id for e in entities), key=str)
+
+        after_first = await store.find_entities(tenant, after=ordered[0])
+        assert [e.id for e in after_first] == ordered[1:]
+
+        assert await store.find_entities(tenant, after=ordered[-1]) == []
+
+    async def test_find_entities_cursor_need_not_exist(self, store: GraphStore) -> None:
+        """Resuming from a since-deleted id must not lose the rest of the page."""
+        tenant = uuid4()
+        entities = [_example_entity(tenant=tenant) for _ in range(3)]
+        await store.upsert_entities(entities)
+        ordered = sorted((e.id for e in entities), key=str)
+
+        await store.delete_by_tenant(tenant)
+        await store.upsert_entities([e for e in entities if e.id != ordered[0]])
+
+        assert [e.id for e in await store.find_entities(tenant, after=ordered[0])] == ordered[1:]
+
+    async def test_find_entities_cursor_combines_with_filters(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        people = [_example_entity(tenant=tenant, entity_type="person") for _ in range(3)]
+        await store.upsert_entities([*people, _example_entity(tenant=tenant, entity_type="place")])
+        ordered = sorted((e.id for e in people), key=str)
+
+        found = await store.find_entities(tenant, entity_type="person", after=ordered[0])
+        assert [e.id for e in found] == ordered[1:]
+
+    # ------------------------------------------------------------------
+    # delete_relationship
+    # ------------------------------------------------------------------
+
+    async def test_delete_relationship_removes_only_that_edge(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        a, b, c = (_example_entity(tenant=tenant) for _ in range(3))
+        await store.upsert_entities([a, b, c])
+        doomed = _example_relationship(tenant, source=a.id, target=b.id)
+        spared = _example_relationship(tenant, source=a.id, target=c.id)
+        await store.upsert_relationships([doomed, spared])
+
+        assert await store.delete_relationship(doomed.id, tenant) is True
+
+        assert await store.get_relationships(a.id, tenant) == [spared]
+        assert [e.id for e in await store.neighbors(a.id, tenant)] == [c.id]
+
+    async def test_delete_relationship_leaves_the_endpoints(self, store: GraphStore) -> None:
+        """Deleting an edge is not a cascade; both entities survive."""
+        tenant = uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        edge = _example_relationship(tenant, source=a.id, target=b.id)
+        await store.upsert_relationship(edge)
+
+        await store.delete_relationship(edge.id, tenant)
+
+        assert await store.get_entity(a.id, tenant) == a
+        assert await store.get_entity(b.id, tenant) == b
+
+    async def test_delete_relationship_reports_whether_it_removed_anything(
+        self, store: GraphStore
+    ) -> None:
+        tenant = uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        edge = _example_relationship(tenant, source=a.id, target=b.id)
+        await store.upsert_relationship(edge)
+
+        assert await store.delete_relationship(edge.id, tenant) is True
+        # Idempotent: replaying a delete is not an error, it just removes nothing.
+        assert await store.delete_relationship(edge.id, tenant) is False
+        assert await store.delete_relationship(uuid4(), tenant) is False
+
+    async def test_delete_relationship_is_tenant_scoped(self, store: GraphStore) -> None:
+        tenant, other = uuid4(), uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        edge = _example_relationship(tenant, source=a.id, target=b.id)
+        await store.upsert_relationship(edge)
+
+        assert await store.delete_relationship(edge.id, other) is False
+        assert await store.get_relationships(a.id, tenant) == [edge]
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 

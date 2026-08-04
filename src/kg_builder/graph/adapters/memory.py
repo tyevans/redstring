@@ -55,6 +55,18 @@ class InMemoryGraphStore:
         entity = self._entities.get(tenant_id, {}).get(entity_id)
         return None if entity is None else entity.model_copy(deep=True)
 
+    async def get_entities(
+        self, entity_ids: Sequence[EntityId], tenant_id: TenantId
+    ) -> list[Entity]:
+        known = self._entities.get(tenant_id, {})
+        # dict.fromkeys deduplicates while keeping the caller's order, which
+        # makes a repeated id yield one entity without an extra pass.
+        return [
+            known[entity_id].model_copy(deep=True)
+            for entity_id in dict.fromkeys(entity_ids)
+            if entity_id in known
+        ]
+
     async def find_entities(
         self,
         tenant_id: TenantId,
@@ -62,17 +74,25 @@ class InMemoryGraphStore:
         name: str | None = None,
         entity_type: str | None = None,
         limit: int | None = None,
+        after: EntityId | None = None,
     ) -> list[Entity]:
         if limit is not None and limit < 0:
             raise ValueError("limit must not be negative")
 
-        found = [
-            entity.model_copy(deep=True)
-            for entity in self._entities.get(tenant_id, {}).values()
-            if (name is None or entity.normalized_name == name)
-            and (entity_type is None or entity.entity_type == entity_type)
-        ]
-        return found if limit is None else found[:limit]
+        found = sorted(
+            (
+                entity
+                for entity in self._entities.get(tenant_id, {}).values()
+                if (name is None or entity.normalized_name == name)
+                and (entity_type is None or entity.entity_type == entity_type)
+                # Strictly after, and by the same key the sort uses, so the
+                # cursor stays valid when the id it names has been deleted.
+                and (after is None or str(entity.id) > str(after))
+            ),
+            key=lambda entity: str(entity.id),
+        )
+        page = found if limit is None else found[:limit]
+        return [entity.model_copy(deep=True) for entity in page]
 
     async def find_by_blocking_key(self, key: str, tenant_id: TenantId) -> list[Entity]:
         return [
@@ -80,6 +100,18 @@ class InMemoryGraphStore:
             for entity in self._entities.get(tenant_id, {}).values()
             if entity.blocking_keys is not None and key in entity.blocking_keys
         ]
+
+    async def find_by_blocking_keys(
+        self, keys: Sequence[str], tenant_id: TenantId
+    ) -> dict[str, list[Entity]]:
+        # Seeded with every requested key so absent ones map to [] rather than
+        # being missing -- the caller iterates the result, not its request.
+        grouped: dict[str, list[Entity]] = {key: [] for key in keys}
+        for entity in self._entities.get(tenant_id, {}).values():
+            for key in entity.blocking_keys or ():
+                if key in grouped:
+                    grouped[key].append(entity.model_copy(deep=True))
+        return grouped
 
     # ------------------------------------------------------------------
     # Relationships
@@ -116,6 +148,33 @@ class InMemoryGraphStore:
             if self._touches(relationship, entity_id, direction)
             and (allowed is None or relationship.relationship_type in allowed)
         ]
+
+    async def get_relationships_for(
+        self,
+        entity_ids: Sequence[EntityId],
+        tenant_id: TenantId,
+        *,
+        direction: Literal["out", "in", "both"] = "both",
+        relationship_types: Sequence[str] | None = None,
+    ) -> list[Relationship]:
+        if direction not in ("out", "in", "both"):
+            raise ValueError(f"direction must be 'out', 'in' or 'both', not {direction!r}")
+
+        wanted = set(entity_ids)
+        allowed = None if relationship_types is None else set(relationship_types)
+        # One pass over the tenant's edges, keeping each at most once: an edge
+        # with both endpoints in `wanted` must not appear twice.
+        return [
+            relationship.model_copy(deep=True)
+            for relationship in self._relationships.get(tenant_id, {}).values()
+            if any(self._touches(relationship, entity_id, direction) for entity_id in wanted)
+            and (allowed is None or relationship.relationship_type in allowed)
+        ]
+
+    async def delete_relationship(
+        self, relationship_id: RelationshipId, tenant_id: TenantId
+    ) -> bool:
+        return self._relationships.get(tenant_id, {}).pop(relationship_id, None) is not None
 
     @staticmethod
     def _touches(

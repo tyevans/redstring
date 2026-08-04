@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from kg_builder.domain.entity import Entity
-    from kg_builder.domain.ids import EntityId, TenantId
+    from kg_builder.domain.ids import EntityId, RelationshipId, TenantId
     from kg_builder.domain.relationship import Relationship
 
 
@@ -56,6 +56,22 @@ class GraphStore(Protocol):
         """
         ...
 
+    async def get_entities(
+        self, entity_ids: Sequence[EntityId], tenant_id: TenantId
+    ) -> list[Entity]:
+        """Return whichever of `entity_ids` exist in this tenant.
+
+        Ids that do not exist are omitted rather than represented by a `None`
+        placeholder: the caller is asking which of these exist, and a hole
+        would only be filtered out again. Repeated ids yield one entity each.
+        Order is unspecified -- key the result by `id` if you need to align it
+        with the input.
+
+        This exists so consolidation is not a loop over `get_entity`. It must
+        be one round trip.
+        """
+        ...
+
     async def find_entities(
         self,
         tenant_id: TenantId,
@@ -63,12 +79,29 @@ class GraphStore(Protocol):
         name: str | None = None,
         entity_type: str | None = None,
         limit: int | None = None,
+        after: EntityId | None = None,
     ) -> list[Entity]:
         """Return this tenant's entities matching every filter supplied.
 
         `name` matches `Entity.normalized_name` exactly -- no fuzziness, no
-        substring. Filters combine with AND. `limit` caps the result size;
+        substring. Filters combine with AND. `limit` caps the page size;
         `None` means no cap. A negative `limit` raises `ValueError`.
+
+        **Total order.** Results are ascending by `Entity.id` compared as its
+        canonical lowercase hyphenated string. Because every UUID renders to
+        the same fixed-width hex format, that ordering coincides with unsigned
+        big-endian ordering of the 128-bit value -- so a backend may index
+        either the text or the native UUID and satisfy this identically.
+
+        **Cursor.** `after` resumes strictly *after* that id in the above
+        order. It need not still exist, which is what makes a page resumable
+        when rows are deleted between calls. Pass the last id of a page to get
+        the next one; an empty page means the end.
+
+        The order is part of the contract, not an implementation detail: a
+        cursor over an undefined order is not resumable. Note in particular
+        that insertion order is *not* promised -- no adapter over a real
+        database could honour it.
         """
         ...
 
@@ -77,6 +110,21 @@ class GraphStore(Protocol):
 
         The store computes nothing: consolidation derives blocking keys with a
         pure key function and the entity carries them.
+        """
+        ...
+
+    async def find_by_blocking_keys(
+        self, keys: Sequence[str], tenant_id: TenantId
+    ) -> dict[str, list[Entity]]:
+        """Group this tenant's entities by each of `keys`.
+
+        Every requested key appears in the result, mapping to `[]` when
+        nothing carries it, so a caller can iterate the mapping without
+        re-checking it against what it asked for. An entity carrying several
+        of the keys appears under each.
+
+        Blocking a whole tenant is the shape consolidation actually uses, and
+        as a loop over `find_by_blocking_key` it is one query per key.
         """
         ...
 
@@ -120,6 +168,48 @@ class GraphStore(Protocol):
         """
         ...
 
+    async def get_relationships_for(
+        self,
+        entity_ids: Sequence[EntityId],
+        tenant_id: TenantId,
+        *,
+        direction: Literal["out", "in", "both"] = "both",
+        relationship_types: Sequence[str] | None = None,
+    ) -> list[Relationship]:
+        """Return this tenant's relationships touching any of `entity_ids`.
+
+        The result is a set of edges, not a concatenation of per-entity
+        answers: an edge whose endpoints are both in `entity_ids` appears
+        once. `direction` and `relationship_types` mean what they do on
+        `get_relationships`, with `direction` read relative to each id.
+
+        Merging a group of entities needs every edge of that group; this
+        exists so that is one round trip rather than one per member.
+        """
+        ...
+
+    async def delete_relationship(
+        self, relationship_id: RelationshipId, tenant_id: TenantId
+    ) -> bool:
+        """Delete one relationship; return whether it existed.
+
+        Idempotent: deleting an absent id returns `False` rather than raising,
+        so replaying a delete is not an error. Deleting an edge is not a
+        cascade -- both endpoints survive.
+
+        Merge redirects an edge by upserting its id with new endpoints, which
+        can leave a semantically duplicate edge behind. This is how that
+        duplicate is removed. **Whether merge dedupes parallel edges at all is
+        slice 7's decision, not this port's** -- the port only provides the
+        means.
+
+        There is deliberately no `delete_entity`. An entity merged away
+        survives as an alias node rather than disappearing, so single-entity
+        deletion has no caller; `delete_by_tenant` covers bulk removal. Add
+        one only when something genuinely needs it, not for symmetry.
+        """
+        ...
+
     async def neighbors(
         self,
         entity_id: EntityId,
@@ -135,6 +225,10 @@ class GraphStore(Protocol):
         terminate. The origin entity is never in the result, and neither is
         any entity of another tenant. An unknown `entity_id` yields `[]`.
         `depth=0` yields `[]`; a negative `depth` raises `ValueError`.
+
+        Hop distance is deliberately **not** returned. Slice 8's temporal work
+        may want it; adding it now would widen the contract on speculation,
+        and it is additive to introduce later.
         """
         ...
 
