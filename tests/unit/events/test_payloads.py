@@ -23,6 +23,22 @@ from kg_builder.events import (
 
 SOURCE_ID = "doc-1"
 
+#: A tenant, and two others bracketing it -- one sorting below, one above.
+#:
+#: Every check below is a `!=`, and a mutant rewriting one as `<` or `>` is
+#: half right against a single random `uuid4()`: it rejects the foreign
+#: tenants that happen to sort the correct side and accepts the rest. Which
+#: side a random pair lands on is luck, so the suite would pass or fail by
+#: luck too. Bracketing makes both mutants fail, deterministically.
+PIVOT_TENANT = UUID("88888888-8888-4888-8888-888888888888")
+BELOW_TENANT = UUID("00000000-0000-4000-8000-000000000001")
+ABOVE_TENANT = UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
+OTHER_TENANTS = [BELOW_TENANT, ABOVE_TENANT]
+TENANT_IDS = ["sorts-below", "sorts-above"]
+
+#: Source ids bracketing `SOURCE_ID`, for the same reason.
+OTHER_SOURCES = ["doc-0", "doc-2"]
+
 
 def _entity(tenant_id, **overrides):
     fields = {
@@ -82,20 +98,23 @@ class TestDocumentExtracted:
         assert event.entities == []
         assert event.relationships == []
 
-    def test_entities_of_another_tenant_are_rejected(self):
-        tenant_id = uuid4()
+    @pytest.mark.parametrize("other", OTHER_TENANTS, ids=TENANT_IDS)
+    def test_entities_of_another_tenant_are_rejected(self, other):
         with pytest.raises(ValidationError, match="entities carries tenants"):
-            _extracted(tenant_id, entities=[_entity(uuid4())])
+            _extracted(PIVOT_TENANT, entities=[_entity(other)])
 
-    def test_relationships_of_another_tenant_are_rejected(self):
-        tenant_id = uuid4()
+    @pytest.mark.parametrize("other", OTHER_TENANTS, ids=TENANT_IDS)
+    def test_relationships_of_another_tenant_are_rejected(self, other):
         with pytest.raises(ValidationError, match="relationships carries tenants"):
-            _extracted(tenant_id, relationships=[_relationship(uuid4())])
+            _extracted(PIVOT_TENANT, relationships=[_relationship(other)])
 
-    def test_entities_attributed_to_another_document_are_rejected(self):
+    @pytest.mark.parametrize("other_source", OTHER_SOURCES)
+    def test_entities_attributed_to_another_document_are_rejected(self, other_source):
+        """Both a source id sorting below `SOURCE_ID` and one sorting above,
+        because the check is `!=` and string comparison is ordered too."""
         tenant_id = uuid4()
         with pytest.raises(ValidationError, match="attributed to the document"):
-            _extracted(tenant_id, entities=[_entity(tenant_id, source_id="doc-2")])
+            _extracted(tenant_id, entities=[_entity(tenant_id, source_id=other_source)])
 
     def test_the_document_a_carrier_names_is_the_one_it_is_appended_to(self):
         """`source_id` is on the event as well as implied by its stream.
@@ -110,13 +129,13 @@ class TestDocumentExtracted:
 
 
 class TestEntitiesEmbedded:
-    def test_embeddings_of_another_tenant_are_rejected(self):
-        tenant_id = uuid4()
-        record = VectorRecord(entity_id=uuid4(), tenant_id=uuid4(), vector=[1.0, 0.0])
+    @pytest.mark.parametrize("other", OTHER_TENANTS, ids=TENANT_IDS)
+    def test_embeddings_of_another_tenant_are_rejected(self, other):
+        record = VectorRecord(entity_id=uuid4(), tenant_id=other, vector=[1.0, 0.0])
         with pytest.raises(ValidationError, match="embeddings carries tenants"):
             EntitiesEmbedded(
                 aggregate_id=uuid4(),
-                tenant_id=tenant_id,
+                tenant_id=PIVOT_TENANT,
                 source_id=SOURCE_ID,
                 embedding_model="ollama/nomic-embed-text",
                 embeddings=[record],
@@ -142,24 +161,24 @@ class TestEntitiesMerged:
         with pytest.raises(ValidationError, match="duplicates"):
             _merged(uuid4(), merged_entity_ids=[entity_id, entity_id])
 
-    def test_redirections_of_another_tenant_are_rejected(self):
-        tenant_id = uuid4()
-        redirection = RelationshipRedirection(before=_relationship(uuid4()))
+    @pytest.mark.parametrize("other", OTHER_TENANTS, ids=TENANT_IDS)
+    def test_redirections_of_another_tenant_are_rejected(self, other):
+        redirection = RelationshipRedirection(before=_relationship(other))
         with pytest.raises(ValidationError, match="redirections carry tenants"):
-            _merged(tenant_id, redirections=[redirection])
+            _merged(PIVOT_TENANT, redirections=[redirection])
 
 
 class TestMergeUndone:
-    def test_restorations_of_another_tenant_are_rejected(self):
-        tenant_id = uuid4()
+    @pytest.mark.parametrize("other", OTHER_TENANTS, ids=TENANT_IDS)
+    def test_restorations_of_another_tenant_are_rejected(self, other):
         with pytest.raises(ValidationError, match="restored_relationships carry tenants"):
             MergeUndone(
-                aggregate_id=tenant_id,
-                tenant_id=tenant_id,
+                aggregate_id=PIVOT_TENANT,
+                tenant_id=PIVOT_TENANT,
                 merge_event_id=uuid4(),
                 canonical_entity_id=uuid4(),
                 unmerged_entity_ids=[uuid4()],
-                restored_relationships=[_relationship(uuid4())],
+                restored_relationships=[_relationship(other)],
             )
 
     def test_an_undo_names_the_merge_it_reverses(self):
