@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from kg_builder.domain.ids import EntityId, TenantId
 
@@ -14,9 +13,16 @@ from kg_builder.domain.ids import EntityId, TenantId
 class Alias(BaseModel):
     """One entity having been merged into another.
 
-    Carries the values displaced by the merge, so a merge can be undone
-    without a separate history table.
+    **Not** a record of what the merge displaced. Undo is a compensating
+    `MergeUndone` event carrying typed `RelationshipRedirection`s, so the log
+    already holds the pre-merge state; a `displaced` dict here would be a
+    second, unversioned copy of it. `extra="forbid"` is what makes removing
+    that field visible: pydantic's default is to ignore an unknown keyword, so
+    a call site still passing `displaced=` would keep constructing an `Alias`
+    that quietly lost the data.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     id: UUID
     tenant_id: TenantId
@@ -26,7 +32,6 @@ class Alias(BaseModel):
     alias_normalized_name: str
     merged_at: datetime
     merge_reason: str | None = None
-    displaced: dict[str, Any] = {}
 
     @field_validator("merged_at")
     @classmethod

@@ -26,7 +26,6 @@ def _alias(**overrides):
 def test_minimal_construction():
     alias = _alias()
     assert alias.merge_reason is None
-    assert alias.displaced == {}
 
 
 def test_self_merge_is_rejected():
@@ -41,9 +40,20 @@ def test_naive_merged_at_is_rejected():
 
 
 def test_round_trip_through_model_dump():
-    alias = _alias(
-        merge_reason="exact name match",
-        displaced={"name": "Ada Lovelace", "confidence": 0.7},
-    )
+    alias = _alias(merge_reason="exact name match")
     reconstructed = Alias.model_validate(alias.model_dump())
     assert reconstructed == alias
+
+
+def test_displaced_values_are_not_an_alias_field():
+    """Undo is a compensating event, so an alias carries no displaced payload.
+
+    `Alias.displaced` was a `dict[str, Any]` added when undo was a storage
+    problem. `MergeUndone` now carries typed `RelationshipRedirection`s, so a
+    caller passing `displaced` is working from the superseded design and is
+    told so rather than having the value silently dropped -- which is what
+    pydantic does by default, and what would make the stale call site look
+    like it still worked.
+    """
+    with pytest.raises(ValidationError):
+        _alias(displaced={"name": "Ada Lovelace"})
