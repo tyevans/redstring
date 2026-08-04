@@ -44,6 +44,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple
 from uuid import NAMESPACE_URL, uuid5
 
+from kg_builder.domain.blocking import blocking_keys_for
 from kg_builder.domain.entity import Entity, ExtractionMethod
 from kg_builder.domain.normalization import normalize_name
 
@@ -210,7 +211,7 @@ def _build_entity(
     """
     if not candidate.name.strip():
         return None
-    return Entity(
+    built = Entity(
         id=entity_id_for(
             tenant_id=tenant_id,
             source_id=source_id,
@@ -228,6 +229,16 @@ def _build_entity(
         model=model,
         confidence=candidate.confidence,
     )
+    # Blocking keys are computed **here**, at extraction time, and stored on
+    # the entity -- `GraphStore.find_by_blocking_key` only looks them up and
+    # computes nothing. Two rounds rather than one because `blocking_keys_for`
+    # takes an `Entity`, and building one to derive a field of itself is
+    # cheaper to read than threading the four inputs through separately.
+    #
+    # An entity extracted without them is not findable by consolidation at all,
+    # which is a silent failure: blocking returns an empty candidate list, and
+    # an empty candidate list is what "no duplicates" also looks like.
+    return built.model_copy(update={"blocking_keys": blocking_keys_for(built)})
 
 
 def _map_relationships(

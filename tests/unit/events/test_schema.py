@@ -103,12 +103,18 @@ def test_every_event_resolves_from_the_registry_by_its_wire_name(event_type):
     assert get_event_class(event_type.event_type_name()) is event_type
 
 
-#: The two legacy modules whose classes are not part of the live schema.
+#: The legacy module whose classes are not part of the live schema.
 #:
-#: They are un-registered (see `events/__init__.py`), so they should not appear
-#: in the registry at all -- this list is what makes that a *checked* claim
-#: rather than an assumed one, and it must shrink to nothing when B33 lands.
-LEGACY_EVENT_MODULES = frozenset({"kg_builder.events.consolidation", "kg_builder.events.scraping"})
+#: It is un-registered (see `events/__init__.py`), so it should not appear in
+#: the registry at all -- this list is what makes that a *checked* claim rather
+#: than an assumed one, and it must shrink to nothing when B33 lands.
+#:
+#: `kg_builder.events.consolidation` was here too and is gone: slice 7 deleted
+#: it in the commit that removed its last consumer,
+#: `services/consolidation/merge_service.py`. `scraping` survives because
+#: `services/neo4j_errors.py` still imports `Neo4jSyncFailed` from it, which is
+#: slice 9's to remove.
+LEGACY_EVENT_MODULES = frozenset({"kg_builder.events.scraping"})
 
 
 def _import_every_module_of_the_events_package():

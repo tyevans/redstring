@@ -16,6 +16,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from kg_builder.domain.blocking import blocking_keys_for
 from kg_builder.domain.entity import ExtractionMethod
 from kg_builder.domain.normalization import normalize_name
 from kg_builder.extraction.mapping import MappedExtraction, entity_id_for, map_extraction
@@ -612,3 +613,57 @@ def test_the_pinned_id_is_not_an_accident_of_this_tenant():
     assert entity_id_for(
         tenant_id=uuid4(), source_id="doc-1", name="Ada Lovelace", entity_type="Person"
     ) != UUID("899d1f1b-504f-5bbe-a266-a9ff5593dc91")
+
+
+class TestBlockingKeys:
+    """Mapped entities carry their blocking keys.
+
+    Computed at extraction time and stored, because `GraphStore` computes
+    nothing -- `find_by_blocking_key` only looks them up. An entity mapped
+    without them is invisible to consolidation, and that failure is silent:
+    blocking returns an empty candidate list, which is exactly what "this
+    entity has no duplicates" also looks like.
+    """
+
+    def test_a_mapped_entity_carries_keys(self):
+        [built] = mapped(Extraction(entities=[entity("Ada Lovelace")])).entities
+
+        assert built.blocking_keys == blocking_keys_for(built)
+        assert built.blocking_keys
+
+    def test_two_mentions_of_one_name_get_the_same_keys(self):
+        """The property blocking rests on. If it were false, a re-extraction
+        would land an entity in a different block from its own earlier copy."""
+        first = mapped(Extraction(entities=[entity("Ada Lovelace")]), source="doc-1")
+        second = mapped(Extraction(entities=[entity("Ada Lovelace")]), source="doc-2")
+
+        assert first.entities[0].blocking_keys == second.entities[0].blocking_keys
+        # ...and they are nonetheless different entities, which is what gives
+        # consolidation something to merge.
+        assert first.entities[0].id != second.entities[0].id
+
+    async def test_consolidation_can_find_a_mapped_entity_by_its_keys(self):
+        """The seam, checked end to end rather than by matching two constants.
+
+        Extraction writing keys and blocking reading them are in sibling layers
+        that never import each other, so nothing but a test spanning both can
+        tell that they agree about what a key is.
+        """
+        from kg_builder.graph.adapters.memory import InMemoryGraphStore
+
+        [built] = mapped(Extraction(entities=[entity("Ada Lovelace")])).entities
+        store = InMemoryGraphStore()
+        await store.upsert_entity(built)
+
+        for key in built.blocking_keys:
+            found = await store.find_by_blocking_key(key, built.tenant_id)
+            assert [e.id for e in found] == [built.id], key
+
+    def test_an_entity_whose_name_has_no_letters_still_has_keys(self):
+        """The soundex key is absent for it, and the other two are not -- so it
+        is still blockable. An entity with no keys at all cannot be
+        consolidated by any path."""
+        [built] = mapped(Extraction(entities=[entity("2024")])).entities
+
+        assert built.blocking_keys
+        assert not any(key.startswith("s:") for key in built.blocking_keys)

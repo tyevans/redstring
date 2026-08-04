@@ -940,18 +940,16 @@ Take it up in slice 6, when extraction actually emits.
 ### B33. `events/consolidation.py` and `events/scraping.py` are dead schema
 
 40 ORM-shaped event classes, none of which has ever been emitted, kept alive
-only by `services/consolidation/merge_service.py` (26 references) and
-`services/neo4j_errors.py` (one, `Neo4jSyncFailed`). Slice 5b deleted the
-five modules with no consumers at all -- `documents`, `extraction`,
+only by `services/neo4j_errors.py` (one, `Neo4jSyncFailed`). Slice 5b deleted
+the five modules with no consumers at all -- `documents`, `extraction`,
 `inference`, `projects`, `relationships` -- and stopped `events/__init__.py`
-re-exporting the survivors, so they are reachable only by their own module
-path.
+re-exporting the survivors. Slice 7 deleted `events/consolidation.py` in the
+commit that removed its last consumer, `services/consolidation/merge_service.py`.
 
-They cannot be deleted here because deleting them means deleting or rewriting
-their consumers, which is slice 7 (`merge_service`) and slice 9
-(`neo4j_errors`). Delete each module in the commit that removes its last
-consumer; nothing else needs to happen first. Note `events/base.py` exists
-only to serve them.
+`scraping.py` cannot go here because deleting it means rewriting
+`neo4j_errors.py`, which is slice 9. Delete it in the commit that removes that
+consumer; nothing else needs to happen first. Note `events/base.py` exists only
+to serve it.
 
 ### B37. Hand-applied mutants can be masked by a stale `__pycache__`
 

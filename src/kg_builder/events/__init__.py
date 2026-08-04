@@ -16,11 +16,11 @@ closes that by walking every module in this package and comparing the library
 registry against this tuple, in both directions; the filesystem is the source
 of truth, because it is the one thing that cannot be forgotten.
 
-The modules `consolidation` and `scraping` are **not** part of this schema.
-They are what is left of the ORM-shaped classes this package used to hold;
-none has ever been emitted, and they are reachable only by their own module
-path, kept alive by the legacy services that die in slices 7 and 9. See
-BACKLOG B33.
+The module `scraping` is **not** part of this schema. It is what is left of
+the ORM-shaped classes this package used to hold; none has ever been emitted,
+and it is reachable only by its own module path, kept alive by
+`services/neo4j_errors.py`, which dies in slice 9. `consolidation` was its
+sibling and went in slice 7, with `services/consolidation/`. See BACKLOG B33.
 """
 
 from __future__ import annotations

@@ -90,7 +90,6 @@ LEGACY_CYPHER = frozenset(
         "services/neo4j_schema.py",
         "services/neo4j_queries.py",
         "services/neo4j_tenant.py",
-        "services/consolidation/graph_similarity.py",
     }
 )
 
