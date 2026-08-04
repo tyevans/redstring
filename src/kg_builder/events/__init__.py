@@ -27,7 +27,7 @@ list, which is why `tests/unit/events/test_schema.py` no longer has one.
 
 from __future__ import annotations
 
-from eventsource.domain.tenant_events import TenantDomainEvent
+from typing import TYPE_CHECKING
 
 from kg_builder.events.document import DocumentExtracted, EntitiesEmbedded
 from kg_builder.events.merge import EntitiesMerged, MergeUndone
@@ -37,6 +37,9 @@ from kg_builder.events.streams import (
     consolidation_stream,
     document_stream,
 )
+
+if TYPE_CHECKING:
+    from eventsource.domain.tenant_events import TenantDomainEvent
 
 #: Every event type kg-builder writes to its log. See the module docstring.
 KG_EVENT_TYPES: tuple[type[TenantDomainEvent], ...] = (

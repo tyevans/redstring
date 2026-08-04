@@ -113,14 +113,13 @@ ignore = [
 # `models`, `services`, `schemas`, `graph/client.py` and `graph/queries.py`
 # along with their test-side entries.
 #
-# Two survivors, and they are different in kind:
-# - `extraction/**` still holds the pre-rewrite `classifier`, `prompts`,
-#   `prompt_generator` and `domains/` (BACKLOG B55). Narrowing this to those
-#   paths is worth doing when one of them is next touched.
-# - `events/**` is no longer legacy at all -- as of slice 9 every module in it
-#   is live schema. The exemption is now unearned rather than pending, and is
-#   left only because removing it is a strictness change, not a deletion, and
-#   belongs in a commit that can be judged on its own findings.
+# One survivor: `extraction/**` still holds the pre-rewrite `classifier`,
+# `prompts`, `prompt_generator` and `domains/` (BACKLOG B55). Narrowing this to
+# those paths is worth doing when one of them is next touched.
+#
+# `events/**` was here and is gone. Its ANN half exempted nothing at all, and
+# its TC half was covering for a misconfiguration rather than for legacy code
+# -- see `runtime-evaluated-base-classes` below.
 "src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]
 # E501 only, and only here. Every long line in `prompts.py` is inside a
 # triple-quoted prompt literal -- the entity-type property lists and the task
@@ -130,7 +129,6 @@ ignore = [
 # reasoning as `extraction/schema.py`, whose field descriptions are prompt
 # rather than documentation. BACKLOG B15.
 "src/kg_builder/extraction/prompts.py" = ["ANN", "TC", "RET", "ERA", "E501"]
-"src/kg_builder/events/**" = ["ANN", "TC"]
 
 "tests/unit/extraction/**" = ["PT", "PTH", "RET", "ERA"]
 
@@ -150,7 +148,22 @@ known-first-party = ["kg_builder"]
 # (schema building), so imports feeding those annotations must stay real
 # imports, not TYPE_CHECKING-guarded ones -- TC001/TC003 would otherwise
 # flag imports whose removal breaks pydantic at import time.
-runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    # Ruff matches the base class as *written in the file*, not through the
+    # MRO, so it cannot tell that eventsource's event base is itself a pydantic
+    # model -- every event class here declares `TenantDomainEvent` and got
+    # TC001/TC002/TC003 on its field annotations as a result.
+    #
+    # Those are the dangerous kind of false positive: the suggested fix
+    # compiles, imports, and breaks at model *use*. Measured -- moving
+    # `from uuid import UUID` into a type-checking block in `events/merge.py`
+    # (a fix ruff offers) leaves `import kg_builder.events.merge` succeeding
+    # and then fails 23 tests with `PydanticUserError: MergeUndone is not
+    # fully defined`, because `merge_event_id: UUID` is a field and pydantic
+    # resolves field annotations when it builds the schema.
+    "eventsource.domain.tenant_events.TenantDomainEvent",
+]
 
 [tool.mypy]
 python_version = "3.13"
@@ -162,7 +175,7 @@ exclude = [
     # packages. `graph/(client|queries).py` did too -- all of `graph/` is now
     # new architecture and type-checked. See the ruff list above for why
     # `events` should follow and has not yet.
-    "^src/kg_builder/(extraction|events)/",
+    "^src/kg_builder/extraction/",
 ]
 strict = true
 warn_unreachable = true

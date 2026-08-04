@@ -1290,19 +1290,53 @@ deletes the package (slices 6-9). `domain/`, `ports/`, and every package
 created after slice 2b get full strictness from birth and must never be
 added here.
 
-**As of slice 9 the list is `extraction` and `events`, and they are different
-in kind.** `extraction/**` is genuine legacy -- the pre-rewrite `classifier`,
-`prompts`, `prompt_generator` and `domains/` (B55) -- and narrowing the
+**As of slice 9's fix round the list is `extraction` alone** -- the pre-rewrite
+`classifier`, `prompts`, `prompt_generator` and `domains/` (B55). Narrowing the
 exemption to those paths, so the slice-6 modules beside them are held to the
 full rule set, is worth doing when one of them is next touched.
 
-`events/**` is **not** legacy any more. Slice 9 deleted `events/scraping.py`
-and `events/base.py`, so every module in that package is now live schema
-written after slice 2b, and by this entry's own rule it should never have been
-exemptable. It was left in place in the deleting commit on purpose: removing
-it is a strictness change that will produce findings, and findings deserve a
-commit that can be judged on them rather than being buried in a 15000-line
-deletion. It is the next thing to close here.
+`events/**` is gone from both lists, and **what it was hiding is the reason to
+distrust a deferral that has not been measured.** Slice 9 deferred removing it
+on the stated grounds that doing so "will produce findings"; review pushed
+back with a measurement showing none. Both were wrong, in opposite directions,
+and each was wrong because of how it measured:
+
+- `ruff check --select ANN,TC src/kg_builder/events/` reports "All checks
+  passed!" **unconditionally**. `per-file-ignores` applies on top of `--select`,
+  and the ignore was exactly `["ANN", "TC"]`, so that command could not have
+  found anything whatever the code said. It is the CLAUDE.md shape -- an input
+  that makes every candidate implementation agree -- in a lint command rather
+  than a test.
+- Actually deleting the entry surfaced **10** TC001/TC002/TC003 findings. So
+  the deferral's premise was right by accident and its conclusion still wrong,
+  because the findings were not the strictness debt it imagined.
+
+**Nine of the ten were false positives of the kind that pass every cheap
+check.** Ruff's `runtime-evaluated-base-classes` exists precisely to stop
+TC00x firing on pydantic field annotations, but it matches the base class *as
+written in the file*, not through the MRO -- and every event here declares
+`TenantDomainEvent`, eventsource's base, not `pydantic.BaseModel`. Applying
+ruff's suggested fix to one of them (moving `from uuid import UUID` into a
+type-checking block in `events/merge.py`) leaves `import
+kg_builder.events.merge` **succeeding** and then fails 23 tests with
+`PydanticUserError: MergeUndone is not fully defined`, because
+`merge_event_id: UUID` is a field and pydantic resolves field annotations when
+it builds the schema. An import smoke test does not catch it; only using the
+model does.
+
+The fix was therefore neither "keep the exemption" nor "delete the exemption
+and take the findings", but to add `TenantDomainEvent` to
+`runtime-evaluated-base-classes`, which is the setting that was always meant
+to cover this. Nine findings vanish, the tenth is genuine
+(`events/__init__.py` annotating a module-level variable, safe to move and
+now moved), and the exemption is deleted having exempted nothing real.
+
+**The mypy half was genuinely unearned**, and narrowing the exclude to
+`^src/kg_builder/extraction/` is clean: the configured whole-program run goes
+from 62 to 66 checked files with `Success: no issues found`. Note the review's
+mypy command (`mypy --no-incremental src/kg_builder/events/*.py`) bypasses the
+exclude by naming files explicitly, so it happened to be right without being
+a test of the configured run -- which is what was verified before acting.
 
 Slice 9 also found that `services`, `graph/client.py` and `graph/queries.py`
 outlived their packages in both lists by one and two commits respectively. A
