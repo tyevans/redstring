@@ -97,6 +97,32 @@ constructs a `RedisCache`: both `RateLimiter` and `CircuitBreaker` default to
 explicitly. The single-process path — which is every current caller — is fully
 covered.
 
+### B42. `extraction/schema.py` and `extraction/schemas.py` both exist
+
+One character apart, and they are unrelated.
+
+- `schema.py` (new, slice 6) is what a model is *asked* for: `Extraction`,
+  `ExtractedEntity`, `ExtractedRelationship`. Its field descriptions are prompt,
+  not documentation — they reach the model as part of the JSON schema.
+- `schemas.py` (old) is the ORM-shaped `ExtractedEntitySchema` /
+  `ExtractionResult` family, kept alive only by
+  `services/extraction/temporal_enrichment.py` (which imports
+  `ExtractedEntitySchema` and `TemporalEventProperties` at module scope) and by
+  `extraction/strategy_router.py`.
+
+An import of the wrong one type-checks in plenty of places, because both hold
+a class with "entity" in its name and a `properties` dict.
+
+**Why not renamed now.** Renaming the new one buries the good name under the
+dead one. Renaming the old one touches a module slice 8 is about to rewrite for
+temporal, and every rename is a merge conflict against that work. It resolves
+itself when `schemas.py` dies with the relational layer in slice 9 — the fix is
+to *delete*, not to rename, and doing it early costs a conflict for a few weeks
+of ambiguity.
+
+If it bites before then, rename the old one to `orm_schemas.py`: it has the
+smaller import surface (two modules) and is the one leaving.
+
 ### B39. The legacy orchestrator lost its chunk/extract/merge branch
 
 `services/extraction/orchestrator.py:179` used to route through
