@@ -3,29 +3,31 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **2336 tests pass, 0 fail, 0 skipped**
-in the default gate, plus **196 `integration` tests** — 118 against a real Neo4j
-(slices 4 and 7), 70 against real pgvector (slice 5), and 8 against a live
-`qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`). The first two need
-`docker-compose.test.yml`. The default-gate count falls because slice 7 deleted
-`services/consolidation/` and its 9706 lines of source and tests, replacing
-them with 116 tests over `kg_builder/consolidation/`.
+Status of the tree as of the last update: **1645 tests pass, 0 fail, 0
+skipped** in the default gate, plus **196 `integration` tests** -- 118 against
+a real Neo4j (slices 4 and 7), 70 against real pgvector (slice 5), and 8
+against a live `qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`). The first two
+need `docker-compose.test.yml`. Full `pre-commit` gate green (including
+`mypy`), nothing skipped at collection. The `integration` suite is deselected
+by default (B10a); a run prints what it deselected and how to run it. There is
+no `accuracy` suite -- see B12. Note the two compliance suites must be run in
+**separate pytest invocations**; see B10m.
 
-Slice 7 rebuilt consolidation on the ports (`kg_builder/consolidation/`),
-closing B34, B10b and B40. Slice 5b added the event log, the two aggregates and
-the projections, and moved the project onto eventsource-py 0.9.1+ (see B38);
-slice 6 rebuilt extraction on the `LlmProvider` port and deleted the
-vendor-specific extractors, `kg_builder.inference` and `kg_builder.preprocessing`
-(the count falls because ~1400 lines of Redis-mocking transport tests were
-replaced by ~300 against a real in-memory `Cache`). The replay-equivalence suite
-runs in the default gate, not under `integration`. Note that the two suites
-must be run in **separate pytest invocations**; see B10m. Full `pre-commit`
-gate green (now
-including `mypy`, see B30), nothing skipped at collection. The `integration`
-suite is deselected by default (see B10a); a run prints what it deselected and
-how to run it. There is no longer an `accuracy` suite — see B12. (Slice 1 of the ring migration deleted
-document sourcing -- scraping, storage, document parsing, and HTML
-preprocessors -- which accounts for the earlier drop in count.)
+**The default-gate count keeps falling, and that is the campaign working.**
+It has gone 2336 -> 1645 across slices 7-9 while the library got more
+trustworthy, because what is leaving is tests over deleted code and mock-heavy
+transport tests, and what replaces them is smaller and runs against real
+backends. Slice 9 alone removed ~25000 lines: `models/`, `db.py`, `schemas/`,
+`services/`, `graph/client.py`, `extraction/strategy_router.py` and their
+tests. Do not read the count as a coverage signal -- see B14, which now says
+why the *percentage* is not one either.
+
+**As of slice 9 there is no ORM, no session, no SQLAlchemy and no schema this
+library expects a caller to have migrated.** Persistence is `GraphStore` and
+`VectorStore`, the write model is `aggregates/` + `events/`, the read model is
+`projections/`, and the types are `domain/`. The import-linter contract is
+`exhaustive`, so a new top-level package fails the gate until it is placed on
+a layer.
 
 Ordering within a section is roughly by priority. Ordering between sections
 is not meaningful.
@@ -447,6 +449,25 @@ TestOutcome.KILLED` for all 426, which is exactly what a perfect suite looks
 like. The real run, once the environment was fixed, had 136 survivors from 28
 source lines, four of them genuine defects.
 
+**It happened again in slice 9, from a different direction, which is why the
+wrapper should not be scoped to mutation runs alone.** Running
+`uv remove sqlalchemy psycopg2-binary pgvector` re-resolved the environment to
+`--extra dev` only, silently uninstalling the `eventsourcing`, `neo4j` and
+`llm` extras. The next `mypy` reported **47 errors in 11 files**, all of the
+form `Cannot find implementation or library stub for module named
+"eventsource.ports.store"` -- in `aggregates/` and `consolidation/`, modules
+the commit had not touched. Nothing was wrong with the code;
+`uv sync --extra dev --extra all` fixed all 47.
+
+That is slice 7's incident with the sign flipped: there, a missing extra made
+a mutation run report a perfect score, and here it made a clean tree report 47
+errors. Both are the environment lying about the code, and neither is
+detectable from the output. Note the trap specific to this one: **`uv add` and
+`uv remove` re-sync**, so any dependency change can silently narrow the
+installed extras, and CLAUDE.md's documented setup
+(`uv sync --extra dev`) does not install them in the first place. A fresh
+clone following the README cannot run the suite that needs them.
+
 A habit that has already been forgotten once is a habit, not a control.
 Wanted: a `scripts/mutation.py` that does the baseline, the init, the exec and
 the report, and **refuses to start if the baseline is red**. Two things to
@@ -500,36 +521,36 @@ intended taxonomy should decide whether `child_of` is a containment
 relationship (`part_of`) or a generic association (`related_to`) — and then
 add the test that was missing.
 
-### B10. No database anywhere in the test suite
+### B10. Real backends in the test suite — what is and is not covered
 
-**Partially addressed in slice 3.** `InMemoryGraphStore`
-(`src/kg_builder/graph/adapters/memory.py`) is a real, contract-enforcing
-`GraphStore` backend, and `tests/compliance/graph_store.py` is the shared
-suite every adapter must pass — so graph storage is now genuinely exercised
-rather than only constructed.
+**This entry no longer describes a gap in the suite; it describes the map.**
+Its original claim -- "there is no sqlite, no `create_async_engine`, no
+`sessionmaker`, and no integration fixture" -- was resolved in the only way
+that was ever going to work: slice 9 deleted the SQL. There is no ORM, no
+session and no schema left to exercise, so "no database in the test suite" has
+no subject.
 
-**Further addressed in slice 4.** `Neo4jGraphStore`
-(`src/kg_builder/graph/adapters/neo4j.py`) passes the identical compliance
-suite against a real Neo4j from `docker-compose.test.yml`, so the port is now
-demonstrably implementable against a graph database and not merely against a
-dictionary. `tests/integration/` exists and the `integration` marker is used.
-What remains uncovered:
+The six modules it named as having unexercised SQL -- `vector_ops`,
+`blocking`, `merge_service`, `timeline_query`, `project_timeline_query`,
+`sync_status` -- are all deleted. Their capabilities were rebuilt on the ports
+and are covered by the compliance suites: blocking in `domain/blocking.py` and
+`GraphStore.find_by_blocking_keys`, similarity in `VectorStore.search`,
+merging in `consolidation/`, timelines in `temporal/`.
 
-- **The vector store.** No `VectorStore` port, no in-memory adapter, no
-  compliance suite. That is slice 5, and it is the larger half of this item.
-- Everything in the original list below still stands for the SQL paths.
+What each store is now exercised against:
 
-There is no sqlite, no `create_async_engine`, no `sessionmaker`, and no
-integration fixture. Consequences:
+| Port | In-memory | Real backend |
+|---|---|---|
+| `GraphStore` | `graph/adapters/memory.py`, default gate | Neo4j, `-m integration` (slice 4) |
+| `VectorStore` | `vector/adapters/memory.py`, default gate | pgvector, `-m integration` (slice 5) |
+| `Cache` | `MemoryCache`, default gate | **nothing** -- see B41 |
+| `LlmProvider` | -- | live model, `-m integration` (slice 6) |
 
-- Nothing exercises the SQL in `vector_ops`, `blocking`, `merge_service`,
-  `timeline_query`, `project_timeline_query`, or `sync_status` — the queries
-  are only ever constructed, never run.
-- Column `default=` values cannot be observed, because SQLAlchemy applies
-  them at INSERT. Two tests were rewritten to assert the *declared* default
-  instead (see B17).
-- The `integration` marker is declared in `pyproject.toml` but no test uses
-  it, and `tests/integration/` does not exist. **Both done in slice 4.**
+So one real gap survives from this item and it has its own entry (B41,
+`RedisCache`). The structural ones that remain are about *how* the integration
+suites run, not whether they exist: B10a (they are not in the default gate and
+their coverage is not combined), B10f (they cannot run under xdist), B10m (two
+adapters of one compliance suite cannot share a pytest invocation).
 
 ### B10a. The Cypher-executing half of the Neo4j adapter is not in the gate
 
@@ -974,22 +995,27 @@ Note also that the two suites cannot share a probe: the integration probe asks
 for one completion and skips, whereas an accuracy run wants to *fail* loudly if
 the model is missing, or the number it reports is silently "no data".
 
-### B13. Five unused-variable findings in tests
+### B14. The coverage number moves for reasons that are not test quality
 
-`F841` at `tests/unit/schemas/test_project.py:292`,
-`tests/unit/services/consolidation/test_string_similarity.py:569,579,587`,
-`tests/unit/services/test_embedding_service.py:384`. An assigned-but-unused
-result is often an assertion someone forgot to write — worth reading each
-rather than deleting the variable.
+Coverage is **85.82%**, up from the 60.79% this entry was filed at. Almost
+none of that rise came from writing tests. It came from slices 6-9 deleting
+tens of thousands of lines of legacy source, and the ratchet raising the
+baseline behind each deletion.
 
-### B14. Coverage is 60.79%
+**That is worth stating because it cuts both ways, and slice 9 saw both.**
+Deleting `models/` and `schemas/` *lowered* the ratio (85.85 -> 85.30) even
+though nothing usefully tested was removed: declarative ORM columns execute at
+import, so those packages scored very high while proving almost nothing --
+B17 recorded two tests rewritten to assert a *declared* default because no
+database existed to flush an instance against. Deleting `services/` and
+`config.py`'s dead keys *raised* it, because that code was barely covered.
 
-The ratchet prevents regression but does not drive this up. The least-covered
-areas are the ones with no database (B10).
-
----
-
-## 4. Code health
+So the number is a ratio whose denominator has been changing faster than its
+numerator, and neither direction has meant much about the tests. The ratchet
+is still worth having -- it stops a regression inside a stable tree -- but it
+should not be read as a quality trend, and a movement of either sign during a
+deletion slice needs the argument in the commit message rather than a reflex
+to add tests or lower the bar.
 
 ### B15. Pre-existing ruff findings in the surviving legacy modules
 
@@ -1125,6 +1151,10 @@ clean.** `git rm -r` removes the tracked `.py` files; the ignored `.pyc` tree
 survives as a source-less directory under a package path. Slice 6 left two
 (`inference/`, `inference/providers/`) and slice 7 left two more
 (`services/consolidation/`, and the mirrored test directories) before noticing.
+**Slice 9 produced eight**, the largest crop and the one this entry predicted:
+`models`, `schemas`, `services`, `services/extraction` and the four mirrored
+test directories. All were deleted in the commit that found them, with the
+script below.
 
 Harmless in itself -- Python 3 will not import from a `__pycache__` without
 its source -- but it is this entry's trap in miniature: a directory that looks
@@ -1153,9 +1183,10 @@ eventsource-py[all]>=0.9.1  requires  redis>=8.0,<9.0
 kg-builder                  requires  redis[hiredis]>=5.3,<6
 ```
 
-`redis` is a direct dependency here for `cache.py` and `services/
-embedding_cache.py`, so this is a real conflict rather than a lockfile
-accident. Dropping `[all]` costs nothing today -- slice 5b is in-memory only,
+`redis` is a direct dependency here for `cache.py`, so this is a real conflict
+rather than a lockfile accident. (It was for `services/embedding_cache.py`
+too, until slice 9 deleted it -- so the conflict now rests on a single module,
+which makes widening the pin cheaper to verify than this entry assumed.) Dropping `[all]` costs nothing today -- slice 5b is in-memory only,
 by decision, and the base package carries the store, bus, projections and
 aggregates. It costs something the moment a Kafka, RabbitMQ, Redis or
 PostgreSQL adapter is wanted (slices beyond 10), because each lives behind an
@@ -1170,9 +1201,9 @@ under the new version, rather than discovering it in a failed CI run.
 
 To fix the extra, in order of preference: widen kg-builder's `redis` pin to
 `<9` and
-verify `cache.py` and `embedding_cache.py` against redis-py 8 (the 5->8 API is
-largely source-compatible, but neither module is covered against a real
-server, so this needs the integration suite that B10 asks for); or take the
+verify `cache.py` against redis-py 8 (the 5->8 API is largely
+source-compatible, but that module is not covered against a real server, so
+this needs the `RedisCache` integration suite B41 asks for); or take the
 narrow extras actually wanted (`eventsource-py[postgresql]`) rather than
 `[all]`.
 
@@ -1282,17 +1313,3 @@ lists exists would**, and is the cheap fix; it is the same shape as
 `test_the_exemption_list_has_no_stale_entries` in
 `tests/unit/graph/test_neo4j_adapter_is_wired.py`, which did catch its
 equivalent, in the same slice, because someone had written it.
-
-### B31. `InferenceProvider.close` trips B027, silenced with `noqa`
-
-`inference/providers/base.py:427` — `close()` is an intentional no-op default
-in a template-method style base class (subclasses override it to release
-HTTP connections; most don't need to). B027 (empty method in an ABC without
-`@abstractmethod`) flags this, but making it `@abstractmethod` would force
-every subclass to implement a trivial no-op, and adding `inference/` to the
-`B` per-file-ignores list is against the ratchet policy in B30 (list may only
-shrink). Discovered incidentally while fixing B29 in the same file — this
-predates that change and pre-commit only surfaces it when the file is
-touched. Silenced with an inline `noqa` rather than fixed, since `inference/`
-is scheduled for deletion in slice 6/9; revisit only if the package survives
-longer than expected.
