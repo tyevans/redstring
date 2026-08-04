@@ -73,7 +73,7 @@ class EncryptionService:
         self,
         master_key: str | None = None,
         enabled: bool = True,
-    ):
+    ) -> None:
         """
         Initialize the encryption service.
 
@@ -309,7 +309,7 @@ class EncryptionService:
             )
             raise DecryptionError(
                 "Failed to decrypt value - data may be corrupted or encrypted with a different key"
-            )
+            ) from None
         except Exception as e:
             logger.error(
                 "Decryption failed",

@@ -465,8 +465,7 @@ class ExtractedEntity(Base):
         normalized = unicodedata.normalize("NFKD", normalized)
         normalized = "".join(c for c in normalized if not unicodedata.combining(c))
         # Collapse multiple spaces
-        normalized = " ".join(normalized.split())
-        return normalized
+        return " ".join(normalized.split())
 
     @property
     def entity_type_enum(self) -> EntityType | None:

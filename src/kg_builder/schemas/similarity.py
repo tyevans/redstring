@@ -774,18 +774,20 @@ class SimilarityThresholds(BaseModel):
     @classmethod
     def review_less_than_auto(cls, v: float, info) -> float:
         """Ensure review threshold is less than auto merge threshold."""
-        if hasattr(info, "data") and info.data.get("auto_merge"):
-            if v >= info.data["auto_merge"]:
-                raise ValueError("review_required must be less than auto_merge threshold")
+        if hasattr(info, "data") and info.data.get("auto_merge") and v >= info.data["auto_merge"]:
+            raise ValueError("review_required must be less than auto_merge threshold")
         return v
 
     @field_validator("reject_below")
     @classmethod
     def reject_less_than_review(cls, v: float, info) -> float:
         """Ensure reject threshold is less than review threshold."""
-        if hasattr(info, "data") and info.data.get("review_required"):
-            if v >= info.data["review_required"]:
-                raise ValueError("reject_below must be less than review_required threshold")
+        if (
+            hasattr(info, "data")
+            and info.data.get("review_required")
+            and v >= info.data["review_required"]
+        ):
+            raise ValueError("reject_below must be less than review_required threshold")
         return v
 
     def get_decision(self, confidence: float) -> str:
@@ -800,7 +802,6 @@ class SimilarityThresholds(BaseModel):
         """
         if confidence >= self.auto_merge:
             return "auto_merge"
-        elif confidence >= self.review_required:
+        if confidence >= self.review_required:
             return "review"
-        else:
-            return "reject"
+        return "reject"

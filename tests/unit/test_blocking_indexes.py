@@ -8,6 +8,8 @@ The actual index creation is tested during migration application;
 these tests validate the migration structure and extension availability.
 """
 
+from pathlib import Path
+
 
 class TestPgTrigram:
     """Test pg_trgm extension availability and functions."""
@@ -91,23 +93,20 @@ class TestMigrationStructure:
 
     def test_migration_file_exists(self):
         """Test that the migration file exists."""
-        import os
-
-        migration_path = (
+        migration_path = Path(
             "/home/ty/workspace/knowledge-mapper/backend/alembic/versions/"
             "20251214_1700_add_blocking_indexes.py"
         )
-        assert os.path.exists(migration_path), f"Migration file not found: {migration_path}"
+        assert migration_path.exists(), f"Migration file not found: {migration_path}"
 
     def test_migration_has_correct_revision(self):
         """Test migration has correct revision identifiers."""
-        migration_path = (
+        migration_path = Path(
             "/home/ty/workspace/knowledge-mapper/backend/alembic/versions/"
             "20251214_1700_add_blocking_indexes.py"
         )
 
-        with open(migration_path) as f:
-            content = f.read()
+        content = migration_path.read_text()
 
         # Check revision ID
         assert 'revision: str = "p6q7r8s9t0u1"' in content
@@ -116,25 +115,23 @@ class TestMigrationStructure:
 
     def test_migration_creates_pg_trgm_extension(self):
         """Test migration creates pg_trgm extension."""
-        migration_path = (
+        migration_path = Path(
             "/home/ty/workspace/knowledge-mapper/backend/alembic/versions/"
             "20251214_1700_add_blocking_indexes.py"
         )
 
-        with open(migration_path) as f:
-            content = f.read()
+        content = migration_path.read_text()
 
         assert "CREATE EXTENSION IF NOT EXISTS pg_trgm" in content
 
     def test_migration_creates_expected_indexes(self):
         """Test migration creates all expected indexes."""
-        migration_path = (
+        migration_path = Path(
             "/home/ty/workspace/knowledge-mapper/backend/alembic/versions/"
             "20251214_1700_add_blocking_indexes.py"
         )
 
-        with open(migration_path) as f:
-            content = f.read()
+        content = migration_path.read_text()
 
         # All expected index names
         expected_indexes = [
@@ -152,13 +149,12 @@ class TestMigrationStructure:
 
     def test_migration_downgrade_drops_indexes(self):
         """Test migration downgrade drops all created indexes."""
-        migration_path = (
+        migration_path = Path(
             "/home/ty/workspace/knowledge-mapper/backend/alembic/versions/"
             "20251214_1700_add_blocking_indexes.py"
         )
 
-        with open(migration_path) as f:
-            content = f.read()
+        content = migration_path.read_text()
 
         # All indexes should be dropped in downgrade
         expected_drops = [

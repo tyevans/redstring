@@ -35,7 +35,8 @@ engine: AsyncEngine = create_async_engine(
     database_url,
     pool_size=20,  # Support 20 concurrent database operations
     max_overflow=10,  # Allow bursts up to 30 total connections
-    pool_pre_ping=False,  # Disabled to avoid event loop issues in tests (safe in production with pool_recycle)
+    # Disabled to avoid event loop issues in tests (safe in production with pool_recycle)
+    pool_pre_ping=False,
     pool_recycle=3600,  # Recycle connections after 1 hour to prevent long-lived issues
     echo=settings.DB_ECHO,  # Log SQL queries (controlled separately from DEBUG)
     future=True,  # Use SQLAlchemy 2.0 API style
@@ -102,9 +103,12 @@ class Base(DeclarativeBase):
     )
 
 
-# Connection pool event listeners for observability
+# Connection pool event listeners for observability.
+# ANN401 is suppressed on these signatures: SQLAlchemy's Pool event payloads
+# are driver-dependent (DBAPI connection/record/proxy types vary per backend),
+# so `Any` is the correct type here, not a shortcut.
 @event.listens_for(Pool, "connect")
-def receive_connect(dbapi_conn: Any, connection_record: Any) -> None:
+def receive_connect(dbapi_conn: Any, connection_record: Any) -> None:  # noqa: ANN401
     """
     Event listener for new database connections.
 
@@ -120,7 +124,11 @@ def receive_connect(dbapi_conn: Any, connection_record: Any) -> None:
 
 
 @event.listens_for(Pool, "checkout")
-def receive_checkout(dbapi_conn: Any, connection_record: Any, connection_proxy: Any) -> None:
+def receive_checkout(
+    dbapi_conn: Any,  # noqa: ANN401
+    connection_record: Any,  # noqa: ANN401
+    connection_proxy: Any,  # noqa: ANN401
+) -> None:
     """
     Event listener for connection checkout from pool.
 
@@ -136,7 +144,7 @@ def receive_checkout(dbapi_conn: Any, connection_record: Any, connection_proxy: 
 
 
 @event.listens_for(Pool, "checkin")
-def receive_checkin(dbapi_conn: Any, connection_record: Any) -> None:
+def receive_checkin(dbapi_conn: Any, connection_record: Any) -> None:  # noqa: ANN401
     """
     Event listener for connection checkin to pool.
 

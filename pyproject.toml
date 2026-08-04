@@ -73,6 +73,15 @@ select = [
     "UP",   # pyupgrade
     "SIM",  # flake8-simplify
     "RUF",  # ruff-specific
+    "ANN",    # flake8-annotations
+    "ASYNC",  # flake8-async
+    "DTZ",    # flake8-datetimez -- tz-aware is a domain invariant here
+    "ERA",    # eradicate (commented-out code)
+    "PT",     # flake8-pytest-style
+    "PTH",    # flake8-use-pathlib
+    "RET",    # flake8-return
+    "TC",     # flake8-type-checking
+    "TID",    # flake8-tidy-imports
 ]
 ignore = [
     # UP042 wants `class X(str, Enum)` rewritten as `enum.StrEnum`. That is a
@@ -84,10 +93,44 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["B011"]
+"tests/**" = [
+    "B011",
+    # Test functions do not earn return annotations: thousands of findings,
+    # zero signal.
+    "ANN",
+    # hypothesis `st.datetimes(min_value=..., max_value=...)` bounds MUST be
+    # naive, and strategies that generate naive datetimes to prove rejection
+    # are the point. DTZ003 (utcnow) stays enforced everywhere.
+    "DTZ001",
+]
+
+# Legacy packages pending deletion (slices 7/9). Each entry is removed in the
+# commit that deletes its package -- this list may only shrink.
+"src/kg_builder/models/**" = ["ANN", "TC"]
+"src/kg_builder/services/**" = ["ANN", "TC", "RET", "ERA"]
+"src/kg_builder/inference/**" = ["ANN", "TC", "RET"]
+"src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]
+"src/kg_builder/preprocessing/**" = ["ANN", "TC", "RET"]
+"src/kg_builder/graph/**" = ["ANN", "TC", "RET"]
+"src/kg_builder/schemas/**" = ["ANN", "TC"]
+"src/kg_builder/events/**" = ["ANN", "TC"]
+
+# Tests exercising the same legacy packages above. Same ratchet: each entry
+# dies with the test module for the package it covers (slices 6-9).
+"tests/unit/extraction/**" = ["PT", "PTH", "RET", "ERA"]
+"tests/unit/models/**" = ["PT", "PTH", "RET"]
+"tests/unit/schemas/**" = ["PT", "PTH", "RET"]
+"tests/unit/services/**" = ["PT", "PTH", "RET", "ERA"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["kg_builder"]
+
+[tool.ruff.lint.flake8-type-checking]
+# Pydantic BaseModel subclasses resolve their field annotations at runtime
+# (schema building), so imports feeding those annotations must stay real
+# imports, not TYPE_CHECKING-guarded ones -- TC001/TC003 would otherwise
+# flag imports whose removal breaks pydantic at import time.
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

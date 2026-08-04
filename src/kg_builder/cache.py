@@ -71,15 +71,17 @@ async def get_redis_client() -> redis.Redis | None:
         return _redis_client
 
     except Exception as e:
+        # Hide credentials in the logged URL.
+        redis_url = settings.REDIS_URL.split("@")[-1]
         logger.error(
-            f"Redis connection failed: redis_url={settings.REDIS_URL.split('@')[-1]}, "  # Hide credentials
+            f"Redis connection failed: redis_url={redis_url}, "
             f"error={e!s}, error_type={type(e).__name__}"
         )
         # Don't raise - allow graceful degradation
         return None
 
 
-async def close_redis_client():
+async def close_redis_client() -> None:
     """
     Close Redis client connection.
 

@@ -135,7 +135,7 @@ class Settings(BaseSettings):
     # Master toggle for security headers
     SECURITY_HEADERS_ENABLED: bool = True
 
-    # Content-Security-Policy (CSP)
+    # Content-Security-Policy (CSP)  # noqa: ERA001 -- prose, not commented-out code
     # Default allows Lit components (requires unsafe-inline for script/style)
     CSP_ENABLED: bool = True
     CSP_DEFAULT_SRC: str = "'self'"
@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     CSP_FORM_ACTION: str = "'self'"
     CSP_REPORT_URI: str = ""  # Empty = disabled, set to CSP reporting endpoint
 
-    # Strict-Transport-Security (HSTS)
+    # Strict-Transport-Security (HSTS)  # noqa: ERA001 -- prose, not commented-out code
     # Only applied for HTTPS requests
     HSTS_ENABLED: bool = True
     HSTS_MAX_AGE: int = 31536000  # 1 year in seconds
@@ -240,7 +240,7 @@ class Settings(BaseSettings):
     CHUNKING_ENABLED: bool = True  # Enable document chunking
 
     # Chunker settings
-    # Options: "sliding_window" (default)
+    # Options: "sliding_window" (default)  # noqa: ERA001 -- prose, not commented-out code
     CHUNKER_TYPE: str = "sliding_window"
     CHUNK_SIZE: int = 8000  # Maximum characters per chunk
     CHUNK_OVERLAP: int = 200  # Characters of overlap between chunks
@@ -331,7 +331,7 @@ class Settings(BaseSettings):
         """Parse comma-separated CORS origins into a list."""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
-        elif isinstance(v, list):
+        if isinstance(v, list):
             return v
         return []
 

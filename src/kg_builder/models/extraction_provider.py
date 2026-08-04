@@ -99,7 +99,7 @@ class ExtractionProvider(Base):
     )
 
     # Configuration stored as JSON - sensitive fields should be encrypted
-    # Example: {"base_url": "http://...", "api_key": "enc:v1:..."}
+    # Example keys: base_url, api_key (stored as "enc:v1:...")
     config: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,
