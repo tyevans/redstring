@@ -126,6 +126,14 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["kg_builder"]
 
+# datetime.utcnow() returns a NAIVE datetime and is deprecated from 3.12.
+# DTZ003 catches the call form but not a bare reference such as
+# `default_factory=datetime.utcnow`, which is how it reached this codebase
+# (BACKLOG B29). Banning the attribute catches both shapes.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"datetime.datetime.utcnow".msg = "Naive and deprecated since 3.12 — use datetime.now(UTC)."
+"datetime.datetime.utcfromtimestamp".msg = "Naive — use datetime.fromtimestamp(ts, UTC)."
+
 [tool.ruff.lint.flake8-type-checking]
 # Pydantic BaseModel subclasses resolve their field annotations at runtime
 # (schema building), so imports feeding those annotations must stay real

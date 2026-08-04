@@ -219,7 +219,7 @@ these on commit and must fix them there (slice 2b did exactly this for
 The nine new rule sets added in slice 2b (`ANN`, `ASYNC`, `DTZ`, `ERA`, `PT`,
 `PTH`, `RET`, `TC`, `TID`) are **not** in this table — they are fully clean
 across `src/` and `tests/`, either fixed directly or covered by the
-per-file-ignore ratchet in `pyproject.toml` (see `B29`).
+per-file-ignore ratchet in `pyproject.toml`.
 
 ### B16. 14 Pydantic v1-style `class Config` blocks
 
@@ -304,20 +304,6 @@ Hardcodes `eventsource` as the root package and allowlists
 `docs/superpowers/`, which does not exist here. Parameterise for
 `kg_builder` before the first move slice.
 
-### B29. `ProviderHealth.checked_at` default_factory is still naive
-
-`inference/providers/base.py:198` —
-`checked_at: datetime = Field(default_factory=datetime.utcnow, ...)`. This is
-the same defect as the `ollama.py:333` call fixed in slice 2b
-(`datetime.utcnow()` is naive and deprecated since Python 3.12), but DTZ003
-does not catch it: ruff's rule flags `datetime.utcnow()` *calls*, not a bare
-function reference passed as `default_factory`. It is currently unreachable
-in practice — every caller of `ProviderHealth(...)` in this codebase passes
-`checked_at` explicitly — but it is a live trap for any future caller that
-omits it, and it is genuinely untested by lint. `inference/` is scheduled for
-deletion in slice 6/9 so this was left as-is rather than fixed in the same
-commit as the ollama.py bug (out of that fix's stated scope); fix it if the
-package survives longer than expected, or let it die with the package.
 
 ### B30. Legacy-package ruff/mypy exemption ratchet (slice 2b)
 
@@ -330,3 +316,17 @@ This list may only shrink — delete a package's entry in the same commit that
 deletes the package (slices 6-9). `domain/`, `ports/`, and every package
 created after slice 2b get full strictness from birth and must never be
 added here.
+
+### B31. `InferenceProvider.close` trips B027, silenced with `noqa`
+
+`inference/providers/base.py:427` — `close()` is an intentional no-op default
+in a template-method style base class (subclasses override it to release
+HTTP connections; most don't need to). B027 (empty method in an ABC without
+`@abstractmethod`) flags this, but making it `@abstractmethod` would force
+every subclass to implement a trivial no-op, and adding `inference/` to the
+`B` per-file-ignores list is against the ratchet policy in B30 (list may only
+shrink). Discovered incidentally while fixing B29 in the same file — this
+predates that change and pre-commit only surfaces it when the file is
+touched. Silenced with an inline `noqa` rather than fixed, since `inference/`
+is scheduled for deletion in slice 6/9; revisit only if the package survives
+longer than expected.

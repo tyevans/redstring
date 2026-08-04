@@ -19,7 +19,7 @@ Usage:
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -195,7 +195,7 @@ class ProviderHealth(BaseModel):
         description="Error details if unhealthy",
     )
     checked_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(UTC),
         description="Health check timestamp",
     )
 
@@ -424,7 +424,7 @@ class InferenceProvider(ABC):
         except ProviderError:
             return False
 
-    async def close(self) -> None:
+    async def close(self) -> None:  # noqa: B027 -- see BACKLOG B31
         """Clean up provider resources.
 
         Called when provider is no longer needed. Implementations
