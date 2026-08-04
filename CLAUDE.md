@@ -169,6 +169,8 @@ reading the code:
   | a loop body reached with exactly *one* item left | `break` where `continue` was meant — identical on a one-element remainder, discards every later item in real input |
   | objects built only through a factory that passes every field | wrong defaults on the public type — the signature invites direct construction that no test performs |
   | a fixture reusing state a previous run left behind | setup that does nothing — the DDL loop can be replaced by an empty iterable and nothing notices |
+  | duplicates built from a bare name, so they are *fully equal objects* | a partial tie-break where a total one was meant — "first wins" and "last wins" agree on equal objects, for any implementation |
+  | a collection grouped *after* the deduplication being tested | any invariant about duplicates — every group is a singleton and the assertion cannot fail |
 
   The small-integer row is the string-interning row's sibling: **both
   identity-vs-equality rows fired because the test value sat inside a CPython
@@ -188,6 +190,22 @@ reading the code:
   fixture row is the one reviewers never look for: at least one test per
   stateful setup path must start from genuinely nothing, or the setup is
   unverified no matter how many tests depend on it.
+
+  The last two rows are one shape, and it is the shape that keeps recurring:
+  **the input was built by the same function the assertion was about.**
+  Deduplicating input built by the deduplicator leaves nothing to deduplicate;
+  a tie-break fed objects that are equal in every field cannot be observed at
+  all. Both fired in slice 6 *inside tests written specifically to catch
+  tie-break defects*, and one of them — a hypothesis property — read as a
+  strong test right up until someone tried to break it.
+
+  So: **before trusting a property, break the implementation on purpose and
+  watch it fail.** A property that stays green under a deliberate defect is
+  not evidence, and it is more dangerous than no property, because its
+  existence is what stops anyone writing the test that would have worked.
+  The same applies to reading a surviving mutant as "equivalent": in slice 6
+  a `>` → `>=` survivor was equivalent only *because* the order was total, so
+  the totality had to be asserted before the label was honest.
 
   **When a key is a tuple, write one test where its components collide.**
   This is narrower than the rule above, and it is the form that actually
