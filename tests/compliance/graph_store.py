@@ -405,6 +405,41 @@ class GraphStoreCompliance:
 
         assert await store.get_entity(entity.id, entity.tenant_id) == pristine
 
+    async def test_mutating_a_blocking_key_result_does_not_change_the_store(
+        self, store: GraphStore
+    ) -> None:
+        """Isolation is required of *every* read path, not just the common two."""
+        tenant = uuid4()
+        entity = _example_entity(
+            tenant=tenant, blocking_keys=frozenset({"A430"}), properties={"nested": {"k": "v"}}
+        )
+        await store.upsert_entity(entity)
+        pristine = entity.model_copy(deep=True)
+
+        for found in await store.find_by_blocking_key("A430", tenant):
+            _mutate(found)
+
+        assert await store.find_by_blocking_key("A430", tenant) == [pristine]
+        assert await store.get_entity(entity.id, tenant) == pristine
+
+    async def test_mutating_a_neighbours_result_does_not_change_the_store(
+        self, store: GraphStore
+    ) -> None:
+        tenant = uuid4()
+        origin = _example_entity(tenant=tenant)
+        neighbour = _example_entity(tenant=tenant, properties={"nested": {"k": "v"}})
+        await store.upsert_entities([origin, neighbour])
+        await store.upsert_relationship(
+            _example_relationship(tenant, source=origin.id, target=neighbour.id)
+        )
+        pristine = neighbour.model_copy(deep=True)
+
+        for found in await store.neighbors(origin.id, tenant):
+            _mutate(found)
+
+        assert await store.neighbors(origin.id, tenant) == [pristine]
+        assert await store.get_entity(neighbour.id, tenant) == pristine
+
     # ------------------------------------------------------------------
     # Error semantics
     # ------------------------------------------------------------------
@@ -526,6 +561,84 @@ class GraphStoreCompliance:
         assert {e.id for e in await store.neighbors(a.id, tenant, depth=1)} == {b.id}
         assert {e.id for e in await store.neighbors(a.id, tenant, depth=2)} == {b.id, c.id}
 
+    async def test_neighbours_traverse_a_long_chain(self, store: GraphStore) -> None:
+        """Reach every hop of a 5-node chain, one depth at a time.
+
+        Two-hop tests are not enough: an adapter that computes the next hop
+        count with any operator that happens to agree with `+ 1` on {0, 1}
+        passes them and diverges at hop three.
+        """
+        tenant = uuid4()
+        chain = [_example_entity(tenant=tenant) for _ in range(5)]
+        await store.upsert_entities(chain)
+        await store.upsert_relationships(
+            [
+                _example_relationship(tenant, source=chain[i].id, target=chain[i + 1].id)
+                for i in range(4)
+            ]
+        )
+
+        for depth in range(5):
+            reached = {e.id for e in await store.neighbors(chain[0].id, tenant, depth=depth)}
+            assert reached == {node.id for node in chain[1 : depth + 1]}
+
+    async def test_neighbours_default_depth_is_one_hop(self, store: GraphStore) -> None:
+        """The default must be pinned, not merely "some small number"."""
+        tenant = uuid4()
+        a, b, c = (_example_entity(tenant=tenant) for _ in range(3))
+        await store.upsert_entities([a, b, c])
+        await store.upsert_relationships(
+            [
+                _example_relationship(tenant, source=a.id, target=b.id),
+                _example_relationship(tenant, source=b.id, target=c.id),
+            ]
+        )
+
+        assert [e.id for e in await store.neighbors(a.id, tenant)] == [b.id]
+
+    async def test_neighbours_keep_scanning_past_an_already_visited_node(
+        self, store: GraphStore
+    ) -> None:
+        """Meeting a visited node skips that node, not the rest of the scan.
+
+        The ids are sorted so the origin is the lowest, which puts the
+        already-visited node first for any adapter that scans in id order --
+        the arrangement that catches an early exit instead of a skip.
+        """
+        tenant = uuid4()
+        ids = sorted((uuid4() for _ in range(4)), key=str)
+        hub_root, hub, leaf_one, leaf_two = (_example_entity(tenant=tenant, id=i) for i in ids)
+        await store.upsert_entities([hub_root, hub, leaf_one, leaf_two])
+        await store.upsert_relationships(
+            [
+                _example_relationship(tenant, source=hub_root.id, target=hub.id),
+                _example_relationship(tenant, source=hub.id, target=leaf_one.id),
+                _example_relationship(tenant, source=hub.id, target=leaf_two.id),
+            ]
+        )
+
+        reached = {e.id for e in await store.neighbors(hub_root.id, tenant, depth=2)}
+        assert reached == {hub.id, leaf_one.id, leaf_two.id}
+
+    async def test_neighbours_keep_scanning_past_a_filtered_out_edge(
+        self, store: GraphStore
+    ) -> None:
+        """A non-matching edge is skipped, not treated as the end of the scan."""
+        tenant = uuid4()
+        a, b, c = (_example_entity(tenant=tenant) for _ in range(3))
+        await store.upsert_entities([a, b, c])
+        # The excluded edge is written first, so an adapter that stops at the
+        # first non-matching edge never sees the matching one.
+        await store.upsert_relationships(
+            [
+                _example_relationship(tenant, source=a.id, target=b.id, kind="works_at"),
+                _example_relationship(tenant, source=a.id, target=c.id, kind="knows"),
+            ]
+        )
+
+        found = await store.neighbors(a.id, tenant, relationship_types=["knows"])
+        assert [e.id for e in found] == [c.id]
+
     async def test_neighbours_filter_by_relationship_type(self, store: GraphStore) -> None:
         tenant = uuid4()
         a, b, c = (_example_entity(tenant=tenant) for _ in range(3))
@@ -581,9 +694,25 @@ class GraphStoreCompliance:
         entity = _example_entity(tenant=tenant, name="Ada Lovelace", normalized_name="ada lovelace")
         await store.upsert_entities([entity])
 
+        # Built at runtime so it is equal to the stored name but not the same
+        # object. Filters must compare by value; an adapter using `is` passes
+        # against a literal purely because CPython interns it.
+        equal_but_distinct = " ".join(["ada", "lovelace"])
+        assert equal_but_distinct is not entity.normalized_name
+        assert await store.find_entities(tenant, name=equal_but_distinct) == [entity]
+
         assert await store.find_entities(tenant, name="ada lovelace") == [entity]
         assert await store.find_entities(tenant, name="ada") == []
         assert await store.find_entities(tenant, name="Ada Lovelace") == []
+
+    async def test_find_entities_matches_entity_type_by_value(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        entity = _example_entity(tenant=tenant, entity_type="plot_point")
+        await store.upsert_entity(entity)
+
+        equal_but_distinct = "_".join(["plot", "point"])
+        assert equal_but_distinct is not entity.entity_type
+        assert await store.find_entities(tenant, entity_type=equal_but_distinct) == [entity]
 
     async def test_find_entities_respects_limit(self, store: GraphStore) -> None:
         tenant = uuid4()
