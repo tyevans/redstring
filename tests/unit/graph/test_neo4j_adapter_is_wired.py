@@ -73,23 +73,17 @@ CYPHER_MARKERS = (
     "CREATE CONSTRAINT",
 )
 
-#: The pre-rewrite Neo4j layer, condemned by the migration plan and deleted in
-#: slices 7 and 9. Exempt because they are already on the way out, not because
-#: the rule does not apply to them.
+#: **Empty, and staying that way.** This exempted the pre-rewrite Neo4j layer
+#: while it was on its way out; slices 7 and 9 deleted every module in it, and
+#: as of slice 9 the adapter is the only module in the library containing
+#: Cypher -- which is the property the port was for.
 #:
-#: **This list may only shrink.** Delete an entry in the commit that deletes
-#: its module; `test_the_exemption_list_has_no_stale_entries` fails if an
-#: entry names a file that is gone, and the main test fails if a *new* module
-#: grows Cypher. Between them, the only way to add Cypher outside the adapter
-#: is to edit this list, which is a visible decision in review.
-LEGACY_CYPHER = frozenset(
-    {
-        "services/neo4j.py",
-        "services/neo4j_schema.py",
-        "services/neo4j_queries.py",
-        "services/neo4j_tenant.py",
-    }
-)
+#: The list is kept rather than removed along with its last entry, because it
+#: is the seam the rule is enforced at: with it empty,
+#: `test_no_module_outside_the_adapter_contains_cypher` admits no exceptions
+#: at all, and adding one means adding a name here, which is a visible
+#: decision in review rather than a query that quietly appeared in a service.
+LEGACY_CYPHER: frozenset[str] = frozenset()
 
 #: The adapter itself, which is where Cypher is supposed to be.
 ADAPTER = "graph/adapters/neo4j.py"

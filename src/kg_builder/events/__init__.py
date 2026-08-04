@@ -16,11 +16,13 @@ closes that by walking every module in this package and comparing the library
 registry against this tuple, in both directions; the filesystem is the source
 of truth, because it is the one thing that cannot be forgotten.
 
-The module `scraping` is **not** part of this schema. It is what is left of
-the ORM-shaped classes this package used to hold; none has ever been emitted,
-and it is reachable only by its own module path, kept alive by
-`services/neo4j_errors.py`, which dies in slice 9. `consolidation` was its
-sibling and went in slice 7, with `services/consolidation/`. See BACKLOG B33.
+Every module in this package is now part of that schema. The ORM-shaped
+classes this package used to hold -- 40 of them across `consolidation` and
+`scraping`, none ever emitted -- are gone: `consolidation` in slice 7 with
+`services/consolidation/`, `scraping` in slice 9 with `services/
+neo4j_errors.py`, its last consumer. `events/base.py` existed only to serve
+`scraping` and went with it. So the walk below no longer needs an exclusion
+list, which is why `tests/unit/events/test_schema.py` no longer has one.
 """
 
 from __future__ import annotations

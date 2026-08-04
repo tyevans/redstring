@@ -103,20 +103,6 @@ def test_every_event_resolves_from_the_registry_by_its_wire_name(event_type):
     assert get_event_class(event_type.event_type_name()) is event_type
 
 
-#: The legacy module whose classes are not part of the live schema.
-#:
-#: It is un-registered (see `events/__init__.py`), so it should not appear in
-#: the registry at all -- this list is what makes that a *checked* claim rather
-#: than an assumed one, and it must shrink to nothing when B33 lands.
-#:
-#: `kg_builder.events.consolidation` was here too and is gone: slice 7 deleted
-#: it in the commit that removed its last consumer,
-#: `services/consolidation/merge_service.py`. `scraping` survives because
-#: `services/neo4j_errors.py` still imports `Neo4jSyncFailed` from it, which is
-#: slice 9's to remove.
-LEGACY_EVENT_MODULES = frozenset({"kg_builder.events.scraping"})
-
-
 def _import_every_module_of_the_events_package():
     """Import every module in `kg_builder.events`, and say which they were.
 
@@ -138,13 +124,18 @@ def _registered_kg_event_classes():
     Derived from the library's own registry rather than from `KG_EVENT_TYPES`,
     which is the point: the tuple is hand-maintained, and every other gate in
     this module reads from it.
+
+    There is no exclusion list any more. `LEGACY_EVENT_MODULES` and its two
+    guard tests were deleted in slice 9 with the last legacy module
+    (`events/scraping.py`, B33): an exclusion list over an empty set excludes
+    nothing, and a guard that iterates it passes vacuously. Every module in
+    the package is now live schema, so the walk is the whole check.
     """
     _import_every_module_of_the_events_package()
     return {
         cls
         for cls in default_registry.list_classes()
         if cls.__module__.startswith("kg_builder.events")
-        and cls.__module__ not in LEGACY_EVENT_MODULES
     }
 
 
@@ -172,33 +163,3 @@ def test_the_tuple_lists_exactly_the_registered_events():
         f"in KG_EVENT_TYPES but not registered, so a stored one cannot be "
         f"deserialised: {sorted(c.__name__ for c in extra)}"
     )
-
-
-def test_the_legacy_modules_hold_no_registered_events():
-    """The other half. `LEGACY_EVENT_MODULES` exists to exclude those classes
-    from the check above, and an exclusion list is only safe while the thing
-    it excludes really is inert -- if one were re-registered, the exclusion
-    would hide it rather than report it.
-
-    Imports the package first for the same reason: a legacy module nothing
-    imported would pass this vacuously.
-    """
-    _import_every_module_of_the_events_package()
-    legacy = {
-        cls.__name__
-        for cls in default_registry.list_classes()
-        if cls.__module__ in LEGACY_EVENT_MODULES
-    }
-    assert legacy == set(), (
-        f"legacy event classes are registered again: {sorted(legacy)}. They "
-        f"hold wire names the live schema needs; see BACKLOG B33."
-    )
-
-
-def test_the_legacy_modules_named_for_exclusion_still_exist():
-    """An exclusion list that names a module nobody has is an exclusion that
-    silently stops excluding. When B33 deletes these, this fails and the list
-    must shrink with them."""
-    _import_every_module_of_the_events_package()
-    for name in LEGACY_EVENT_MODULES:
-        assert importlib.import_module(name), name

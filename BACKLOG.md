@@ -498,40 +498,18 @@ of ambiguity.
 If it bites before then, rename the old one to `orm_schemas.py`: it has the
 smaller import surface (two modules) and is the one leaving.
 
-### B39. The legacy orchestrator lost its chunk/extract/merge branch
+### B39. `settings.PREPROCESSING_ENABLED` is read by nothing
 
-`services/extraction/orchestrator.py:179` used to route through
-`PreprocessingPipeline` when `settings.PREPROCESSING_ENABLED` was set. Slice 6
-deleted `preprocessing/pipeline.py` and `preprocessing/factory.py`, so that
-branch called nothing but deleted code and went with them; the orchestrator now
-always takes the legacy single-call path.
+`config.py:239`. The legacy orchestrator was its only reader, and slice 9
+deleted it with the rest of `services/`. Kept for the length of one commit
+only because `config.py` is a single `Settings` object and pruning it wholesale
+is its own change; it goes with the OAuth block (B6) in this slice.
 
-**Why deleting was right rather than porting.** The orchestrator is
-slice-9 legacy with **zero tests** — it is not in `tests/unit/services/`
-at all — and every one of its three extraction paths (`_extract_with_provider`,
-the pipeline branch, `_extract_with_llm_legacy`) reaches a module this slice
-deletes. Rewriting a branch of an untested, doomed class onto the new pipeline
-would have produced code with no test to prove it works and a deletion date
-three slices out.
-
-The replacement is `extraction/pipeline.py`, which does chunk/extract/merge on
-domain types and emits `DocumentExtracted`. Nothing calls it from the legacy
-service layer on purpose: wiring it in is slice 10's public-API work, and doing
-it here would put an event-emitting pipeline behind a class that writes to the
-ORM.
-
-`settings.PREPROCESSING_ENABLED` (`config.py:239`) is now read by nothing. Left
-in place rather than removed, because `config.py` is a single `Settings` object
-shared by the legacy services and pruning it one key at a time invites a merge
-conflict per slice; it goes wholesale in slice 9.
-
-### B3. `mark_sync_failed` does not persist anything
-
-`services/sync_status.py:252` — the method only logs. Its own comment lists
-what it should do: store the error, increment a retry counter, set
-`next_retry_at`, emit a failure event. `retry_failed_syncs` therefore cannot
-distinguish "never synced" from "failed repeatedly".
-
+The rest of this entry described the orchestrator's lost chunk/extract/merge
+branch and is deleted with the module. What it recorded and is worth keeping:
+the replacement is `extraction/pipeline.py`, which does chunk/extract/merge on
+domain types and emits `DocumentExtracted`. Nothing calls it from a service
+layer, on purpose -- wiring it in is slice 10's public-API work.
 ### B5. Timeline events do not populate involved entities
 
 `services/timeline_query.py:640` — `involved_entities=[]` with a TODO to
@@ -563,13 +541,6 @@ Slice 1 of the ring migration plan.
 `shutdown_event` handlers; the module assumes an application lifecycle a
 library does not own. Needs reshaping into a session provider the caller
 drives.
-
-### B8. Cross-context coupling that the ring migration must break
-
-Recorded here so they are not "discovered" again mid-migration:
-
-- `services/consolidation` reaches directly into the embedding services.
-- `services/extraction/orchestrator.py` pulls `preprocessing` directly.
 
 ### B9. Import-linter contract is not exhaustive
 
@@ -1075,72 +1046,6 @@ distance, not first-found, is the contract worth pinning, and a diamond-shaped
 graph (two paths of different length to the same node) is the case that
 separates them.
 
-### B10d. Legacy service tests still poison `sys.modules` at import time
-
-`tests/unit/services/test_neo4j_errors.py` set `sys.modules["neo4j"]` to a
-`MagicMock` at module level and never restored it, so *every* test collected
-afterwards saw a fake `neo4j` — deselected modules included, since pytest
-imports before it deselects. Slice 4 hit this as
-`TypeError: object MagicMock can't be used in 'await' expression` raised from
-the real adapter's driver, in a test that had nothing to do with that file.
-That one is fixed: the originals are saved and restored once the module under
-test has been exec'd.
-
-**Slice 5 will probably hit this, so here is how to recognise it.** The
-symptom never points at the cause. You get, in a test you just wrote, against
-a library you are using correctly:
-
-```
-TypeError: object MagicMock can't be used in 'await' expression
-AttributeError: 'MagicMock' object has no attribute '<something real>'
-TypeError: 'MagicMock' object is not subscriptable
-```
-
-...or a mock that silently returns another `MagicMock` where you expected a
-real value, so an assertion fails with a nonsense comparison instead of
-raising. The tell is that **the fake object is a library you never mocked**.
-Confirm it in one line before debugging anything else:
-
-```python
-import neo4j; print(neo4j.__file__)   # a real path, or "<MagicMock ...>"
-```
-
-It is also **order-dependent**: `pytest-randomly` reshuffles collection, so
-the same test passes and fails between runs, and running the file alone
-always passes. That combination reads as flakiness or infrastructure trouble,
-which is the trap — do not pin the seed, find the poisoner.
-
-**Which modules, and what each replaces.** Six are still unfixed:
-
-| module | replaces in `sys.modules` |
-|---|---|
-| `tests/unit/extraction/test_circuit_breaker.py` | `kg_builder.config`, `redis`, `redis.asyncio` |
-| `tests/unit/extraction/test_retry.py` | `kg_builder.config` |
-| `tests/unit/services/test_neo4j_schema.py` | `kg_builder.services.neo4j` |
-| `tests/unit/services/test_neo4j_tenant.py` | `kg_builder.services.neo4j` |
-| `tests/unit/services/test_neo4j_queries.py` | `kg_builder.services.neo4j` |
-| `tests/unit/services/test_neo4j_errors.py` | `kg_builder.events.scraping` |
-
-**`redis` is the one to watch for slice 5** — it is a real installed package
-being replaced process-wide, the same shape as the `neo4j` bug, and any new
-test touching redis inherits the fake.
-
-None is breaking anything *today*, which is exactly why they are worth
-writing down. They exist because these modules load their subject with
-`importlib` to dodge a heavy `__init__.py`; the fix is the same save/restore
-applied in `test_neo4j_errors.py`, or `monkeypatch.setitem(sys.modules, ...)`
-in a fixture so pytest undoes it. Apply when slices 7 and 9 delete the
-services they cover — or sooner, for `redis`, if slice 5 trips on it.
-
-### B11. `AsyncMock` misuse still warns in two tests
-
-`tests/unit/services/test_embedding_cache.py` — `test_batch_set_uses_pipeline`
-and `test_batch_set_redis_error` still emit `RuntimeWarning: coroutine
-'AsyncMockMixin._execute_mock_call' was never awaited` from
-`embedding_cache.py:275`. Redis pipelines queue commands synchronously and
-only `execute()` is awaited, so `mock_pipeline.setex` should be a
-`MagicMock`. Tests pass; the warning is real.
-
 ### B12. There is no accuracy suite any more
 
 Slice 6 deleted `tests/accuracy/test_extraction_accuracy.py`, the only file
@@ -1293,20 +1198,6 @@ problem is currently worth:
   freshly generated per run), and that is slice 6's question.
 
 Take it up in slice 6, when extraction actually emits.
-
-### B33. `events/consolidation.py` and `events/scraping.py` are dead schema
-
-40 ORM-shaped event classes, none of which has ever been emitted, kept alive
-only by `services/neo4j_errors.py` (one, `Neo4jSyncFailed`). Slice 5b deleted
-the five modules with no consumers at all -- `documents`, `extraction`,
-`inference`, `projects`, `relationships` -- and stopped `events/__init__.py`
-re-exporting the survivors. Slice 7 deleted `events/consolidation.py` in the
-commit that removed its last consumer, `services/consolidation/merge_service.py`.
-
-`scraping.py` cannot go here because deleting it means rewriting
-`neo4j_errors.py`, which is slice 9. Delete it in the commit that removes that
-consumer; nothing else needs to happen first. Note `events/base.py` exists only
-to serve it.
 
 ### B37. Hand-applied mutants can be masked by a stale `__pycache__`
 

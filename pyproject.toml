@@ -254,7 +254,11 @@ include_external_packages = false
 name = "Layered architecture"
 type = "layers"
 layers = [
-    "kg_builder.services",
+    # `kg_builder.services` was the top layer and is gone as of slice 9. There
+    # is no service layer any more: the write model is `aggregates` + `events`,
+    # the read model is `projections`, and persistence is the two ports. A new
+    # name here should be argued for, not added because something needs
+    # somewhere to sit.
     # `llm` is a sibling of `extraction` rather than beneath it, and that is
     # the load-bearing part: siblings may not import each other, so extraction
     # can depend only on `kg_builder.ports.llm_provider`. Putting `llm` lower
