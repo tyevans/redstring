@@ -8,16 +8,23 @@ by projections to update read models or trigger downstream processing.
 from datetime import datetime
 from uuid import UUID
 
-from eventsource import register_event
+from pydantic import Field
 
 from kg_builder.events.base import TenantDomainEvent
+
+# `@register_event` was removed from every class below in slice 5b. The
+# registry is keyed by wire name and refuses duplicates, and the live schema
+# (`kg_builder.events.merge`) legitimately owns `EntitiesMerged` and
+# `MergeUndone`. Registration bought these classes nothing anyway: it exists
+# so a stored event can be deserialised into its class, and not one of these
+# has ever been emitted. See BACKLOG B33 -- this module dies with
+# `services/consolidation/merge_service.py` in slice 7.
 
 # =============================================================================
 # Scraping Job Events
 # =============================================================================
 
 
-@register_event
 class ScrapingJobCreated(TenantDomainEvent):
     """Emitted when a new scraping job is created."""
 
@@ -31,7 +38,6 @@ class ScrapingJobCreated(TenantDomainEvent):
     config: dict  # Job configuration snapshot
 
 
-@register_event
 class ScrapingJobStarted(TenantDomainEvent):
     """Emitted when a scraping job begins execution."""
 
@@ -43,7 +49,6 @@ class ScrapingJobStarted(TenantDomainEvent):
     started_at: datetime
 
 
-@register_event
 class ScrapingJobProgressUpdated(TenantDomainEvent):
     """Emitted periodically during job execution to report progress."""
 
@@ -56,7 +61,6 @@ class ScrapingJobProgressUpdated(TenantDomainEvent):
     errors_count: int
 
 
-@register_event
 class ScrapingJobCompleted(TenantDomainEvent):
     """Emitted when a scraping job finishes successfully."""
 
@@ -70,7 +74,6 @@ class ScrapingJobCompleted(TenantDomainEvent):
     completed_at: datetime
 
 
-@register_event
 class ScrapingJobFailed(TenantDomainEvent):
     """Emitted when a scraping job fails."""
 
@@ -83,7 +86,6 @@ class ScrapingJobFailed(TenantDomainEvent):
     failed_at: datetime
 
 
-@register_event
 class ScrapingJobCancelled(TenantDomainEvent):
     """Emitted when a scraping job is cancelled by user."""
 
@@ -95,7 +97,6 @@ class ScrapingJobCancelled(TenantDomainEvent):
     cancelled_at: datetime
 
 
-@register_event
 class ScrapingJobPaused(TenantDomainEvent):
     """Emitted when a scraping job is paused."""
 
@@ -107,7 +108,6 @@ class ScrapingJobPaused(TenantDomainEvent):
     pages_completed: int
 
 
-@register_event
 class ScrapingJobResumed(TenantDomainEvent):
     """Emitted when a paused scraping job is resumed."""
 
@@ -123,7 +123,6 @@ class ScrapingJobResumed(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class PageScraped(TenantDomainEvent):
     """Emitted when a page is successfully scraped."""
 
@@ -139,7 +138,6 @@ class PageScraped(TenantDomainEvent):
     scraped_at: datetime
 
 
-@register_event
 class PageScrapingFailed(TenantDomainEvent):
     """Emitted when a page fails to be scraped."""
 
@@ -158,7 +156,6 @@ class PageScrapingFailed(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class EntityExtracted(TenantDomainEvent):
     """Emitted when an entity is extracted from a page.
 
@@ -194,11 +191,11 @@ class EntityExtracted(TenantDomainEvent):
     # New fields (added for knowledge graph extraction)
     normalized_name: str = ""  # Default empty for backward compatibility
     description: str | None = None
-    properties: dict = {}  # Type-specific properties (signature, methods, etc.)
+    # Type-specific properties (signature, methods, etc.)
+    properties: dict = Field(default_factory=dict)
     source_text: str | None = None  # Text snippet where entity was found
 
 
-@register_event
 class EntitiesExtractedBatch(TenantDomainEvent):
     """Emitted when multiple entities are extracted from a page (batch)."""
 
@@ -213,7 +210,6 @@ class EntitiesExtractedBatch(TenantDomainEvent):
     extracted_at: datetime
 
 
-@register_event
 class EntityRelationshipCreated(TenantDomainEvent):
     """Emitted when a relationship between entities is created."""
 
@@ -227,7 +223,6 @@ class EntityRelationshipCreated(TenantDomainEvent):
     confidence_score: float
 
 
-@register_event
 class ExtractionFailed(TenantDomainEvent):
     """Emitted when entity extraction fails for a page."""
 
@@ -245,7 +240,6 @@ class ExtractionFailed(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class EntitySyncedToNeo4j(TenantDomainEvent):
     """Emitted when an entity is synced to Neo4j."""
 
@@ -257,7 +251,6 @@ class EntitySyncedToNeo4j(TenantDomainEvent):
     synced_at: datetime
 
 
-@register_event
 class RelationshipSyncedToNeo4j(TenantDomainEvent):
     """Emitted when a relationship is synced to Neo4j."""
 
@@ -269,7 +262,6 @@ class RelationshipSyncedToNeo4j(TenantDomainEvent):
     synced_at: datetime
 
 
-@register_event
 class Neo4jSyncFailed(TenantDomainEvent):
     """Emitted when Neo4j sync fails."""
 

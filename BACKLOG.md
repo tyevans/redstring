@@ -777,6 +777,48 @@ Replace with `ConfigDict`. Removed in Pydantic v3.
 
 These were decided against *for now*, with reasons. Revisit consciously.
 
+### B32. Re-extraction cannot remove an entity a previous run found
+
+`events/document.py` -- `DocumentExtracted` carries the whole result of one
+extraction run, and the projection folds it with `upsert_entities`. So a
+second run over the same document under a newer model, finding *fewer*
+entities than the first, leaves the dropped ones in the graph forever. The
+graph converges on the union of every run, not on the latest one.
+
+This was accepted rather than missed. The alternatives all cost more than the
+problem is currently worth:
+
+- Emitting a `DocumentEntitiesRetracted` alongside means extraction must diff
+  against the previous run, which means reading the projection from the write
+  path -- exactly the coupling event sourcing is being adopted to remove.
+- Making the projection delete-then-insert per document would need
+  `GraphStore.delete_entity`, which slice 3 deliberately did not add, and
+  would make the fold non-idempotent under at-least-once delivery: the delete
+  half of a redelivered event would remove entities a later event had added.
+- Having the aggregate compute the retraction from its own replayed state is
+  the right answer and is cheap -- the `Document` aggregate already replays
+  every `DocumentExtracted` -- but it needs a decision about what "the same
+  entity across two extraction runs" means (id equality is not it; ids are
+  freshly generated per run), and that is slice 6's question.
+
+Take it up in slice 6, when extraction actually emits.
+
+### B33. `events/consolidation.py` and `events/scraping.py` are dead schema
+
+40 ORM-shaped event classes, none of which has ever been emitted, kept alive
+only by `services/consolidation/merge_service.py` (26 references) and
+`services/neo4j_errors.py` (one, `Neo4jSyncFailed`). Slice 5b deleted the
+five modules with no consumers at all -- `documents`, `extraction`,
+`inference`, `projects`, `relationships` -- and stopped `events/__init__.py`
+re-exporting the survivors, so they are reachable only by their own module
+path.
+
+They cannot be deleted here because deleting them means deleting or rewriting
+their consumers, which is slice 7 (`merge_service`) and slice 9
+(`neo4j_errors`). Delete each module in the commit that removes its last
+consumer; nothing else needs to happen first. Note `events/base.py` exists
+only to serve them.
+
 ### B31. The `eventsourcing` extra no longer pulls `eventsource-py[all]`
 
 `pyproject.toml` declares `eventsourcing = ["eventsource-py>=0.9.1"]`. It used

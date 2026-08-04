@@ -1,118 +1,53 @@
-"""Event definitions for Knowledge Mapper."""
+"""The event log's schema: what kg-builder writes, and where it writes it.
 
-from kg_builder.events.base import TenantDomainEvent
-from kg_builder.events.consolidation import (
-    AliasCreated,
-    BatchConsolidationCompleted,
-    BatchConsolidationFailed,
-    BatchConsolidationProgress,
-    BatchConsolidationStarted,
-    ConsolidationConfigUpdated,
+`KG_EVENT_TYPES` is the whole schema, and it is a tuple rather than prose so
+that the properties every event must have -- an explicitly declared
+`event_version`, a required tenant, one of the two stream categories, no
+hand-declared `event_type` -- can be asserted by introspection over it, and a
+new event class inherits those checks by joining it. `tests/unit/events/
+test_schema.py` and `tests/unit/projections/test_replay_coverage.py` both key
+off this tuple.
+
+**Adding an event means adding it here.** Both suites derive their cases from
+this tuple, so an event class that exists but is not listed is an event
+nothing checks.
+
+The modules `consolidation` and `scraping` are **not** part of this schema.
+They are what is left of the ORM-shaped classes this package used to hold;
+none has ever been emitted, and they are reachable only by their own module
+path, kept alive by the legacy services that die in slices 7 and 9. See
+BACKLOG B33.
+"""
+
+from __future__ import annotations
+
+from eventsource.domain.tenant_events import TenantDomainEvent
+
+from kg_builder.events.document import DocumentExtracted, EntitiesEmbedded
+from kg_builder.events.merge import EntitiesMerged, MergeUndone
+from kg_builder.events.streams import (
+    CONSOLIDATION_CATEGORY,
+    DOCUMENT_CATEGORY,
+    consolidation_stream,
+    document_stream,
+)
+
+#: Every event type kg-builder writes to its log. See the module docstring.
+KG_EVENT_TYPES: tuple[type[TenantDomainEvent], ...] = (
+    DocumentExtracted,
+    EntitiesEmbedded,
     EntitiesMerged,
-    EntitySplit,
-    MergeCandidateIdentified,
-    MergeQueuedForReview,
-    MergeReviewDecision,
     MergeUndone,
-)
-from kg_builder.events.extraction import (
-    ExtractionBatchCompleted,
-    ExtractionBatchStarted,
-    ExtractionCompleted,
-    ExtractionProcessFailed,
-    ExtractionRequested,
-    ExtractionRetryScheduled,
-    ExtractionStarted,
-    RelationshipDiscovered,
-)
-from kg_builder.events.inference import (
-    InferenceCancelled,
-    InferenceCompleted,
-    InferenceFailed,
-    InferenceRequested,
-    InferenceStarted,
-    ProviderCreated,
-    ProviderDeleted,
-    ProviderTestFailed,
-    ProviderTestSucceeded,
-    ProviderUpdated,
-)
-from kg_builder.events.scraping import (
-    EntitiesExtractedBatch,
-    EntityExtracted,
-    EntityRelationshipCreated,
-    EntitySyncedToNeo4j,
-    ExtractionFailed,
-    Neo4jSyncFailed,
-    PageScraped,
-    PageScrapingFailed,
-    RelationshipSyncedToNeo4j,
-    ScrapingJobCancelled,
-    ScrapingJobCompleted,
-    ScrapingJobCreated,
-    ScrapingJobFailed,
-    ScrapingJobPaused,
-    ScrapingJobProgressUpdated,
-    ScrapingJobResumed,
-    ScrapingJobStarted,
 )
 
 __all__ = [
-    # Base event
-    "TenantDomainEvent",
-    # Scraping job events
-    "ScrapingJobCreated",
-    "ScrapingJobStarted",
-    "ScrapingJobProgressUpdated",
-    "ScrapingJobCompleted",
-    "ScrapingJobFailed",
-    "ScrapingJobCancelled",
-    "ScrapingJobPaused",
-    "ScrapingJobResumed",
-    # Page events
-    "PageScraped",
-    "PageScrapingFailed",
-    # Entity extraction events (scraping module)
-    "EntityExtracted",
-    "EntitiesExtractedBatch",
-    "EntityRelationshipCreated",
-    "ExtractionFailed",
-    # Extraction pipeline events (extraction module)
-    "ExtractionRequested",
-    "ExtractionStarted",
-    "ExtractionCompleted",
-    "ExtractionProcessFailed",
-    "ExtractionRetryScheduled",
-    "RelationshipDiscovered",
-    "ExtractionBatchStarted",
-    "ExtractionBatchCompleted",
-    # Neo4j sync events
-    "EntitySyncedToNeo4j",
-    "RelationshipSyncedToNeo4j",
-    "Neo4jSyncFailed",
-    # Inference provider events
-    "ProviderCreated",
-    "ProviderUpdated",
-    "ProviderDeleted",
-    "ProviderTestSucceeded",
-    "ProviderTestFailed",
-    # Inference request events
-    "InferenceRequested",
-    "InferenceStarted",
-    "InferenceCompleted",
-    "InferenceFailed",
-    "InferenceCancelled",
-    # Consolidation events
-    "AliasCreated",
-    "BatchConsolidationCompleted",
-    "BatchConsolidationFailed",
-    "BatchConsolidationProgress",
-    "BatchConsolidationStarted",
-    "ConsolidationConfigUpdated",
+    "CONSOLIDATION_CATEGORY",
+    "DOCUMENT_CATEGORY",
+    "KG_EVENT_TYPES",
+    "DocumentExtracted",
+    "EntitiesEmbedded",
     "EntitiesMerged",
-    "EntitySplit",
-    "MergeCandidateIdentified",
-    "MergeQueuedForReview",
-    "MergeReviewDecision",
     "MergeUndone",
+    "consolidation_stream",
+    "document_stream",
 ]

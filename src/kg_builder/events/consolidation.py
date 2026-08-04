@@ -14,17 +14,23 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from eventsource import register_event
 from pydantic import Field
 
 from kg_builder.events.base import TenantDomainEvent
+
+# `@register_event` was removed from every class below in slice 5b. The
+# registry is keyed by wire name and refuses duplicates, and the live schema
+# (`kg_builder.events.merge`) legitimately owns `EntitiesMerged` and
+# `MergeUndone`. Registration bought these classes nothing anyway: it exists
+# so a stored event can be deserialised into its class, and not one of these
+# has ever been emitted. See BACKLOG B33 -- this module dies with
+# `services/consolidation/merge_service.py` in slice 7.
 
 # =============================================================================
 # Candidate Identification Events
 # =============================================================================
 
 
-@register_event
 class MergeCandidateIdentified(TenantDomainEvent):
     """
     Emitted when a potential duplicate entity pair is identified.
@@ -70,7 +76,6 @@ class MergeCandidateIdentified(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class EntitiesMerged(TenantDomainEvent):
     """
     Emitted when entities are merged into a canonical entity.
@@ -119,7 +124,6 @@ class EntitiesMerged(TenantDomainEvent):
     )
 
 
-@register_event
 class AliasCreated(TenantDomainEvent):
     """
     Emitted when an alias record is created for a merged entity.
@@ -153,7 +157,6 @@ class AliasCreated(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class MergeQueuedForReview(TenantDomainEvent):
     """
     Emitted when a merge candidate is queued for human review.
@@ -195,7 +198,6 @@ class MergeQueuedForReview(TenantDomainEvent):
     )
 
 
-@register_event
 class MergeReviewDecision(TenantDomainEvent):
     """
     Emitted when a human makes a review decision on a merge candidate.
@@ -246,7 +248,6 @@ class MergeReviewDecision(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class MergeUndone(TenantDomainEvent):
     """
     Emitted when a previous merge is undone.
@@ -278,7 +279,6 @@ class MergeUndone(TenantDomainEvent):
     undone_by_user_id: UUID = Field(description="User who initiated undo")
 
 
-@register_event
 class EntitySplit(TenantDomainEvent):
     """
     Emitted when an entity is split into multiple entities.
@@ -325,7 +325,6 @@ class EntitySplit(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class BatchConsolidationStarted(TenantDomainEvent):
     """
     Emitted when a batch consolidation job starts.
@@ -349,7 +348,6 @@ class BatchConsolidationStarted(TenantDomainEvent):
     )
 
 
-@register_event
 class BatchConsolidationProgress(TenantDomainEvent):
     """
     Emitted periodically during batch consolidation to report progress.
@@ -372,7 +370,6 @@ class BatchConsolidationProgress(TenantDomainEvent):
     reviews_queued: int = Field(description="Reviews queued so far", ge=0)
 
 
-@register_event
 class BatchConsolidationCompleted(TenantDomainEvent):
     """
     Emitted when a batch consolidation job completes.
@@ -399,7 +396,6 @@ class BatchConsolidationCompleted(TenantDomainEvent):
     errors: list[str] = Field(description="Errors encountered", default_factory=list)
 
 
-@register_event
 class BatchConsolidationFailed(TenantDomainEvent):
     """
     Emitted when a batch consolidation job fails.
@@ -428,7 +424,6 @@ class BatchConsolidationFailed(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class ConsolidationConfigUpdated(TenantDomainEvent):
     """
     Emitted when consolidation configuration is updated.
@@ -454,7 +449,6 @@ class ConsolidationConfigUpdated(TenantDomainEvent):
 # =============================================================================
 
 
-@register_event
 class ConsolidationCompleted(TenantDomainEvent):
     """
     Emitted when consolidation for a scraping job completes.
