@@ -29,3 +29,12 @@ services:
       POSTGRES_PASSWORD: kgbuilder
       POSTGRES_DB: kgbuilder_test
     ports: ["5434:5432"]
+    # Same reason as neo4j's: `up -d` returns when the container is running,
+    # not when the server can serve, so an immediate connect races. `-d` names
+    # the database because `pg_isready` with no arguments succeeds against the
+    # bootstrap server before `POSTGRES_DB` has been created.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kgbuilder_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
