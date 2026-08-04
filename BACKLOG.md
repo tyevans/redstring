@@ -343,23 +343,6 @@ distance, not first-found, is the contract worth pinning, and a diamond-shaped
 graph (two paths of different length to the same node) is the case that
 separates them.
 
-### B10c. `neighbors` at a large `depth` is unbounded work
-
-`src/kg_builder/graph/adapters/neo4j.py` — traversal is one
-`-[rels:RELATES_TO*1..N]-` pattern. Cypher's relationship-uniqueness rule
-terminates cycles, so the *result* is always correct and finite, but the
-number of paths explored can grow exponentially with `N` in a dense graph
-even though the number of distinct neighbours cannot. The compliance suite
-only reaches `depth=99` on a three-node graph, so nothing here is slow today.
-
-The fix is not a smaller depth limit — it is to stop enumerating paths, e.g.
-expanding level by level with a visited set server-side. That was not done
-because the port asks for one round trip and the plain-Cypher forms that
-avoid path enumeration either need apoc (`apoc.path.subgraphNodes`) or a
-`CALL {}` loop that is harder to read than the win justifies at current
-scale. Revisit if slice 8's temporal traversal raises typical depths above
-about 3.
-
 ### B10d. Legacy service tests still poison `sys.modules` at import time
 
 `tests/unit/services/test_neo4j_errors.py` set `sys.modules["neo4j"]` to a
