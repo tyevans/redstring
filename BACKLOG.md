@@ -25,6 +25,33 @@ is not meaningful.
 
 ## 1. Unlanded features
 
+### B39. The legacy orchestrator lost its chunk/extract/merge branch
+
+`services/extraction/orchestrator.py:179` used to route through
+`PreprocessingPipeline` when `settings.PREPROCESSING_ENABLED` was set. Slice 6
+deleted `preprocessing/pipeline.py` and `preprocessing/factory.py`, so that
+branch called nothing but deleted code and went with them; the orchestrator now
+always takes the legacy single-call path.
+
+**Why deleting was right rather than porting.** The orchestrator is
+slice-9 legacy with **zero tests** — it is not in `tests/unit/services/`
+at all — and every one of its three extraction paths (`_extract_with_provider`,
+the pipeline branch, `_extract_with_llm_legacy`) reaches a module this slice
+deletes. Rewriting a branch of an untested, doomed class onto the new pipeline
+would have produced code with no test to prove it works and a deletion date
+three slices out.
+
+The replacement is `extraction/pipeline.py`, which does chunk/extract/merge on
+domain types and emits `DocumentExtracted`. Nothing calls it from the legacy
+service layer on purpose: wiring it in is slice 10's public-API work, and doing
+it here would put an event-emitting pipeline behind a class that writes to the
+ORM.
+
+`settings.PREPROCESSING_ENABLED` (`config.py:239`) is now read by nothing. Left
+in place rather than removed, because `config.py` is a single `Settings` object
+shared by the legacy services and pruning it one key at a time invites a merge
+conflict per slice; it goes wholesale in slice 9.
+
 ### B2. Anthropic extraction provider is a stub
 
 `extraction/registry.py:179` — "Creator for Anthropic extraction services

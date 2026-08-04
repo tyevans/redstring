@@ -15,9 +15,8 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
 from kg_builder.config import settings
-from kg_builder.preprocessing.factory import EntityMergerFactory, EntityMergerType
-from kg_builder.preprocessing.mergers.simple_merger import SimpleMerger
-from kg_builder.preprocessing.schemas import EntityMergeCandidate, EntityMergeDecision
+from kg_builder.extraction.chunking import EntityMergeCandidate, EntityMergeDecision
+from kg_builder.extraction.mergers.simple_merger import SimpleMerger
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,6 @@ class LLMMergeResponse(BaseModel):
     )
 
 
-@EntityMergerFactory.register(EntityMergerType.LLM)
 class LLMMerger:
     """Entity merger that uses LLM for ambiguous resolution.
 
@@ -71,8 +69,10 @@ class LLMMerger:
         )
     """
 
-    SYSTEM_PROMPT = """You are an entity resolution expert analyzing entities extracted from a document.
-Your task is to determine whether pairs of entity references from different parts of a document refer to the same real-world entity.
+    SYSTEM_PROMPT = """You are an entity resolution expert analyzing entities \
+extracted from a document.
+Your task is to determine whether pairs of entity references from different \
+parts of a document refer to the same real-world entity.
 
 For each candidate pair, analyze:
 1. Name similarity (exact match, abbreviation, nickname, alternate spelling, etc.)
@@ -168,7 +168,7 @@ For each pair, provide:
     @property
     def merger_type(self) -> str:
         """Return the type identifier for this merger."""
-        return EntityMergerType.LLM.value
+        return "llm"
 
     async def merge_entities(
         self,
@@ -281,7 +281,7 @@ For each pair, provide:
             decisions_by_idx = {d.pair_index: d for d in result.data.decisions}
 
             decisions = []
-            for idx, candidate in enumerate(batch):
+            for idx, _candidate in enumerate(batch):
                 if idx in decisions_by_idx:
                     llm_decision = decisions_by_idx[idx]
                     decisions.append(
@@ -373,7 +373,7 @@ Pair {idx}:
         seen_pairs: set[tuple] = set()
 
         for i, entity_a in enumerate(entities):
-            for j, entity_b in enumerate(entities[i + 1 :], i + 1):
+            for entity_b in entities[i + 1 :]:
                 name_a = entity_a.get("name", "").lower()
                 name_b = entity_b.get("name", "").lower()
 
@@ -425,7 +425,7 @@ Pair {idx}:
         # Build merge graph: which entities should be merged together
         merge_groups: dict[str, set[str]] = defaultdict(set)
 
-        for candidate, decision in zip(candidates, decisions):
+        for candidate, decision in zip(candidates, decisions, strict=False):
             if decision.should_merge:
                 name_a = candidate.entity_a_name.lower()
                 name_b = candidate.entity_b_name.lower()

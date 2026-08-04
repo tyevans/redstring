@@ -13,13 +13,11 @@ from collections import defaultdict
 
 from jellyfish import jaro_winkler_similarity
 
-from kg_builder.preprocessing.factory import EntityMergerFactory, EntityMergerType
-from kg_builder.preprocessing.schemas import EntityMergeCandidate, EntityMergeDecision
+from kg_builder.extraction.chunking import EntityMergeCandidate, EntityMergeDecision
 
 logger = logging.getLogger(__name__)
 
 
-@EntityMergerFactory.register(EntityMergerType.SIMPLE)
 class SimpleMerger:
     """Entity merger using string similarity for deduplication.
 
@@ -73,7 +71,7 @@ class SimpleMerger:
     @property
     def merger_type(self) -> str:
         """Return the type identifier for this merger."""
-        return EntityMergerType.SIMPLE.value
+        return "simple"
 
     async def merge_entities(
         self,
@@ -109,7 +107,7 @@ class SimpleMerger:
 
         # Merge exact matches within each group
         merged_entities: list[dict] = []
-        for key, group in entity_groups.items():
+        for group in entity_groups.values():
             merged = self._merge_group(group)
             merged_entities.append(merged)
 

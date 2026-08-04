@@ -152,8 +152,10 @@ class ExtractionOrchestrator:
 
         Routes to the appropriate extraction strategy based on configuration:
         - If extraction_provider is specified, uses provider-based extraction
-        - If PREPROCESSING_ENABLED, uses the full pipeline
         - Otherwise falls back to legacy extraction
+
+        The chunk/extract/merge pipeline branch was removed in slice 6 with
+        `preprocessing/`; see BACKLOG B39.
 
         Args:
             text: HTML content to extract from
@@ -175,11 +177,7 @@ class ExtractionOrchestrator:
             )
             return [], []
 
-        # Use preprocessing pipeline if enabled
-        if settings.PREPROCESSING_ENABLED:
-            return self._extract_with_preprocessing_pipeline(text, tenant_id, page_url)
-        else:
-            return self._extract_with_llm_legacy(text, tenant_id, page_url)
+        return self._extract_with_llm_legacy(text, tenant_id, page_url)
 
     def _extract_with_provider(
         self,
@@ -307,111 +305,6 @@ class ExtractionOrchestrator:
             ExtractionProviderType.OLLAMA: ExtractionMethod.LLM_OLLAMA,
         }
         return method_map.get(provider_type, ExtractionMethod.LLM_OLLAMA)
-
-    def _extract_with_preprocessing_pipeline(
-        self, text: str, tenant_id: str, page_url: str = ""
-    ) -> tuple[list[dict], list[dict]]:
-        """
-        Extract using the full preprocessing pipeline.
-
-        Pipeline stages:
-        1. Chunk (sliding window): Split into overlapping chunks
-        2. Extract (Ollama): Run LLM on each chunk
-        3. Merge (LLM-assisted): Combine entities across chunks
-
-        Returns:
-            Tuple of (entities, relationships)
-        """
-        from kg_builder.extraction.ollama_extractor import get_ollama_extraction_service
-        from kg_builder.preprocessing.factory import ChunkerType, EntityMergerType
-        from kg_builder.preprocessing.pipeline import PipelineConfig, PreprocessingPipeline
-
-        logger.info(
-            "Starting preprocessing pipeline extraction",
-            extra={
-                "page_url": page_url,
-                "text_length": len(text),
-                "chunker": settings.CHUNKER_TYPE,
-                "merger": settings.MERGER_TYPE,
-                "chunk_size": settings.CHUNK_SIZE,
-            },
-        )
-
-        start_time = time.time()
-
-        try:
-            # Build pipeline configuration from settings
-            config = PipelineConfig(
-                chunker_type=ChunkerType(settings.CHUNKER_TYPE),
-                chunk_size=settings.CHUNK_SIZE,
-                chunk_overlap=settings.CHUNK_OVERLAP,
-                merger_type=EntityMergerType(settings.MERGER_TYPE),
-                use_llm_merging=settings.MERGER_USE_LLM,
-                merger_config={
-                    "high_threshold": settings.MERGER_HIGH_SIMILARITY_THRESHOLD,
-                    "low_threshold": settings.MERGER_LOW_SIMILARITY_THRESHOLD,
-                    "batch_size": settings.MERGER_LLM_BATCH_SIZE,
-                },
-                skip_chunking=not settings.CHUNKING_ENABLED,
-                max_chunks=settings.MAX_CHUNKS_PER_DOCUMENT,
-            )
-
-            # Create pipeline and extractor
-            pipeline = PreprocessingPipeline(config)
-            extractor = get_ollama_extraction_service()
-
-            # Run pipeline (async in sync context)
-            result = asyncio.run(
-                pipeline.process(
-                    content=text,
-                    extractor=extractor,
-                    content_type="text/html",
-                    url=page_url,
-                    tenant_id=UUID(tenant_id) if tenant_id else None,
-                )
-            )
-
-            elapsed = time.time() - start_time
-
-            # Add extraction method to entities
-            entities = []
-            for entity in result.entities:
-                entity_copy = entity.copy()
-                entity_copy["method"] = ExtractionMethod.LLM_OLLAMA
-                entities.append(entity_copy)
-
-            logger.info(
-                "Preprocessing pipeline extraction completed",
-                extra={
-                    "page_url": page_url,
-                    "entities_count": len(entities),
-                    "relationships_count": len(result.relationships),
-                    "elapsed_seconds": round(elapsed, 2),
-                    "original_length": result.original_length,
-                    "preprocessed_length": result.preprocessed_length,
-                    "num_chunks": result.num_chunks,
-                    "preprocessing_method": result.preprocessing_method,
-                    "chunking_method": result.chunking_method,
-                    "merging_method": result.merging_method,
-                    "entities_per_chunk": result.entities_per_chunk,
-                },
-            )
-
-            return entities, result.relationships
-
-        except Exception as e:
-            elapsed = time.time() - start_time
-            logger.warning(
-                "Preprocessing pipeline extraction failed, falling back to legacy",
-                extra={
-                    "page_url": page_url,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "elapsed_seconds": round(elapsed, 2),
-                },
-            )
-            # Fall back to legacy extraction on pipeline failure
-            return self._extract_with_llm_legacy(text, tenant_id, page_url)
 
     def _extract_with_llm_legacy(
         self, text: str, tenant_id: str, page_url: str = ""

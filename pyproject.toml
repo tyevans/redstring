@@ -117,7 +117,6 @@ ignore = [
 "src/kg_builder/services/**" = ["ANN", "TC", "RET", "ERA"]
 "src/kg_builder/inference/**" = ["ANN", "TC", "RET"]
 "src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]
-"src/kg_builder/preprocessing/**" = ["ANN", "TC", "RET"]
 # Narrowed from `graph/**` in slice 3: graph/adapters/ is new architecture and
 # is held to the full rule set.
 "src/kg_builder/graph/client.py" = ["ANN", "TC", "RET"]
@@ -156,7 +155,7 @@ python_version = "3.13"
 # rather than weakened, and each exclusion dies with its package.
 files = ["src/kg_builder"]
 exclude = [
-    "^src/kg_builder/(models|services|inference|extraction|preprocessing|schemas|events)/",
+    "^src/kg_builder/(models|services|inference|extraction|schemas|events)/",
     # graph/ is half legacy: the Neo4j client and Cypher templates predate the
     # rewrite, while graph/adapters/ is new architecture and is type-checked.
     "^src/kg_builder/graph/(client|queries)\\.py$",
@@ -263,7 +262,7 @@ layers = [
     # would let extraction import the LangChain adapter directly and undo the
     # port. Note that import-linter cannot see the *external* langchain
     # imports; `tests/unit/llm/test_port_does_not_leak.py` covers those.
-    "kg_builder.extraction : kg_builder.graph : kg_builder.vector : kg_builder.llm : kg_builder.preprocessing : kg_builder.schemas",
+    "kg_builder.extraction : kg_builder.graph : kg_builder.vector : kg_builder.llm : kg_builder.schemas",
     # Projections read the ports and the event schema and write nothing back:
     # nothing below them may import a projection, and they may not import an
     # adapter.

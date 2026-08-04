@@ -10,14 +10,12 @@ import logging
 import re
 from collections.abc import Iterator
 
-from kg_builder.preprocessing.exceptions import ChunkSizeError
-from kg_builder.preprocessing.factory import ChunkerFactory, ChunkerType
-from kg_builder.preprocessing.schemas import Chunk, ChunkingResult
+from kg_builder.extraction.chunking import Chunk, ChunkingResult
+from kg_builder.extraction.errors import ChunkSizeError
 
 logger = logging.getLogger(__name__)
 
 
-@ChunkerFactory.register(ChunkerType.SLIDING_WINDOW)
 class SlidingWindowChunker:
     """Chunker that uses sliding windows with configurable overlap.
 
@@ -73,11 +71,13 @@ class SlidingWindowChunker:
         """
         if default_chunk_size < min_chunk_size:
             raise ChunkSizeError(
-                f"default_chunk_size ({default_chunk_size}) must be >= min_chunk_size ({min_chunk_size})"
+                f"default_chunk_size ({default_chunk_size}) must be "
+                f">= min_chunk_size ({min_chunk_size})"
             )
         if default_overlap >= default_chunk_size:
             raise ChunkSizeError(
-                f"default_overlap ({default_overlap}) must be < default_chunk_size ({default_chunk_size})"
+                f"default_overlap ({default_overlap}) must be "
+                f"< default_chunk_size ({default_chunk_size})"
             )
         if default_overlap < 0:
             raise ChunkSizeError(f"default_overlap ({default_overlap}) must be >= 0")
@@ -101,7 +101,7 @@ class SlidingWindowChunker:
     @property
     def chunker_type(self) -> str:
         """Return the type identifier for this chunker."""
-        return ChunkerType.SLIDING_WINDOW.value
+        return "sliding_window"
 
     def chunk(
         self,
