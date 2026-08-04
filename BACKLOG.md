@@ -1222,6 +1222,27 @@ Interim: `ScoredCandidate` already carries the per-signal features, so a
 caller wanting this today can call `CandidateFinder.candidates` itself and log
 what it sees before handing the survivors to `resolve`.
 
+### B18b. `architecture.md` not imported from `eventsource-py`
+
+Five of the six rules in `~/workspace/eventsource-py/.claude/rules/` were
+imported into `.claude/rules/`. `architecture.md` was not. It is ~16KB and
+almost entirely an inventory of *that* project's rings, module homes, and ADR
+numbers (`domain/types.py` contents, which locations are "settled" vs.
+"transitional", `AggregateTypeNotSetError`, ADRs 0030–0046) — none of which
+exists here.
+
+The transferable part is the Dependency Rule itself, and kg-builder already
+declares its layered contract in `pyproject.toml`, enforced by
+`lint-imports`, and summarised in `CLAUDE.md`. Restating it a third time in a
+rules file would be defect shape §2 — a redundant declaration site with
+undocumented precedence — in the file that warns against it.
+
+Revisit when `docs/plans/ring-migration.md` lands: at that point there will
+be per-ring guidance ("what belongs in `domain/`", "why this import is
+forbidden") that the contract expresses only as a graph and that `CLAUDE.md`
+should not grow to hold. The rule to write then is kg-builder's own, derived
+from its rings — not a port of eventsource's.
+
 ### B28. Three property-merge strategies deferred
 
 `PropertyMergeStrategy` has five members. The re-architecture keeps the

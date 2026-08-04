@@ -7,6 +7,15 @@ The library **never fetches content** — document sourcing is a different
 problem set — and extraction **writes to no store**: it emits events, and
 projections do the writing.
 
+## Rules
+
+Conventions and workflow rules live in `.claude/rules/`:
+
+- `recurring-defects.md` — **read before writing or reviewing code.** Six
+  defect shapes, with a quick checklist.
+- `definition-of-done.md` — what "done" means per kind of work.
+- `testing.md`, `commits.md`, `user-trust.md`.
+
 ## Environment
 
 `uv` manages everything. Never edit `pyproject.toml` dependency tables by hand —
