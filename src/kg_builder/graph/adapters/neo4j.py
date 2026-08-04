@@ -5,9 +5,10 @@ so nothing above this module needs to know a graph database is involved.
 
 ## Three decisions worth knowing before reading the queries
 
-**No apoc.** The old `graph/client.py` calls `apoc.create.addLabels` to give
-each entity a per-type label and `apoc.path.subgraphAll` to traverse. Neither
-is needed: `entity_type` is already an indexed property, and traversal is a
+**No apoc.** The old `graph/client.py` -- deleted in slice 9, recoverable from
+`3502900` -- called `apoc.create.addLabels` to give each entity a per-type
+label and `apoc.path.subgraphAll` to traverse. Neither is needed:
+`entity_type` is already an indexed property, and traversal is a
 variable-length path. Requiring a plugin narrows which managed Neo4j offerings
 can host this library, so plain Cypher wins where it costs nothing.
 

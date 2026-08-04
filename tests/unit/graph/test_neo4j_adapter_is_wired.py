@@ -84,8 +84,6 @@ CYPHER_MARKERS = (
 #: is to edit this list, which is a visible decision in review.
 LEGACY_CYPHER = frozenset(
     {
-        "graph/client.py",
-        "graph/queries.py",
         "services/neo4j.py",
         "services/neo4j_schema.py",
         "services/neo4j_queries.py",
