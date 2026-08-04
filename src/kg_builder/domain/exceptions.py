@@ -70,6 +70,24 @@ class AliasCycleError(KgBuilderError):
         )
 
 
+class UnknownDomainError(KgBuilderError):
+    """No domain schema by that id.
+
+    A `KgBuilderError` rather than the `KeyError` the registry raises, because
+    `domain_system_prompt` is public and `KgBuilderError` is documented as the
+    base of every error this library raises deliberately. A typo in a domain
+    id is the overwhelmingly likely cause, so the message lists the ids that
+    do exist -- "unknown domain" alone does not help fix it.
+    """
+
+    def __init__(self, domain_id: str, available: list[str]) -> None:
+        self.domain_id = domain_id
+        self.available = available
+        super().__init__(
+            f"Unknown domain {domain_id!r}. Available: {', '.join(available) or 'none'}"
+        )
+
+
 class LlmProviderError(KgBuilderError):
     """An `LlmProvider` could not produce a validated extraction.
 

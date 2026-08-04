@@ -35,7 +35,6 @@ from kg_builder.extraction.classifier import (
     PHONE_PATTERN,
     SSN_PATTERN,
     ContentClassifier,
-    classify_content,
 )
 from kg_builder.llm.adapters.fake import EMPTY, FakeLlmProvider
 
@@ -338,22 +337,3 @@ class TestPromptBuilding:
         classifier = ContentClassifier(FakeLlmProvider(script=[{}]), registry=FakeRegistry())
 
         assert "Ada Lovelace" in classifier._build_prompt("Ada Lovelace")
-
-
-class TestConvenienceFunction:
-    async def test_it_classifies(self, long_content):
-        result = await classify_content(
-            long_content, FakeLlmProvider(script=[answer("news_journalism", 0.9)])
-        )
-
-        assert result.domain == "news_journalism"
-
-    async def test_it_passes_the_threshold_and_fallback_through(self, long_content):
-        result = await classify_content(
-            long_content,
-            FakeLlmProvider(script=[answer("news_journalism", 0.2)]),
-            confidence_threshold=0.9,
-            fallback_domain="encyclopedia_wiki",
-        )
-
-        assert result.domain == "encyclopedia_wiki"

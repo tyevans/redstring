@@ -27,6 +27,7 @@ from uuid import uuid4
 
 import pytest
 
+from kg_builder import KgBuilderError, UnknownDomainError
 from kg_builder.domain.source import SourceDocument
 from kg_builder.extraction import (
     DEFAULT_SYSTEM_PROMPT,
@@ -79,7 +80,16 @@ class TestDomainSystemPrompt:
         assert domain_system_prompt(schema) == domain_system_prompt("news_journalism")
 
     def test_an_unknown_domain_names_the_ones_that_exist(self) -> None:
-        with pytest.raises(KeyError, match="literature_fiction"):
+        with pytest.raises(UnknownDomainError, match="literature_fiction"):
+            domain_system_prompt("underwater_basket_weaving")
+
+    def test_an_unknown_domain_is_catchable_as_a_kg_builder_error(self) -> None:
+        # `KgBuilderError` is documented as the base of every error this
+        # library raises deliberately, and `domain_system_prompt` is public.
+        # A bare `KeyError` from the internal registry escaping through it
+        # would make that promise false for the one public function most
+        # likely to be handed a typo.
+        with pytest.raises(KgBuilderError):
             domain_system_prompt("underwater_basket_weaving")
 
 

@@ -18,6 +18,7 @@ import pytest
 
 from kg_builder import (
     AUTO,
+    EMPTY,
     FakeLlmProvider,
     InMemoryGraphStore,
     SourceDocument,
@@ -192,6 +193,80 @@ class TestWhichPromptIsSent:
         # swapped.
         _, extraction_prompt = provider.calls[-1]
         assert extraction_prompt == domain_system_prompt("academic_research")
+
+
+class TestAClassifierThatGaveUpIsDistinguishableFromOneThatChose:
+    """`report.domain` alone cannot tell them apart, and both are common.
+
+    `ContentClassifier` falls back to `encyclopedia_wiki` with confidence 0.0
+    on three separate paths -- content under 100 characters is never sent at
+    all, a below-threshold answer is replaced, and an `LlmProviderError` is
+    swallowed. All three produce a report that reads exactly like a confident
+    classification into that domain.
+
+    That is the failure shape this project keeps finding: a plausible answer
+    nobody investigates. The confidence was already computed and discarded.
+    """
+
+    async def test_a_confident_classification_reports_its_confidence(self) -> None:
+        provider = CountingProvider(
+            answer={"domain": "academic_research", "confidence": 0.92, "reasoning": "a paper"}
+        )
+
+        report = await build_graph(
+            document("Hamlet " * 40),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain=AUTO,
+        )
+
+        assert report.domain == "academic_research"
+        assert report.domain_confidence == pytest.approx(0.92)
+
+    async def test_a_document_too_short_to_classify_says_so(self) -> None:
+        # Under MIN_CONTENT_LENGTH: no model call is made for classification
+        # at all, and the domain is the fallback. Without the confidence this
+        # is indistinguishable from the classifier having picked
+        # `encyclopedia_wiki` on purpose.
+        report = await build_graph(
+            document("Ada met Charles."),
+            provider=CountingProvider(),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain=AUTO,
+        )
+
+        assert report.domain == "encyclopedia_wiki"
+        assert report.domain_confidence == 0.0
+
+    async def test_a_failed_classification_says_so(self) -> None:
+        report = await build_graph(
+            document("Hamlet " * 40),
+            provider=CountingProvider(answer=EMPTY),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain=AUTO,
+            skip_failed_chunks=True,
+            allow_partial=True,
+        )
+
+        assert report.domain == "encyclopedia_wiki"
+        assert report.domain_confidence == 0.0
+
+    async def test_without_auto_there_is_no_confidence_to_report(self) -> None:
+        # `None`, not 0.0. A caller filtering on `domain_confidence == 0.0` to
+        # find give-ups must not catch every run that named its domain.
+        report = await build_graph(
+            document(),
+            provider=CountingProvider(),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain="news_journalism",
+        )
+
+        assert report.domain == "news_journalism"
+        assert report.domain_confidence is None
 
 
 class TestWhatLandsInTheStore:

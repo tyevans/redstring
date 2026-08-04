@@ -41,7 +41,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kg_builder.extraction.domains.registry import get_domain_schema
+from kg_builder.domain.exceptions import UnknownDomainError
+from kg_builder.extraction.domains.registry import get_domain_registry, get_domain_schema
 
 if TYPE_CHECKING:
     from kg_builder.extraction.domains.models import (
@@ -75,11 +76,13 @@ def domain_system_prompt(domain: str | DomainSchema) -> str:
         Pass it to `ExtractionPipeline(provider, system_prompt=...)`.
 
     Raises:
-        KeyError: No such domain. The message lists the ones that exist,
-            because a typo in a domain id is the overwhelmingly likely cause
-            and "unknown domain" alone does not help fix it.
+        UnknownDomainError: No such domain. The message lists the ones that
+            exist, because a typo in a domain id is the overwhelmingly likely
+            cause. The registry raises a bare `KeyError`; it is translated
+            here because this is the public boundary and `KgBuilderError` is
+            the promise a caller catches on.
     """
-    schema = get_domain_schema(domain) if isinstance(domain, str) else domain
+    schema = _schema_for(domain) if isinstance(domain, str) else domain
     return (
         schema.extraction_prompt_template.replace(
             "{entity_descriptions}", _entity_descriptions(schema)
@@ -88,6 +91,14 @@ def domain_system_prompt(domain: str | DomainSchema) -> str:
         # a domain whose prompt is entirely prose is a domain whose author
         # decided the type list was not worth the tokens.
     )
+
+
+def _schema_for(domain_id: str) -> DomainSchema:
+    try:
+        return get_domain_schema(domain_id)
+    except KeyError as error:
+        available = sorted(summary.domain_id for summary in get_domain_registry().list_domains())
+        raise UnknownDomainError(domain_id, available) from error
 
 
 def _entity_descriptions(schema: DomainSchema) -> str:

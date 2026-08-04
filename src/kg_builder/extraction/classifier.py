@@ -1,29 +1,36 @@
-"""Content classifier for adaptive extraction.
+"""Deciding which domain schema a document should be extracted with.
 
-This module provides LLM-based content classification to determine
-the appropriate domain schema for extraction.
+One model call, whose answer selects the `system_prompt` the extraction calls
+then use. `kg_builder.composition.build_graph(domain=AUTO)` is the caller;
+this is also usable directly:
 
-The classifier analyzes content samples and determines the most
-appropriate domain schema using a configurable inference provider
-(e.g., Ollama or OpenAI).
+```python
+from kg_builder import domain_system_prompt
+from kg_builder.extraction.classifier import ContentClassifier
 
-Usage:
-    from kg_builder.extraction.classifier import ContentClassifier
-    from kg_builder.llm.adapters.langchain import LangChainLlmProvider
+result = await ContentClassifier(provider).classify(document.text)
+prompt = domain_system_prompt(result.domain)
+```
 
-    provider = OllamaProvider(base_url="http://localhost:11434")
-    classifier = ContentClassifier(provider)
+The `provider` is any `LlmProvider` -- `LangChainLlmProvider` against an
+OpenAI-compatible server, or `FakeLlmProvider` in a test. This docstring used
+to construct an `OllamaProvider(base_url=...)`, a class that has not existed
+in this repository since slice 6 replaced the vendor extractors with one port.
+Slice 10 put the module on the public `AUTO` path without reading it; the
+review caught it.
 
-    result = await classifier.classify(content="some text content...")
-    print(f"Domain: {result.domain}, Confidence: {result.confidence}")
+## It never fails, and that is the thing to know about it
 
-    # Or use the convenience function
-    from kg_builder.extraction.classifier import classify_content
+Three paths return `encyclopedia_wiki` with **confidence 0.0**: content under
+`MIN_CONTENT_LENGTH`, which is never sent to the model at all; an answer below
+`confidence_threshold`; and any `LlmProviderError`. Falling back is right
+*here* and wrong in extraction -- a misclassified document is extracted with
+the general-purpose schema, which is a worse answer, while a silently empty
+extraction is a missing answer that looks like a real one.
 
-    result = await classify_content(
-        content="some text...",
-        provider,
-    )
+But a fallback that reports the same shape as a choice is a plausible answer
+nobody investigates, so the confidence is carried out rather than logged and
+dropped: `GraphBuildReport.domain_confidence` is where it surfaces.
 """
 
 from __future__ import annotations
@@ -38,6 +45,7 @@ from kg_builder.extraction.domains.models import ClassificationResult
 from kg_builder.extraction.domains.registry import get_domain_registry
 
 if TYPE_CHECKING:
+    from kg_builder.domain.ids import TenantId
     from kg_builder.extraction.domains.registry import DomainSchemaRegistry
     from kg_builder.ports.llm_provider import LlmProvider
 
@@ -139,19 +147,21 @@ class ContentClassifier:
     async def classify(
         self,
         content: str,
-        tenant_id: str | None = None,
+        tenant_id: TenantId | None = None,
     ) -> ClassificationResult:
         """Classify content into a domain.
 
         Args:
             content: The content to classify.
-            tenant_id: Optional tenant ID for logging.
+            tenant_id: Optional, and only for logging -- nothing here is
+                scoped by tenant. Typed `TenantId` (a `UUID`) rather than the
+                `str` it was, because every other tenant parameter in the
+                library is a `UUID` and a lone `str` here is a trap for the
+                next caller rather than a flexibility anyone wanted.
 
         Returns:
-            ClassificationResult with domain, confidence, and reasoning.
-
-        Note:
-            On error or timeout, returns fallback domain with 0.0 confidence.
+            A `ClassificationResult`. **Confidence 0.0 means it gave up** --
+            see the module docstring for the three ways that happens.
         """
         # Check minimum content length
         content_stripped = content.strip()
@@ -300,54 +310,15 @@ class ContentClassifier:
         )
 
 
-async def classify_content(
-    content: str,
-    provider: LlmProvider,
-    tenant_id: str | None = None,
-    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
-    fallback_domain: str = DEFAULT_FALLBACK_DOMAIN,
-) -> ClassificationResult:
-    """Convenience function for content classification.
-
-    Creates a ContentClassifier instance and classifies the provided
-    content. Use this for one-off classifications. For repeated
-    classifications, create a ContentClassifier instance directly.
-
-    Args:
-        content: Content to classify.
-        provider: The `LlmProvider` to classify with.
-        tenant_id: Optional tenant ID for logging.
-        confidence_threshold: Minimum confidence for accepting classification.
-        fallback_domain: Domain to use when classification fails.
-
-    Returns:
-        ClassificationResult with domain and confidence.
-
-    Example:
-        from kg_builder.llm.adapters.langchain import LangChainLlmProvider
-        from kg_builder.extraction.classifier import classify_content
-
-        provider = OllamaProvider(base_url="http://localhost:11434")
-        result = await classify_content(
-            content="The quick brown fox...",
-            provider,
-        )
-        print(f"Classified as: {result.domain}")
-    """
-    classifier = ContentClassifier(
-        provider,
-        confidence_threshold=confidence_threshold,
-        fallback_domain=fallback_domain,
-    )
-    return await classifier.classify(content, tenant_id)
-
-
-# Type alias for exported symbols
 __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_FALLBACK_DOMAIN",
     "MAX_CONTENT_FOR_CLASSIFICATION",
     "MIN_CONTENT_LENGTH",
+    # `classify_content` was here: a module-level wrapper that built a
+    # `ContentClassifier` and called it. `ContentClassifier(provider).classify(text)`
+    # is the same line without the indirection, and the wrapper had no caller.
+    # Same test slice 10 applied to `prompt_generator`'s three dead halves,
+    # applied here in the fix round rather than skipped again.
     "ContentClassifier",
-    "classify_content",
 ]

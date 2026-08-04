@@ -113,6 +113,7 @@ from kg_builder.domain.exceptions import (
     MalformedCompletionError,
     MissingEntityError,
     RefusedCompletionError,
+    UnknownDomainError,
 )
 from kg_builder.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from kg_builder.domain.relationship import Relationship
@@ -200,6 +201,7 @@ __all__ = [
     "TemporalExtent",
     "TenantId",
     "UncertaintyMarker",
+    "UnknownDomainError",
     "VectorMatch",
     "VectorProjection",
     "VectorRecord",

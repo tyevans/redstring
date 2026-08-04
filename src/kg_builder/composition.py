@@ -107,6 +107,20 @@ class GraphBuildReport:
     #: invisible and it is the first thing to look at when extraction for one
     #: document comes back oddly shaped.
     domain: str | None
+    #: How sure the classifier was, and `None` when no classifier ran.
+    #:
+    #: **`0.0` means it gave up**, and that is the field's whole reason for
+    #: existing. `ContentClassifier` falls back to `encyclopedia_wiki` on
+    #: three paths -- a document under 100 characters is never sent at all, a
+    #: below-threshold answer is replaced, and an `LlmProviderError` is
+    #: swallowed -- and all three produce a `domain` that reads exactly like a
+    #: confident classification. The confidence was computed and discarded;
+    #: now it is not.
+    #:
+    #: `None` rather than `0.0` when `domain` was given or omitted, so a
+    #: caller filtering for give-ups on `== 0.0` does not catch every run that
+    #: named its own domain.
+    domain_confidence: float | None
     entities: int
     relationships: int
     #: Chunks whose model call failed and were skipped. Non-zero only with
@@ -141,6 +155,11 @@ async def build_graph(
         domain: `None` for the general-purpose prompt; a domain id or a
             `DomainSchema` to specialise it; `AUTO` to have
             `ContentClassifier` choose, at the cost of one extra model call.
+            `AUTO` never fails: a document under 100 characters is not sent
+            to the classifier at all, and a low-confidence or failed
+            classification falls back to `encyclopedia_wiki`. Read
+            `report.domain_confidence` to tell those apart from a real
+            choice -- `0.0` is a give-up.
         chunker: How to split the document. A `SlidingWindowChunker` with its
             own defaults when None.
         skip_failed_chunks: Continue past a chunk whose model call failed.
@@ -156,12 +175,13 @@ async def build_graph(
         same one twice.
 
     Raises:
+        UnknownDomainError: `domain` named an id no schema has.
         PartialExtractionError: Chunks failed and `allow_partial` is False.
             Nothing is written -- the refusal happens before the projection
             runs, so it cannot itself cause the gap it prevents.
         LlmProviderError: A model call failed and `skip_failed_chunks` is off.
     """
-    domain_id, system_prompt = await _resolve_prompt(domain, document, provider)
+    domain_id, confidence, system_prompt = await _resolve_prompt(domain, document, provider)
 
     pipeline = ExtractionPipeline(
         provider,
@@ -186,6 +206,7 @@ async def build_graph(
     return GraphBuildReport(
         event=event,
         domain=domain_id,
+        domain_confidence=confidence,
         entities=len(result.entities),
         relationships=len(result.relationships),
         failed_chunks=result.failed_chunks,
@@ -198,13 +219,17 @@ async def _resolve_prompt(
     domain: str | DomainSchema | AutoDomain | None,
     document: SourceDocument,
     provider: LlmProvider,
-) -> tuple[str | None, str]:
-    """The domain id that was chosen, and the prompt to ask with."""
+) -> tuple[str | None, float | None, str]:
+    """The domain chosen, how sure the classifier was, and the prompt to ask with."""
     if domain is None:
-        return None, DEFAULT_SYSTEM_PROMPT
+        return None, None, DEFAULT_SYSTEM_PROMPT
     if isinstance(domain, AutoDomain):
         classification = await ContentClassifier(provider).classify(document.text)
-        return classification.domain, domain_system_prompt(classification.domain)
+        return (
+            classification.domain,
+            classification.confidence,
+            domain_system_prompt(classification.domain),
+        )
     if isinstance(domain, str):
-        return domain, domain_system_prompt(domain)
-    return domain.domain_id, domain_system_prompt(domain)
+        return domain, None, domain_system_prompt(domain)
+    return domain.domain_id, None, domain_system_prompt(domain)
