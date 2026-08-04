@@ -78,6 +78,24 @@ class EmptyCompletionError(LlmProviderError):
         super().__init__(f"returned empty content{detail}", model=model)
 
 
+class RefusedCompletionError(LlmProviderError):
+    """The model declined to answer, and its safety layer said so.
+
+    A sibling of `EmptyCompletionError` rather than a subclass, because the
+    two call for opposite responses. A truncation is a configuration problem
+    that a larger token budget fixes, and retrying is the right move. A
+    refusal is a permanent property of *this content*: retrying spends tokens
+    to be refused again, and the useful reaction is to record which document
+    could not be extracted and move on.
+
+    Collapsing them would make that distinction unavailable at exactly the
+    point a caller extracting from clinical or legal text needs it most.
+    """
+
+    def __init__(self, *, model: str) -> None:
+        super().__init__("refused to answer (content filter)", model=model)
+
+
 class MalformedCompletionError(LlmProviderError):
     """Content came back, but did not validate against the requested schema."""
 

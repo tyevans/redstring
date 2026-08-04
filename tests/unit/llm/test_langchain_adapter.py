@@ -31,6 +31,7 @@ from kg_builder.domain.exceptions import (
     EmptyCompletionError,
     LlmProviderError,
     MalformedCompletionError,
+    RefusedCompletionError,
 )
 from kg_builder.llm.adapters.langchain import LangChainLlmProvider
 from kg_builder.ports.llm_provider import LlmProvider
@@ -167,6 +168,66 @@ async def test_a_truncation_the_vendor_sdk_refuses_becomes_the_same_empty_error(
         await provider.extract("Ada.", _Bag)
 
     assert caught.value.finish_reason == "length"
+
+
+async def test_a_content_filter_refusal_becomes_a_distinct_domain_error():
+    """The same openai parsing path, the other exception it can raise.
+
+    `ContentFilterFinishReasonError` escaped untranslated, making `openai`
+    part of this library's public failure contract in exactly the way the
+    module docstring says translation prevents.
+
+    Its own error rather than `EmptyCompletionError`, because the two call
+    for opposite responses: a truncation is a configuration problem a larger
+    budget fixes, while a refusal is a permanent property of the content and
+    retrying it just spends tokens. A caller extracting from clinical or
+    legal text needs to tell "this chunk was refused" from "this run was
+    misconfigured", and one error type cannot say both.
+    """
+    from openai import ContentFilterFinishReasonError
+
+    class RefusingChatModel(ScriptedChatModel):
+        def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
+            raise ContentFilterFinishReasonError
+
+    provider = LangChainLlmProvider(
+        RefusingChatModel(reply=AIMessage(content="{}")), model="test/scripted-v1"
+    )
+
+    with pytest.raises(RefusedCompletionError) as caught:
+        await provider.extract("Ada.", _Bag)
+
+    assert caught.value.model == "test/scripted-v1"
+
+
+async def test_a_refusal_is_still_one_of_the_catchable_family():
+    """A caller wrapping extraction keeps one `except`, and the pipeline's
+    `skip_failed_chunks` keeps working without knowing the new type exists."""
+    from openai import ContentFilterFinishReasonError
+
+    class RefusingChatModel(ScriptedChatModel):
+        def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
+            raise ContentFilterFinishReasonError
+
+    provider = LangChainLlmProvider(RefusingChatModel(reply=AIMessage(content="{}")), model="m")
+
+    with pytest.raises(LlmProviderError):
+        await provider.extract("Ada.", _Bag)
+
+
+async def test_a_refusal_is_not_reported_as_an_empty_completion():
+    """Guards the distinction: a shared base would make this pass vacuously."""
+    from openai import ContentFilterFinishReasonError
+
+    class RefusingChatModel(ScriptedChatModel):
+        def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
+            raise ContentFilterFinishReasonError
+
+    provider = LangChainLlmProvider(RefusingChatModel(reply=AIMessage(content="{}")), model="m")
+
+    with pytest.raises(RefusedCompletionError):
+        await provider.extract("Ada.", _Bag)
+    assert not issubclass(RefusedCompletionError, EmptyCompletionError)
 
 
 async def test_whitespace_only_content_counts_as_empty():

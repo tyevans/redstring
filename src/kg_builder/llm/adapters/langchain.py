@@ -49,10 +49,13 @@ check below sees only the `"stop"`-with-empty-content case, and truncation --
 the more common of the two, and the one the reference model reaches first --
 would otherwise escape as a vendor exception from three frames down.
 
-Both are the same thing to a caller: the model produced no usable content.
-They are therefore translated to the same `EmptyCompletionError`, which is
-also what keeps the vendor exception from becoming part of this library's
-public failure contract.
+That path raises a second exception too, `ContentFilterFinishReasonError`,
+and it is translated to `RefusedCompletionError` rather than to the same
+error. A truncation is a configuration problem a larger budget fixes; a
+refusal is a permanent property of the content, and retrying it only spends
+tokens. Both are `LlmProviderError`, so a caller wanting one `except` still
+has one -- what is preserved is the ability to tell them apart when it
+matters.
 """
 
 from __future__ import annotations
@@ -61,7 +64,11 @@ from typing import TYPE_CHECKING, Any, Final
 
 from pydantic import ValidationError
 
-from kg_builder.domain.exceptions import EmptyCompletionError, MalformedCompletionError
+from kg_builder.domain.exceptions import (
+    EmptyCompletionError,
+    MalformedCompletionError,
+    RefusedCompletionError,
+)
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -83,9 +90,11 @@ class _NeverRaised(Exception):
 
 
 try:  # pragma: no cover -- the except branch needs langchain-openai absent
+    from openai import ContentFilterFinishReasonError as _RefusedError
     from openai import LengthFinishReasonError as _TruncatedError
 except ImportError:  # pragma: no cover
     _TruncatedError = _NeverRaised  # type: ignore[assignment, misc]
+    _RefusedError = _NeverRaised  # type: ignore[assignment, misc]
 
 
 def _text_of(content: str | list[str | dict[str, Any]]) -> str:
@@ -219,6 +228,11 @@ class LangChainLlmProvider:
             # The openai SDK's parsing path refuses a truncated completion
             # before returning a message, so `_parse` never sees this one.
             raise EmptyCompletionError(model=self._model, finish_reason="length") from error
+        except _RefusedError as error:
+            # The same path, the other exception it raises. Distinct from the
+            # truncation because the fixes are opposite: a bigger budget vs.
+            # not sending this content again.
+            raise RefusedCompletionError(model=self._model) from error
         return self._parse(reply, schema)
 
     def _parse[S: BaseModel](self, reply: BaseMessage, schema: type[S]) -> S:
