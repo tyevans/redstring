@@ -29,46 +29,64 @@ is not meaningful.
 
 ## 1. Unlanded features
 
-### B40. Fuzzy entity resolution was deleted, not ported — slice 7 owns it
+### B43. A merge plans against a graph read outside its concurrency window
 
-Slice 6 deleted `extraction/mergers/` (`SimpleMerger`, `LLMMerger`), the
-`EntityMerger` protocol, and the `EntityMergeCandidate` / `EntityMergeDecision`
-vocabulary they used. What replaced them, `extraction/merging.py`, does **exact**
-deduplication only: two chunks reporting the same name and type get one id from
-`entity_id_for`, so combining them is not a judgement.
+`consolidation/service.py::merge` reads `get_relationships_for` *before*
+loading the aggregate, so the edge set it plans against can be stale by the
+time the append happens. Deliberate: the read model is a projection and lags
+the log by construction, so no ordering of the two steps makes the graph
+authoritative, and doing the read inside the aggregate's window would widen
+the window without making it correct.
 
-The deleted code did more than that. `SimpleMerger` used
-`jellyfish.jaro_winkler_similarity` with a high and a low threshold, and
-`LLMMerger` sent the band between them to a model to adjudicate — so "Ada
-Lovelace" and "Ada" could be resolved to one entity within a document.
+**Half of the staleness is already harmless.** A redirection for an edge that
+has since been deleted is applied by `upsert_relationship`, which recreates
+it, and a delete of an absent edge returns `False` -- both idempotent by the
+port's contract.
 
-**Why deleting beat porting.** That is the same operation as cross-document
-consolidation, which slice 7 implements against `ConsolidationLog`. Doing it
-inside extraction does it *invisibly*: no `EntitiesMerged` event, so nothing to
-audit, nothing to undo, and no record that a judgement was made — which is the
-exact failure the event-sourced write model exists to prevent. Porting it would
-have produced a second, weaker resolver that slice 7 then has to delete, and
-would have shipped a merge path that bypasses `ConsolidationLog`'s three
-invariants (`MergeIntoAliasError`, `DoubleMergeError`, `UnknownMergeError`).
+**The other half is a real gap.** An edge that appeared *after* the read gets
+no redirection at all, so it keeps pointing at the absorbed entity. The graph
+fold then resolves it through the alias table on the next
+`DocumentExtracted` -- which is why this is a gap rather than a corruption --
+but until something re-extracts that document, `get_relationships` on the
+canonical entity does not report it.
 
-**What slice 7 needs to know, so it is not rediscovered.** The old
-implementation is at `0d5f09b:src/kg_builder/extraction/mergers/`. Its shape was
-sound and the thresholds were tuned: `MERGER_HIGH_SIMILARITY_THRESHOLD` /
-`MERGER_LOW_SIMILARITY_THRESHOLD` in `config.py`, above the high one merge
-outright, below the low one never, and only the band in between costs a model
-call — which is what kept the LLM cost sub-quadratic. `LLMMerger` batched those
-pairs (`MERGER_LLM_BATCH_SIZE`). Rebuild that policy on domain types against
-`LlmProvider` and emit `EntitiesMerged`; do not rebuild the dict plumbing.
+Two candidate fixes, neither obviously right, which is why this is deferred
+rather than half-done:
 
-Note the interaction with the deliberate scoping decision in
-`extraction/mapping.py`: entity ids are namespaced **per document**, so
-`doc-1`'s Ada and `doc-2`'s Ada are already two entities by construction and
-consolidation has something to merge. Within-document fuzzy resolution is
-therefore not a special case for slice 7 — it is the same code path with both
-entities happening to share a `source_id`.
+- Have the merge fold resolve `EntitiesMerged` redirections against the store
+  as well, so the projection catches what the planner missed. Cheap, but it
+  moves a decision into the fold, where it cannot be audited.
+- Re-read and re-plan on an `ExpectedVersion` conflict, so the retry sees the
+  newer graph. Correct, and it needs the repository to surface the conflict in
+  a form the service can act on, which it does not today.
 
-`jellyfish` (the `nlp` extra) now has no importer in `src/`. Left declared
-because slice 7 needs it back within one slice.
+Measure how often it actually happens first. Consolidation runs behind
+extraction, so the window is between a store read and a stream append on one
+tenant.
+
+### B44. Rejected merge candidates are discarded, not recorded
+
+`consolidation/service.py::resolve` drops every candidate the policy or the
+model rejected. Nothing records that the pair was considered, what it scored,
+or what the model said about it.
+
+That is the data needed to tune `HIGH_SIMILARITY` and `LOW_SIMILARITY`, which
+are currently inherited numbers with no measurement behind them on this
+corpus. Without the rejections there is no way to answer "how many real
+duplicates fall below the low threshold" except by re-running the whole
+pipeline with a wider band -- and the model calls that band costs are exactly
+what the thresholds exist to avoid spending twice.
+
+**Not simply "emit an event for it".** A `MergeRejected` on the consolidation
+stream would put one event per considered pair into a permanent, replayed log
+that already grows with a tenant's merge history, to record something with no
+effect on the graph. The right home is probably a projection or a metrics
+sink, which is a decision about a piece of infrastructure this project does
+not have yet.
+
+Interim: `ScoredCandidate` already carries the per-signal features, so a
+caller wanting this today can call `CandidateFinder.candidates` itself and log
+what it sees before handing the survivors to `resolve`.
 
 ### B41. `RedisCache` has no test against a real Redis
 

@@ -26,7 +26,8 @@ properties of calling a model over a network, not of turning prose into
 entities -- any other transport would need the same three.
 
 Chunkers and mergers arrived here from `preprocessing/`, which is gone. What
-became of the mergers is BACKLOG B40.
+became of the mergers is `kg_builder.consolidation.policy`, which rebuilt
+their two-threshold policy where a judgement becomes an `EntitiesMerged`.
 """
 
 from kg_builder.extraction.chunkers import SlidingWindowChunker

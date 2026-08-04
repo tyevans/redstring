@@ -16,8 +16,13 @@ the same operation as cross-document consolidation, which slice 7 implements
 against `ConsolidationLog`, and doing it here would do it *invisibly*: no
 `EntitiesMerged` event, nothing to audit, nothing to undo, and no record that a
 judgement was made at all. An unaudited merge buried inside extraction is
-precisely what the event-sourced write model exists to prevent. See BACKLOG
-B40, which records what was deleted rather than ported and why.
+precisely what the event-sourced write model exists to prevent.
+
+Slice 7 rebuilt that resolution in `kg_builder.consolidation.policy`, with the
+same two thresholds and the same batched model call for the band between them,
+emitting an event each time. Note that within-document resolution is not a
+special case there: ids are namespaced per document, so two mentions in one
+document reach it by the same path as two in different documents.
 
 ## Order-independence is a property of the tie-break, not of the dict
 

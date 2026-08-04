@@ -6,7 +6,7 @@ timed a pipeline that is gone. `LLMMergeResponse` was shadowed by an
 identically named class inside `mergers/llm_merger.py` and so had never been
 the one in use. `EntityMergeCandidate` and `EntityMergeDecision` described a
 dict-shaped merge protocol that `kg_builder.extraction.merging` replaces and
-that slice 7 will want to redesign on domain types anyway -- see BACKLOG B40.
+that slice 7 redesigned on domain types -- see `kg_builder.consolidation`.
 """
 
 from dataclasses import dataclass, field

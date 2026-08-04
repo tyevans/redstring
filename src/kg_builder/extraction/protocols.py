@@ -10,7 +10,7 @@ overlapping chunks each reported is not pluggable and does not need to be:
 `kg_builder.extraction.merging` is a total function with nothing to configure.
 The *fuzzy* resolution the old protocol existed for -- deciding "Ada" and "Ada
 Lovelace" are one person -- is consolidation, and belongs to slice 7 where it
-produces an auditable `EntitiesMerged`. See BACKLOG B40.
+produces an auditable `EntitiesMerged`. See `kg_builder.consolidation.policy`.
 """
 
 from typing import Protocol, runtime_checkable

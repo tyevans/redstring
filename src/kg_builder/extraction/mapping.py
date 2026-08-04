@@ -41,16 +41,22 @@ are what make this a decision rather than a bug.
 
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 from uuid import NAMESPACE_URL, uuid5
 
 from kg_builder.domain.entity import Entity, ExtractionMethod
 from kg_builder.domain.normalization import normalize_name
+
+# Re-exported rather than defined here. They moved to `domain/` when
+# consolidation became the third caller: `consolidation` and `extraction` are
+# sibling layers and may not import each other, so a shared tie-break has to
+# live below both. Kept importable from this module because `merging.py` and
+# every test already name it here, and because the alternative -- two
+# definitions -- is what `domain/preference.py` exists to prevent.
+from kg_builder.domain.preference import preference, relationship_preference
 from kg_builder.domain.relationship import Relationship
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from uuid import UUID
 
     from kg_builder.domain.ids import EntityId, SourceId, TenantId
@@ -118,109 +124,6 @@ def _relationship_id_for(
     from_source = uuid5(_RELATIONSHIP_NAMESPACE, str(source_entity_id))
     to_target = uuid5(from_source, str(target_entity_id))
     return uuid5(to_target, relationship_type)
-
-
-def preference(entity: Entity) -> tuple[float, int, bool, str, str, int, str]:
-    """A **total** order on two mappings of one entity. Higher wins.
-
-    Total, and that is the whole point. An earlier version compared
-    confidence alone and fell through to "keep the one already there", which
-    is order-dependent exactly where it matters: two mentions of one entity
-    carry the *same* confidence whenever the model declined to score them,
-    which is the common case rather than the edge case. The same document
-    would then map differently depending on the order the model happened to
-    list things in.
-
-    cosmic-ray found it. Mutating `>` to `>=` flipped which of two tied
-    mentions survived and every test passed, because they all used distinct
-    confidences -- the CLAUDE.md failure shape, where the input makes two
-    candidate implementations agree.
-
-    Confidence first, which is the only part anyone would design
-    deliberately. The rest exist to make the order total:
-
-    - description length, preferring the mention that said more, which is
-      usually the chunk holding the whole sentence rather than its tail;
-    - then whether a description was given *at all*, the description text,
-      the name, and a stable rendering of `properties` -- all of which carry
-      no meaning and are there purely so that no two distinct objects compare
-      equal.
-
-    The "at all" slot is not padding. `description or ""` maps `None` and
-    `""` onto the same value, so two mentions differing only in which of
-    those they carry tied on every field of the order and arrival order
-    decided between them. The strengthened order-independence property in
-    `test_merging.py` found it on its first run, with the minimal example
-    `[("a", None)], [("a", "")]`.
-
-    That last one is what makes the order genuinely total rather than merely
-    long. `_build_entity` sets `tenant_id`, `source_id`, `entity_type`,
-    `extraction_method` and `model` identically for every mention in a
-    bucket, and never populates `external_ids`, `source_text`, `temporal` or
-    `blocking_keys` at all -- so `confidence`, `name`, `description` and
-    `properties` are exactly the fields two mappings of one entity can
-    disagree about, and all four are here.
-
-    Property-level *merging* is still not attempted: the winner keeps its own
-    `properties` and the loser's are discarded. That is BACKLOG B28.
-
-    Shared with `kg_builder.extraction.merging`, which folds across chunks
-    using this same order. Two definitions would be two tie-breaks, and
-    "dedup within one model answer" disagreeing with "dedup across chunks"
-    about which mention wins is a difference nobody would go looking for.
-    """
-    return (
-        entity.confidence,
-        len(entity.description or ""),
-        entity.description is not None,
-        entity.description or "",
-        entity.name,
-        *_stably(entity.properties),
-    )
-
-
-def _stably(properties: Mapping[str, Any]) -> tuple[int, str]:
-    """A deterministic, orderable rendering of a free-form property bag.
-
-    Size first, so "the mention that said more" wins by the same instinct
-    description length encodes for entities. Then a canonical JSON rendering,
-    which exists purely to make the order **total**: two bags of equal size
-    that are not equal must still compare unequal, or the comparison falls
-    through to "keep the one already there" and the answer depends on arrival
-    order.
-
-    `sort_keys=True` so two equal dicts built in different key orders render
-    identically. `default=repr` because these values come from a model and the
-    port only guarantees they parsed as JSON *once* -- a caller mapping a
-    hand-built `Extraction` can put anything in here, and a `TypeError` from
-    deep inside a sort would be an appalling way to find out.
-    """
-    return len(properties), json.dumps(properties, sort_keys=True, default=repr)
-
-
-def relationship_preference(relationship: Relationship) -> tuple[float, int, str]:
-    """A **total** order on two mappings of one edge. Higher wins.
-
-    Total over everything that can vary, and the argument is short: within one
-    id bucket the endpoints and the relationship type are fixed, because all
-    three are inputs to `_relationship_id_for`. `tenant_id` is fixed by the
-    caller. So `confidence` and `properties` are the only fields two mappings
-    of one edge can disagree about, and both are here.
-
-    The order this replaces was `(confidence, relationship_type)` -- and the
-    type is constant inside every bucket, so the tuple degenerated to
-    `(confidence,)`. Ties are the common case, because every relationship the
-    model declines to score carries `DEFAULT_CONFIDENCE` and overlapping
-    windows manufacture duplicate edges on purpose. Which `properties`
-    survived was therefore decided by arrival order, which means the same
-    document extracted twice could produce different `DocumentExtracted`
-    payloads in a durable, replayable log.
-
-    Shared with `kg_builder.extraction.merging` for the reason `preference`
-    is: the within-answer and across-chunk deduplications must not disagree
-    about which mention wins, and two definitions are two chances to.
-    """
-    return (relationship.confidence, *_stably(relationship.properties))
 
 
 def map_extraction(

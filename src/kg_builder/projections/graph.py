@@ -187,10 +187,18 @@ class GraphProjection(StoreProjection[GraphStore]):
 
     @handles(MergeUndone)
     async def _apply_undo(self, _context: object, event: MergeUndone) -> None:
-        # Aliases go before the restorations, and that order is load-bearing:
-        # `restored_relationships` carry the pre-merge endpoints, so leaving
-        # the aliases in place would leave a store where the edges say one
-        # thing and resolution says another.
+        # The order of these two steps does **not** matter, and that is worth
+        # saying because it looks as though it should. `restored_relationships`
+        # carry the pre-merge endpoints, so an alias still in place while they
+        # are written would seem to contradict them -- but nothing resolves on
+        # this path. Only `_apply_extraction` resolves, because only it handles
+        # data that predates the merge without knowing about it.
+        #
+        # Checked rather than assumed: swapping these two statements by hand
+        # left all 52 tests in `tests/unit/consolidation` passing. An earlier
+        # version of this comment claimed the order was load-bearing; it was
+        # not, and a comment asserting a constraint that does not exist is how
+        # a later reader comes to believe the fold resolves here too.
         for entity_id in event.unmerged_entity_ids:
             await self._store.remove_alias(entity_id, event.tenant_id)
         await self._store.upsert_relationships(event.restored_relationships)
