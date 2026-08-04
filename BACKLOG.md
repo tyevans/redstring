@@ -1096,10 +1096,11 @@ will produce a crop of them.
 Delete them in the same commit, and note that doing so produces **no diff**,
 so the commit needs another reason to exist. To find them:
 
-```
-find src tests -type d -name __pycache__ -exec sh -c \
-  '[ -z "$(find "$(dirname "$1")" -maxdepth 1 -name "*.py" -print -quit)" ] \
-   && echo "$(dirname "$1")"' _ {} \;
+```sh
+find src tests -type d -name __pycache__ -printf '%h\n' | sort -u |
+  while read -r dir; do
+    [ -z "$(find "$dir" -maxdepth 1 -name '*.py' -print -quit)" ] && echo "$dir"
+  done
 ```
 
 ### B38. The `eventsourcing` extra no longer pulls `eventsource-py[all]`
