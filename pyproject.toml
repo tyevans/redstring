@@ -153,5 +153,6 @@ layers = [
     "kg_builder.inference",
     "kg_builder.models",
     "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
+    "kg_builder.domain",
 ]
 exhaustive = false
