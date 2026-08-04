@@ -245,6 +245,129 @@ The session config used is worth recreating rather than rediscovering:
 (the `-m integration` is required — `addopts` deselects it otherwise, and the
 run then silently mutates code no test executes, which is how B10a happened).
 
+### B10f. The integration suite cannot run under xdist
+
+`tests/integration/graph/test_neo4j_store.py::_wipe` runs
+`MATCH (n) DETACH DELETE n` on the one shared Neo4j database before every
+test. Under `pytest-xdist` each worker does that to the others' data
+mid-test, which produced **36 failures that say nothing about the code**.
+Measured, not predicted.
+
+**The constraint today: run `-m integration` serially. No `-n auto`.** The
+default gate is unaffected — `addopts` deselects `integration`, so the xdist
+run the hook does never reaches these tests.
+
+**This is a direct trap for two pieces of scheduled work**, which is why it is
+filed rather than merely known:
+
+- **B10a** proposes a combined coverage run over the unit and integration
+  suites. `parallel = true` is already set for coverage, and the obvious way
+  to write that CI target is `pytest -n auto` over both. That target will fail
+  36 times for a reason that looks like flakiness.
+- **Slice 5's pgvector suite** hits the identical problem the moment it wipes
+  or truncates a shared database between tests, which is the natural way to
+  write it.
+
+The real fixes, in increasing order of cost: give each test its own tenant and
+scope the wipe to it (weakens `test_delete_by_tenant_removes_exactly_that_tenant`,
+which is why slice 4 did not); give each xdist worker its own database
+(`PYTEST_XDIST_WORKER` into the database name — Neo4j community allows one
+database, so this needs Enterprise or a container per worker); or mark the
+module `xdist_group` so one worker owns it, which keeps the other suites
+parallel and is probably the right answer.
+
+### B10g. `upsert_relationships` is atomic in Neo4j, where the port permits partial writes
+
+`kg_builder/ports/graph_store.py:142` says a `MissingEntityError` part-way
+through **leaves earlier elements written**. `graph/adapters/memory.py`
+behaves that way. `graph/adapters/neo4j.py::upsert_relationships` validates
+every endpoint in one query before writing anything, so on a dangling edge it
+writes **nothing** — strictly stronger than the contract.
+
+Nothing pins either behaviour: the compliance suite asserts that the error is
+raised, never what survived it, so the two adapters differ on an axis no test
+covers. That is exactly the kind of difference that gets depended on by
+accident.
+
+**What a caller may rely on:** that `MissingEntityError` was raised and that
+the batch is not *fully* written. **What a caller may not rely on:** which
+of the earlier elements landed. Code that retries the whole batch after the
+error is correct against both adapters; code that skips the prefix it assumes
+was written is correct against neither.
+
+Resolving it means choosing: pin the weak contract in the compliance suite
+(and accept that Neo4j is gratuitously stronger), or strengthen the port to
+all-or-nothing (and make the in-memory adapter validate up front, which is a
+few lines). The second is the better contract for replay, and it is cheap
+because the adapter that would find it hard already does it.
+
+### B10h. `KG_COMPLIANCE_MAX_EXAMPLES` cannot be tuned per adapter subclass
+
+`tests/compliance/graph_store.py:87` reads `DEFAULT_MAX_EXAMPLES` from the
+environment at **module import**, and line 93 bakes it into the shared
+`settings()`. By the time a subclass body executes, the value is fixed — so
+"tune `max_examples` down for the slow adapter" is not achievable as written.
+It is tunable per *run* (`KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest ...`)
+and not per class.
+
+An explicit `settings(max_examples=...)` on the subclass is deliberately ruled
+out by the suite's own comment at line 82: it outranks `--hypothesis-profile`,
+which would make the profile inert for **every** adapter, not just that one.
+That reasoning is right and should not be reversed casually.
+
+Slice 4 measured the cost and it was nothing — 25 s / 43 s / 66 s at 10 / 25 /
+50 examples over 106 tests — so this was correctly not fixed then. **Slice 5
+meets the same wall**, and a pgvector adapter with a per-example schema reset
+may not get off as lightly.
+
+What would have to change: make the per-class value a hypothesis *profile*
+rather than a `settings()` argument — register one profile per adapter at
+import and have each subclass select it — or give the suite a class-level hook
+(e.g. a `max_examples` class attribute the shared decorator reads through a
+`settings` callable) that still leaves `--hypothesis-profile` outranking it.
+Either is a change to slice 3's suite, which is why slice 4 did not make it
+unilaterally.
+
+### B10i. The `EXPLAIN` tests run against an empty database and do not pin the negative
+
+`tests/integration/graph/test_neo4j_store.py:205`
+(`test_tenant_scoped_reads_seek_rather_than_scan_the_label`). The claim it
+encodes was measured at 5000 entities across 100 tenants; the `store` fixture
+wipes first, so the planner sees zero nodes.
+
+**Recorded as a strengthening opportunity, not a defect** — deliberately not
+fixed in the slice-4 fix round, for two reasons that still hold. The
+discrimination is *structural* rather than statistical: a Neo4j composite
+index needs a predicate on every one of its properties, so `tenant_id` alone
+cannot use `(tenant_id, id)`, and that does not depend on cardinality. And the
+test is fail-safe: it asserts operator names directly
+(`NodeUniqueIndexSeek`/`NodeIndexSeek` present, `NodeByLabelScan` absent)
+rather than comparing two runs, so a regressed planner fails rather than
+passing vacuously.
+
+What it does not do is show the seek survives at a scale where the cost
+matters, and **nothing asserts the plan *is* a label scan without
+`_TENANT_SEEK`**. If a later change makes the predicate redundant, the test
+keeps passing while the reason for it is forgotten. The strengthening is to
+run the same `EXPLAIN` against the query with `_TENANT_SEEK` removed and
+assert `NodeByLabelScan` *is* present — that is the assertion that makes the
+pair discriminating, and it is the only one that would notice the predicate
+becoming unnecessary.
+
+### B10j. `_schema_ready` is module-level mutable test state
+
+`tests/integration/graph/test_neo4j_store.py:101`. **Harmless today and
+deliberately left alone**: `ensure_schema` is idempotent, `_wipe` does not
+drop indexes, so a stale `True` cannot cause a missing index within a process,
+and each xdist worker would have its own copy anyway (see B10f — that suite
+does not run under xdist regardless).
+
+It is recorded only because it is the same shape that produced **B10d**:
+module-level mutable state in a test file, correct until collection order or
+process reuse changes underneath it. If B10f is resolved by giving each worker
+its own database, revisit this at the same time — that is the change that
+would make the cached flag mean something different per worker.
+
 ### B10b. Model blocking keys as nodes — decided, scheduled for slice 7
 
 **The design is decided; do not re-litigate it. Implement in slice 7.**
