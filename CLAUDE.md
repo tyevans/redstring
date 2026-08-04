@@ -140,7 +140,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape four times,
+  testing the difference.** This project has hit the same shape five times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -149,6 +149,18 @@ reading the code:
   | random `uuid4`s | `<=` where `==` was meant — passes about half the time, depending on how ids sort |
   | a *chain* graph | first-found where shortest-path was meant — on a chain they are the same function |
   | results only, never the query plan | a full scan where an index seek was meant — same answers, catastrophic cost |
+  | ids drawn from `uuid4()`, never colliding across tenants | a `(tenant_id, id)` key compared on `id` alone — one tenant's write vouches for another's |
+
+  **When a key is a tuple, write one test where its components collide.**
+  This is narrower than the rule above, and it is the form that actually
+  fires in time. The fifth row was written *during a fix round that cited
+  this table*, by an implementer who had just read it: the principle was
+  understood and the defect shipped anyway, because ids came from `uuid4()`
+  the way every other test in the file makes them. Knowing to ask "what else
+  would pass this?" did not survive contact with a habit; a rule naming the
+  concrete action does. Composite keys in this codebase are almost always
+  `(tenant_id, something)`, so the collision to force is almost always the
+  same one.
 
   Before trusting a test, ask what *other* implementation would also pass it.
   If a plausible wrong one would, the input is the problem: pin the values so
