@@ -1310,32 +1310,28 @@ suites run, not whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
-### B60. `0.1.0` cannot be published: there is no licence
+### B60. Packaging metadata beyond the licence
 
-**Found in slice 11 while assessing releasability. This is the release
-blocker, and it is not a formality** — a package on PyPI with no licence grants
-no rights, so nobody can legally use it and the friendliest possible reading is
-"all rights reserved".
+**The licence is done** — MIT, `LICENSE` at the repo root, `license = "MIT"`
+and `license-files = ["LICENSE"]` in `[project]`, and `authors`. Verified in
+the built artifact rather than the config: the wheel carries
+`License-Expression: MIT` and ships the file at
+`dist-info/licenses/LICENSE`.
 
-There is **no `LICENSE` file** in the repository and **no `license` or
-`license-files` key** in `[project]`. Nothing else about the build is wrong:
-`uv build --wheel` succeeds, and
-`tests/integration/test_wheel_ships_the_domain_schemas.py` passes against the
-built artifact (verified in slice 11).
-
-Also absent, and all conventional for a first publish:
+What is still absent, all conventional for a first publish and none of it a
+blocker:
 
 - `[project.urls]` — no repository or issues link, so an installed package
   gives a user nowhere to go.
-- `authors` / `maintainers`.
 - `classifiers`, including `Programming Language :: Python :: 3.13` and a
   development-status trove classifier. `requires-python = ">=3.13"` already
   gates installation correctly, so these are discoverability rather than
   correctness.
+- `maintainers`.
 - A CHANGELOG (B22).
 
-The licence is a decision for whoever owns the copyright and cannot be made
-from inside the repository. Everything else is fifteen minutes once it is.
+Do these with B61's dependency narrowing, which is the one item that is
+genuinely cheaper before a release than after.
 
 ### B61. Four of the nine core dependencies do not belong there, and two are unused
 
