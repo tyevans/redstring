@@ -25,6 +25,13 @@ correctness depend on the resolution of whatever stored the value, and
 `datetime`'s microseconds, Neo4j's nanoseconds and Postgres's microseconds do
 not agree on what "the last instant of 2022" is.
 
+## Precision changes an interval; uncertainty mostly does not
+
+`BEFORE` and `AFTER` are the only two markers that alter the bounds, and they
+do it by opening one. `CIRCA` and `APPROXIMATE` are claims about confidence
+rather than about extent, so they leave the interval exactly where `EXACT`
+would -- see `bounds` for why widening them would mean inventing a margin.
+
 ## `None` is two different infinities
 
 In `Bounds.lower` it means "unbounded below"; in `Bounds.upper`, "unbounded
@@ -94,6 +101,32 @@ def bounds(extent: TemporalExtent) -> Bounds | None:
     `None` for an extent carrying no dates -- one holding only a
     `sequence_position`, say. That is not an error: sequence position orders
     events that have no dates at all, and no interval comparison applies to it.
+
+    ## Only two markers change the interval
+
+    `BEFORE` and `AFTER` open a bound. `EXACT`, `CIRCA`, `APPROXIMATE` and
+    `INFERRED` all fall through to the ordinary closed interval, and that is a
+    decision rather than an omission: "circa 1850" is a claim about *how
+    confidently* 1850 is known, not about which years it might have been.
+    Widening it by some margin would mean inventing the margin -- a decade? a
+    century? -- and then every comparison would rest on a number nobody chose
+    deliberately. The uncertainty is preserved on the extent for a caller that
+    wants to weight it; the interval stays what the text said.
+
+    ## An open marker discards the far endpoint
+
+    "before 1900" and "after 1900" name one instant, so an extent carrying both
+    a marker and an `end_date` has said something contradictory -- the marker
+    says the range is open in one direction while the range says it is closed
+    at both. The marker wins and `end_date` is dropped.
+
+    Deliberate, and the alternative was considered: reading "before" as
+    `(-inf, end_date)` would honour both, but it silently converts a
+    contradiction into a plausible interval, and the extent that produced it is
+    almost certainly a parser bug rather than a caller's intent.
+    `parse_temporal` cannot construct one -- the range strategies run before
+    uncertainty is folded in and never combine the two -- so this is a guard
+    against hand-built extents, and it fails towards the smaller claim.
     """
     start, end = extent.start_date, extent.end_date
     if start is None and end is None:

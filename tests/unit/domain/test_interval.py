@@ -111,6 +111,26 @@ class TestUncertaintyOtherThanTheOpenOnes:
         )
         assert bounds(extent) == Bounds(utc(2023, 1, 1), utc(2024, 1, 1))
 
+    def test_an_open_marker_wins_over_a_stated_range(self):
+        """A marker and an `end_date` together are a contradiction: the marker
+        says open in one direction, the range says closed at both. The marker
+        wins and the far endpoint is dropped, rather than the two being
+        reconciled into a plausible interval that nothing asserted.
+
+        `parse_temporal` cannot build one of these -- the range strategies run
+        before uncertainty is folded in -- so this pins the behaviour for
+        hand-built extents."""
+        contradictory = TemporalExtent(
+            start_date=utc(1900, 1, 1),
+            end_date=utc(1950, 1, 1),
+            precision=DatePrecision.YEAR,
+            uncertainty=UncertaintyMarker.BEFORE,
+        )
+        assert bounds(contradictory) == Bounds(None, utc(1900, 1, 1))
+
+        onwards = contradictory.model_copy(update={"uncertainty": UncertaintyMarker.AFTER})
+        assert bounds(onwards) == Bounds(utc(1901, 1, 1), None)
+
     def test_a_circa_extent_relates_like_an_exact_one(self):
         circa = TemporalExtent(
             start_date=utc(2023, 1, 1),

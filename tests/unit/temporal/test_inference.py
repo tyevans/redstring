@@ -6,11 +6,18 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.interval import TemporalRelation
+from kg_builder.domain.interval import Bounds, TemporalRelation, relate_bounds
 from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-from kg_builder.temporal.inference import InferredRelation, infer_relations
+from kg_builder.temporal.inference import (
+    _CANONICAL,
+    INFERRED_RELATIONS,
+    InferredRelation,
+    infer_relations,
+)
 
 TENANT = uuid4()
 
@@ -106,6 +113,68 @@ class TestDirectionIsCanonical:
         assert all(r.relation is not TemporalRelation.AFTER for r in relations)
         assert all(r.relation is not TemporalRelation.DURING for r in relations)
 
+    def test_containment_survives_when_both_extents_start_together(self):
+        """The pair the sort gets wrong. "2023" and "2023-2025" begin at the
+        same instant, so ordering by lower-then-upper bound puts the *shorter*
+        one first -- and `relate` from the shorter to the longer is DURING,
+        which the default filter drops. The edge vanished entirely.
+
+        Direction must come from the relation, not from the sort order."""
+        year = dated(
+            "2023", TemporalExtent(start_date=utc(2023, 1, 1), precision=DatePrecision.YEAR)
+        )
+        span_of_years = dated(
+            "2023-2025",
+            TemporalExtent(
+                start_date=utc(2023, 1, 1),
+                end_date=utc(2025, 1, 1),
+                precision=DatePrecision.YEAR,
+            ),
+        )
+        for order in ([year, span_of_years], [span_of_years, year]):
+            (relation,) = infer_relations(order)
+            assert relation.relation is TemporalRelation.CONTAINS
+            assert relation.source_entity_id == span_of_years.id
+            assert relation.target_entity_id == year.id
+
+    def test_containment_survives_when_both_extents_end_together(self):
+        """The mirror case, which the sort happens to get right -- included so
+        that a fix which merely reverses the sort cannot pass."""
+        longer = dated("longer", span(2020, 2025))
+        shorter = dated("shorter", span(2023, 2025))
+        for order in ([longer, shorter], [shorter, longer]):
+            (relation,) = infer_relations(order)
+            assert relation.relation is TemporalRelation.CONTAINS
+            assert relation.source_entity_id == longer.id
+
+    def test_a_month_opening_its_year_still_relates_to_that_year(self):
+        """Ordinary parser output on both sides: `_parse_partial` produces
+        both of these, and January is exactly the month whose lower bound
+        coincides with its year's."""
+        january = dated(
+            "January 2023",
+            TemporalExtent(start_date=utc(2023, 1, 1), precision=DatePrecision.MONTH),
+        )
+        whole_year = dated(
+            "2023", TemporalExtent(start_date=utc(2023, 1, 1), precision=DatePrecision.YEAR)
+        )
+        (relation,) = infer_relations([january, whole_year])
+        assert relation.relation is TemporalRelation.CONTAINS
+        assert relation.source_entity_id == whole_year.id
+
+    def test_every_related_pair_of_dated_entities_yields_an_edge(self):
+        """The invariant the filter default rests on: no pair that `relate`
+        calls related may be dropped by canonicalisation. Stated over a set
+        containing coincident starts, coincident ends and nesting."""
+        entities = [
+            dated("2023", TemporalExtent(start_date=utc(2023, 1, 1), precision=DatePrecision.YEAR)),
+            dated("2023-2025", span(2023, 2025)),
+            dated("2020-2025", span(2020, 2025)),
+            dated("2050", year(2050)),
+        ]
+        expected = len(entities) * (len(entities) - 1) // 2
+        assert len(infer_relations(entities)) == expected
+
     def test_two_entities_with_identical_extents_are_ordered_by_id(self):
         """`EQUALS` has no earlier side, so the tie-break must be something
         total or the output depends on input order."""
@@ -113,6 +182,95 @@ class TestDirectionIsCanonical:
         (relation,) = infer_relations(pair)
         assert relation.source_entity_id == min(e.id for e in pair)
         assert infer_relations(pair) == infer_relations(list(reversed(pair)))
+
+
+class TestTheInvariantIsStructural:
+    """`INFERRED_RELATIONS` promises that `AFTER` and `DURING` never come out.
+    These assert it against the canonicalisation itself rather than against
+    what the sort happens to feed it.
+
+    Why that matters here specifically: after sorting, `relate_bounds` cannot
+    return `AFTER` at all -- it would require an interval whose upper bound is
+    below its own lower bound. So deleting the `AFTER` entry from `_CANONICAL`
+    passes every behavioural test in this file. That is the same species of
+    reasoning that produced the `DURING` defect: an invariant resting on an
+    argument about sort order rather than on the code. The entry stays, and
+    these tests make it live."""
+
+    def test_the_inverse_map_covers_every_relation_the_default_set_excludes(self):
+        excluded = set(TemporalRelation) - set(INFERRED_RELATIONS)
+        assert set(_CANONICAL) == excluded
+
+    def test_the_inverse_map_lands_inside_the_default_set(self):
+        assert set(_CANONICAL.values()) <= set(INFERRED_RELATIONS)
+
+    @pytest.mark.parametrize(("relation", "inverse"), sorted(_CANONICAL.items()))
+    def test_each_inverse_matches_what_relate_bounds_says_about_the_swap(self, relation, inverse):
+        """Grounded against `relate_bounds`, so this is not the map asserting
+        itself: find a real pair of intervals standing in `relation`, and
+        check the reversed pair genuinely stands in `inverse`."""
+        pairs = {
+            TemporalRelation.AFTER: (
+                Bounds(utc(2020, 1, 1), utc(2021, 1, 1)),
+                Bounds(utc(2000, 1, 1), utc(2001, 1, 1)),
+            ),
+            TemporalRelation.DURING: (
+                Bounds(utc(2000, 1, 1), utc(2001, 1, 1)),
+                Bounds(utc(2000, 1, 1), utc(2010, 1, 1)),
+            ),
+        }
+        first, second = pairs[relation]
+        assert relate_bounds(first, second) is relation
+        assert relate_bounds(second, first) is inverse
+
+    @given(
+        starts=st.lists(st.integers(1500, 2500), min_size=2, max_size=5),
+        widths=st.lists(st.integers(0, 40), min_size=2, max_size=5),
+    )
+    @settings(max_examples=300)
+    def test_no_excluded_relation_ever_reaches_the_output(self, starts, widths):
+        """Over extents that deliberately collide at their endpoints -- shared
+        starts and shared ends are what the widths of 0 and the repeated years
+        manufacture."""
+        entities = [
+            dated(
+                f"e{n}",
+                TemporalExtent(
+                    start_date=utc(start, 1, 1),
+                    end_date=utc(start + width, 1, 1) if width else None,
+                    precision=DatePrecision.YEAR,
+                ),
+            )
+            for n, (start, width) in enumerate(zip(starts, widths, strict=False))
+        ]
+        relations = infer_relations(entities, relations=set(TemporalRelation))
+        assert not {r.relation for r in relations} & set(_CANONICAL)
+
+    @given(
+        starts=st.lists(st.integers(1500, 2500), min_size=2, max_size=5),
+        widths=st.lists(st.integers(0, 40), min_size=2, max_size=5),
+    )
+    @settings(max_examples=300)
+    def test_the_default_set_loses_no_pair_that_relate_calls_related(self, starts, widths):
+        """The property the defect violated. Asking for everything and asking
+        for the default set must return the same number of edges, because the
+        default set is exactly what canonicalisation can produce."""
+        entities = [
+            dated(
+                f"e{n}",
+                TemporalExtent(
+                    start_date=utc(start, 1, 1),
+                    end_date=utc(start + width, 1, 1) if width else None,
+                    precision=DatePrecision.YEAR,
+                ),
+            )
+            for n, (start, width) in enumerate(zip(starts, widths, strict=False))
+        ]
+        distinct = len({e.id for e in entities})
+        assert len(infer_relations(entities)) == distinct * (distinct - 1) // 2
+        assert infer_relations(entities) == infer_relations(
+            entities, relations=set(TemporalRelation)
+        )
 
 
 class TestNotARelationship:

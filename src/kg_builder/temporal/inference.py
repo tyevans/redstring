@@ -33,10 +33,28 @@ The cost is honest and stated: computing on read is O(n^2) in dated entities,
 
 `relate` is symmetric -- `a BEFORE b` and `b AFTER a` are one fact. Emitting
 both would double the output and make "how many relations are there" depend on
-input order. So pairs are canonicalised before comparison: the earlier interval
-is the source, ties broken by entity id, and `AFTER` and `DURING` never appear
-in the output at all. A caller wanting the inverse view can read the edge
-backwards; a caller counting edges gets one answer.
+input order. So each pair is reduced to one edge, and `AFTER` and `DURING`
+never appear in the output: an `AFTER` is emitted as its target's `BEFORE`, a
+`DURING` as its target's `CONTAINS`.
+
+**That reduction happens after the comparison, not before, and the distinction
+is the whole of it.** The first version canonicalised first -- sort the pair by
+interval, call the earlier one the source -- and the invariant above was then
+an *argument* about sort order rather than a property of the code. The argument
+was wrong. `order_key` sorts by lower bound and then by upper bound ascending,
+so two intervals sharing a lower bound put the **shorter** one first, and
+`relate` from shorter to longer is `DURING` -- which `INFERRED_RELATIONS` then
+discarded, losing the edge entirely.
+
+The pair that broke it is not exotic: "2023" and "2023-2025" both come straight
+out of the parser, as do a month and the year it opens, and an event and the
+era that begins with it. Every one of those had no edge at all.
+
+Inverting after the fact makes the invariant true by construction: whatever
+direction the pair arrives in, `_CANONICAL` decides. `order_key` still orders
+the pairs, but now only so that `OVERLAPS` and `EQUALS` -- which are genuinely
+symmetric and have no earlier side -- get a *deterministic* direction rather
+than a correct one. Nothing else in this module depends on it for correctness.
 
 ## `InferredRelation` is not a `Relationship`, deliberately
 
@@ -67,9 +85,21 @@ if TYPE_CHECKING:
 #: that it needs more patience.
 DEFAULT_MAX_PAIRS: Final = 500_000
 
+#: The inverse of each relation, used to reduce a pair to one edge. `BEFORE`
+#: and `CONTAINS` are the directions kept; `AFTER` and `DURING` are emitted as
+#: their opposites with the endpoints swapped. `OVERLAPS` and `EQUALS` are
+#: their own inverses, so for those the pair's order is settled by `order_key`
+#: instead -- deterministic rather than meaningful, because neither has an
+#: earlier side.
+_CANONICAL: Final = {
+    TemporalRelation.AFTER: TemporalRelation.BEFORE,
+    TemporalRelation.DURING: TemporalRelation.CONTAINS,
+}
+
 #: What a caller gets when it does not filter. `AFTER` and `DURING` are absent
-#: because canonical ordering means they are never produced -- listing them
-#: would suggest a filter that silently matches nothing.
+#: because `_CANONICAL` guarantees they are never produced. That guarantee is
+#: now structural; it used to be an argument about sort order, and the argument
+#: was wrong -- see the module docstring.
 INFERRED_RELATIONS: Final = frozenset(
     {
         TemporalRelation.BEFORE,
@@ -143,10 +173,9 @@ def infer_relations(
             f"raise the cap knowingly."
         )
 
-    # Sorted once, so the canonical direction of every pair is just "the one
-    # that comes first here". Deciding it inside the loop would mean swapping
-    # loop variables, which silently corrupts the outer one for the rest of
-    # its inner pass.
+    # Sorted so that `OVERLAPS` and `EQUALS` -- the two relations with no
+    # earlier side -- get a stable direction. It does **not** decide direction
+    # for the asymmetric relations; `_CANONICAL` does, after the comparison.
     dated.sort(key=lambda pair: order_key(pair[1], pair[0].id))
 
     wanted = frozenset(relations)
@@ -154,16 +183,19 @@ def infer_relations(
     for index, (first, first_bounds) in enumerate(dated):
         for second, second_bounds in dated[index + 1 :]:
             relation = relate_bounds(first_bounds, second_bounds)
+            inverse = _CANONICAL.get(relation)
+            source, target = (second, first) if inverse is not None else (first, second)
+            relation = inverse if inverse is not None else relation
             if relation in wanted:
                 found.append(
                     InferredRelation(
-                        source_entity_id=first.id,
-                        target_entity_id=second.id,
+                        source_entity_id=source.id,
+                        target_entity_id=target.id,
                         relation=relation,
-                        source_name=first.name,
-                        target_name=second.name,
-                        source_extent=first.temporal,
-                        target_extent=second.temporal,
+                        source_name=source.name,
+                        target_name=target.name,
+                        source_extent=source.temporal,
+                        target_extent=target.temporal,
                     )
                 )
     return sorted(found)
