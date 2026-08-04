@@ -234,6 +234,97 @@ sheds. Dependencies dropped from the core: `scrapy`, `trafilatura`,
 `extraction/llm_extractor.py` imports `unstructured` — document parsing
 inside extraction. Same boundary violation; extraction takes text.
 
+## LLM strategy
+
+Ollama-specific and OpenAI-specific extraction code goes. LangChain supplies
+chat and embedding models; LangGraph orchestrates multi-step extraction;
+deepagents provides an agentic extraction mode. `pydantic-ai` leaves
+entirely, which resolves BACKLOG **B19** (the `==0.0.31` pin) and **B2**
+(the Anthropic stub) by deletion.
+
+### Verified test endpoint
+
+`http://192.168.1.14:8080/v1` — OpenAI-compatible, confirmed serving:
+
+| Model | Role | Verified |
+|---|---|---|
+| `qwen3.6-27b-mtp` | chat | `POST /v1/chat/completions` → 200 |
+| `nomic-embed-text` | embeddings | `POST /v1/embeddings` → 200, **dim 768** |
+
+Unlike the Ollama box — which lists `gpt-oss:20b` but cannot load it
+(BACKLOG B12) — this endpoint actually serves, so **B12 becomes fixable**
+and extraction accuracy can be measured for the first time.
+
+Note: `qwen3.6-27b-mtp` returned 200 with an empty
+`choices[0].message.content` on a trivial prompt. Confirm the response shape
+before wiring it; do not assume `.content` is populated.
+
+### Ports: LangChain goes behind them, not through them
+
+```
+LlmProvider.extract(text, schema, *, model?) -> structured result
+EmbeddingProvider.embed(texts) -> list[vector]
+EmbeddingProvider.dimension -> int
+```
+
+LangChain's `BaseChatModel` and `Embeddings` are **adapter
+implementations**, never the port. `domain/` must import nothing from
+`kg_builder` beyond `domain/`, and certainly not an LLM framework — leaking
+`AIMessage` into a domain type would undo the layering. LangChain's
+interfaces also move fast; a breaking change should touch one adapter.
+
+### Embedding dimension is configuration, not a constant
+
+`nomic-embed-text` is 768-dimensional. The codebase hardcodes 1024 (bge-m3)
+at `config.py:228` and — worse — bakes it into the pgvector **column type**
+at `models/extracted_entity.py:385` as `Vector(EMBEDDING_DIMENSION)`.
+
+`VectorStore` therefore takes dimension as configuration and **rejects
+vectors whose length disagrees with it**. A dimension mismatch is a silent
+correctness catastrophe that surfaces only as poor search results, so the
+in-memory adapter must enforce the same check pgvector would — otherwise the
+compliance suite passes on mixed dimensions that a real store rejects.
+Switching embedding models means a new collection, not an in-place change.
+
+### `ExtractionMethod` must stop naming vendors
+
+`domain/entity.py` currently carries `LLM_OLLAMA`, `LLM_OPENAI`,
+`LLM_CLAUDE`, copied from the ORM. That is the wrong abstraction once
+providers are LangChain adapters: the domain cares *how* an entity was
+derived, not which vendor answered.
+
+```
+ExtractionMethod: LLM | PATTERN | SCHEMA_ORG | OPEN_GRAPH | HYBRID | MANUAL
+```
+
+with the concrete model recorded alongside as provenance
+(`model: str | None`, e.g. `"qwen3.6-27b-mtp"`) — strictly more useful, since
+it survives model upgrades and supports "re-extract everything the old model
+touched". **This must land before slice 5b freezes the event schemas**: an
+`ExtractionMethod` inside a persisted event is permanent.
+
+### LangGraph: scoped, or it competes with the event log
+
+LangGraph fits *within-run* orchestration — chunk → extract → merge → resolve
+is genuinely a stateful graph, and that logic is hand-rolled today. The
+boundary that must hold:
+
+- **LangGraph state is ephemeral working state for one extraction run.**
+- **The event log is durable truth.**
+
+Do not use LangGraph's checkpointer as a second durable store; that
+reintroduces exactly the dual-write problem this re-architecture exists to
+remove. A run that dies is re-run, not resumed from a competing checkpoint.
+
+### deepagents: a second mode, not the default path
+
+Agentic extraction — plan, use tools, iterate — is slower, costlier, and less
+reproducible than deterministic bulk extraction. Those are the right
+trade-offs for some documents and the wrong ones for a million. It arrives
+behind the same `LlmProvider` port, selected per run, *after* the
+deterministic path works end to end. It must not become the default by
+accident.
+
 ## Consolidation design
 
 Consolidation is the part with the most real design work in it. It is not a
