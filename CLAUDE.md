@@ -1,7 +1,11 @@
 # kg-builder
 
-Knowledge graph construction: entity extraction, preprocessing, scraping,
-consolidation, and Neo4j sync.
+Knowledge graph construction: entity extraction, consolidation, and the
+graph/vector stores those project into.
+
+The library **never fetches content** — document sourcing is a different
+problem set — and extraction **writes to no store**: it emits events, and
+projections do the writing.
 
 ## Environment
 
@@ -155,7 +159,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape nine times,
+  testing the difference.** This project has hit the same shape eleven times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
