@@ -101,6 +101,14 @@ two commits, and nothing said a word. Same hazard, same commit, opposite
 outcomes, decided entirely by whether someone had written the staleness check
 as a test.
 
+**Both legacy exemption lists are now empty, and the empty one is deleted.**
+As of slice 10, ruff's `per-file-ignores` carries no legacy entry and mypy
+carries no `exclude` at all — `--strict` covers every module in the package.
+The mypy key was deleted rather than kept empty, per the paragraph below: an
+exclusion over an empty set excludes nothing, and a staleness guard written
+over it would pass vacuously. Re-adding either is now a visible decision in
+review rather than an edit to an existing list.
+
 So: **every exemption list needs a test that its entries still match something.**
 And when a list empties, decide deliberately between two different things —
 keeping it empty (no exceptions admitted, and adding one is visible in review)
@@ -156,13 +164,23 @@ removing exemptions promptly than any amount of accumulated strictness debt.
 to lowest:
 
 ```
+composition
 extraction : consolidation : temporal : graph : vector : llm   (siblings)
 projections
 aggregates
-events : cache : encryption : config : context
+events : encryption
 ports
 domain
 ```
+
+**`composition` is the top layer and holds one module.** `extraction` may not
+import `projections` — that is what keeps a store reference out of the
+pipeline — but something has to hold both or the library ships two halves and
+a diagram. `build_graph` is that something. A second module wanting in here
+should have to say what it composes.
+
+`cache`, `config` and `context` left the line in slice 10 with their modules:
+a settings object, a Redis singleton and a re-export shim, none with a caller.
 
 `containers = ["kg_builder"]` with **`exhaustive = true`**: a new top-level
 package is a contract failure until it is placed deliberately. That is the

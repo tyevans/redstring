@@ -116,6 +116,37 @@ class TestTheModelIsAskedOnce:
         assert len(provider.calls) == 2
 
 
+class TestTheSignatureAndTheReportAreThemselvesContracts:
+    """Two shapes no behavioural test can see. Both found by cosmic-ray.
+
+    A surviving mutant in each case produced a `build_graph` that did the
+    right thing and a `GraphBuildReport` that held the right numbers, so
+    every other test in this file passed.
+    """
+
+    async def test_everything_after_the_document_must_be_passed_by_name(self) -> None:
+        # `*` mutated to `/` survived: keyword calls keep working, and
+        # `build_graph(doc, provider, store, tenant)` quietly becomes legal.
+        # `provider`, `store` and `tenant_id` are three arguments of three
+        # unrelated types whose positional order nothing would remind a
+        # caller of, and the point of the `*` is that they never have one.
+        with pytest.raises(TypeError):
+            await build_graph(  # type: ignore[misc]
+                document(), CountingProvider(), InMemoryGraphStore(), TENANT_ID
+            )
+
+    async def test_the_report_cannot_be_edited_after_the_fact(self) -> None:
+        # `frozen=True` mutated to `frozen=False` survived. A report is a
+        # record of what happened; a caller that can rewrite `entities` can
+        # make a log line disagree with the store it describes.
+        report = await build_graph(
+            document(), provider=CountingProvider(), store=InMemoryGraphStore(), tenant_id=TENANT_ID
+        )
+
+        with pytest.raises(AttributeError):
+            report.entities = 99  # type: ignore[misc]
+
+
 class TestWhichPromptIsSent:
     async def test_no_domain_sends_the_general_prompt(self) -> None:
         provider = CountingProvider()
