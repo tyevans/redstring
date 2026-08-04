@@ -103,7 +103,7 @@ never avoided optimistic concurrency — it only meant hand-rolling it.
 
 | Aggregate | Id | Streams | Owns |
 |---|---|---|---|
-| `Document` | `SourceDocument.id` | short, one per document, parallel across documents | extraction is idempotent per model version |
+| `Document` | `uuid5(tenant_id, SourceDocument.id)` | short, one per document, parallel across documents | extraction is idempotent per model version |
 | `ConsolidationLog` | `tenant_id` | long, serialised per tenant, `EveryNEvents` snapshots | the merge invariants below |
 
 **Not `Entity`** — that part of the original objection stands.
@@ -416,10 +416,11 @@ A merge is an `EntitiesMerged` event; undoing it is a compensating
 recoverable from the log — that is what a log is for. No history table, and
 no displaced-value payload smuggled onto an alias edge either.
 
-Note for slice 5b: slice 2's `Alias` type carries a `displaced` dict, added
-when undo was still a storage problem. Once undo is a compensating event
-that field is redundant with the log. Decide there whether the projection
-still wants it as a read optimisation, and delete it if not.
+Settled in slice 5b: `Alias.displaced` is **deleted**. What a merge displaces
+is edge endpoints, and those are carried in typed form by
+`RelationshipRedirection` on `EntitiesMerged` -- the edge before and after,
+with `after is None` meaning the merge dropped it. See
+`docs/adr/0001-event-log-schema-and-granularity.md`.
 
 ## Test infrastructure
 

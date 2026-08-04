@@ -777,6 +777,32 @@ Replace with `ConfigDict`. Removed in Pydantic v3.
 
 These were decided against *for now*, with reasons. Revisit consciously.
 
+### B36. Free-form event payload dicts can hold a NUL that `jsonb` refuses
+
+`domain/entity.py` (`properties`, `external_ids`) and
+`domain/relationship.py` (`properties`) are `dict[str, Any]` with no
+validation, and they reach the event log as payloads. Postgres `jsonb`
+**cannot store a NUL character in text** -- it rejects the write outright --
+so an entity carrying one is accepted by every in-memory adapter and refused
+by the first persistent event store it reaches.
+
+This is not hypothetical here: slice 5 hit exactly this on
+`VectorRecord.metadata`, found it with a round-trip property test, and fixed
+it in `domain/vector.py::_reject_nul` rather than in either adapter, so every
+adapter would reject it identically.
+
+Deferred rather than fixed in slice 5b for one reason: `_reject_nul` is
+private to `domain/vector.py`, and sharing it means either a cross-module
+private import or a new home for it, and slice 5b's permanent surface was
+worth keeping minimal. Deferring is safe in a way that deferring a *schema*
+decision is not -- adding the rejection later only refuses data that could
+never have been persisted anyway, so no stored event becomes invalid.
+
+To fix: move `_reject_nul` somewhere both can reach (a `domain/_json.py`, or
+onto `domain/normalization.py`), and apply it in field validators on the three
+fields above. The `VectorRecord` docstring explains why stripping or escaping
+the NUL was rejected in favour of raising.
+
 ### B34. The graph fold needs order-preserving redelivery, and cannot detect otherwise
 
 `projections/graph.py` -- a redelivered `DocumentExtracted` that arrives
