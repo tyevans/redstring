@@ -121,6 +121,22 @@ exchange rate. Measure on a real corpus first. The hypothesis suite in
 text-generating properties for this reason; if that is ever tightened, this is
 what will trip it.
 
+**It has now trapped a second file, which is the part to note.** Slice 9's
+first deletion commit failed the gate on
+`tests/unit/extraction/test_merging.py::TestProperties::test_merging_the_same_chunk_twice_equals_merging_it_once`
+at **299ms** against the 200ms default, in a commit that changed nothing in
+that file. Every property in that class builds its input through
+`map_extraction`, so all seven are exposed and *which one* fails is decided by
+which property an xdist worker happens to draw first -- meaning the failure
+moves between runs and between files. All seven now set `deadline=None`, with
+the reason at the top of the class.
+
+So the blast radius is "any hypothesis property whose input passes through
+`map_extraction`", not two named tests, and a new one inherits the trap
+silently. That is the argument for actually measuring and fixing the call
+cost rather than continuing to drop deadlines: the third occurrence will be in
+a file whose author has no idea `dateparser` is involved.
+
 ### B51. `test_delay_between_retries` asserts on wall-clock time under xdist
 
 `tests/unit/llm/test_retry.py::TestRetryTiming::test_delay_between_retries`
