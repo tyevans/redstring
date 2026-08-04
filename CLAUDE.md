@@ -189,7 +189,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape thirteen times,
+  testing the difference.** This project has hit the same shape fifteen times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -207,8 +207,19 @@ reading the code:
   | a collection grouped *after* the deduplication being tested | any invariant about duplicates — every group is a singleton and the assertion cannot fail |
   | ids compared after a *store* handed them back | `is` where `==` was meant — both adapters happen to return the same object, and any adapter that rebuilds the id finds nothing |
   | two `len()` calls on collections under 257 items | `is not` where `!=` was meant — the two calls return the *same* int object, and the check inverts above the cache |
+  | an expectation written in terms of the constant under test (`start + INSTANT`) | *any* value of that constant, including one that makes the interval empty |
+  | asserting only the *precision* of a parsed date, never where it lands | every wrong arithmetic — "Q3" moving to January, April or August all keep MONTH precision |
 
-  **Four of the thirteen rows are identity-vs-equality**, and they are the
+  The last two are one lesson from different angles: **an assertion has to be
+  independent of the thing it checks, and it has to check every claim the code
+  makes.** Writing the expectation as `start + INSTANT` makes the test true by
+  construction for any `INSTANT`, zero included. And a parsed date is two
+  separate claims — the value and the precision — so a suite that asserts one
+  of them leaves the other to nine surviving mutants. Write the literal you
+  expect, and assert every claim the function makes rather than the one that
+  was convenient.
+
+  **Four of the fifteen rows are identity-vs-equality**, and they are the
   ones to expect rather than to be surprised by. Three fired because the test
   value sat inside a CPython cache — interned strings, cached small ints, and
   `len()` on a short collection returning that same cached int. Test numeric
