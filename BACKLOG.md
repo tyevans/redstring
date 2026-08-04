@@ -1081,6 +1081,27 @@ subprocess and its survivors in slice 5b matched hand verification once the
 cache was cleared -- but nothing proves it is immune either, and a run that
 disagrees with a hand check should suspect this first.
 
+**Deleting a package leaves its `__pycache__` behind, and `git status` stays
+clean.** `git rm -r` removes the tracked `.py` files; the ignored `.pyc` tree
+survives as a source-less directory under a package path. Slice 6 left two
+(`inference/`, `inference/providers/`) and slice 7 left two more
+(`services/consolidation/`, and the mirrored test directories) before noticing.
+
+Harmless in itself -- Python 3 will not import from a `__pycache__` without
+its source -- but it is this entry's trap in miniature: a directory that looks
+like a package, holds bytecode for modules that no longer exist, and is
+invisible to every check the gate runs. Slice 9 deletes a much larger tree and
+will produce a crop of them.
+
+Delete them in the same commit, and note that doing so produces **no diff**,
+so the commit needs another reason to exist. To find them:
+
+```
+find src tests -type d -name __pycache__ -exec sh -c \
+  '[ -z "$(find "$(dirname "$1")" -maxdepth 1 -name "*.py" -print -quit)" ] \
+   && echo "$(dirname "$1")"' _ {} \;
+```
+
 ### B38. The `eventsourcing` extra no longer pulls `eventsource-py[all]`
 
 `pyproject.toml` declares `eventsourcing = ["eventsource-py>=0.9.1,<0.11"]`.
