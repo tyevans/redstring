@@ -285,6 +285,11 @@ def _parse_partial(text: str) -> _Parsed | None:
     """
     match = _YEAR_ONLY.match(text)
     if match:
+        # `group(1)` and `group(0)` are the same string here -- the pattern is
+        # `^(\d{4})$`, so the capture spans the whole match. A cosmic-ray
+        # mutant swapping them is equivalent, and is recorded rather than
+        # chased. Note it stops being equivalent the moment this pattern grows
+        # anything outside the group.
         return _Parsed(datetime(int(match.group(1)), 1, 1, tzinfo=UTC), None, DatePrecision.YEAR)
 
     match = _MONTH_YEAR.match(text)

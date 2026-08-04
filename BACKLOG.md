@@ -211,6 +211,30 @@ suite is where the gap should be closed -- a round-trip assertion on `temporal`
 in the shared suite covers every adapter at once, which is the point of it
 having one.
 
+### B54. 793 of `temporal_parsing.py`'s 850 mutants were never run
+
+Slice 8 ran cosmic-ray over `domain/interval.py` (217, all classified),
+`temporal/inference.py` (95, all classified) and **the precision logic only**
+of `domain/temporal_parsing.py` (57 of 850). The remaining 793 cover the
+uncertainty patterns, the marker stripping, the range and period regexes, the
+ambiguity probe and `render_temporal`.
+
+They were not run because each mutant costs ~70 seconds: it re-runs the whole
+80-test file, which includes two hypothesis properties at 300 examples and a
+`dateparser` import. 850 x 70s is about seventeen hours. The 57 that were run
+found a real defect -- the quarter arithmetic, closed in `44e213d` -- so the
+remainder is likely to be worth the time rather than not.
+
+**How to make it affordable** rather than just waiting: give the session a
+narrower `test-command`. The round-trip properties are the expensive part and
+they exercise `render_temporal` and the partial-date strategies; a session
+aimed at the uncertainty patterns can run against the marker tests alone in a
+second or two per mutant. Split by target, not by patience.
+
+The mechanism for scoping is worth keeping: cosmic-ray has no line filter, so
+`init` the full session and then `DELETE FROM mutation_specs` / `work_items`
+for the rows whose `start_pos_row` is outside the range of interest.
+
 ### B43. A merge plans against a graph read outside its concurrency window
 
 `consolidation/service.py::merge` reads `get_relationships_for` *before*
