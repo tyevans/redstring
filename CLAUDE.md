@@ -14,6 +14,14 @@ use `uv add`, `uv add --optional <extra>`, `uv remove`.
 
 Run anything project-scoped through `uv run`.
 
+**`uv add` and `uv remove` re-sync, and can silently narrow the installed
+extras back to `dev`.** Re-sync with `--all-extras` after any dependency
+change. This one behaviour is the root cause of both incidents recorded further
+down this file: slice 7's phantom "0 survivors out of 426" mutation run, and
+slice 9's 47 phantom mypy errors in files nobody had touched. Neither presented
+as a packaging problem — one looked like an outstanding test suite and the
+other like a type regression.
+
 ## Deferred work goes in BACKLOG.md — always
 
 **Anything you notice and do not fix must land in `BACKLOG.md` in the same
