@@ -10,6 +10,7 @@ in slice 3.
 from uuid import uuid4
 
 import pytest
+from eventsource.domain.event_registry import get_event_class
 
 from kg_builder.events import KG_EVENT_TYPES
 from kg_builder.events.streams import CONSOLIDATION_CATEGORY, DOCUMENT_CATEGORY
@@ -80,3 +81,21 @@ def test_every_event_rejects_fields_it_does_not_declare(event_type):
                 "not_a_field_of_any_event": 1,
             }
         )
+
+
+@pytest.mark.parametrize("event_type", KG_EVENT_TYPES, ids=lambda t: t.__name__)
+def test_every_event_resolves_from_the_registry_by_its_wire_name(event_type):
+    """`@register_event` is what turns a stored event back into its class.
+
+    Unregistered, an event round-trips through JSON as a dict and nothing
+    fails until a persistent store tries to rehydrate one -- long after the
+    events were written. The in-memory store keeps object identity, so no
+    other test in this suite can see the difference, which is exactly why a
+    cosmic-ray mutant deleting the decorator survived until this existed.
+
+    It also guards the reverse: slice 5b had to *un*-register the legacy
+    consolidation events because they were holding the wire names this schema
+    needs, and the registry refuses duplicates. If they ever come back, this
+    is what says so.
+    """
+    assert get_event_class(event_type.event_type_name()) is event_type
