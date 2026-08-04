@@ -36,7 +36,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
@@ -56,9 +55,6 @@ logger = logging.getLogger(__name__)
 
 # Default schema directory
 DEFAULT_SCHEMA_DIR = get_schema_directory()
-
-# Environment variable to enable hot reload in development
-HOT_RELOAD_ENV_VAR = "DOMAIN_SCHEMA_HOT_RELOAD"
 
 
 class DomainSchemaRegistry:
@@ -98,23 +94,20 @@ class DomainSchemaRegistry:
         Args:
             schema_dir: Directory containing YAML schema files.
                        Defaults to the built-in schemas directory.
-            hot_reload: Enable hot reload for development. Defaults to
-                       the value of DOMAIN_SCHEMA_HOT_RELOAD env var.
+            hot_reload: Re-read the YAML on every access. Off by default,
+                       and a caller argument rather than an environment
+                       variable.
         """
         self._schema_dir = schema_dir or DEFAULT_SCHEMA_DIR
         self._schemas: dict[str, DomainSchema] = {}
         self._loaded = False
         self._load_lock = Lock()
 
-        # Determine hot reload setting
-        if hot_reload is not None:
-            self._hot_reload = hot_reload
-        else:
-            self._hot_reload = os.getenv(HOT_RELOAD_ENV_VAR, "").lower() in (
-                "true",
-                "1",
-                "yes",
-            )
+        # Off unless the caller asks. It used to default to the
+        # `DOMAIN_SCHEMA_HOT_RELOAD` environment variable, which made a
+        # library's disk-access behaviour depend on the shell that started the
+        # process -- see `tests/unit/test_library_reads_no_environment.py`.
+        self._hot_reload = bool(hot_reload)
 
         if self._hot_reload:
             logger.warning(

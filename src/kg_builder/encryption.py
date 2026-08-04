@@ -5,15 +5,18 @@ Provides field-level encryption for sensitive configuration values like API keys
 with per-tenant key derivation for enhanced isolation.
 
 Architecture:
-- Master key stored in environment variable (ENCRYPTION_MASTER_KEY)
+- Master key supplied by the caller. There was a `get_encryption_service()`
+  singleton that read `ENCRYPTION_MASTER_KEY` and `ENCRYPTION_ENABLED` off a
+  process-wide settings object; it had no caller, and it is what kept
+  `kg_builder.config` alive (BACKLOG B56). Construct the service.
 - Per-tenant keys derived using HKDF (HMAC-based Key Derivation Function)
 - Fernet symmetric encryption (AES-128-CBC with HMAC-SHA256)
 - Audit logging for all encryption/decryption operations
 
 Usage:
-    from kg_builder.encryption import get_encryption_service
+    from kg_builder.encryption import EncryptionService
 
-    service = get_encryption_service()
+    service = EncryptionService(master_key=..., enabled=True)
     encrypted = service.encrypt("api-key-value", tenant_id)
     decrypted = service.decrypt(encrypted, tenant_id)
 
@@ -462,39 +465,3 @@ class EncryptionService:
         if not value or len(value) <= visible_chars:
             return "****"
         return f"****{value[-visible_chars:]}"
-
-
-# Global service instance (lazy initialization)
-_encryption_service: EncryptionService | None = None
-
-
-def get_encryption_service() -> EncryptionService:
-    """
-    Get the global encryption service instance.
-
-    Lazily initializes from settings on first call.
-
-    Returns:
-        EncryptionService instance
-    """
-    global _encryption_service
-    if _encryption_service is None:
-        from kg_builder.config import settings
-
-        _encryption_service = EncryptionService(
-            master_key=settings.ENCRYPTION_MASTER_KEY,
-            enabled=settings.ENCRYPTION_ENABLED,
-        )
-    return _encryption_service
-
-
-def reset_encryption_service() -> None:
-    """
-    Reset the global encryption service.
-
-    Useful for testing or after configuration changes.
-    """
-    global _encryption_service
-    if _encryption_service:
-        _encryption_service.clear_tenant_cache()
-    _encryption_service = None

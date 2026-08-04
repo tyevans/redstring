@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.12,<3",
-    "pydantic-settings>=2.12,<3",
     "asyncpg>=0.31.0",
     "httpx>=0.25.0",
     "numpy>=1.26.0",
@@ -304,7 +303,13 @@ layers = [
     # on the line below; both went in slice 9, as did `schemas`
     # from the sibling line above. There is no ORM and no session for a layer
     # to be built around.
-    "events : cache : encryption : config : context",
+    # `cache` and `config` left this line in slice 10, with the modules.
+    # `config.py` was a `pydantic_settings.BaseSettings` of 287 lines with four
+    # keys anything read; `cache.py` was a module-level Redis singleton with no
+    # caller at all. A library takes its configuration through constructor
+    # arguments -- `tests/unit/test_library_reads_no_environment.py` is what
+    # keeps that true now.
+    "events : encryption : context",
     # Ports sit directly above `domain` and below every adapter: an adapter
     # (graph.adapters) may import its port, never the reverse.
     "ports",
