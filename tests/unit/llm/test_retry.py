@@ -1,60 +1,36 @@
-"""
-Unit tests for retry logic with exponential backoff.
+"""Retry with exponential backoff and jitter.
 
-Tests cover:
-- ExtractionRetryPolicy configuration and defaults
-- get_delay method exponential backoff calculation
-- Jitter application and variation
-- with_retry decorator success and failure scenarios
-- RetryExhausted exception behavior
+The import preamble this module used to carry is gone. It inserted a
+`MagicMock` at `sys.modules["kg_builder.config"]` and then loaded
+`retry.py` by absolute filesystem path, because the real module read
+`settings.OLLAMA_MAX_RETRIES` at construction and importing it dragged in the
+whole config chain. Slice 6 replaced that read with `DEFAULT_MAX_RETRIES`, so
+a plain import works and the module no longer poisons `sys.modules` for every
+test that runs after it -- part of BACKLOG B10d.
 """
 
 import asyncio
-import importlib
-import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-# Create a mock settings module before importing retry
-# This avoids the full import chain through __init__.py
-_mock_settings = MagicMock()
-_mock_settings.OLLAMA_MAX_RETRIES = 3
-
-# Create mock config module
-_mock_config = MagicMock()
-_mock_config.settings = _mock_settings
-
-# Insert our mock before importing retry module
-sys.modules["kg_builder.config"] = _mock_config
-
-# Now we need to import retry module directly without going through __init__.py
-# We use importlib to load just the retry module
-import importlib.util
-
-spec = importlib.util.spec_from_file_location(
-    "kg_builder.extraction.retry",
-    "/home/ty/workspace/kg-builder/src/kg_builder/extraction/retry.py",
+import kg_builder.llm.retry as retry_module
+from kg_builder.llm.retry import (
+    DEFAULT_MAX_RETRIES,
+    ExtractionRetryPolicy,
+    RetryExhausted,
+    with_retry,
 )
-retry_module = importlib.util.module_from_spec(spec)
-sys.modules["kg_builder.extraction.retry"] = retry_module
-spec.loader.exec_module(retry_module)
-
-# Import the classes from the loaded module
-ExtractionRetryPolicy = retry_module.ExtractionRetryPolicy
-RetryExhausted = retry_module.RetryExhausted
-with_retry = retry_module.with_retry
 
 
 class TestExtractionRetryPolicy:
     """Tests for ExtractionRetryPolicy class."""
 
     def test_default_values(self):
-        """Test that default values are set correctly from settings."""
-        # Settings are mocked at module level with OLLAMA_MAX_RETRIES = 3
+        """The defaults a caller gets without configuring anything."""
         policy = ExtractionRetryPolicy()
 
-        assert policy.max_retries == 3
+        assert policy.max_retries == DEFAULT_MAX_RETRIES
         assert policy.initial_delay == 1.0
         assert policy.max_delay == 60.0
         assert policy.multiplier == 2.0
@@ -93,15 +69,15 @@ class TestExtractionRetryPolicy:
 
     def test_validation_multiplier_less_than_one(self):
         """Test that multiplier less than 1 raises ValueError."""
-        with pytest.raises(ValueError, match="multiplier must be at least 1.0"):
+        with pytest.raises(ValueError, match=r"multiplier must be at least 1\.0"):
             ExtractionRetryPolicy(multiplier=0.5)
 
     def test_validation_jitter_out_of_range(self):
         """Test that jitter outside 0-1 range raises ValueError."""
-        with pytest.raises(ValueError, match="jitter must be between 0.0 and 1.0"):
+        with pytest.raises(ValueError, match=r"jitter must be between 0\.0 and 1\.0"):
             ExtractionRetryPolicy(jitter=1.5)
 
-        with pytest.raises(ValueError, match="jitter must be between 0.0 and 1.0"):
+        with pytest.raises(ValueError, match=r"jitter must be between 0\.0 and 1\.0"):
             ExtractionRetryPolicy(jitter=-0.1)
 
     def test_repr(self):

@@ -11,14 +11,13 @@ The ExtractionStrategyRouter coordinates between:
 Usage:
     from kg_builder.extraction.strategy_router import (
         ExtractionStrategyRouter,
-        get_strategy_router,
         route_extraction_strategy,
     )
     from kg_builder.models.scraping_job import ScrapingJob
 
     # Using the router class
     router = ExtractionStrategyRouter(
-        inference_provider=ollama_provider,
+        inference_provider=llm_provider,
     )
     strategy = await router.route(job, content)
 
@@ -48,8 +47,8 @@ from kg_builder.extraction.domains.registry import (
 from kg_builder.extraction.prompt_generator import DomainPromptGenerator
 
 if TYPE_CHECKING:
-    from kg_builder.inference.providers.base import InferenceProvider
     from kg_builder.models.scraping_job import ScrapingJob
+    from kg_builder.ports.llm_provider import LlmProvider
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +103,7 @@ class ExtractionStrategyRouter:
 
     def __init__(
         self,
-        inference_provider: InferenceProvider | None = None,
+        inference_provider: LlmProvider | None = None,
         *,
         classifier: ContentClassifier | None = None,
         prompt_generator: DomainPromptGenerator | None = None,
@@ -478,7 +477,7 @@ class ExtractionStrategyRouterFactory:
         @router.post("/extract")
         async def extract(
             factory: ExtractionStrategyRouterFactory = Depends(get_strategy_router_factory),
-            inference_provider: InferenceProvider = Depends(get_inference_provider),
+            inference_provider: LlmProvider = Depends(get_llm_provider),
         ):
             router = factory.create(inference_provider=inference_provider)
             strategy = await router.route(job, content)
@@ -486,7 +485,7 @@ class ExtractionStrategyRouterFactory:
 
     def create(
         self,
-        inference_provider: InferenceProvider | None = None,
+        inference_provider: LlmProvider | None = None,
         *,
         classifier: ContentClassifier | None = None,
         prompt_generator: DomainPromptGenerator | None = None,
@@ -534,7 +533,7 @@ async def route_extraction_strategy(
     job: ScrapingJob,
     content: str,
     *,
-    inference_provider: InferenceProvider | None = None,
+    inference_provider: LlmProvider | None = None,
     tenant_id: str | None = None,
     job_update_callback: JobUpdateCallback | None = None,
 ) -> ExtractionStrategy:
@@ -557,7 +556,7 @@ async def route_extraction_strategy(
         strategy = await route_extraction_strategy(
             job=scraping_job,
             content=page_content,
-            inference_provider=ollama_provider,
+            inference_provider=llm_provider,
         )
 
         if strategy.is_adaptive:
@@ -575,56 +574,10 @@ async def route_extraction_strategy(
     return await router.route(job, content, tenant_id=tenant_id)
 
 
-# Process-wide router, for callers with no dependency-injection container to
-# hang one off. Prefer ExtractionStrategyRouterFactory wherever you can inject:
-# this singleton keeps whichever inference provider it was first built with,
-# which is exactly the hidden global state the factory exists to avoid.
-_router: ExtractionStrategyRouter | None = None
-
-
-def get_strategy_router(
-    inference_provider: InferenceProvider | None = None,
-    *,
-    classifier: ContentClassifier | None = None,
-    prompt_generator: DomainPromptGenerator | None = None,
-    registry: DomainSchemaRegistry | None = None,
-    job_update_callback: JobUpdateCallback | None = None,
-    confidence_threshold: float = 0.5,
-) -> ExtractionStrategyRouter:
-    """Get the shared ExtractionStrategyRouter, creating it on first call.
-
-    Arguments are used only when the instance is created; later calls return
-    the existing router and ignore them. Call `reset_strategy_router()` to
-    build a new one.
-
-    Returns:
-        The shared ExtractionStrategyRouter instance
-    """
-    global _router
-    if _router is None:
-        _router = _factory.create(
-            inference_provider=inference_provider,
-            classifier=classifier,
-            prompt_generator=prompt_generator,
-            registry=registry,
-            job_update_callback=job_update_callback,
-            confidence_threshold=confidence_threshold,
-        )
-    return _router
-
-
-def reset_strategy_router() -> None:
-    """Discard the shared router so the next get_strategy_router() rebuilds it."""
-    global _router
-    _router = None
-
-
 __all__ = [
     "ExtractionStrategyRouter",
     "ExtractionStrategyRouterFactory",
     "JobUpdateCallback",
-    "get_strategy_router",
     "get_strategy_router_factory",
-    "reset_strategy_router",
     "route_extraction_strategy",
 ]

@@ -28,8 +28,6 @@ from kg_builder.extraction.domains.models import (
 # Import directly from modules to avoid database dependencies
 from kg_builder.extraction.strategy_router import (
     ExtractionStrategyRouter,
-    get_strategy_router,
-    reset_strategy_router,
     route_extraction_strategy,
 )
 
@@ -656,27 +654,12 @@ class TestSchemaSnapshot:
 class TestConvenienceFunctions:
     """Tests for module-level convenience functions."""
 
-    @pytest.fixture(autouse=True)
-    def reset_singleton(self):
-        """Reset singleton before each test."""
-        reset_strategy_router()
-        yield
-        reset_strategy_router()
-
-    def test_get_strategy_router_returns_singleton(self, mock_provider):
-        """Test that get_strategy_router returns same instance."""
-        router1 = get_strategy_router(inference_provider=mock_provider)
-        router2 = get_strategy_router()
-
-        assert router1 is router2
-
-    def test_reset_strategy_router(self, mock_provider):
-        """Test that reset creates new instance."""
-        router1 = get_strategy_router(inference_provider=mock_provider)
-        reset_strategy_router()
-        router2 = get_strategy_router(inference_provider=mock_provider)
-
-        assert router1 is not router2
+    # `get_strategy_router` / `reset_strategy_router` and their three tests
+    # were deleted in slice 6, closing BACKLOG B25. The singleton kept
+    # whichever provider it was first built with, which is the hidden global
+    # state `ExtractionStrategyRouterFactory` exists to avoid -- and B25 asked
+    # for one accessor to be chosen rather than both left as equals. The
+    # factory is the supported one.
 
     @pytest.mark.asyncio
     async def test_route_extraction_strategy_function(self, mock_job, sample_content):

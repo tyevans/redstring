@@ -3,18 +3,22 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **2392 tests pass, 0 fail** in the
-default gate, plus **177 `integration` tests** — 106 against a real Neo4j
-(slice 4) and 63 against real pgvector (slice 5) — from
-`docker-compose.test.yml`. Coverage baseline 70.12. Slice 5b added the event
-log, the two aggregates, and the projections, and moved the project onto
-eventsource-py 0.9.1+ (see B38); the replay-equivalence suite runs in the
-default gate, not under `integration`. Note that the two suites
+Status of the tree as of the last update: **2358 tests pass, 0 fail, 0 skipped**
+in the default gate, plus **185 `integration` tests** — 106 against a real Neo4j
+(slice 4), 63 against real pgvector (slice 5), and 9 against a live
+`qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`). The first two need
+`docker-compose.test.yml`. Slice 5b added the event log, the two aggregates and
+the projections, and moved the project onto eventsource-py 0.9.1+ (see B38);
+slice 6 rebuilt extraction on the `LlmProvider` port and deleted the
+vendor-specific extractors, `kg_builder.inference` and `kg_builder.preprocessing`
+(the count falls because ~1400 lines of Redis-mocking transport tests were
+replaced by ~300 against a real in-memory `Cache`). The replay-equivalence suite
+runs in the default gate, not under `integration`. Note that the two suites
 must be run in **separate pytest invocations**; see B10m. Full `pre-commit`
 gate green (now
-including `mypy`, see B30), nothing skipped at collection. The accuracy and
-integration suites are deselected by default (see B12, B10a); a run now prints
-what it deselected and how to run it. (Slice 1 of the ring migration deleted
+including `mypy`, see B30), nothing skipped at collection. The `integration`
+suite is deselected by default (see B10a); a run prints what it deselected and
+how to run it. There is no longer an `accuracy` suite — see B12. (Slice 1 of the ring migration deleted
 document sourcing -- scraping, storage, document parsing, and HTML
 preprocessors -- which accounts for the earlier drop in count.)
 
@@ -66,6 +70,33 @@ entities happening to share a `source_id`.
 `jellyfish` (the `nlp` extra) now has no importer in `src/`. Left declared
 because slice 7 needs it back within one slice.
 
+### B41. `RedisCache` has no test against a real Redis
+
+`llm/cache/redis.py` is the only `Cache` adapter with no run of
+`tests/compliance/cache.py` behind it. `MemoryCache` passes the suite in the
+default gate; `RedisCache` passes nothing.
+
+**Why this is riskier than it looks.** The compliance suite exists precisely
+because the two adapters' natural implementations disagree, and three of its
+cases were written against divergences this adapter *could* have:
+`get` returning `bytes` rather than `str` (a client left at its default does),
+`ZCOUNT` being inclusive at the boundary where a `>` comparison is not, and two
+hits at one instant collapsing into one sorted-set member. Each was reasoned
+about and coded for, and none is *verified*.
+
+**What to do.** Add `tests/integration/llm/test_redis_cache.py` subclassing
+`CacheCompliance`, with a `cache` fixture pointing at the `redis` service in
+`docker-compose.test.yml` and a skip probe that round-trips a key — not a TCP
+connect, for the reason `tests/integration/vector/test_pgvector_store.py`
+spells out. Give each xdist worker its own key prefix; B10f is the same hazard
+one layer down.
+
+**Why deferring is safe rather than merely convenient.** Nothing in the library
+constructs a `RedisCache`: both `RateLimiter` and `CircuitBreaker` default to
+`MemoryCache`, so a caller reaches it only by importing it and passing it
+explicitly. The single-process path — which is every current caller — is fully
+covered.
+
 ### B39. The legacy orchestrator lost its chunk/extract/merge branch
 
 `services/extraction/orchestrator.py:179` used to route through
@@ -93,23 +124,12 @@ in place rather than removed, because `config.py` is a single `Settings` object
 shared by the legacy services and pruning it one key at a time invites a merge
 conflict per slice; it goes wholesale in slice 9.
 
-### B2. Anthropic extraction provider is a stub
-
-`extraction/registry.py:179` — "Creator for Anthropic extraction services
-(placeholder)". The `anthropic` extra is declared in `pyproject.toml` and
-advertised in the README, but the provider does not work.
-
 ### B3. `mark_sync_failed` does not persist anything
 
 `services/sync_status.py:252` — the method only logs. Its own comment lists
 what it should do: store the error, increment a retry counter, set
 `next_retry_at`, emit a failure event. `retry_failed_syncs` therefore cannot
 distinguish "never synced" from "failed repeatedly".
-
-### B4. Relationship extraction in `llm_extractor` is rudimentary
-
-`extraction/llm_extractor.py:385` — "a placeholder for more sophisticated
-relationship extraction".
 
 ### B5. Timeline events do not populate involved entities
 
@@ -172,18 +192,6 @@ The models and any real Postgres are now out of sync with no mechanism to
 reconcile them. Either adopt Alembic here or document that schema ownership
 stays with the consuming application — but decide, because "the ORM says so"
 is currently the only record that these columns exist.
-
-### B25. `get_strategy_router` reintroduces the global state the factory avoids
-
-`extraction/strategy_router.py` carries an explicit design note that
-`ExtractionStrategyRouterFactory` exists so there is "no hidden global
-state". `get_strategy_router` / `reset_strategy_router` were added because
-`tests/unit/extraction/test_strategy_router.py` requires a singleton, and the
-singleton keeps whichever inference provider it was first constructed with.
-
-The tension is real and documented at the definition site. Resolve it by
-deciding which accessor is the supported one, then deleting the other and its
-tests — do not leave both as equals.
 
 ### B27. `child_of` relationship normalization is ambiguous
 
@@ -779,17 +787,31 @@ and `test_batch_set_redis_error` still emit `RuntimeWarning: coroutine
 only `execute()` is awaited, so `mock_pipeline.setex` should be a
 `MagicMock`. Tests pass; the warning is real.
 
-### B12. Accuracy suite cannot run in this environment
+### B12. There is no accuracy suite any more
 
-Deselected from the default run via `addopts = ["-m", "not accuracy"]`, which
-is what its own docstring always intended. When run explicitly with
-`-m accuracy` it now skips honestly, because the fixture verifies the model
-can serve rather than merely that it is listed.
+Slice 6 deleted `tests/accuracy/test_extraction_accuracy.py`, the only file
+carrying the `accuracy` marker. It measured `OllamaExtractionService`, which no
+longer exists. `tests/accuracy/` is now an empty package and the marker is
+declared with nothing using it; both are left in place because a replacement is
+wanted, not because they are doing anything.
 
-The blocker is environmental: Ollama at `192.168.1.14:11434` lists
-`gpt-oss:20b`, but `POST /v1/chat/completions` returns 500 "model failed to
-load, this may be due to resource limitations". Nothing in this repo can fix
-that. It also means extraction accuracy is currently unmeasured.
+The environmental blocker this entry used to describe is **resolved**: the
+reference endpoint moved to `http://192.168.1.14:8080/v1` (llama-swap), and
+`qwen3.6-27b-mtp` serves real completions. Slice 6 added
+`tests/integration/llm/`, which talks to it and is green. So a live model is
+available again — what is missing is the graded corpus.
+
+**What a replacement needs, learned in slice 6.** Assertions must be about
+*structure*, not taste. `tests/integration/llm/test_live_pipeline.py`
+deliberately asserts that Ada Lovelace is extracted and that edges resolve, and
+deliberately does **not** assert which `entity_type` the model assigns her —
+that changes between model versions, and a suite that pins it fails on every
+upgrade for no reason. Accuracy work is precision/recall against a corpus with
+known answers, and it wants a tolerance band rather than equality.
+
+Note also that the two suites cannot share a probe: the integration probe asks
+for one completion and skips, whereas an accuracy run wants to *fail* loudly if
+the model is missing, or the number it reports is silently "no data".
 
 ### B13. Five unused-variable findings in tests
 
@@ -1096,15 +1118,6 @@ silently falling back:
 
 Implement when a caller needs one, not before. The port shape accepts them
 without redesign.
-
-### B19. `pydantic-ai` pinned to `==0.0.31`
-
-`extraction` and `inference.providers` use the pre-1.0
-`pydantic_ai.models.openai.OpenAIModel` API. Unpinning means porting both.
-
----
-
-## 6. Documentation
 
 ### B21. README is stale
 

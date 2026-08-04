@@ -8,7 +8,7 @@ such as connection issues, timeouts, or temporary server errors.
 Example:
     from kg_builder.extraction.retry import with_retry, ExtractionRetryPolicy
 
-    # Use default policy (from settings)
+    # Use the default policy
     @with_retry(retryable_exceptions=(httpx.ConnectError, httpx.TimeoutException))
     async def extract_with_ollama(content: str) -> ExtractionResult:
         ...
@@ -27,17 +27,19 @@ Example:
 import asyncio
 import logging
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from functools import wraps
-from typing import ParamSpec, TypeVar
-
-from kg_builder.config import settings
+from typing import Any, ParamSpec, TypeVar
 
 logger = logging.getLogger(__name__)
 
 # Type variables for generic decorator typing
 P = ParamSpec("P")
 T = TypeVar("T")
+
+
+#: Attempts after the first, when the caller does not say.
+DEFAULT_MAX_RETRIES = 3
 
 
 class RetryExhausted(Exception):
@@ -52,7 +54,7 @@ class RetryExhausted(Exception):
         attempts: Number of attempts made before exhaustion
     """
 
-    def __init__(self, message: str, attempts: int = 0):
+    def __init__(self, message: str, attempts: int = 0) -> None:
         super().__init__(message)
         self.message = message
         self.attempts = attempts
@@ -70,14 +72,13 @@ class ExtractionRetryPolicy:
         final_delay = base_delay + random.uniform(-jitter_range, jitter_range)
 
     Attributes:
-        max_retries: Maximum number of retry attempts (default from settings.OLLAMA_MAX_RETRIES)
+        max_retries: Maximum number of retry attempts (default `DEFAULT_MAX_RETRIES`)
         initial_delay: Base delay in seconds for first retry (default: 1.0)
         max_delay: Maximum delay cap in seconds (default: 60.0)
         multiplier: Exponential multiplier for backoff (default: 2.0)
         jitter: Jitter factor as fraction of delay (default: 0.1, meaning +/- 10%)
 
     Example:
-        # Default policy uses settings
         policy = ExtractionRetryPolicy()
 
         # Custom policy with more aggressive backoff
@@ -100,11 +101,11 @@ class ExtractionRetryPolicy:
         max_delay: float = 60.0,
         multiplier: float = 2.0,
         jitter: float = 0.1,
-    ):
+    ) -> None:
         """Initialize the retry policy.
 
         Args:
-            max_retries: Maximum retry attempts. Defaults to settings.OLLAMA_MAX_RETRIES.
+            max_retries: Maximum retry attempts. Defaults to `DEFAULT_MAX_RETRIES`.
             initial_delay: Initial delay in seconds before first retry. Defaults to 1.0.
             max_delay: Maximum delay cap in seconds. Defaults to 60.0.
             multiplier: Exponential backoff multiplier. Defaults to 2.0.
@@ -124,7 +125,12 @@ class ExtractionRetryPolicy:
         if not 0.0 <= jitter <= 1.0:
             raise ValueError("jitter must be between 0.0 and 1.0")
 
-        self.max_retries = max_retries if max_retries is not None else settings.OLLAMA_MAX_RETRIES
+        # Plain default rather than `settings.OLLAMA_MAX_RETRIES`. A library
+        # reading a process-wide settings object makes its behaviour depend on
+        # a file the caller may not know exists, and it was the reason this
+        # module's tests had to poison `sys.modules["kg_builder.config"]`
+        # before importing it -- part of BACKLOG B10d.
+        self.max_retries = max_retries if max_retries is not None else DEFAULT_MAX_RETRIES
         self.initial_delay = initial_delay
         self.max_delay = max_delay
         self.multiplier = multiplier
@@ -177,7 +183,7 @@ class ExtractionRetryPolicy:
 def with_retry(
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
     policy: ExtractionRetryPolicy | None = None,
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Coroutine[Any, Any, T]]]:
     """Decorator for retry with exponential backoff.
 
     Wraps an async function to automatically retry on specified exceptions.
@@ -218,7 +224,11 @@ def with_retry(
     """
     retry_policy = policy or ExtractionRetryPolicy()
 
-    def decorator(func: Callable[P, T]) -> Callable[P, T]:
+    # `Callable[P, Awaitable[T]]`, not `Callable[P, T]`. This decorator only
+    # works on coroutine functions -- it awaits the result -- and the looser
+    # annotation let it be applied to a sync one, where `await` on a plain
+    # value raises at the first *retryable* failure rather than at the call.
+    def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Coroutine[Any, Any, T]]:
         @wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             last_exception: Exception | None = None

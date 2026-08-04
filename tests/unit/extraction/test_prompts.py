@@ -12,8 +12,6 @@ running these pure unit tests without Docker/database setup.
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
-import pytest
-
 # Direct import from prompts.py file to avoid __init__.py chain
 # that pulls in database-dependent modules
 _prompts_path = (
@@ -495,89 +493,13 @@ class TestPromptContentQuality:
         assert "direction" in prompt or "->" in prompt
 
 
-# =============================================================================
-# Integration with OllamaExtractionService Tests
-# =============================================================================
-
-# Try to import OllamaExtractionService, skip tests if database dependencies unavailable
-try:
-    from kg_builder.extraction.ollama_extractor import OllamaExtractionService
-
-    _OLLAMA_SERVICE_AVAILABLE = True
-except (ImportError, ModuleNotFoundError):
-    _OLLAMA_SERVICE_AVAILABLE = False
-    OllamaExtractionService = None
-
-
-@pytest.mark.skipif(
-    not _OLLAMA_SERVICE_AVAILABLE, reason="OllamaExtractionService requires database dependencies"
-)
-class TestPromptsIntegrationWithOllamaService:
-    """Tests verifying prompts work correctly with OllamaExtractionService.
-
-    These tests require the full application context with database dependencies.
-    They will be skipped when running in isolation without database setup.
-    """
-
-    def test_service_uses_get_system_prompt(self):
-        """Test that OllamaExtractionService imports and uses get_system_prompt."""
-        # Create service with specific doc type
-        service = OllamaExtractionService(
-            base_url="http://localhost:11434",
-            model="test-model",
-            doc_type=DocumentationType.API_REFERENCE,
-        )
-
-        # Verify the service's _get_system_prompt returns the expected prompt
-        prompt = service._get_system_prompt()
-        assert "API Reference Focus" in prompt
-
-    def test_service_uses_build_user_prompt(self):
-        """Test that OllamaExtractionService uses build_user_prompt."""
-        service = OllamaExtractionService(
-            base_url="http://localhost:11434",
-            model="test-model",
-            doc_type=DocumentationType.TUTORIAL,
-        )
-
-        content = "test content"
-        page_url = "https://example.com"
-
-        prompt = service._build_prompt(content, page_url)
-
-        assert content in prompt
-        assert page_url in prompt
-        assert "Document Type: tutorial" in prompt
-
-    def test_service_accepts_doc_type_override(self):
-        """Test that OllamaExtractionService accepts doc_type override in _build_prompt."""
-        service = OllamaExtractionService(
-            base_url="http://localhost:11434",
-            model="test-model",
-            doc_type=DocumentationType.GENERAL,
-        )
-
-        # Override with API_REFERENCE
-        prompt = service._build_prompt(
-            content="test",
-            page_url="https://example.com",
-            doc_type=DocumentationType.API_REFERENCE,
-        )
-
-        assert "Document Type: api_reference" in prompt
-
-    def test_service_accepts_additional_context(self):
-        """Test that OllamaExtractionService passes additional_context."""
-        service = OllamaExtractionService(
-            base_url="http://localhost:11434",
-            model="test-model",
-        )
-
-        context = "This is for the eventsource-py library"
-        prompt = service._build_prompt(
-            content="test",
-            page_url="https://example.com",
-            additional_context=context,
-        )
-
-        assert context in prompt
+# The four `TestPromptsIntegrationWithOllamaService` tests that stood here are
+# gone with `OllamaExtractionService` (slice 6). They were guarded by a
+# try/except ImportError that had been silently skipping them -- the reason
+# given, "requires database dependencies", was never true; the import chain
+# pulled in `pydantic_ai`. A permanently-skipped test asserts nothing and
+# reads as coverage, so they are deleted rather than left in place.
+#
+# What they actually covered -- that a service passes doc type and additional
+# context into `build_user_prompt` -- is covered directly by the
+# `build_user_prompt` tests above, which do not need a service at all.

@@ -22,23 +22,21 @@ dependencies = [
 
 [project.optional-dependencies]
 neo4j = ["neo4j>=5.27,<6"]
-openai = ["openai>=1.50.0"]
-anthropic = ["anthropic>=0.42.0"]
-# pinned <1.0: kg_builder.inference.providers uses the pre-1.0
-# `pydantic_ai.models.openai.OpenAIModel` API.
-# pinned to the version knowledge-mapper resolved; kg_builder.extraction and
-# kg_builder.inference use the pre-1.0 pydantic-ai model API.
+# The LLM transport. `langchain-openai` speaks to any OpenAI-compatible
+# server -- llama.cpp, llama-swap, vLLM, Ollama's shim, OpenAI itself -- so
+# one extra covers every deployment this library has. Ranges rather than pins:
+# the whole point of the `LlmProvider` port is that a breaking change touches
+# `llm/adapters/langchain.py` and nothing else.
 llm = [
     "langchain-core>=0.3,<2",
     "langchain-openai>=0.2,<2",
-    "pydantic-ai==0.0.31",
 ]
 nlp = ["jellyfish>=1.0.0"]
 eventsourcing = [
     "eventsource-py>=0.9.1,<0.11",
 ]
 all = [
-    "kg-builder[neo4j,openai,anthropic,llm,nlp,eventsourcing]",
+    "kg-builder[neo4j,llm,nlp,eventsourcing]",
 ]
 dev = [
     "bandit[toml]>=1.9.4",
@@ -115,7 +113,6 @@ ignore = [
 # commit that deletes its package -- this list may only shrink.
 "src/kg_builder/models/**" = ["ANN", "TC"]
 "src/kg_builder/services/**" = ["ANN", "TC", "RET", "ERA"]
-"src/kg_builder/inference/**" = ["ANN", "TC", "RET"]
 "src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]
 # Narrowed from `graph/**` in slice 3: graph/adapters/ is new architecture and
 # is held to the full rule set.
@@ -155,7 +152,7 @@ python_version = "3.13"
 # rather than weakened, and each exclusion dies with its package.
 files = ["src/kg_builder"]
 exclude = [
-    "^src/kg_builder/(models|services|inference|extraction|schemas|events)/",
+    "^src/kg_builder/(models|services|extraction|schemas|events)/",
     # graph/ is half legacy: the Neo4j client and Cypher templates predate the
     # rewrite, while graph/adapters/ is new architecture and is type-checked.
     "^src/kg_builder/graph/(client|queries)\\.py$",
@@ -270,7 +267,6 @@ layers = [
     # Aggregates are the write model: they import events and domain, and
     # nothing below them may import an aggregate.
     "kg_builder.aggregates",
-    "kg_builder.inference",
     "kg_builder.models",
     "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
     # Ports sit directly above `domain` and below every adapter: an adapter
