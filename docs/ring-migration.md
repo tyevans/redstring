@@ -12,11 +12,14 @@ reports, ten reviews, 4.2 MB — were never tracked and are gone.
 Everything below is either verifiable from the tree today or names the git ref
 that holds the evidence.
 
-> **The recovery refs in this document and in `BACKLOG.md` only survive if this
-> branch's history does.** They are commits on `rearchitect/graph-vector-ports`,
-> not on any tag. A squash-merge, or a rebase that orphans them past `gc`,
-> destroys every deleted capability recorded here. Merge with history, or tag
-> the pre-deletion refs before you do anything else.
+> **Every recovery ref below is also an annotated tag**, so it survives a
+> squash-merge, a rebase, or `gc`. `git tag -l 'recovery/*'` lists them, and
+> each tag message says what it holds and which `BACKLOG` entry discusses it.
+>
+> Recover a deleted file with `git show recovery/<name>:<path>`, e.g.
+> `git show recovery/strategy-router:src/kg_builder/extraction/strategy_router.py`.
+> **Push the tags along with the branch** — `git push origin --tags` — or they
+> exist only on the machine that made them.
 
 ## What the library is now
 
@@ -46,19 +49,19 @@ works today; all were verified resolvable when this document was written.
 
 | Capability | Path | Ref | Replaced by |
 |---|---|---|---|
-| Document sourcing, scraping | `src/kg_builder/scraping/` | `94b9ae1` | Nothing — out of scope, by decision |
-| Vendor extractors, inference providers | `src/kg_builder/inference/` | `a75015a` | `LlmProvider` port + `llm/adapters/` |
-| Preprocessing, chunkers, mergers | `src/kg_builder/preprocessing/` | `bd40882` | `extraction/chunking.py`, `extraction/merging.py` |
-| Fuzzy merging (`SimpleMerger`, `LLMMerger`) | `src/kg_builder/services/consolidation/` | `ff36ec7` | `consolidation/` on the `ConsolidationLog` aggregate |
-| Temporal parser service | `src/kg_builder/services/temporal_parser.py` | `d49f56b` | `domain/temporal_parsing.py::parse_temporal` |
-| Timeline query / export / cache | `src/kg_builder/services/` | `d49f56b` | `temporal/` (query); export is a genuine loss, see `BACKLOG` B47 |
-| Strategy router | `src/kg_builder/extraction/strategy_router.py` | `66f589d` | Nothing — 826-line test file supplied every input as a `MagicMock` |
-| Neo4j client (443 lines, zero callers) | `src/kg_builder/graph/client.py` | `3502900` | `graph/adapters/neo4j.py` |
-| The whole service layer | `src/kg_builder/services/` | `c3c88ad` | `aggregates` + `events` + `projections` |
-| ORM models, schemas, `db.py` | `src/kg_builder/models/`, `schemas/`, `db.py` | `1b9f9f3` | The two ports. The library owns no schema |
-| Settings object, Redis singleton | `src/kg_builder/config.py`, `cache.py` | `6a473ff` | Explicit constructor arguments |
-| Prompt library, JSON-schema generator | `src/kg_builder/extraction/prompts.py` | `e063faa` | `extraction/domains/` + `prompt_generator.domain_system_prompt` |
-| Encryption at rest | `src/kg_builder/encryption.py` | `e063faa` | Nothing — see `BACKLOG` B58 |
+| Document sourcing, scraping | `src/kg_builder/scraping/` | `94b9ae1`<br>`recovery/sourcing` | Nothing — out of scope, by decision |
+| Vendor extractors, inference providers | `src/kg_builder/inference/` | `a75015a`<br>`recovery/vendor-extractors` | `LlmProvider` port + `llm/adapters/` |
+| Preprocessing, chunkers, mergers | `src/kg_builder/preprocessing/` | `bd40882`<br>`recovery/preprocessing` | `extraction/chunking.py`, `extraction/merging.py` |
+| Fuzzy merging (`SimpleMerger`, `LLMMerger`) | `src/kg_builder/services/consolidation/` | `ff36ec7`<br>`recovery/fuzzy-merging` | `consolidation/` on the `ConsolidationLog` aggregate |
+| Temporal parser service | `src/kg_builder/services/temporal_parser.py` | `d49f56b`<br>`recovery/temporal-services` | `domain/temporal_parsing.py::parse_temporal` |
+| Timeline query / export / cache | `src/kg_builder/services/` | `d49f56b`<br>`recovery/temporal-services` | `temporal/` (query); export is a genuine loss, see `BACKLOG` B47 |
+| Strategy router | `src/kg_builder/extraction/strategy_router.py` | `66f589d`<br>`recovery/strategy-router` | Nothing — 826-line test file supplied every input as a `MagicMock` |
+| Neo4j client (443 lines, zero callers) | `src/kg_builder/graph/client.py` | `3502900`<br>`recovery/neo4j-client` | `graph/adapters/neo4j.py` |
+| The whole service layer | `src/kg_builder/services/` | `c3c88ad`<br>`recovery/service-layer` | `aggregates` + `events` + `projections` |
+| ORM models, schemas, `db.py` | `src/kg_builder/models/`, `schemas/`, `db.py` | `1b9f9f3`<br>`recovery/orm-layer` | The two ports. The library owns no schema |
+| Settings object, Redis singleton | `src/kg_builder/config.py`, `cache.py` | `6a473ff`<br>`recovery/settings` | Explicit constructor arguments |
+| Prompt library, JSON-schema generator | `src/kg_builder/extraction/prompts.py` | `e063faa`<br>`recovery/prompts-encryption` | `extraction/domains/` + `prompt_generator.domain_system_prompt` |
+| Encryption at rest | `src/kg_builder/encryption.py` | `e063faa`<br>`recovery/prompts-encryption` | Nothing — see `BACKLOG` B58 |
 
 The deletions were not uniformly costly. Three of the four modules that looked
 like live dependents of the relational layer were dead code that merely still
