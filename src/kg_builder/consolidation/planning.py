@@ -39,6 +39,12 @@ one seen" would make the surviving edge id depend on how an adapter happened to
 sort -- two backends would produce different `EntitiesMerged` payloads for the
 same graph, and the same backend might differ between runs.
 
+**Order-independent is not the same as instant-independent.** Everything below
+says the plan is a function of the graph; it is a function of the graph *at the
+moment the caller read it*, and an edge created after that read is not
+deduplicated by anything, ever. See BACKLOG B43 and
+`tests/unit/consolidation/test_known_gaps.py`.
+
 `duplicate_preference` is the order, and it *composes* rather than redefines:
 `kg_builder.domain.preference.relationship_preference` decides on confidence
 and properties, exactly as extraction's two deduplications do, and this module

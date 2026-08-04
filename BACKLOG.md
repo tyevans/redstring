@@ -43,31 +43,75 @@ the log by construction, so no ordering of the two steps makes the graph
 authoritative, and doing the read inside the aggregate's window would widen
 the window without making it correct.
 
-**Half of the staleness is already harmless.** A redirection for an edge that
-has since been deleted is applied by `upsert_relationship`, which recreates
-it, and a delete of an absent edge returns `False` -- both idempotent by the
-port's contract.
+**The staleness has three consequences, not two, and only the third matters.**
 
-**The other half is a real gap.** An edge that appeared *after* the read gets
-no redirection at all, so it keeps pointing at the absorbed entity. The graph
-fold then resolves it through the alias table on the next
-`DocumentExtracted` -- which is why this is a gap rather than a corruption --
-but until something re-extracts that document, `get_relationships` on the
-canonical entity does not report it.
+**1. A redirection for an edge that has since gone -- harmless.**
+`upsert_relationship` recreates it and `delete_relationship` returns `False`
+for an absent id. Both are idempotent by the port's contract.
 
-Two candidate fixes, neither obviously right, which is why this is deferred
-rather than half-done:
+**2. An edge that appeared after the read keeps pointing at the absorbed
+entity -- self-healing.** The extraction fold resolves each endpoint through
+the alias table before writing, so the next `DocumentExtracted` touching that
+document moves it onto the canonical entity. Until then it is a visibility
+gap: `get_relationships(canonical)` does not report it.
 
-- Have the merge fold resolve `EntitiesMerged` redirections against the store
-  as well, so the projection catches what the planner missed. Cheap, but it
-  moves a decision into the fold, where it cannot be audited.
-- Re-read and re-plan on an `ExpectedVersion` conflict, so the retry sees the
-  newer graph. Correct, and it needs the repository to surface the conflict in
-  a form the service can act on, which it does not today.
+**3. That same edge can become a permanent parallel edge -- and nothing
+repairs it.** If the canonical entity already has an edge with the same
+`(source, target, relationship_type)`, resolving the late edge's endpoint
+produces a *second* edge making the same claim under a different id.
+Deduplication lives only in `plan_redirections`, which by definition never saw
+that edge, and the fold writes by id. **Re-extraction creates the duplicate
+rather than resolving it** -- consequence 2's repair is what produces this
+one.
 
-Measure how often it actually happens first. Consolidation runs behind
-extraction, so the window is between a store read and a stream append on one
-tenant.
+That is exactly the state `duplicate_preference` and the whole tie-break
+argument exist to prevent, and no later merge, undo or replay removes it.
+
+Reproduced and pinned in `tests/unit/consolidation/test_known_gaps.py`, which
+asserts the wrong answer on purpose. The shape:
+
+```
+doc-1 extracted and projected      canonical -> outsider  "worked_on"
+doc-2 extracted, NOT yet projected  absorbed -> outsider  "worked_on"
+merge absorbed into canonical       0 redirections planned
+doc-2 projected                     the edge is still on `absorbed`
+doc-2 re-extracted                  endpoint resolved -> two edges, one claim
+```
+
+No race is needed to build it. "An edge exists in the log that the graph read
+cannot see" is the ordinary state of a projection, not a timing accident.
+
+**Which fix addresses which consequence -- this is the part that changes what
+to measure.**
+
+- **Have the merge fold resolve `EntitiesMerged` redirections against the
+  store.** Addresses consequence 2 and **not** consequence 3: it resolves the
+  endpoint and leaves the duplicate, which is precisely what re-extraction
+  already does. Cheap, and it moves a decision into the fold where it cannot
+  be audited. **On its own it is not enough.**
+- **Re-read and re-plan on an `ExpectedVersion` conflict.** The only one that
+  addresses consequence 3, because it puts the late edge in front of
+  `plan_redirections`, which is the only code that deduplicates. It needs the
+  repository to surface the conflict in a form the service can act on, which
+  it does not today.
+
+So the deferral stands, but what to measure is narrower than "how often is
+the read stale". Measure **how often a late edge duplicates one the canonical
+already has**, since that is the only case the cheap fix cannot reach.
+
+Two smaller facts about the same window, recorded here so they are not
+rediscovered:
+
+- **An undo overwrites concurrent edits.** `MergeUndone` upserts every `before`
+  relationship, so an edge legitimately modified between the merge and the
+  undo is restored to its pre-merge value. That is probably correct for a
+  compensating event -- an undo's job is to reproduce the pre-merge graph, and
+  the round-trip test asserts exactly that -- but it is a real choice and is
+  now stated on `ConsolidationService.undo`.
+- **`plan_redirections` is order-independent, not instant-independent.** Its
+  docstring's claim that the plan is a function of the graph is true of the
+  graph *at the moment of the read*; this entry is the weaker half, and
+  `planning.py` now points here.
 
 ### B44. Rejected merge candidates are discarded, not recorded
 

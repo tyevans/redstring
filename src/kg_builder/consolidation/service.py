@@ -25,9 +25,13 @@ checked against the replayed log, not against the graph -- and optimistic
 concurrency on the tenant's stream, which is why the stream is the tenant.
 
 A stale read can therefore produce a redirection for an edge that no longer
-exists, or miss one that has just appeared. The first is harmless: the
-projection's `upsert_relationship` recreates it, and `delete_relationship` is
-idempotent. The second is a genuine gap and is BACKLOG **B43**.
+exists, or miss one that has just appeared. The first is harmless -- both
+writes are idempotent. The second has two outcomes, and only one of them
+heals: the extraction fold resolves the endpoint on the next
+`DocumentExtracted`, but if the canonical entity already carries the same
+claim, that resolution *creates a permanent parallel edge* rather than fixing
+one. BACKLOG **B43**, pinned in
+`tests/unit/consolidation/test_known_gaps.py`.
 
 ## `resolve` is the whole pipeline, and it is what closes B40
 
@@ -235,6 +239,15 @@ class ConsolidationService:
         way.
 
         No graph read at all. Everything the undo restores is in the log.
+
+        **This overwrites concurrent edits, and that is the intended reading.**
+        The projection upserts every `before` relationship, so an edge
+        legitimately modified between the merge and the undo is restored to
+        its pre-merge value rather than merged with the newer one. A
+        compensating event's job is to reproduce the state before the event it
+        compensates -- the round-trip test asserts exactly that -- and an undo
+        that preserved intervening edits would reproduce something else. Said
+        out loud because it is a real choice that looks like an oversight.
         """
         async with tenant_scope(tenant_id):
             log = await self._log.load_or_create(
