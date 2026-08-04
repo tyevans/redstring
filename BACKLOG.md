@@ -99,6 +99,13 @@ things that have no home on `TemporalExtent`, all dropped deliberately:
 
 ### B50. `dateparser` costs ~250ms on a first call and is on the extraction path
 
+**Its import cost is already handled**: `import dateparser` is inside
+`_parse_natural` rather than at module scope, because at module scope every
+importer of `extraction/mapping.py` paid ~250ms whether or not any document
+contained a date. That surfaced as two hypothesis properties in unrelated test
+files exceeding their 200ms deadline. What follows is about the *call* cost,
+which remains.
+
 `_parse_natural` is the last strategy `parse_temporal` tries, so it is reached
 only by text the regex strategies and `dateutil` all declined -- but that
 includes every entity whose temporal expression is unparseable, which in a real
@@ -156,6 +163,53 @@ normalisation -- the six-field schema may have been doing some of its work as a
 chain of thought. There is no accuracy suite to measure that with (B12), so it
 is an open question rather than a settled one. If temporal recall looks poor on
 a real corpus, this is the first thing to try reverting.
+
+### B48. Temporal query is a full tenant scan
+
+`temporal/query.py::TemporalQuery.entities_in_interval` pages
+`GraphStore.find_entities` over the whole tenant and applies the interval
+predicate in Python. It composes rather than adding a port method, deliberately
+— see that module's docstring for the argument — but the cost is linear in the
+tenant's entity count regardless of how few entities are dated.
+
+**What to do when that stops being acceptable, and why it is not "add a
+`temporal_overlaps` filter to `find_entities`".** The predicate is not a range
+test on two columns: precision widens a bound (`2023` at `YEAR` precision
+denotes all of 2023 even though `end_date` is `None`), and
+`UncertaintyMarker.BEFORE`/`AFTER` make a bound infinite. Reimplementing that in
+Cypher *and* in the memory adapter *and* in any future SQL adapter gives three
+copies of a rule that lives in `domain/interval.py`, and they will diverge
+silently — a wrong answer here looks exactly like a correct one.
+
+The shape that works: add a port method returning a deliberate **superset** —
+a cheap, index-assisted bound on the raw `start_date`/`end_date` columns, widened
+by the largest precision unit (one year) so it cannot exclude a true match — and
+keep `interval.relate` as the exact filter over what comes back. Then the
+adapters implement only a range scan, which they cannot get subtly wrong, and
+the semantics stay in one place. That method needs the compliance gate's
+mutation-isolation and tenant-isolation tests, and an `EXPLAIN` assertion in the
+Neo4j adapter after `CALL db.awaitIndexes()` (see B10i).
+
+### B53. The Neo4j adapter does not store or index `Entity.temporal`
+
+Extraction now populates `Entity.temporal`, and `temporal/query.py` reads it
+back off entities that `GraphStore.find_entities` returned. That works against
+`InMemoryGraphStore`, which round-trips the whole domain object. It has **not**
+been verified against `Neo4jGraphStore`: if the adapter drops the field on
+write, every temporal query answers `[]` against Neo4j and the same code
+answers correctly in every unit test, because the unit tests use the memory
+adapter and the integration suite is deselected by default (B10a).
+
+Slice 8 did not add it because the field's storage shape is a real decision
+that interacts with B48: flattening `TemporalExtent` into node properties makes
+the indexed range prefilter B48 wants possible, while storing it as a JSON blob
+makes it impossible. Making that choice here, without the query cost measured,
+would fix the harder decision in passing.
+
+**Check this first when temporal work resumes**, and note that the compliance
+suite is where the gap should be closed -- a round-trip assertion on `temporal`
+in the shared suite covers every adapter at once, which is the point of it
+having one.
 
 ### B43. A merge plans against a graph read outside its concurrency window
 

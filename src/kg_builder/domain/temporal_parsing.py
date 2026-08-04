@@ -54,7 +54,6 @@ import re
 from datetime import UTC, datetime
 from typing import Final, NamedTuple
 
-import dateparser
 from dateutil import parser as dateutil_parser
 from dateutil.relativedelta import relativedelta
 
@@ -397,7 +396,21 @@ def _parse_absolute(text: str, base: datetime) -> _Parsed | None:
 
 
 def _parse_natural(text: str, base: datetime) -> _Parsed | None:
-    """Natural language, including relative expressions, resolved from `base`."""
+    """Natural language, including relative expressions, resolved from `base`.
+
+    `dateparser` is imported here rather than at module scope, and that is not
+    style. Importing it costs a quarter of a second -- it builds language
+    detection tables -- and this module is reached from
+    `extraction/mapping.py`, so at module scope every importer of extraction
+    pays it whether or not any document ever contains a date. It first showed
+    up as two hypothesis properties in *unrelated* test files exceeding their
+    200ms deadline, which is an obscure way to be told about an import cost.
+
+    Deferred, the cost is paid once, by the first text that gets past the four
+    cheaper strategies. B50 has the measurement.
+    """
+    import dateparser
+
     try:
         parsed = dateparser.parse(
             text,

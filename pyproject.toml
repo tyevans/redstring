@@ -266,7 +266,14 @@ layers = [
     # moved down to `domain.preference` when consolidation became its third
     # caller -- and putting it above would let it reach for `mapping.py`, which
     # is how a second entity-id scheme gets born.
-    "kg_builder.extraction : kg_builder.consolidation : kg_builder.graph : kg_builder.vector : kg_builder.llm : kg_builder.schemas",
+    # `temporal` is a sibling too, for the same reason `consolidation` is: it
+    # needs nothing from extraction. It reads entities through
+    # `ports.graph_store` and computes over `domain.interval`. Above
+    # `extraction` it could reach `mapping.py`, and the temptation there is
+    # specific -- inferred edges would acquire a path into `DocumentExtracted`,
+    # which is exactly the persistence decision `temporal/inference.py` argues
+    # against.
+    "kg_builder.extraction : kg_builder.consolidation : kg_builder.temporal : kg_builder.graph : kg_builder.vector : kg_builder.llm : kg_builder.schemas",
     # Projections read the ports and the event schema and write nothing back:
     # nothing below them may import a projection, and they may not import an
     # adapter.
