@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -40,7 +40,46 @@ if TYPE_CHECKING:
 from kg_builder.domain.ids import EntityId, TenantId
 
 
-class VectorRecord(BaseModel):
+def _reject_nul(value: object) -> None:
+    """Raise if any string reachable from `value` contains U+0000.
+
+    Metadata is stored as JSON by every adapter worth having, and Postgres
+    `jsonb` **cannot hold a NUL in text** -- it rejects the write outright.
+    Python dictionaries can, so without this check the in-memory adapter
+    accepts metadata that pgvector refuses, which is precisely the silent
+    divergence a shared compliance suite exists to prevent. Found by the
+    round-trip property, and fixed here rather than in either adapter so that
+    every adapter rejects it identically and for the same reason.
+
+    Stripping or escaping the NUL instead was rejected: it would make the
+    round-trip contract a lie, and a caller with a NUL in its metadata has a
+    bug upstream that is better surfaced than smoothed over.
+    """
+    if isinstance(value, str):
+        if "\x00" in value:
+            raise ValueError("metadata must not contain a NUL character; JSON storage rejects it")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _reject_nul(key)
+            _reject_nul(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_nul(item)
+
+
+class _HasPortableMetadata(BaseModel):
+    """Shared metadata validation; see `_reject_nul`."""
+
+    metadata: dict[str, Any] = {}
+
+    @field_validator("metadata")
+    @classmethod
+    def _metadata_is_storable_as_json(cls, value: dict[str, Any]) -> dict[str, Any]:
+        _reject_nul(value)
+        return value
+
+
+class VectorRecord(_HasPortableMetadata):
     """One entity's embedding under one tenant.
 
     `vector` is a `list[float]` and `metadata` a `dict`, both mutable on
@@ -54,15 +93,13 @@ class VectorRecord(BaseModel):
     entity_id: EntityId
     tenant_id: TenantId
     vector: list[float]
-    metadata: dict[str, Any] = {}
 
 
-class VectorMatch(BaseModel):
+class VectorMatch(_HasPortableMetadata):
     """One result of a similarity search. See the module docstring on `score`."""
 
     entity_id: EntityId
     score: float = Field(ge=0.0, le=1.0)
-    metadata: dict[str, Any] = {}
 
 
 def cosine_score(left: Sequence[float], right: Sequence[float]) -> float:

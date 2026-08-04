@@ -166,6 +166,14 @@ disallow_untyped_defs = true
 # domain model whose whole job is enforcing invariants.
 plugins = ["pydantic.mypy"]
 
+# asyncpg ships no `py.typed`, so mypy cannot see its types at all. The
+# alternative is a stub package, which would have to track asyncpg's releases
+# for the sake of one adapter; `kg_builder.vector.adapters.pgvector` is the
+# only module that imports it, and its own signatures are fully annotated.
+[[tool.mypy.overrides]]
+module = ["asyncpg.*"]
+ignore_missing_imports = true
+
 [tool.pydantic-mypy]
 init_typed = true
 init_forbid_extra = true

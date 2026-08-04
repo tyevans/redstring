@@ -20,6 +20,7 @@ from kg_builder.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_MET
 from kg_builder.domain.entity import Entity, ExtractionMethod
 from kg_builder.domain.relationship import Relationship
 from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from kg_builder.domain.vector import _reject_nul
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -160,17 +161,55 @@ distinct_tenant_pairs = st.tuples(st.uuids(), st.uuids()).filter(lambda pair: pa
 # ----------------------------------------------------------------------
 
 vector_components = st.floats(
-    min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, width=32
+    min_value=-1e3,
+    max_value=1e3,
+    allow_nan=False,
+    allow_infinity=False,
+    width=32,
+    # Subnormals square to zero, so a vector of them is non-zero by the port's
+    # guard -- which asks whether the components are zero -- and still has a
+    # norm of zero, at which point cosine is undefined for a vector that was
+    # accepted. That gap is real and is filed as BACKLOG B10l; excluding
+    # subnormals here keeps it from arriving as an intermittent failure in an
+    # unrelated property.
+    allow_subnormal=False,
 )
 
 
 def vectors(dimension: int) -> st.SearchStrategy[list[float]]:
-    """Non-zero vectors of exactly `dimension` components.
+    """Vectors of exactly `dimension` components, with a usable direction.
 
     Zero vectors are excluded because cosine is undefined at the origin and
     the port rejects them; generating one would test the guard, not the
     property, in every property that draws a vector.
+
+    The bound is on the **norm**, not on "some component is non-zero" -- see
+    the comment on `vector_components` and BACKLOG B10l for why those are not
+    the same question.
     """
     return st.lists(vector_components, min_size=dimension, max_size=dimension).filter(
-        lambda values: any(values)
+        lambda values: sum(value * value for value in values) > 1e-12
     )
+
+
+def _has_no_nul(mapping: dict[str, Any]) -> bool:
+    """Whether `VectorRecord` would accept this metadata.
+
+    Written against the domain rule rather than restating it, so widening or
+    narrowing the rule in one place cannot leave the strategy generating
+    values the model rejects. `json.dumps` is *not* usable for this: it
+    escapes a NUL to the six characters `\\u0000`, so a substring search over
+    its output never finds one.
+    """
+    try:
+        _reject_nul(mapping)
+    except ValueError:
+        return False
+    return True
+
+
+#: Metadata for the `VectorStore` suite: `property_dicts` minus what
+#: `VectorRecord` rejects. Postgres `jsonb` cannot store a NUL in text while a
+#: Python dict can, and an adapter accepting what another refuses is the
+#: divergence the shared suite exists to prevent.
+metadata_dicts = property_dicts.filter(_has_no_nul)

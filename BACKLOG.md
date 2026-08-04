@@ -264,9 +264,14 @@ filed rather than merely known:
   suites. `parallel = true` is already set for coverage, and the obvious way
   to write that CI target is `pytest -n auto` over both. That target will fail
   36 times for a reason that looks like flakiness.
-- **Slice 5's pgvector suite** hits the identical problem the moment it wipes
-  or truncates a shared database between tests, which is the natural way to
-  write it.
+- **Slice 5's pgvector suite** would hit the identical problem the moment it
+  truncated a shared table between tests, which is the natural way to write
+  it. It does not: `tests/integration/vector/test_pgvector_store.py` puts
+  `PYTEST_XDIST_WORKER` into the table name, so each worker truncates only its
+  own rows and the module is parallel-safe. That is the third fix below, one
+  level cheaper — a table per worker rather than a database per worker — and
+  it is available in Postgres precisely because it allows as many tables as
+  you like, which Neo4j community does not do for databases.
 
 The real fixes, in increasing order of cost: give each test its own tenant and
 scope the wipe to it (weakens `test_delete_by_tenant_removes_exactly_that_tenant`,
@@ -367,6 +372,73 @@ module-level mutable state in a test file, correct until collection order or
 process reuse changes underneath it. If B10f is resolved by giving each worker
 its own database, revisit this at the same time — that is the change that
 would make the cached flag mean something different per worker.
+
+### B10k. The pgvector adapter has no ANN index, so search is linear in a tenant
+
+`src/kg_builder/vector/adapters/pgvector.py::_schema_statements`. There is
+deliberately no `hnsw` or `ivfflat` index on `embedding`, and
+`tests/integration/vector/test_pgvector_store.py::test_there_is_no_ann_index_on_the_embedding`
+asserts its absence so adding one is a decision rather than a drive-by
+optimisation.
+
+**Why it was left out, which is the expensive part to rediscover.** An ANN
+index and a tenant filter interact badly, and both outcomes look correct:
+
+- the planner uses the vector index, takes the `k` globally nearest rows and
+  drops other tenants' afterwards. A tenant holding 1% of the table gets a
+  handful of results, or none, for a query with thousands of genuine
+  neighbours. This violates the port's "filters are applied before `k`" rule
+  and **no test that only inspects results can see it** — it is
+  indistinguishable from a tenant with little data.
+- the planner filters by tenant first, does not touch the vector index at all,
+  and the index costs write throughput to be never read.
+
+Scanning within the tenant is exact, which is also why the pgvector adapter
+passes the compliance suite's *exact* tier and not merely its recall tier.
+
+**What it costs:** search is `O(rows in this tenant)`. Measured shape, not
+measured cost — nothing here has profiled it. At the 50 rows/tenant used in
+the plan test it is irrelevant; at 10^6 rows in one tenant it will not be.
+
+**The three ways out, in increasing order of cost.** (1) `LIST`-partition the
+table by `tenant_id` and build an ANN index per partition: the index then only
+ever sees one tenant, so post-filtering cannot lose rows. Costs partition
+management and a bound on tenant count. (2) pgvector 0.8's iterative index
+scan (`SET hnsw.iterative_scan = relaxed_order`) — the container already runs
+0.8.5 — which keeps pulling from the index until `k` rows survive the filter.
+Costs a session GUC the adapter would have to own, and recall becomes
+configuration. (3) A partial ANN index per large tenant, which does not scale
+past a few tenants. Whoever takes this on should extend the compliance suite's
+recall tier first: it currently passes trivially because both adapters are
+exact.
+
+### B10l. A vector with non-zero components can still have a zero norm
+
+`src/kg_builder/domain/vector.py::is_zero_vector` asks whether every component
+is zero. `cosine_score` needs the **norm** to be non-zero, and those are not
+the same question: `[1e-200, 1e-200]` has non-zero components and a squared
+norm that underflows to `0.0`, so the port's guard accepts it on `upsert` and
+`search` then raises `ValueError` from a code path documented as unreachable.
+`tests/unit/domain/test_vector.py::test_a_vector_whose_norm_underflows_is_treated_as_zero`
+pins the current behaviour.
+
+The band is far narrower in float32, where pgvector stores: components below
+about `1e-19` square to zero there, and `<=>` against such a row yields NaN,
+which sorts unpredictably and would then fail `VectorMatch`'s `0..1` bound.
+**So the two adapters fail differently on the same input** — the in-memory one
+raises at search time, pgvector produces a NaN score — which is the kind of
+divergence the shared suite exists to prevent, and the suite does not catch it
+because `tests/compliance/strategies.py::vector_components` excludes
+subnormals to avoid intermittent failures in unrelated properties.
+
+**Deferred rather than fixed because the fix requires a decision, not a
+check.** Guarding on the norm instead of the components is two lines; deciding
+*what threshold* is another matter, because "an embedding of magnitude 1e-160"
+is not a thing any real model produces and picking a number without a caller
+to serve invents a contract. The honest resolution is probably to reject on
+the float32 norm being zero (which is what any adapter would hit) and say so
+in the port. Nothing depends on this today: real embeddings are unit-norm or
+close to it.
 
 ### B10b. Model blocking keys as nodes — decided, scheduled for slice 7
 

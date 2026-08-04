@@ -56,7 +56,20 @@ SOURCE_ROOT = Path(adapter.__file__).parent.parent.parent
 
 #: Cypher keywords distinctive enough that finding one outside the adapter
 #: means a query has leaked. "MATCH" alone would be too common in prose.
-CYPHER_MARKERS = ("MERGE (", "MATCH (", "DETACH DELETE", "UNWIND $", "CREATE INDEX")
+#:
+#: `"CREATE INDEX"` was here and is not any more: slice 5's pgvector adapter
+#: creates a *SQL* index and tripped this test, which is a false positive
+#: rather than a leak. `"IF NOT EXISTS FOR "` is the Cypher-only form of the
+#: same DDL -- `CREATE INDEX ... IF NOT EXISTS FOR (e:Entity) ON (...)` -- and
+#: `"CREATE CONSTRAINT"` has no SQL spelling with that syntax either.
+CYPHER_MARKERS = (
+    "MERGE (",
+    "MATCH (",
+    "DETACH DELETE",
+    "UNWIND $",
+    "IF NOT EXISTS FOR ",
+    "CREATE CONSTRAINT",
+)
 
 #: The pre-rewrite Neo4j layer, condemned by the migration plan and deleted in
 #: slices 7 and 9. Exempt because they are already on the way out, not because

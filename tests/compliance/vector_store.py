@@ -187,7 +187,7 @@ class VectorStoreCompliance:
         async with self._store() as store:
             entity_id, tenant_id = data.draw(st.uuids()), data.draw(st.uuids())
             vector = data.draw(self._vectors())
-            metadata = data.draw(gen.property_dicts)
+            metadata = data.draw(gen.metadata_dicts)
 
             await store.upsert(entity_id, vector, tenant_id, metadata=metadata)
 
@@ -204,7 +204,7 @@ class VectorStoreCompliance:
                 entity_id=data.draw(st.uuids()),
                 tenant_id=data.draw(st.uuids()),
                 vector=data.draw(self._vectors()),
-                metadata=data.draw(gen.property_dicts),
+                metadata=data.draw(gen.metadata_dicts),
             )
 
             await store.upsert_many([record])
@@ -237,7 +237,7 @@ class VectorStoreCompliance:
         async with self._store() as store:
             entity_id, tenant = data.draw(st.uuids()), data.draw(st.uuids())
             first, second = data.draw(self._vectors()), data.draw(self._vectors())
-            metadata = data.draw(gen.property_dicts)
+            metadata = data.draw(gen.metadata_dicts)
 
             await store.upsert(entity_id, first, tenant, metadata={"first": True})
             await store.upsert(entity_id, second, tenant, metadata=metadata)
@@ -598,7 +598,7 @@ class VectorStoreCompliance:
         async with self._store() as store:
             entity_id, tenant = data.draw(st.uuids()), data.draw(st.uuids())
             vector = data.draw(self._vectors())
-            metadata = data.draw(gen.property_dicts)
+            metadata = data.draw(gen.metadata_dicts)
             await store.upsert(entity_id, vector, tenant, metadata=metadata)
             pristine = VectorRecord(
                 entity_id=entity_id, tenant_id=tenant, vector=vector, metadata=metadata
@@ -616,7 +616,7 @@ class VectorStoreCompliance:
         async with self._store() as store:
             entity_id, tenant = data.draw(st.uuids()), data.draw(st.uuids())
             vector = data.draw(self._vectors())
-            metadata = data.draw(gen.property_dicts)
+            metadata = data.draw(gen.metadata_dicts)
             await store.upsert(entity_id, vector, tenant, metadata=metadata)
             pristine = dict(metadata)
 
