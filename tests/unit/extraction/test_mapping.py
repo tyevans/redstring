@@ -18,7 +18,7 @@ from hypothesis import strategies as st
 
 from kg_builder.domain.entity import ExtractionMethod
 from kg_builder.domain.normalization import normalize_name
-from kg_builder.extraction.mapping import entity_id_for, map_extraction
+from kg_builder.extraction.mapping import MappedExtraction, entity_id_for, map_extraction
 from kg_builder.extraction.schema import (
     DEFAULT_CONFIDENCE,
     ExtractedEntity,
@@ -248,6 +248,52 @@ class TestRelationships:
         assert len(result.entities) == 1
         assert (result.self_loops, result.unresolved_relationships) == (1, 0)
 
+    def test_a_self_loop_does_not_stop_the_edges_after_it(self):
+        """Found by cosmic-ray: `continue` mutated to `break` and survived.
+
+        Every other self-loop test states exactly one relationship, and with
+        one item left in the loop `break` and `continue` are the same
+        function -- the CLAUDE.md failure shape exactly. A bad edge must skip
+        itself and nothing else, or one careless model sentence silently
+        discards every relationship listed after it.
+        """
+        result = mapped(
+            Extraction(
+                entities=[entity("Ada Lovelace"), entity("Charles Babbage")],
+                relationships=[
+                    link("Ada Lovelace", "ada lovelace", "IS"),
+                    link("Ada Lovelace", "Charles Babbage", "WORKED_WITH"),
+                ],
+            )
+        )
+
+        assert [edge.relationship_type for edge in result.relationships] == ["WORKED_WITH"]
+        assert result.self_loops == 1
+
+    def test_an_unresolved_edge_does_not_stop_the_edges_after_it(self):
+        """The same shape one branch up, and equally invisible with one edge."""
+        result = mapped(
+            Extraction(
+                entities=[entity("Ada Lovelace"), entity("Charles Babbage")],
+                relationships=[
+                    link("Ada Lovelace", "Someone Unmentioned", "KNEW"),
+                    link("Ada Lovelace", "Charles Babbage", "WORKED_WITH"),
+                ],
+            )
+        )
+
+        assert [edge.relationship_type for edge in result.relationships] == ["WORKED_WITH"]
+        assert result.unresolved_relationships == 1
+
+    def test_a_blank_name_does_not_stop_the_entities_after_it(self):
+        """And once more for the entity loop, for the same reason."""
+        result = mapped(
+            Extraction(entities=[entity("  "), entity("Ada"), entity("  "), entity("Charles")])
+        )
+
+        assert sorted(e.name for e in result.entities) == ["Ada", "Charles"]
+        assert result.dropped_entities == 2
+
     def test_a_relationship_gets_a_deterministic_id_too(self):
         """So re-extraction upserts the same edge instead of accumulating copies."""
         payload = Extraction(
@@ -359,6 +405,24 @@ class TestProvenance:
                 source_id=SOURCE,
                 model=None,
             )
+
+
+class TestTheResultTypeItself:
+    def test_the_counters_default_to_zero_when_a_caller_builds_one_directly(self):
+        """`MappedExtraction` is a public type, and nothing constructed it bare.
+
+        Found by cosmic-ray: mutating `unresolved_relationships: int = 0` to
+        `= 1` and `self_loops: int = 0` to `= -1` both survived, because every
+        test reached the type through `map_extraction`, which passes all five
+        fields explicitly. A caller assembling one by hand -- which the type's
+        signature invites -- would have got a non-zero count out of an empty
+        result.
+        """
+        empty = MappedExtraction(entities=[], relationships=[])
+
+        assert empty.dropped_entities == 0
+        assert empty.unresolved_relationships == 0
+        assert empty.self_loops == 0
 
 
 class TestEmptyIsNotAnError:
