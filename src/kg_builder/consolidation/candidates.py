@@ -168,11 +168,13 @@ class CandidateFinder:
         # away cannot be merged again -- `ConsolidationLog` would refuse it --
         # so proposing it would produce a candidate nobody can act on.
         canonical = await self._graph.resolve_entity_ids(list(found), subject.tenant_id)
-        return [
-            entity
-            for entity_id, entity in found.items()
-            if canonical[entity_id] == entity_id and entity_id != subject.id
-        ]
+        # `==`, never `is`. Both adapters happen to hand back the *same* `UUID`
+        # object for an id that is not an alias, so `is` would pass every test
+        # in this repo -- and would then return an empty candidate list against
+        # any adapter that rebuilt the id, which is consolidation finding no
+        # duplicates in silence. A cosmic-ray mutant rewriting this as `is`
+        # survived until `test_resolution_by_value_not_by_identity` pinned it.
+        return [entity for entity_id, entity in found.items() if canonical[entity_id] == entity_id]
 
     async def _embedding_scores(self, subject: Entity) -> dict[EntityId, float]:
         """Nearest-vector scores by candidate id, or empty when unavailable.
@@ -188,7 +190,13 @@ class CandidateFinder:
         if record is None:
             return {}
         matches = await self._vectors.search(record.vector, subject.tenant_id, k=EMBEDDING_SEARCH_K)
-        return {match.entity_id: match.score for match in matches if match.entity_id != subject.id}
+        # The subject's own vector is the nearest to itself and is in here.
+        # It is *not* filtered out: `_block` never proposes the subject as its
+        # own candidate, so nothing ever looks its score up, and a guard no
+        # input reaches describes a situation that cannot arise. Removing it
+        # was prompted by three cosmic-ray survivors on the comparison, which
+        # is what an unreachable guard looks like from outside.
+        return {match.entity_id: match.score for match in matches}
 
     async def _neighbours(self, entity_id: EntityId, tenant_id: TenantId) -> list[EntityId] | None:
         """Ids adjacent to `entity_id`, or `None` when the signal is off.

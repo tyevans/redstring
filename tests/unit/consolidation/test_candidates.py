@@ -110,6 +110,54 @@ class TestBlocking:
         assert await CandidateFinder(store).candidates(subject) == []
 
 
+class TestResolutionIsByValue:
+    """A candidate is kept when its resolved id *equals* its own, not when it
+    is the same object.
+
+    Both adapters in this repo hand back the identical `UUID` for an id that is
+    not an alias, so `is` passes every other test here -- and would return an
+    empty candidate list against any adapter that rebuilt the id from a row.
+    That failure is silent: no candidates is exactly what "no duplicates" also
+    looks like.
+
+    The store below is a real `GraphStore`, not a mock. It differs from
+    `InMemoryGraphStore` in one respect the port explicitly permits -- it
+    returns equal-but-distinct ids -- which is the whole point: a port contract
+    two adapters satisfy by accident is not a contract.
+    """
+
+    class RebuildingStore(InMemoryGraphStore):
+        async def resolve_entity_ids(self, entity_ids, tenant_id):
+            resolved = await super().resolve_entity_ids(entity_ids, tenant_id)
+            return {UUID(str(key)): UUID(str(value)) for key, value in resolved.items()}
+
+    async def test_resolution_by_value_not_by_identity(self):
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace")
+        candidate = keyed(tenant, "Ada Lovelac")
+        store = self.RebuildingStore()
+        await store.upsert_entities([subject, candidate])
+
+        found = await CandidateFinder(store).candidates(subject)
+
+        assert [c.entity.id for c in found] == [candidate.id]
+
+    async def test_the_rebuilding_store_really_does_rebuild(self):
+        """Guards the guard: if it returned the same objects, the test above
+        would pass against an `is` comparison and prove nothing."""
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace")
+        store = self.RebuildingStore()
+        await store.upsert_entity(subject)
+
+        resolved = await store.resolve_entity_ids([subject.id], tenant)
+
+        [(key, value)] = resolved.items()
+        assert key == subject.id
+        assert value == subject.id
+        assert value is not subject.id
+
+
 class TestScoring:
     async def test_a_closer_name_scores_higher(self):
         tenant = uuid4()

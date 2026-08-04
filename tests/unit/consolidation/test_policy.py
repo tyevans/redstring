@@ -190,6 +190,26 @@ class TestAdjudication:
         assert "person" in prompt
         assert "a mathematician" in prompt
 
+    async def test_the_pairs_are_numbered_from_one(self):
+        """The numbering is how a reader of the prompt lines an answer up with
+        a question, and the system prompt asks for verdicts "in the order
+        given". Starting at 0 or 2 would be a prompt whose numbering disagreed
+        with the ordinary reading of "the first pair" -- pinned because
+        cosmic-ray found nothing asserting it."""
+        tenant = uuid4()
+        candidates = [_candidate(tenant, f"Ada {index}") for index in range(3)]
+        provider = FakeProvider(
+            answers=[AdjudicationBatch(verdicts=[_verdict() for _ in range(3)])]
+        )
+
+        await Adjudicator(provider).adjudicate(entity(tenant), candidates)
+
+        [prompt] = provider.prompts
+        assert "Pair 1 " in prompt
+        assert "Pair 3 " in prompt
+        assert "Pair 0 " not in prompt
+        assert "Pair 4 " not in prompt
+
     async def test_the_prompt_never_carries_an_entity_id(self):
         """Ids are the graph's business. Putting one in a prompt invites a
         model to echo it back, and an invented id is a merge of something that
