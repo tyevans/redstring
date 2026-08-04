@@ -173,24 +173,48 @@ integration fixture. Consequences:
 - The `integration` marker is declared in `pyproject.toml` but no test uses
   it, and `tests/integration/` does not exist. **Both done in slice 4.**
 
-### B10a. Integration-only code is invisible to the coverage ratchet
+### B10a. The Cypher-executing half of the Neo4j adapter is not in the gate
 
-`src/kg_builder/graph/adapters/neo4j.py` is fully exercised, but only by
-`tests/integration/`, which `addopts` excludes from the default run and
-therefore from `scripts/coverage_ratchet.py`. It is listed in
-`[tool.coverage.run] omit` so the ratchet does not read "0% covered" for code
-that has 106 passing tests against it.
+**How this was found, because it is the important part.** A cosmic-ray run was
+interrupted and left a mutant in `graph/adapters/neo4j.py`:
 
-The cost of that omission: a genuinely untested branch added to the adapter
-would not be caught by the commit gate. What is needed is a second coverage
-run over `-m integration` whose data is combined with the default run's
-(`coverage combine` — `parallel = true` is already set, so the data files
-already accumulate rather than overwrite). It was deferred because the
-integration run needs Docker, and making the ratchet conditional on Docker
-being up turns a deterministic gate into a flaky one. The right shape is
-probably a separate `make coverage-full` for CI that starts the compose file,
-runs both, and combines — not a change to the commit hook. Slice 5 will hit
-this again with pgvector, so it is worth solving once, then.
+```
+-    if limit is not None and limit < 0:
++    if not limit is not None and limit < 0:
+```
+
+The full suite passed with it applied — 2026 tests green, gate clean. The
+adapter's 106 tests are all `integration`-marked and deselected by `addopts`,
+so **not one line of that module executed in the default run.** Corrupt source
+in an integration-only module was invisible.
+
+Two things were done about it, and one was not.
+
+Done: `tests/unit/graph/test_neo4j_adapter_is_wired.py` now runs every part of
+the adapter that needs no server — argument validation (against a driver that
+raises if touched, so it also proves no I/O happens before the guard), the
+pure encode/decode functions, signature conformance against the port, and a
+check that Cypher has not leaked out of the adapter. That mutant is now killed
+by the default gate. The module is **not** in `[tool.coverage.run] omit`, so
+the ratchet measures the remainder honestly rather than hiding it: the adapter
+reads **60%** in the default run, and the 47 uncovered lines are precisely the
+query bodies. The baseline was lowered 68.07 → 67.96 to accept that, which is
+the number to watch — when the combined run below lands, it should go back up
+rather than the omission coming back.
+
+Also done: `tests/conftest.py` prints what a run deselected and how to run it,
+so `pytest` ends with `106 'integration' tests -- uv run pytest -m integration`
+instead of a bare `114 deselected`.
+
+**Not done, and this is the entry:** the queries themselves, the schema DDL,
+tenant isolation, traversal and the query-plan assertions still only run with
+Docker up. What is needed is a second coverage run over `-m integration`
+combined with the default run's data (`coverage combine`; `parallel = true` is
+already set, so the files already accumulate). Deferred because making the
+commit hook conditional on Docker turns a deterministic gate into a flaky one
+— the right shape is a separate CI target that starts the compose file, runs
+both suites, and combines, not a change to the hook. Slice 5 hits this again
+with pgvector, so solve it once, there.
 
 ### B10b. `find_by_blocking_key` scans the tenant on Neo4j
 

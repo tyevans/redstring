@@ -201,12 +201,11 @@ branch = true
 parallel = true
 omit = [
     "*/__pycache__/*",
-    # Covered by `tests/integration/`, which `addopts` excludes from the
-    # default run and so from the ratchet. Measuring it here would report 0%
-    # for a module with 106 passing tests against it and drag the baseline
-    # down. See BACKLOG B10a for the combined-coverage run that would let this
-    # omission go away.
-    "*/graph/adapters/neo4j.py",
+    # Deliberately NOT omitted: `graph/adapters/neo4j.py`. Most of it is
+    # exercised by `tests/unit/graph/test_neo4j_adapter_is_wired.py`, which
+    # runs in the default gate; the rest needs a server. Omitting it would
+    # have hidden the untested remainder, which is the opposite of what a
+    # ratchet is for. See BACKLOG B10a.
 ]
 
 [tool.coverage.paths]
