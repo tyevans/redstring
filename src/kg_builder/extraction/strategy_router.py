@@ -575,10 +575,56 @@ async def route_extraction_strategy(
     return await router.route(job, content, tenant_id=tenant_id)
 
 
+# Process-wide router, for callers with no dependency-injection container to
+# hang one off. Prefer ExtractionStrategyRouterFactory wherever you can inject:
+# this singleton keeps whichever inference provider it was first built with,
+# which is exactly the hidden global state the factory exists to avoid.
+_router: ExtractionStrategyRouter | None = None
+
+
+def get_strategy_router(
+    inference_provider: InferenceProvider | None = None,
+    *,
+    classifier: ContentClassifier | None = None,
+    prompt_generator: DomainPromptGenerator | None = None,
+    registry: DomainSchemaRegistry | None = None,
+    job_update_callback: JobUpdateCallback | None = None,
+    confidence_threshold: float = 0.5,
+) -> ExtractionStrategyRouter:
+    """Get the shared ExtractionStrategyRouter, creating it on first call.
+
+    Arguments are used only when the instance is created; later calls return
+    the existing router and ignore them. Call `reset_strategy_router()` to
+    build a new one.
+
+    Returns:
+        The shared ExtractionStrategyRouter instance
+    """
+    global _router
+    if _router is None:
+        _router = _factory.create(
+            inference_provider=inference_provider,
+            classifier=classifier,
+            prompt_generator=prompt_generator,
+            registry=registry,
+            job_update_callback=job_update_callback,
+            confidence_threshold=confidence_threshold,
+        )
+    return _router
+
+
+def reset_strategy_router() -> None:
+    """Discard the shared router so the next get_strategy_router() rebuilds it."""
+    global _router
+    _router = None
+
+
 __all__ = [
     "ExtractionStrategyRouter",
     "ExtractionStrategyRouterFactory",
     "JobUpdateCallback",
+    "get_strategy_router",
     "get_strategy_router_factory",
+    "reset_strategy_router",
     "route_extraction_strategy",
 ]

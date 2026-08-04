@@ -22,6 +22,32 @@ from kg_builder.services.consolidation.embedding_similarity import (
 class TestCosineSimilarity:
     """Tests for cosine similarity function."""
 
+    def test_float32_identical_vectors_do_not_exceed_one(self):
+        """Identical float32 vectors must not score above 1.0.
+
+        Accumulated float32 rounding makes dot(v, v) / norm(v)**2 land just
+        above 1.0 for real 1024-dim embeddings. `SimilarityScore.raw_score`
+        is bounded by `le=1`, so an unclamped result makes scoring an entity
+        against an identical one raise ValidationError. Seed 0 reproduces it.
+        """
+        np.random.seed(0)
+        vector = np.random.randn(1024).astype(np.float32)
+
+        result = cosine_similarity(vector, vector)
+
+        assert result <= 1.0
+        assert result == pytest.approx(1.0)
+
+    def test_opposite_float32_vectors_do_not_fall_below_minus_one(self):
+        """The same rounding applies at the negative bound."""
+        np.random.seed(0)
+        vector = np.random.randn(1024).astype(np.float32)
+
+        result = cosine_similarity(vector, -vector)
+
+        assert result >= -1.0
+        assert result == pytest.approx(-1.0)
+
     def test_identical_vectors(self):
         """Test identical vectors have similarity 1.0."""
         a = np.array([1.0, 0.0, 0.0])

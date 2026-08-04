@@ -209,7 +209,7 @@ Targeted tests per slice; full gate at slice end, not after every edit.
 | # | Slice | Gate |
 |---|---|---|
 | 0 | **Stabilize.** ✅ Done. Triaged the 42 failures to seven root causes and fixed all of them. 1798 passed, coverage baseline 60.79 recorded. | Full suite green ✅ |
-| 0b | **Land the temporal/strategy-router WIP.** The four modules in `tests/conftest.py::collect_ignore` are 99 tests of unlanded feature work, not stabilization damage — see "Temporal work" below. Implement, then empty `collect_ignore`. | Full suite green, zero collection skips |
+| 0b | **Land the temporal/strategy-router WIP.** ✅ Done. All four modules implemented, `collect_ignore` emptied. 1928 passed. | Full suite green, zero collection skips ✅ |
 | 1 | **Strip auth.** Delete `models/user.py`, `user_tenant_membership.py`, `oauth_provider.py`; rewrite relationships onto plain `tenant_id`; strip OAuth/JWT from `config.py`; reshape `db.py` into a library session provider. | Full suite green |
 | 2 | **Foundation: `shared/`.** Create the ring tree, move shared-kernel modules, write `shared/ports/`, rewrite the import-linter contract to the per-context form. | `lint-imports` + full suite |
 | 3 | **`llm/` + `embedding/`.** Define both ports; move providers, retry/rate-limit/breaker, embedding adapters. Add identity tests before the move, retarget after. | targeted + `lint-imports` |
@@ -233,8 +233,9 @@ Temporal is a first-class core context in this plan, not a small supporting
 one — it is a capability the project wants, so the `temporal/` ring set is
 built to be extended rather than merely relocated.
 
-Four test modules are skipped at collection because the code they exercise
-was never finished. They are unlanded features, not extraction damage:
+Four test modules were skipped at collection because the code they exercise
+was never finished. All four now pass (slice 0b); the table records what was
+built:
 
 | Module | Tests | Missing |
 |---|---|---|
@@ -243,13 +244,20 @@ was never finished. They are unlanded features, not extraction damage:
 | `unit/services/extraction/test_temporal_enrichment.py` | 19 | The enrichment service itself; the module does not import |
 | `unit/extraction/test_strategy_router.py` | 35 | `get_strategy_router`, `reset_strategy_router`, `route_extraction_strategy` — only `get_strategy_router_factory` exists |
 
-`DatePrecision` and `UncertaintyMarker` already exist in
-`schemas/timeline.py`, so two of these are partly re-export work. The
-`ExtractedEntity` temporal columns are a genuine schema addition.
+Two findings from building it that shape the `temporal/` slice:
 
-Slice 0b should land these against the now-green gate, before any code
-moves — writing a feature into a package that is about to be dissolved is
-cheaper than writing it across a half-migrated tree.
+- `DatePrecision` and `UncertaintyMarker` had to be defined in
+  `models/extracted_entity.py`, not `schemas/timeline.py`, because `models`
+  sits *below* `schemas` in the layer contract and the ORM columns need them.
+  `schemas/timeline.py` re-exports them. Their real home is
+  `temporal/domain/` — move them there in this slice (BACKLOG B26).
+- `services/extraction/temporal_enrichment.py` was already complete; it only
+  failed to import because `TemporalEventProperties` did not exist. Nothing
+  in it needed rewriting.
+
+The temporal columns are declared in the ORM but have no migration path —
+this repo has no Alembic at all (BACKLOG B24). Resolve that before anyone
+points this library at a real database.
 
 ## Per-slice mechanics
 

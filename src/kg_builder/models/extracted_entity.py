@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -112,6 +112,45 @@ class ExtractionMethod(str, enum.Enum):
     PATTERN = "pattern"  # Via regex/pattern matching
     SPACY = "spacy"  # Via spaCy NER fallback
     HYBRID = "hybrid"  # Combination of methods
+
+
+class DatePrecision(str, enum.Enum):
+    """Precision level of temporal data.
+
+    Used to indicate the granularity of extracted dates.
+    For example, "1999" would have YEAR precision while
+    "March 15, 1999 at 3:45 PM" would have MINUTE precision.
+
+    Defined here rather than in `kg_builder.schemas.timeline` because the
+    ORM layer sits below the schema layer and needs these values;
+    `schemas.timeline` re-exports them.
+    """
+
+    YEAR = "year"
+    MONTH = "month"
+    DAY = "day"
+    HOUR = "hour"
+    MINUTE = "minute"
+
+
+class UncertaintyMarker(str, enum.Enum):
+    """Uncertainty indicator for temporal data.
+
+    Captures how certain we are about the extracted date:
+    - EXACT: The date is explicitly stated ("on March 15, 1999")
+    - APPROXIMATE: The date is approximate ("around 1999", "in the late 90s")
+    - CIRCA: Historical approximation ("circa 1500")
+    - BEFORE: Event occurred before a date ("before 1999")
+    - AFTER: Event occurred after a date ("after 1999")
+    - INFERRED: Date was inferred from context, not explicit
+    """
+
+    EXACT = "exact"
+    APPROXIMATE = "approximate"
+    CIRCA = "circa"
+    BEFORE = "before"
+    AFTER = "after"
+    INFERRED = "inferred"
 
 
 class ExtractedEntity(Base):
@@ -294,6 +333,49 @@ class ExtractedEntity(Base):
         comment="Whether this is a canonical entity (not an alias)",
     )
 
+    # Temporal columns. Populated for entities that denote events; all are
+    # nullable because most entities are not temporal at all. Dates are stored
+    # timezone-aware, with `date_precision` recording how much of the stored
+    # value was actually known -- "1999" and "1999-03-15T10:30" are both held
+    # as a full datetime and disambiguated by precision.
+    start_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Event start (or point) date",
+    )
+    end_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Event end date, for events spanning a range",
+    )
+    date_precision: Mapped[str | None] = mapped_column(
+        String(10),
+        nullable=True,
+        comment="Granularity of start_date/end_date (see DatePrecision)",
+    )
+    uncertainty_marker: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="How certain the extracted date is (see UncertaintyMarker)",
+    )
+    original_temporal_text: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="The temporal expression as written in the source text",
+    )
+    sequence_position: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Relative ordering for events with no resolvable date",
+    )
+    publication_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When the source document was published, distinct from the event date",
+    )
+
     # Embedding vector for semantic similarity (bge-m3: 1024 dimensions)
     # Note: This column is added by migration and requires pgvector extension
     # The type annotation uses Any because Vector type may not be available
@@ -399,6 +481,40 @@ class ExtractedEntity(Base):
     def is_known_entity_type(self) -> bool:
         """Check if entity_type is a known/legacy type from the EntityType enum."""
         return EntityType.is_valid(self.entity_type)
+
+    @property
+    def is_temporal(self) -> bool:
+        """Whether this entity is placed in time at all.
+
+        An event with no resolvable date can still be ordered, so a
+        sequence position counts as temporal.
+        """
+        return self.start_date is not None or self.sequence_position is not None
+
+    @property
+    def date_precision_enum(self) -> DatePrecision | None:
+        """Get date_precision as a DatePrecision, or None if unset or unknown."""
+        if self.date_precision is None:
+            return None
+        try:
+            return DatePrecision(self.date_precision)
+        except ValueError:
+            return None
+
+    @property
+    def uncertainty_marker_enum(self) -> UncertaintyMarker | None:
+        """Get uncertainty_marker as an UncertaintyMarker, or None if unset or unknown."""
+        if self.uncertainty_marker is None:
+            return None
+        try:
+            return UncertaintyMarker(self.uncertainty_marker)
+        except ValueError:
+            return None
+
+    @property
+    def has_date_range(self) -> bool:
+        """Whether the entity spans a range rather than a single point."""
+        return self.start_date is not None and self.end_date is not None
 
     def __repr__(self) -> str:
         """Return string representation of the entity."""

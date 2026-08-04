@@ -8,11 +8,12 @@ See ADR-025 for design decisions.
 """
 
 from datetime import datetime
-from enum import Enum
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+from kg_builder.models.extracted_entity import DatePrecision, UncertaintyMarker
 
 # Temporal relationship types as a Literal type for strict validation
 TemporalRelationshipType = Literal[
@@ -25,39 +26,10 @@ TemporalRelationshipType = Literal[
 ]
 
 
-class DatePrecision(str, Enum):
-    """Precision level of temporal data.
-
-    Used to indicate the granularity of extracted dates.
-    For example, "1999" would have YEAR precision while
-    "March 15, 1999 at 3:45 PM" would have MINUTE precision.
-    """
-
-    YEAR = "year"
-    MONTH = "month"
-    DAY = "day"
-    HOUR = "hour"
-    MINUTE = "minute"
-
-
-class UncertaintyMarker(str, Enum):
-    """Uncertainty indicator for temporal data.
-
-    Captures how certain we are about the extracted date:
-    - EXACT: The date is explicitly stated ("on March 15, 1999")
-    - APPROXIMATE: The date is approximate ("around 1999", "in the late 90s")
-    - CIRCA: Historical approximation ("circa 1500")
-    - BEFORE: Event occurred before a date ("before 1999")
-    - AFTER: Event occurred after a date ("after 1999")
-    - INFERRED: Date was inferred from context, not explicit
-    """
-
-    EXACT = "exact"
-    APPROXIMATE = "approximate"
-    CIRCA = "circa"
-    BEFORE = "before"
-    AFTER = "after"
-    INFERRED = "inferred"
+# DatePrecision and UncertaintyMarker are defined in the ORM layer, which
+# sits below this one and needs them for its temporal columns. They are
+# re-exported here so temporal schema consumers have a single import site.
+__all__ = ["DatePrecision", "UncertaintyMarker"]
 
 
 # =============================================================================
@@ -115,7 +87,8 @@ class TemporalData(BaseModel):
                 return DatePrecision(v.lower())
             except ValueError as err:
                 raise ValueError(
-                    f"Invalid precision: {v}. Must be one of: {', '.join(e.value for e in DatePrecision)}"
+                    f"Invalid precision: {v}. Must be one of: "
+                    f"{', '.join(e.value for e in DatePrecision)}"
                 ) from err
         raise ValueError(f"Invalid precision type: {type(v)}")
 
@@ -132,7 +105,8 @@ class TemporalData(BaseModel):
                 return UncertaintyMarker(v.lower())
             except ValueError as err:
                 raise ValueError(
-                    f"Invalid uncertainty: {v}. Must be one of: {', '.join(e.value for e in UncertaintyMarker)}"
+                    f"Invalid uncertainty: {v}. Must be one of: "
+                    f"{', '.join(e.value for e in UncertaintyMarker)}"
                 ) from err
         raise ValueError(f"Invalid uncertainty type: {type(v)}")
 
@@ -188,7 +162,8 @@ class TemporalDataCreate(BaseModel):
                 return DatePrecision(v.lower())
             except ValueError as err:
                 raise ValueError(
-                    f"Invalid precision: {v}. Must be one of: {', '.join(e.value for e in DatePrecision)}"
+                    f"Invalid precision: {v}. Must be one of: "
+                    f"{', '.join(e.value for e in DatePrecision)}"
                 ) from err
         raise ValueError(f"Invalid precision type: {type(v)}")
 
@@ -205,7 +180,8 @@ class TemporalDataCreate(BaseModel):
                 return UncertaintyMarker(v.lower())
             except ValueError as err:
                 raise ValueError(
-                    f"Invalid uncertainty: {v}. Must be one of: {', '.join(e.value for e in UncertaintyMarker)}"
+                    f"Invalid uncertainty: {v}. Must be one of: "
+                    f"{', '.join(e.value for e in UncertaintyMarker)}"
                 ) from err
         raise ValueError(f"Invalid uncertainty type: {type(v)}")
 

@@ -3,10 +3,9 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **1798 tests pass, 0 fail**,
-coverage baseline **60.79**, full `pre-commit` gate green. Four test modules
-are skipped at collection (see B1) and the accuracy suite is deselected by
-default (see B12).
+Status of the tree as of the last update: **1930 tests pass, 0 fail**,
+full `pre-commit` gate green, nothing skipped at collection. The accuracy
+suite is deselected by default (see B12).
 
 Ordering within a section is roughly by priority. Ordering between sections
 is not meaningful.
@@ -14,26 +13,6 @@ is not meaningful.
 ---
 
 ## 1. Unlanded features
-
-### B1. Temporal and strategy-router work — 99 skipped tests
-
-Four modules in `tests/conftest.py::collect_ignore` exercise code that was
-never finished. These are unlanded features, not extraction damage. This is
-slice 0b of `docs/plans/ring-migration.md`.
-
-| Module | Tests | Missing |
-|---|---|---|
-| `tests/unit/extraction/test_temporal_schemas.py` | 14 | `TemporalEventProperties`, `is_temporal_relationship_type` in `extraction/schemas.py` |
-| `tests/unit/models/test_extracted_entity_temporal.py` | 31 | Temporal columns on `ExtractedEntity` (none exist today), plus `DatePrecision` / `UncertaintyMarker` re-exports |
-| `tests/unit/services/extraction/test_temporal_enrichment.py` | 19 | The enrichment service; `services/extraction/temporal_enrichment.py` does not import |
-| `tests/unit/extraction/test_strategy_router.py` | 35 | `get_strategy_router`, `reset_strategy_router`, `route_extraction_strategy` — only `get_strategy_router_factory` exists |
-
-`DatePrecision` and `UncertaintyMarker` already exist in
-`schemas/timeline.py`, so part of this is re-export work. The
-`ExtractedEntity` temporal columns are a genuine schema addition.
-
-Temporal is wanted as a first-class capability, so build the `temporal/`
-ring set to be extended, not merely relocated.
 
 ### B2. Anthropic extraction provider is a stub
 
@@ -98,6 +77,60 @@ Recorded here so they are not "discovered" again mid-migration:
 
 `pyproject.toml` sets `exhaustive = false`, so a new top-level package is
 silently unconstrained. Revisit when the per-context contract lands.
+
+### B24. No schema migration tooling — added columns have no migration path
+
+**This is the most consequential open item.** There is no `alembic/`, no
+`migrations/`, and Alembic is not even a dependency; the migrations were left
+behind in knowledge-mapper. Meanwhile the ORM has grown columns that no
+database will have:
+
+- `ScrapingJob.enable_timeline_extraction` (slice 0)
+- `ExtractedEntity.start_date`, `end_date`, `date_precision`,
+  `uncertainty_marker`, `original_temporal_text`, `sequence_position`,
+  `publication_date` (slice 0b)
+
+Nothing catches this, because the test suite has no database at all (B10).
+The models and any real Postgres are now out of sync with no mechanism to
+reconcile them. Either adopt Alembic here or document that schema ownership
+stays with the consuming application — but decide, because "the ORM says so"
+is currently the only record that these columns exist.
+
+### B25. `get_strategy_router` reintroduces the global state the factory avoids
+
+`extraction/strategy_router.py` carries an explicit design note that
+`ExtractionStrategyRouterFactory` exists so there is "no hidden global
+state". `get_strategy_router` / `reset_strategy_router` were added because
+`tests/unit/extraction/test_strategy_router.py` requires a singleton, and the
+singleton keeps whichever inference provider it was first constructed with.
+
+The tension is real and documented at the definition site. Resolve it by
+deciding which accessor is the supported one, then deleting the other and its
+tests — do not leave both as equals.
+
+### B27. `child_of` relationship normalization is ambiguous
+
+`extraction/schemas.py::normalize_relationship_type` had `"child_of"` as a
+duplicate dict key — mapped to `"part_of"` alongside `belongs_to`/`member_of`,
+then again to `"related_to"` alongside `sibling_of`/`parent_of`. The second
+won, so `child_of` has always normalized to `related_to` and the first entry
+was dead code.
+
+The dead entry was removed to keep behaviour identical, because no test pins
+it and both groupings are semantically defensible. Someone who knows the
+intended taxonomy should decide whether `child_of` is a containment
+relationship (`part_of`) or a generic association (`related_to`) — and then
+add the test that was missing.
+
+### B26. `DatePrecision` / `UncertaintyMarker` live in the ORM layer
+
+They are defined in `models/extracted_entity.py` and re-exported from
+`schemas/timeline.py`, because `models` sits below `schemas` in the
+import-linter contract and needs them for its temporal columns.
+
+That is correct for the current layering but not their real home: they are
+domain value objects and belong in `temporal/domain/` once the ring migration
+lands. Move them there in the `temporal/` slice.
 
 ---
 

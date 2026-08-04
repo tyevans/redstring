@@ -59,7 +59,11 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if norm_a == 0 or norm_b == 0:
         return 0.0
 
-    return float(np.dot(a, b) / (norm_a * norm_b))
+    # Clamp: accumulated float32 rounding pushes the ratio a fraction past
+    # +/-1 for identical or opposed vectors, and callers (SimilarityScore)
+    # bound raw_score to [-1, 1].
+    similarity = float(np.dot(a, b) / (norm_a * norm_b))
+    return max(-1.0, min(1.0, similarity))
 
 
 def euclidean_similarity(a: np.ndarray, b: np.ndarray) -> float:

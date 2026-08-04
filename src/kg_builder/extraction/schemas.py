@@ -70,7 +70,102 @@ RelationshipTypeLiteral = Literal[
     "references",
     "defines",
     "instantiates",
+    # Temporal relationships
+    "precedes",
+    "follows",
+    "during",
+    "overlaps",
+    "causes",
+    "concurrent",
 ]
+
+# Relationship types that express a temporal ordering between two events
+# rather than a structural or semantic association.
+TEMPORAL_RELATIONSHIP_TYPES: frozenset[str] = frozenset(
+    {
+        "precedes",
+        "follows",
+        "during",
+        "overlaps",
+        "causes",
+        "concurrent",
+    }
+)
+
+
+def is_temporal_relationship_type(relationship_type: str) -> bool:
+    """Check whether a relationship type expresses temporal ordering.
+
+    Matching is case-insensitive and tolerant of surrounding whitespace, so
+    raw LLM output can be tested directly.
+
+    Args:
+        relationship_type: The relationship type to test
+
+    Returns:
+        True if the type is a temporal relationship type
+    """
+    if not isinstance(relationship_type, str):
+        return False
+    return relationship_type.strip().lower() in TEMPORAL_RELATIONSHIP_TYPES
+
+
+class TemporalEventProperties(BaseModel):
+    """Temporal properties for an entity that denotes an event.
+
+    Captures both the raw temporal expression as written and whatever
+    normalized date could be derived from it. Dates are kept as strings
+    rather than `datetime` because extraction routinely yields partial
+    dates ("1914", "1920-03") that no datetime type can represent.
+    """
+
+    temporal_expression: str | None = Field(
+        None,
+        description=(
+            "The temporal expression exactly as it appears in the text (e.g., 'March 15, 1920', "
+            "'circa 1850')."
+        ),
+        max_length=500,
+    )
+    event_date: str | None = Field(
+        None,
+        description=(
+            "Normalized start/point date, ISO 8601 where possible. May be partial (e.g., '1914', "
+            "'1920-03')."
+        ),
+        max_length=50,
+    )
+    end_date: str | None = Field(
+        None,
+        description="Normalized end date for events spanning a range. May be partial.",
+        max_length=50,
+    )
+    is_approximate: bool = Field(
+        False,
+        description=(
+            "Whether the date is approximate rather than exact (e.g., 'around 1850', 'circa 1500')."
+        ),
+    )
+    temporal_qualifier: str | None = Field(
+        None,
+        description=(
+            "Qualifier attached to the expression (e.g., 'on', 'before', 'after', 'circa')."
+        ),
+        max_length=50,
+    )
+    sequence_position: int | None = Field(
+        None,
+        ge=0,
+        description="Relative position in a sequence when no date is available (0-based).",
+    )
+
+    @field_validator("temporal_qualifier", mode="before")
+    @classmethod
+    def normalize_temporal_qualifier(cls, v: str | None) -> str | None:
+        """Normalize the qualifier to lowercase without surrounding whitespace."""
+        if not isinstance(v, str):
+            return v
+        return v.strip().lower()
 
 
 class FunctionProperties(BaseModel):
@@ -86,7 +181,10 @@ class FunctionProperties(BaseModel):
     )
     parameters: list[dict] = Field(
         default_factory=list,
-        description="List of parameters with name, type, and description. Each dict should have 'name', 'type', and optionally 'description' and 'default' keys.",
+        description=(
+            "List of parameters with name, type, and description. Each dict should have 'name', "
+            "'type', and optionally 'description' and 'default' keys."
+        ),
     )
     return_type: str | None = Field(
         None,
@@ -201,7 +299,9 @@ class PatternProperties(BaseModel):
 
     category: str | None = Field(
         None,
-        description="Pattern category (e.g., 'creational', 'structural', 'behavioral', 'architectural')",
+        description=(
+            "Pattern category (e.g., 'creational', 'structural', 'behavioral', 'architectural')"
+        ),
     )
     problem: str | None = Field(
         None,
@@ -332,12 +432,17 @@ class ExtractedEntitySchema(BaseModel):
     """
 
     name: str = Field(
-        description="Entity name as it appears in the documentation. Should be the canonical/primary name.",
+        description=(
+            "Entity name as it appears in the documentation. Should be the canonical/primary name."
+        ),
         min_length=1,
         max_length=512,
     )
     entity_type: str = Field(
-        description="Type of entity. Use documentation-specific types (function, class, module, pattern, example) for technical docs.",
+        description=(
+            "Type of entity. Use documentation-specific types (function, class, module, pattern, "
+            "example) for technical docs."
+        ),
     )
 
     @field_validator("entity_type", mode="before")
@@ -395,28 +500,48 @@ class ExtractedEntitySchema(BaseModel):
 
     description: str | None = Field(
         None,
-        description="Brief description of the entity (1-2 sentences). Focus on what it is and what it does.",
+        description=(
+            "Brief description of the entity (1-2 sentences). Focus on what it is and what it does."
+        ),
         max_length=1000,
     )
     properties: dict = Field(
         default_factory=dict,
-        description="Type-specific properties. Use the appropriate schema: FunctionProperties for functions, ClassProperties for classes, etc.",
+        description=(
+            "Type-specific properties. Use the appropriate schema: FunctionProperties for "
+            "functions, ClassProperties for classes, etc."
+        ),
     )
     confidence: float = Field(
         ge=0.0,
         le=1.0,
-        description="Confidence in this extraction (0.0-1.0). Use 0.9+ for explicit definitions, 0.7-0.9 for inferred entities, below 0.7 for uncertain.",
+        description=(
+            "Confidence in this extraction (0.0-1.0). Use 0.9+ for explicit definitions, 0.7-0.9 "
+            "for inferred entities, below 0.7 for uncertain."
+        ),
     )
     source_text: Annotated[
         str | None,
         BeforeValidator(truncate_string),
     ] = Field(
         None,
-        description="Text snippet where entity was found (max 500 chars). Include enough context to verify the extraction. Will be truncated if longer.",
+        description=(
+            "Text snippet where entity was found (max 500 chars). Include enough context to verify "
+            "the extraction. Will be truncated if longer."
+        ),
     )
     aliases: list[str] = Field(
         default_factory=list,
-        description="Alternative names or references for this entity (e.g., 'dict' for 'dictionary')",
+        description=(
+            "Alternative names or references for this entity (e.g., 'dict' for 'dictionary')"
+        ),
+    )
+    temporal: TemporalEventProperties | None = Field(
+        None,
+        description=(
+            "Temporal properties for event entities. Populate when the text places the entity in "
+            "time."
+        ),
     )
 
     @field_validator("name")
@@ -471,7 +596,6 @@ class ExtractedRelationshipSchema(BaseModel):
             "is_a": "extends",
             "isa": "extends",
             "parent": "extends",
-            "child_of": "part_of",
             "belongs_to": "part_of",
             "member_of": "part_of",
             "has": "contains",
@@ -524,16 +648,23 @@ class ExtractedRelationshipSchema(BaseModel):
     confidence: float = Field(
         ge=0.0,
         le=1.0,
-        description="Confidence in this relationship (0.0-1.0). Use 0.9+ for explicit relationships, lower for inferred.",
+        description=(
+            "Confidence in this relationship (0.0-1.0). Use 0.9+ for explicit relationships, lower "
+            "for inferred."
+        ),
     )
     context: str | None = Field(
         None,
-        description="Context explaining the relationship (max 500 chars). Include evidence from the text.",
+        description=(
+            "Context explaining the relationship (max 500 chars). Include evidence from the text."
+        ),
         max_length=500,
     )
     properties: dict = Field(
         default_factory=dict,
-        description="Additional relationship properties (e.g., version constraints, optional flag).",
+        description=(
+            "Additional relationship properties (e.g., version constraints, optional flag)."
+        ),
     )
 
     @field_validator("source_name", "target_name")
@@ -568,7 +699,10 @@ class ExtractionResult(BaseModel):
     )
     relationships: list[ExtractedRelationshipSchema] = Field(
         default_factory=list,
-        description="Discovered relationships between entities. Only include relationships between entities in the entities list.",
+        description=(
+            "Discovered relationships between entities. Only include relationships "
+            "between entities in the entities list."
+        ),
     )
     extraction_notes: str | None = Field(
         None,
