@@ -25,6 +25,47 @@ is not meaningful.
 
 ## 1. Unlanded features
 
+### B40. Fuzzy entity resolution was deleted, not ported — slice 7 owns it
+
+Slice 6 deleted `extraction/mergers/` (`SimpleMerger`, `LLMMerger`), the
+`EntityMerger` protocol, and the `EntityMergeCandidate` / `EntityMergeDecision`
+vocabulary they used. What replaced them, `extraction/merging.py`, does **exact**
+deduplication only: two chunks reporting the same name and type get one id from
+`entity_id_for`, so combining them is not a judgement.
+
+The deleted code did more than that. `SimpleMerger` used
+`jellyfish.jaro_winkler_similarity` with a high and a low threshold, and
+`LLMMerger` sent the band between them to a model to adjudicate — so "Ada
+Lovelace" and "Ada" could be resolved to one entity within a document.
+
+**Why deleting beat porting.** That is the same operation as cross-document
+consolidation, which slice 7 implements against `ConsolidationLog`. Doing it
+inside extraction does it *invisibly*: no `EntitiesMerged` event, so nothing to
+audit, nothing to undo, and no record that a judgement was made — which is the
+exact failure the event-sourced write model exists to prevent. Porting it would
+have produced a second, weaker resolver that slice 7 then has to delete, and
+would have shipped a merge path that bypasses `ConsolidationLog`'s three
+invariants (`MergeIntoAliasError`, `DoubleMergeError`, `UnknownMergeError`).
+
+**What slice 7 needs to know, so it is not rediscovered.** The old
+implementation is at `0d5f09b:src/kg_builder/extraction/mergers/`. Its shape was
+sound and the thresholds were tuned: `MERGER_HIGH_SIMILARITY_THRESHOLD` /
+`MERGER_LOW_SIMILARITY_THRESHOLD` in `config.py`, above the high one merge
+outright, below the low one never, and only the band in between costs a model
+call — which is what kept the LLM cost sub-quadratic. `LLMMerger` batched those
+pairs (`MERGER_LLM_BATCH_SIZE`). Rebuild that policy on domain types against
+`LlmProvider` and emit `EntitiesMerged`; do not rebuild the dict plumbing.
+
+Note the interaction with the deliberate scoping decision in
+`extraction/mapping.py`: entity ids are namespaced **per document**, so
+`doc-1`'s Ada and `doc-2`'s Ada are already two entities by construction and
+consolidation has something to merge. Within-document fuzzy resolution is
+therefore not a special case for slice 7 — it is the same code path with both
+entities happening to share a `source_id`.
+
+`jellyfish` (the `nlp` extra) now has no importer in `src/`. Left declared
+because slice 7 needs it back within one slice.
+
 ### B39. The legacy orchestrator lost its chunk/extract/merge branch
 
 `services/extraction/orchestrator.py:179` used to route through

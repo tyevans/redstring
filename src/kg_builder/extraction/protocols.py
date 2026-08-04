@@ -1,21 +1,21 @@
-"""The two shapes extraction plugs together: `Chunker` and `EntityMerger`.
+"""The one shape extraction plugs in: `Chunker`.
 
-`Preprocessor` used to be here too. It is gone: preprocessing meant stripping
-HTML boilerplate, which is sourcing, and slice 1 took sourcing out of this
-library -- callers hand it clean text.
+Two protocols have left this module. `Preprocessor` went first: preprocessing
+meant stripping HTML boilerplate, which is sourcing, and slice 1 took sourcing
+out of this library -- callers hand it clean text.
 
-Chunking is synchronous and merging is not, which looks like an inconsistency
-and is the real difference between them: splitting a string is CPU work, while
-deciding whether two names denote one thing may need a model call.
+`EntityMerger` went with the dict-based mergers it described. Combining what
+overlapping chunks each reported is not pluggable and does not need to be:
+`entity_id_for` gives two reports of one entity the same id, so
+`kg_builder.extraction.merging` is a total function with nothing to configure.
+The *fuzzy* resolution the old protocol existed for -- deciding "Ada" and "Ada
+Lovelace" are one person -- is consolidation, and belongs to slice 7 where it
+produces an auditable `EntitiesMerged`. See BACKLOG B40.
 """
 
 from typing import Protocol, runtime_checkable
 
-from kg_builder.extraction.chunking import (
-    ChunkingResult,
-    EntityMergeCandidate,
-    EntityMergeDecision,
-)
+from kg_builder.extraction.chunking import ChunkingResult
 
 
 @runtime_checkable
@@ -55,43 +55,4 @@ class Chunker(Protocol):
         Raises:
             ChunkSizeError: The requested size and overlap are incompatible.
         """
-        ...
-
-
-@runtime_checkable
-class EntityMerger(Protocol):
-    """Combines the entities several chunks each reported separately."""
-
-    @property
-    def merger_type(self) -> str:
-        """A short identifier for this merger, recorded on its results."""
-        ...
-
-    async def merge_entities(
-        self,
-        entities_by_chunk: dict[int, list[dict]],
-        relationships_by_chunk: dict[int, list[dict]],
-        document_context: str | None = None,
-    ) -> tuple[list[dict], list[dict]]:
-        """Merge per-chunk entities and relationships into one set of each.
-
-        Args:
-            entities_by_chunk: chunk index -> entity dicts found in it.
-            relationships_by_chunk: chunk index -> relationship dicts.
-            document_context: Optional whole-document context for
-                disambiguation.
-
-        Returns:
-            `(merged_entities, merged_relationships)`.
-
-        Raises:
-            EntityMergerError: Merging failed unrecoverably.
-        """
-        ...
-
-    async def resolve_candidates(
-        self,
-        candidates: list[EntityMergeCandidate],
-    ) -> list[EntityMergeDecision]:
-        """Decide each candidate pair: one decision per candidate, in order."""
         ...

@@ -8,6 +8,9 @@ registry left for a lookup to miss), and `PipelineError` /
 `PipelineConfigError` (the config object they described went with
 `preprocessing/pipeline.py`). None had a reference outside its own definition.
 
+`EntityMergerError` followed them: `kg_builder.extraction.merging` is a total
+function over already-mapped results and has no failure mode to name.
+
 These stay separate from `KgBuilderError` deliberately: they are raised by
 extraction's own machinery, not by a port, and the domain's error hierarchy is
 what callers catch across the port boundary.
@@ -35,7 +38,3 @@ class ChunkSizeError(ChunkerError):
     as large as the chunk size is the case that matters: it makes each window
     start no later than the previous one did, so the loop cannot advance.
     """
-
-
-class EntityMergerError(ChunkingError):
-    """A merger could not combine the entities its chunks reported."""
