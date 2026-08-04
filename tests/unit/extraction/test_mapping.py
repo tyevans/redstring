@@ -356,6 +356,40 @@ class TestDuplicatesWithinOneCall:
         assert [e.description for e in forwards] == ["sure"]
         assert [e.description for e in backwards] == ["sure"]
 
+    def test_a_tie_on_confidence_is_broken_without_letting_order_decide(self):
+        """Found by cosmic-ray: `>` mutated to `>=` and every test still passed.
+
+        They all used *distinct* confidences, so no tie ever arose -- the
+        CLAUDE.md failure shape again. And ties are the common case, not the
+        edge case: every entity the model declines to score carries
+        `DEFAULT_CONFIDENCE`, so a tie-break that fell back to "keep whichever
+        came first" would make the same document map differently depending on
+        the order the model happened to list things in.
+        """
+        terse = entity("Ada Lovelace", description="A.")
+        fuller = entity("ada lovelace", description="A mathematician.")
+
+        forwards = mapped(Extraction(entities=[terse, fuller])).entities
+        backwards = mapped(Extraction(entities=[fuller, terse])).entities
+
+        assert [e.description for e in forwards] == ["A mathematician."]
+        assert [e.description for e in backwards] == ["A mathematician."]
+
+    def test_two_mentions_tied_on_everything_but_name_still_resolve_the_same_way(self):
+        """The last field of the order, so the order really is total.
+
+        Two entities with one id can differ in `name` while normalizing
+        together, and if the comparison ran out of tie-breakers before that
+        the dict's insertion order would decide.
+        """
+        upper = entity("ADA LOVELACE")
+        lower = entity("ada lovelace")
+
+        forwards = mapped(Extraction(entities=[upper, lower])).entities
+        backwards = mapped(Extraction(entities=[lower, upper])).entities
+
+        assert [e.name for e in forwards] == [e.name for e in backwards]
+
 
 class TestTenantSafety:
     def test_every_mapped_object_carries_the_tenant_it_was_asked_for(self):

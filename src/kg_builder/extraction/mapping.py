@@ -118,16 +118,44 @@ def _relationship_id_for(
     return uuid5(to_target, relationship_type)
 
 
-def _more_confident(left: Entity, right: Entity) -> Entity:
-    """Pick between two mappings of one entity, without letting order decide.
+def preference(entity: Entity) -> tuple[float, int, str, str]:
+    """A **total** order on two mappings of one entity. Higher wins.
 
-    A tie falls to `left`, and ties are common -- both sides carry
-    `DEFAULT_CONFIDENCE` whenever the model declined to say. That is fine
-    *because* it only happens when the two are equally supported: what must
-    not happen is a more confident description losing to a less confident one
-    for being listed second.
+    Total, and that is the whole point. An earlier version compared
+    confidence alone and fell through to "keep the one already there", which
+    is order-dependent exactly where it matters: two mentions of one entity
+    carry the *same* confidence whenever the model declined to score them,
+    which is the common case rather than the edge case. The same document
+    would then map differently depending on the order the model happened to
+    list things in.
+
+    cosmic-ray found it. Mutating `>` to `>=` flipped which of two tied
+    mentions survived and every test passed, because they all used distinct
+    confidences -- the CLAUDE.md failure shape, where the input makes two
+    candidate implementations agree.
+
+    Confidence first, which is the only part anyone would design
+    deliberately. The rest exist to make the order total:
+
+    - description length, preferring the mention that said more, which is
+      usually the chunk holding the whole sentence rather than its tail;
+    - then the description text and the name, which carry no meaning at all
+      and are there purely so that no two distinct objects compare equal.
+
+    Property-level merging is not attempted: the winner keeps its own
+    `properties` and the loser's are discarded. That is BACKLOG B28.
+
+    Shared with `kg_builder.extraction.merging`, which folds across chunks
+    using this same order. Two definitions would be two tie-breaks, and
+    "dedup within one model answer" disagreeing with "dedup across chunks"
+    about which mention wins is a difference nobody would go looking for.
     """
-    return right if right.confidence > left.confidence else left
+    return (
+        entity.confidence,
+        len(entity.description or ""),
+        entity.description or "",
+        entity.name,
+    )
 
 
 def map_extraction(
@@ -183,7 +211,8 @@ def map_extraction(
             dropped += 1
             continue
         existing = by_id.get(built.id)
-        by_id[built.id] = built if existing is None else _more_confident(existing, built)
+        if existing is None or preference(built) > preference(existing):
+            by_id[built.id] = built
 
     relationships, unresolved, self_loops = _map_relationships(
         extraction, tenant_id=tenant_id, source_id=source_id, known=set(by_id)

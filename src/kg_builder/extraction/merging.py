@@ -28,17 +28,23 @@ confidence -- above all `DEFAULT_CONFIDENCE`, which is what every entity gets
 when the model declines to say -- and "keep the one already there" would then
 make the answer depend on which chunk the splitter happened to emit first.
 
-`_preference` is therefore a total order over the whole object, so the winner
-is a `max` and the result cannot depend on iteration order. That is what the
-hypothesis property in `tests/unit/extraction/test_merging.py` checks, by
-permuting chunks whose entities are deliberately tied.
+`kg_builder.extraction.mapping.preference` is therefore a total order over the
+whole object, so the winner is a `max` and the result cannot depend on
+iteration order. That is what the hypothesis property in
+`tests/unit/extraction/test_merging.py` checks, by permuting chunks whose
+entities are deliberately tied.
+
+It is **imported** rather than defined here, and shared with the within-call
+deduplication in `mapping.py`. Two definitions would be two tie-breaks, and
+"dedup within one model answer" and "dedup across chunks" disagreeing about
+which mention wins is a difference nobody would ever go looking for.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kg_builder.extraction.mapping import MappedExtraction
+from kg_builder.extraction.mapping import MappedExtraction, preference
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -46,31 +52,6 @@ if TYPE_CHECKING:
 
     from kg_builder.domain.entity import Entity
     from kg_builder.domain.relationship import Relationship
-
-
-def _preference(entity: Entity) -> tuple[float, int, str, str]:
-    """A total order on two mappings of one entity. Higher wins.
-
-    Confidence first, which is the only part anyone would design
-    deliberately. The rest exist to make the order *total*, so that equal
-    confidence -- the common case, not the edge case -- resolves the same way
-    whatever order the chunks arrive in:
-
-    - description length, preferring the mention that said more, which is
-      usually the chunk that held the whole sentence rather than its tail;
-    - then the description text and the name, which carry no meaning at all
-      and are there purely so no two distinct objects compare equal.
-
-    Property-level merging is explicitly not attempted: the winner keeps its
-    own `properties` and the loser's are discarded. Combining them is BACKLOG
-    B28, which is about strategies for exactly this and is unresolved.
-    """
-    return (
-        entity.confidence,
-        len(entity.description or ""),
-        entity.description or "",
-        entity.name,
-    )
 
 
 def _relationship_preference(relationship: Relationship) -> tuple[float, str]:
@@ -109,7 +90,7 @@ def merge_extractions(parts: Iterable[MappedExtraction]) -> MappedExtraction:
     for part in parts:
         for entity in part.entities:
             seen = entities.get(entity.id)
-            if seen is None or _preference(entity) > _preference(seen):
+            if seen is None or preference(entity) > preference(seen):
                 entities[entity.id] = entity
         for relationship in part.relationships:
             seen_edge = relationships.get(relationship.id)
