@@ -616,6 +616,25 @@ class VectorStoreCompliance:
         with pytest.raises(ValueError, match="k"):
             await store.search(self._unit(0), uuid4(), k=-1)
 
+    async def test_k_zero_returns_nothing_rather_than_raising(self, store: VectorStore) -> None:
+        """The boundary between "rejected" and "asked for nothing".
+
+        `test_search_never_returns_more_than_k` draws `k` from `0..12`, so it
+        *can* cover this -- and whether it does on any given run depends on
+        the sampler and on `KG_COMPLIANCE_MAX_EXAMPLES`. Two cosmic-ray
+        mutants (`k < 0` widened to `k <= 0` and to `k < 1`, both of which
+        make `k=0` raise) were killed on one run and survived on a shorter
+        one. A boundary that matters belongs in an example, not in a budget:
+        a property test is a sampler, and a sampler is not a proof about a
+        specific value.
+        """
+        tenant = uuid4()
+        await store.upsert(uuid4(), self._unit(0), tenant)
+
+        assert await store.search(self._unit(0), tenant, k=0) == []
+        # And it is genuinely "nothing asked for", not "nothing there".
+        assert len(await store.search(self._unit(0), tenant, k=1)) == 1
+
     async def test_search_on_an_empty_tenant_is_empty(self, store: VectorStore) -> None:
         assert await store.search(self._unit(0), uuid4()) == []
 
