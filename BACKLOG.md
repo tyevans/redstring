@@ -128,9 +128,14 @@ They are defined in `models/extracted_entity.py` and re-exported from
 `schemas/timeline.py`, because `models` sits below `schemas` in the
 import-linter contract and needs them for its temporal columns.
 
-That is correct for the current layering but not their real home: they are
-domain value objects and belong in `temporal/domain/` once the ring migration
-lands. Move them there in the `temporal/` slice.
+That is correct for the current layering but not their real home. As of
+slice 2, `kg_builder.domain.temporal` now also has copies of both enums —
+required so the new `TemporalExtent` value object doesn't depend on the ORM
+layer. The `models/extracted_entity.py` / `schemas/timeline.py` originals are
+intentionally left in place until slice 9 deletes the relational layer;
+until then the definitions exist in two places. Delete the originals and
+re-point any remaining internal references to `kg_builder.domain.temporal`
+in slice 9.
 
 ---
 
