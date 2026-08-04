@@ -78,12 +78,31 @@ def preference(entity: Entity) -> tuple[float, int, bool, str, str, int, str]:
     `[("a", None)], [("a", "")]`.
 
     That last one is what makes the order genuinely total rather than merely
-    long. `_build_entity` sets `tenant_id`, `source_id`, `entity_type`,
-    `extraction_method` and `model` identically for every mention in a
-    bucket, and never populates `external_ids`, `source_text`, `temporal` or
-    `blocking_keys` at all -- so `confidence`, `name`, `description` and
-    `properties` are exactly the fields two mappings of one entity can
-    disagree about, and all four are here.
+    long, and the argument for totality is worth stating precisely because it
+    is what makes a `>` -> `>=` mutant *equivalent* here rather than live.
+
+    Within one id bucket, every field of an `Entity` is in one of three
+    groups:
+
+    - **Fixed by the caller.** `_build_entity` sets `tenant_id`, `source_id`,
+      `entity_type`, `extraction_method` and `model` identically for every
+      mention in a bucket.
+    - **Derived from fields the id already fixes.** `normalized_name` and
+      `blocking_keys` are pure functions of `name` and `entity_type`, both of
+      which are inputs to `entity_id_for` -- so two mentions in one bucket
+      cannot disagree about them. This group is the one to check when adding
+      a field: a derived field is safe, an independently-supplied one is not.
+    - **Never populated.** `external_ids`, `source_text` and `temporal`.
+
+    What is left -- `confidence`, `name`, `description` and `properties` -- is
+    exactly what two mappings of one entity can disagree about, and all four
+    are here.
+
+    (An earlier version of this paragraph listed `blocking_keys` as never
+    populated. That stopped being true when extraction began computing keys,
+    and the conclusion survived only because the field is derived. The
+    three-group form above is stated so the next added field is checked
+    against a rule rather than against a list.)
 
     Property-level *merging* is still not attempted: the winner keeps its own
     `properties` and the loser's are discarded. That is BACKLOG B28.

@@ -659,6 +659,49 @@ class TestBlockingKeys:
             found = await store.find_by_blocking_key(key, built.tenant_id)
             assert [e.id for e in found] == [built.id], key
 
+    @given(
+        names=st.lists(
+            st.sampled_from(["Ada Lovelace", "ada lovelace", "  ADA   Lovelace "]),
+            min_size=2,
+            max_size=4,
+        ),
+        confidences=st.lists(st.floats(0.0, 1.0), min_size=4, max_size=4),
+    )
+    def test_mentions_in_one_bucket_agree_on_every_derived_field(self, names, confidences):
+        """The premise `domain/preference.py`'s totality argument rests on.
+
+        `normalized_name` and `blocking_keys` are not in the tie-break order,
+        and that is only safe because two mentions of one entity cannot
+        disagree about them -- both are pure functions of `name` and
+        `entity_type`, which are the inputs to `entity_id_for`. The names here
+        differ in case and whitespace *and still share an id*, which is the
+        case that would break it if either function stopped normalizing.
+
+        Checked rather than asserted, because the paragraph it supports is
+        what makes a `>` -> `>=` mutant on that order equivalent rather than
+        live -- and because the paragraph was wrong once already.
+        """
+        # Mapped one per call, so every mention survives and can be compared.
+        # Deduplicating them first would leave one entity and nothing to
+        # compare it against, which is how a test of this shape ends up
+        # asserting only that dedup happened.
+        built = [
+            mapped(
+                Extraction(
+                    entities=[entity(name, confidence=confidences[index % len(confidences)])]
+                )
+            ).entities[0]
+            for index, name in enumerate(names)
+        ]
+
+        assert len({e.id for e in built}) == 1, "the names should share one id"
+        assert len({e.normalized_name for e in built}) == 1
+        assert len({e.blocking_keys for e in built}) == 1
+        # The fields that *may* differ, so the test is not vacuous: if these
+        # were also constant the assertions above would say nothing about
+        # derivation.
+        assert {e.name for e in built} == set(names)
+
     def test_an_entity_whose_name_has_no_letters_still_has_keys(self):
         """The soundex key is absent for it, and the other two are not -- so it
         is still blockable. An entity with no keys at all cannot be
