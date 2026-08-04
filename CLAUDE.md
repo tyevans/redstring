@@ -76,15 +76,30 @@ to lowest:
 
 ```
 services
-extraction : graph : preprocessing : scraping : schemas   (independent siblings)
-inference
+extraction : graph : vector : llm : schemas    (independent siblings)
+projections
+aggregates
 models
 events : db : cache : encryption : config : context
+ports
+domain
 ```
 
 Lower layers must not import higher ones, and the sibling layers must not import
 each other. Adding a cross-layer import means either the code is in the wrong
 layer or the contract needs an explicit, argued change.
+
+The sibling band is where the real work happens. `llm` sits *beside*
+`extraction` rather than beneath it precisely because siblings may not import
+each other: extraction can therefore reach `ports.llm_provider` and never the
+LangChain adapter. Put `llm` any lower and the port stops meaning anything.
+
+**`lint-imports` only sees first-party imports**, so it cannot catch a
+`langchain*` import appearing where it should not. That is what
+`tests/unit/llm/test_port_does_not_leak.py` is for — it parses every module
+under `src/` and fails on a third-party leak outside the adapter package.
+Any dependency the architecture deliberately confines to one module needs
+that second kind of check; the contract alone will not do it.
 
 ## Mutation testing
 
@@ -140,7 +155,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape seven times,
+  testing the difference.** This project has hit the same shape nine times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -151,17 +166,28 @@ reading the code:
   | results only, never the query plan | a full scan where an index seek was meant — same answers, catastrophic cost |
   | ids drawn from `uuid4()`, never colliding across tenants | a `(tenant_id, id)` key compared on `id` alone — one tenant's write vouches for another's |
   | a *small* integer (CPython caches -5..256) | `is not` where `!=` was meant — correct at a test dimension of 8, rejects every legitimate write at 768 |
+  | a loop body reached with exactly *one* item left | `break` where `continue` was meant — identical on a one-element remainder, discards every later item in real input |
+  | objects built only through a factory that passes every field | wrong defaults on the public type — the signature invites direct construction that no test performs |
   | a fixture reusing state a previous run left behind | setup that does nothing — the DDL loop can be replaced by an empty iterable and nothing notices |
 
-  The last two came from one cosmic-ray run over the vector adapters. The
-  small-integer row is the string-interning row's sibling: **the two
-  identity-vs-equality rows both fired because the test value sat inside a
-  CPython cache.** Test numeric bounds at a *realistic* magnitude —
-  `nomic-embed-text` is 768, and a dimension check written with `is not`
-  passes at 8 and rejects everything real. The fixture row is the one
-  reviewers never look for: at least one test per stateful setup path must
-  start from genuinely nothing, or the setup is unverified no matter how many
-  tests depend on it.
+  The small-integer row is the string-interning row's sibling: **both
+  identity-vs-equality rows fired because the test value sat inside a CPython
+  cache.** Test numeric bounds at a *realistic* magnitude — `nomic-embed-text`
+  is 768, and a dimension check written with `is not` passes at 8 and rejects
+  everything real.
+
+  The one-item-loop row is the chain-graph row in miniature: every test stated
+  exactly one relationship, and on a one-element remainder `break` and
+  `continue` are the same function. In real input it would have discarded
+  every relationship after the first bad one. State a bad row *followed by a
+  good one*, in every loop.
+
+  The factory row is the one nothing else catches: if every test builds a type
+  through a helper that passes all fields, the type's own defaults are never
+  executed, while its signature openly invites direct construction. The
+  fixture row is the one reviewers never look for: at least one test per
+  stateful setup path must start from genuinely nothing, or the setup is
+  unverified no matter how many tests depend on it.
 
   **When a key is a tuple, write one test where its components collide.**
   This is narrower than the rule above, and it is the form that actually
