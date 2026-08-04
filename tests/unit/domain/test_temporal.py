@@ -1,6 +1,6 @@
 """Tests for kg_builder.domain.temporal."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from hypothesis import given
@@ -115,11 +115,19 @@ def test_any_naive_datetime_is_rejected(dt):
         TemporalExtent(start_date=dt)
 
 
-@given(aware_datetimes, st.timedeltas(min_value=timedelta(0), max_value=timedelta(days=100000)))
-def test_round_trip_through_model_dump(start, delta):
+# Drawn as a sorted pair rather than start + timedelta: an offset of up to
+# 100000 days added to a start near year 9999 raises OverflowError inside the
+# strategy, which is a bug in the test rather than a property of the model.
+# Sorting keeps full-range coverage, extremes included, and cannot overflow.
+ordered_aware_pairs = st.lists(aware_datetimes, min_size=2, max_size=2).map(sorted)
+
+
+@given(ordered_aware_pairs)
+def test_round_trip_through_model_dump(bounds):
+    start, end = bounds
     extent = TemporalExtent(
         start_date=start,
-        end_date=start + delta,
+        end_date=end,
         precision=DatePrecision.DAY,
         uncertainty=UncertaintyMarker.APPROXIMATE,
         original_text="sometime",
