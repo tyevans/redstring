@@ -3,7 +3,7 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **1910 tests pass, 0 fail**,
+Status of the tree as of the last update: **1966 tests pass, 0 fail**,
 full `pre-commit` gate green (now including `mypy`, see B30), nothing skipped
 at collection. The accuracy suite is deselected by default (see B12). (Slice
 1 of the ring migration deleted document sourcing -- scraping, storage,
@@ -168,6 +168,31 @@ integration fixture. Consequences:
   instead (see B17).
 - The `integration` marker is declared in `pyproject.toml` but no test uses
   it, and `tests/integration/` does not exist.
+
+### B32. Relationship-payload isolation is untestable through `GraphStore`
+
+`src/kg_builder/graph/adapters/memory.py::upsert_relationship` stores
+`relationship.model_copy(deep=True)`. Mutating that to `deep=False` survives
+cosmic-ray, and it is **not** an equivalent mutant: a shallow copy would let a
+caller mutate a stored relationship's `properties` dict after the write
+returned.
+
+No test in `tests/compliance/graph_store.py` can catch it, because the port
+has no method that returns a `Relationship`. `neighbors` returns entities;
+that is the only relationship read path, and it exposes edges solely through
+which entities they connect. Every other read path in the port has a
+mutation-isolation test (see `54553fe`); this is the single gap.
+
+Do **not** fix this by adding a `get_relationship` / `find_relationships`
+method to the port just to make the test writable — nothing in the library
+needs to read edge payloads yet, and designing a port around its test suite
+is the wrong trade. Resolve it when a real caller needs to read
+relationships (consolidation provenance in slice 7 is the likely trigger):
+add the method because it is needed, then add the isolation test with it.
+
+Until then, adapter authors must know the compliance suite does not check
+that stored relationships are copied. Slice 4's Neo4j adapter gets this for
+free (the driver deserializes fresh objects); an in-process adapter does not.
 
 ### B11. `AsyncMock` misuse still warns in two tests
 
