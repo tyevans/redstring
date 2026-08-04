@@ -118,11 +118,50 @@ class TestSoundex:
     def test_a_name_with_some_letters_is_coded(self):
         assert soundex_key(_entity("Q3 2024 Review")) is not None
 
-    def test_accents_are_dropped_rather_than_coded(self):
-        """`soundex("\u00e9ada")` is `"E300"`, led by the accent; the reduction
-        makes it `"A300"`, which is what a phonetic code for "ada" should be.
+    def test_accents_are_folded_rather_than_discarded(self):
+        """The case that matters is an accented **consonant**.
+
+        Discarding the character instead of folding it loses a coded letter:
+        "Mu\u00f1oz" reduces to "muoz" and codes `M200`, while "Munoz" codes
+        `M520` -- so the two spellings of one name never share a block, which
+        is the miss blocking exists to prevent. Folding through NFKD makes
+        both `M520`.
+
+        An accented *vowel* hides this: soundex ignores vowels after the first
+        letter, so "Ren\u00e9e" and "Renee" both code `R500` either way. A test
+        written with a vowel would pass against the broken implementation --
+        the `CLAUDE.md` shape, in a spelling nobody would think to look for.
         """
-        assert soundex_key(_entity("\u00e9ada")) == soundex_key(_entity("ada"))
+        assert soundex_key(_entity("Mu\u00f1oz")) == soundex_key(_entity("Munoz"))
+        assert soundex_key(_entity("\u00c5ngstr\u00f6m")) == soundex_key(_entity("Angstrom"))
+
+    def test_an_accented_first_letter_folds_too(self):
+        """soundex keeps the first letter verbatim, so this is the position
+        where a stray accent does the most damage."""
+        assert soundex_key(_entity("\u00e9ada")) == soundex_key(_entity("eada"))
+
+
+class TestTheTypeKey:
+    def test_it_normalizes_like_the_prefix_does(self):
+        """`prefix_key`'s docstring gives the argument and it applies here
+        equally: two extractors writing "Person" and "person" for one type
+        must not land in different blocks."""
+        assert entity_type_key(_entity("Ada", entity_type="Person")) == entity_type_key(
+            _entity("Ada", entity_type="  person ")
+        )
+
+    def test_internal_whitespace_collapses(self):
+        assert entity_type_key(_entity("Ada", entity_type="legal   entity")) == entity_type_key(
+            _entity("Ada", entity_type="Legal Entity")
+        )
+
+    def test_it_is_still_always_present(self):
+        """The property that makes every entity blockable. Normalizing must
+        not introduce a way for the type key to vanish -- `Entity` does not
+        reject a whitespace-only `entity_type`, so this is reachable."""
+        key = entity_type_key(_entity("Ada", entity_type="   "))
+
+        assert key == "t:"
 
 
 class TestTheKeySet:

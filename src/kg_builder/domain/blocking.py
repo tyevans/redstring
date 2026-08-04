@@ -49,15 +49,34 @@ soundex("\u4e2d\u6587")   -> "\u4e2d000"     every CJK name starting the same wa
 Each of those is a key that matches far too much, which is the one failure
 blocking cannot survive: an oversized block puts the quadratic back. So the
 name is reduced to its ASCII letters first, and a name with none gets no
-soundex key rather than a junk one. Accents are dropped along the way, which
-is the right reading for a phonetic code.
+soundex key rather than a junk one.
+
+**Accents are folded, not discarded**, and the difference is the whole point
+of the reduction. Simply dropping non-ASCII characters loses a *coded letter*
+whenever the accent is on a consonant: "Mu\u00f1oz" becomes "muoz" and codes
+`M200`, while "Munoz" codes `M520` -- two spellings of one name that can never
+share a block. NFKD splits the character into its base letter plus a combining
+mark, so the letter survives and only the mark is dropped. An accented *vowel*
+hides this, since soundex ignores vowels after the first letter: "Ren\u00e9e" and
+"Renee" both code `R500` either way.
 
 `prefix_key` and `entity_type_key` are always present -- `Entity` refuses a
 blank name, and every entity has a type -- so no entity is ever unblockable.
+
+## Both textual keys normalize, and neither trusts a stored field
+
+`prefix_key` and `entity_type_key` run `normalize_name` themselves. Two
+extractors writing "Person" and "person" for one type would otherwise land in
+different `t:` blocks, which is the same miss `prefix_key` normalizes to
+avoid. Note `entity_id_for` does **not** normalize the type, so those two are
+genuinely different entities -- which is exactly why they need to block
+together: telling them apart is consolidation's judgement to make, and it
+cannot make it if they never meet.
 """
 
 from __future__ import annotations
 
+import unicodedata
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -124,27 +143,36 @@ def prefix_key(entity: Entity) -> str:
 
 
 def entity_type_key(entity: Entity) -> str:
-    """The entity's type. Always present -- see the module docstring."""
-    return _TYPE + entity.entity_type
+    """The entity's type, normalized. Always present -- see the docstring.
+
+    Total, and deliberately without a blank-type guard. `Entity` does not
+    reject a whitespace-only `entity_type`, so `"t:"` is reachable -- and it
+    is the *right* answer: those entities share a type, vacuous as it is, and
+    a key of `None` would leave them with one fewer way to be found. This is
+    the opposite of `soundex_key`'s empty case, where the shared value would
+    be a phonetic claim that was never made.
+    """
+    return _TYPE + normalize_name(entity.entity_type)
 
 
 def soundex_key(entity: Entity) -> str | None:
     """A phonetic code for the name, or `None` when there is nothing to code.
 
-    The name is reduced to its ASCII letters first. `jellyfish.soundex` accepts
-    anything and codes digits, spaces and CJK into keys that collide far too
-    widely -- see the module docstring for the four measured cases. Reducing
-    first is what makes the output a phonetic code rather than a hash of
-    whatever characters happened to be there.
+    The name is NFKD-normalized and reduced to its ASCII letters first.
+    `jellyfish.soundex` accepts anything and codes digits, spaces and CJK into
+    keys that collide far too widely -- see the module docstring for the four
+    measured cases, and for why the normalization has to come *before* the
+    filter rather than instead of it.
 
     The **whole** name is coded, not the first token. Coding "Ada Lovelace" as
     if it were "Ada" would block it with every Adam and Adams in the tenant,
     which is the block-too-large failure this file's docstring warns about.
     """
+    # NFKD first, so an accented letter becomes base + combining mark and the
+    # base survives the ASCII filter. Filtering without it drops the letter.
+    decomposed = unicodedata.normalize("NFKD", normalize_name(entity.name))
     letters = "".join(
-        character
-        for character in normalize_name(entity.name)
-        if character.isascii() and character.isalpha()
+        character for character in decomposed if character.isascii() and character.isalpha()
     )
     if not letters:
         return None
