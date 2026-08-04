@@ -152,6 +152,29 @@ Classify survivors before drawing any conclusion. The bar is **"every survivor
 is understood"**, never a number. Group them by diff hunk first — the same
 source line usually accounts for a dozen mutants.
 
+### A zero-survivor run is the result most in need of suspicion
+
+**Prove the harness works before believing any mutation result, and disbelieve
+a perfect score first.** Slice 7's first run reported **0 survivors out of
+426**, and a planner-only run before it reported 0 out of 45. Both were
+worthless: the worktree had been synced without a required dependency, so every
+mutant "died" on a collection error. `cr-report` showed
+`WorkerOutcome.NORMAL, TestOutcome.KILLED` for all 426 — indistinguishable from
+an outstanding suite.
+
+This is the other half of "never gate on a raw survivor count". A high survivor
+count merely needs classifying; a *zero* usually means the tests never ran.
+Before reading a run: execute the configured `test-command` unmutated in the
+same environment and require it green. cosmic-ray runs in a separate worktree
+or clone (its `local` distributor mutates the working tree in place), and a
+worktree is exactly where a missing extra goes unnoticed.
+
+Hand-verifying a mutant has its own trap: CPython validates a `.pyc` on
+`(mtime, size)`, so an edit that leaves the file the same size — `1.0` for
+`2.0` — can keep stale bytecode loaded and the mutant never runs. Use
+`PYTHONDONTWRITEBYTECODE=1`, and `dis.dis` on the loaded function when a
+survivor looks impossible.
+
 The survivors worth your attention are the ones where a test passes for an
 accidental reason. Two real examples from slice 3, neither findable by
 reading the code:
