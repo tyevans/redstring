@@ -22,20 +22,25 @@ property of the port precisely so a projection would not need a second dedupe
 layer, and there is none here.
 
 Handlers are **not** order-independent across events, and the reason is
-`GraphStore`'s shape rather than an oversight. A redelivered
-`DocumentExtracted` arriving *after* an `EntitiesMerged` that redirected one
-of its edges will write that edge's original endpoints back. The store has
-nowhere to record that the merge happened -- there is no alias node, no
-canonical pointer, nothing a later write could consult -- so the fold cannot
-detect it.
+`GraphStore`'s shape rather than an oversight. A `DocumentExtracted` applied
+*after* an `EntitiesMerged` that redirected one of its edges writes that
+edge's original endpoints back, undoing the merge. The store has nowhere to
+record that the merge happened -- there is no alias node, no canonical
+pointer, nothing a later write could consult -- so the fold cannot detect it.
 
-What this needs from the delivery mechanism is **order-preserving
-redelivery**: the same events, possibly repeated, never reordered. That is
-exactly what a checkpointed feed gives, because redelivery is always a
-contiguous suffix replayed from the last checkpoint, so the *last* occurrence
-of each event is still in log order and the final state is the log's. An
-at-most-once bus that could deliver e1, e2, e1 would break it. See BACKLOG
-B34 for what fixing it properly would take.
+**This is not only a redelivery hazard.** It happens in strict log order,
+every event delivered once, whenever a document is re-extracted under a new
+model version after a merge touched its entities -- which
+`Document.record_extraction` exists to allow. So the assumption is not "the
+bus preserves order" but *"no `DocumentExtracted` ever follows a merge that
+touched its entities"*, which no delivery mechanism can supply. See BACKLOG
+B34, and `tests/unit/projections/test_known_gaps.py`, which pins the wrong
+answer on purpose so the day it changes, someone reads it.
+
+Redelivery is the milder half of the same defect, and there the fold is safe:
+a checkpointed feed redelivers a contiguous suffix in order, so the last
+occurrence of each event is still in log order and the final state is the
+log's. An at-most-once bus that could deliver e1, e2, e1 would break that too.
 
 ## A missing endpoint is a poison event
 
