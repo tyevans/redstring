@@ -7,10 +7,12 @@ same reason: a rule written only in prose is the one that failed four times
 in slice 3.
 """
 
+import importlib
+import pkgutil
 from uuid import uuid4
 
 import pytest
-from eventsource.domain.event_registry import get_event_class
+from eventsource.domain.event_registry import default_registry, get_event_class
 
 from kg_builder.events import KG_EVENT_TYPES
 from kg_builder.events.streams import CONSOLIDATION_CATEGORY, DOCUMENT_CATEGORY
@@ -99,3 +101,98 @@ def test_every_event_resolves_from_the_registry_by_its_wire_name(event_type):
     is what says so.
     """
     assert get_event_class(event_type.event_type_name()) is event_type
+
+
+#: The two legacy modules whose classes are not part of the live schema.
+#:
+#: They are un-registered (see `events/__init__.py`), so they should not appear
+#: in the registry at all -- this list is what makes that a *checked* claim
+#: rather than an assumed one, and it must shrink to nothing when B33 lands.
+LEGACY_EVENT_MODULES = frozenset({"kg_builder.events.consolidation", "kg_builder.events.scraping"})
+
+
+def _import_every_module_of_the_events_package():
+    """Import every module in `kg_builder.events`, and say which they were.
+
+    Without this the registry check has the same hole it is closing. A new
+    event module that nothing imports registers nothing, so the registry would
+    not know about it and the comparison would pass -- the omission would be
+    invisible in exactly the way the hand-maintained tuple is. Walking the
+    package makes the *filesystem* the source of truth, which is the only
+    thing here that cannot be forgotten.
+    """
+    package = importlib.import_module("kg_builder.events")
+    for module in pkgutil.iter_modules(package.__path__):
+        importlib.import_module(f"kg_builder.events.{module.name}")
+
+
+def _registered_kg_event_classes():
+    """Every registered event class that belongs to `kg_builder.events`.
+
+    Derived from the library's own registry rather than from `KG_EVENT_TYPES`,
+    which is the point: the tuple is hand-maintained, and every other gate in
+    this module reads from it.
+    """
+    _import_every_module_of_the_events_package()
+    return {
+        cls
+        for cls in default_registry.list_classes()
+        if cls.__module__.startswith("kg_builder.events")
+        and cls.__module__ not in LEGACY_EVENT_MODULES
+    }
+
+
+def test_the_tuple_lists_exactly_the_registered_events():
+    """`KG_EVENT_TYPES` is hand-maintained, and everything else keys off it.
+
+    `test_schema.py` and `test_replay_coverage.py` both derive their cases
+    from that tuple, so an event class that is written, registered, and simply
+    not added to it gets no schema check, no replay case and no handler check
+    -- and nothing goes red. The docstring saying "adding an event means
+    adding it here" is exactly the prose rule CLAUDE.md says fails.
+
+    This is the one gate that cannot key off the tuple, so it reads the
+    registry after importing the whole package.
+    """
+    registered = _registered_kg_event_classes()
+    missing = registered - set(KG_EVENT_TYPES)
+    extra = set(KG_EVENT_TYPES) - registered
+
+    assert not missing, (
+        f"registered but absent from KG_EVENT_TYPES, so nothing checks them: "
+        f"{sorted(c.__name__ for c in missing)}"
+    )
+    assert not extra, (
+        f"in KG_EVENT_TYPES but not registered, so a stored one cannot be "
+        f"deserialised: {sorted(c.__name__ for c in extra)}"
+    )
+
+
+def test_the_legacy_modules_hold_no_registered_events():
+    """The other half. `LEGACY_EVENT_MODULES` exists to exclude those classes
+    from the check above, and an exclusion list is only safe while the thing
+    it excludes really is inert -- if one were re-registered, the exclusion
+    would hide it rather than report it.
+
+    Imports the package first for the same reason: a legacy module nothing
+    imported would pass this vacuously.
+    """
+    _import_every_module_of_the_events_package()
+    legacy = {
+        cls.__name__
+        for cls in default_registry.list_classes()
+        if cls.__module__ in LEGACY_EVENT_MODULES
+    }
+    assert legacy == set(), (
+        f"legacy event classes are registered again: {sorted(legacy)}. They "
+        f"hold wire names the live schema needs; see BACKLOG B33."
+    )
+
+
+def test_the_legacy_modules_named_for_exclusion_still_exist():
+    """An exclusion list that names a module nobody has is an exclusion that
+    silently stops excluding. When B33 deletes these, this fails and the list
+    must shrink with them."""
+    _import_every_module_of_the_events_package()
+    for name in LEGACY_EVENT_MODULES:
+        assert importlib.import_module(name), name

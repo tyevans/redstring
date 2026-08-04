@@ -8,9 +8,13 @@ new event class inherits those checks by joining it. `tests/unit/events/
 test_schema.py` and `tests/unit/projections/test_replay_coverage.py` both key
 off this tuple.
 
-**Adding an event means adding it here.** Both suites derive their cases from
-this tuple, so an event class that exists but is not listed is an event
-nothing checks.
+**Adding an event means adding it here** -- and forgetting is a red test
+rather than a rule you had to remember. Both suites derive their cases from
+this tuple, so an event class that exists but is not listed would otherwise be
+an event nothing checks. `test_the_tuple_lists_exactly_the_registered_events`
+closes that by walking every module in this package and comparing the library
+registry against this tuple, in both directions; the filesystem is the source
+of truth, because it is the one thing that cannot be forgotten.
 
 The modules `consolidation` and `scraping` are **not** part of this schema.
 They are what is left of the ORM-shaped classes this package used to hold;
