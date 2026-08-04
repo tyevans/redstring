@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     APP_NAME: str = "Knowledge Mapper"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
-    DB_ECHO: bool = False  # Log all SQL queries (noisy, use sparingly)
 
     # API
     API_V1_PREFIX: str = "/api/v1"
@@ -27,33 +26,10 @@ class Settings(BaseSettings):
     CORS_ALLOW_METHODS: list[str] = ["*"]
     CORS_ALLOW_HEADERS: list[str] = ["*"]
 
-    # Database Configuration
-    # Application runtime uses knowledge_mapper_app_user (NO BYPASSRLS - RLS policies enforced)
-    DATABASE_URL: str = "postgresql+asyncpg://knowledge_mapper_app_user:app_password_dev@postgres:5435/knowledge_mapper_db"
-
-    # Migration database URL uses knowledge_mapper_migration_user (with BYPASSRLS for schema management)  # noqa: E501
-    MIGRATION_DATABASE_URL: str = "postgresql+asyncpg://knowledge_mapper_migration_user:migration_password_dev@postgres:5435/knowledge_mapper_db"
-
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     RELOAD: bool = True
-
-    # OAuth Configuration
-    OAUTH_ISSUER_URL: str = "http://keycloak:8080/realms/knowledge-mapper-dev"
-    OAUTH_AUDIENCE: str = "knowledge-mapper-backend"  # Expected 'aud' claim in tokens
-    OAUTH_ALGORITHMS: list[str] = ["RS256"]  # Supported signing algorithms
-
-    # JWKS Configuration
-    JWKS_CACHE_TTL: int = 3600  # Cache JWKS for 1 hour (seconds)
-    JWKS_HTTP_TIMEOUT: int = 10  # HTTP timeout for JWKS/OIDC requests (seconds)
-
-    # OAuth Client Configuration (TASK-011)
-    OAUTH_CLIENT_ID: str = "knowledge-mapper-backend"
-    OAUTH_CLIENT_SECRET: str = "your-client-secret"  # Set via environment variable in production
-    OAUTH_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/callback"
-    OAUTH_SCOPES: list[str] = ["openid", "profile", "email"]
-    OAUTH_USE_PKCE: bool = True  # Enable PKCE for enhanced security
 
     # Redis Configuration
     REDIS_URL: str = "redis://default:knowledge_mapper_redis_pass@redis:6379/0"
@@ -63,34 +39,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = 100  # General auth request limit
     RATE_LIMIT_FAILED_AUTH_PER_MINUTE: int = 10  # Failed auth attempt limit
     RATE_LIMIT_WINDOW_SECONDS: int = 60  # Time window for rate limiting
-
-    # Session Configuration (TASK-012)
-    SESSION_COOKIE_SECURE: bool = False  # Set Secure flag on cookies (True for HTTPS in production)
-    SESSION_COOKIE_MAX_AGE: int = 86400 * 7  # Max age for session cookies (7 days)
-    FRONTEND_URL: str = "http://localhost:5173"  # Frontend URL for post-auth redirect
-
-    # Multi-Tenancy Configuration
-    TENANT_CLAIM_NAME: str = "tenant_id"  # Claim name in OAuth token for tenant ID
-    REQUIRE_TENANT_CLAIM: bool = True  # Require tenant claim in all OAuth tokens
-
-    # ==========================================================================
-    # App Token Configuration (Backend-issued JWTs)
-    # Used for tenant-scoped tokens after initial Keycloak authentication
-    # ==========================================================================
-
-    # RSA keys for signing app tokens (PEM format)
-    # In production, set via environment variables
-    APP_JWT_PRIVATE_KEY: str = ""  # RSA private key (required for token signing)
-    APP_JWT_PUBLIC_KEY: str = ""  # RSA public key (for token validation)
-
-    # Token settings
-    APP_JWT_ALGORITHM: str = "RS256"  # Signing algorithm
-    APP_JWT_ISSUER: str = "knowledge-mapper-backend"  # Issuer claim value
-    APP_JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # Access token lifetime
-    APP_JWT_KEY_ID: str = "app-key-1"  # Key ID for JWKS rotation support
-
-    # Tenant Resolver Configuration (TASK-016)
-    TENANT_CACHE_TTL: int = 3600  # Tenant cache TTL in seconds (1 hour)
 
     # ==========================================================================
     # Event Sourcing Configuration
@@ -236,7 +184,6 @@ class Settings(BaseSettings):
     # ==========================================================================
 
     # Master toggles
-    PREPROCESSING_ENABLED: bool = True  # Use the chunk/extract/merge pipeline
     CHUNKING_ENABLED: bool = True  # Enable document chunking
 
     # Chunker settings

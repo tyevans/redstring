@@ -34,6 +34,45 @@ is not meaningful.
 
 ## 1. Unlanded features
 
+### B56. `config.py` is still a web application's settings object
+
+Slice 9 pruned what the relational and auth deletions made dead -- the whole
+OAuth/JWKS/session/app-JWT surface (B6), `DATABASE_URL`,
+`MIGRATION_DATABASE_URL`, `DB_ECHO` and `PREPROCESSING_ENABLED` (B39). 53
+lines. What is left is 287 lines of which **four keys are read by anything**:
+
+| Key | Read by |
+|---|---|
+| `ENCRYPTION_ENABLED`, `ENCRYPTION_MASTER_KEY` | `encryption.py` |
+| `REDIS_URL` | `cache.py` |
+
+That is the whole list -- measured by grepping every `settings.X` in `src/`,
+not estimated. Note `OLLAMA_MAX_RETRIES` is *mentioned* in `llm/retry.py` only
+by a comment explaining why the module deliberately uses a plain default
+instead, which is the shape the rest of this object should follow.
+
+**What remains and why none of it belongs in a library:** `CSP_*` (11 keys),
+`HSTS_*`, `X_FRAME_OPTIONS` and the other security headers describe middleware
+this library does not have and cannot install; `KAFKA_*` (11 keys) configures
+an event bus that is not a dependency (see B38 -- the `[all]` extra that would
+bring one cannot even resolve); `CORS_*`, `HOST`, `PORT`, `RELOAD`,
+`API_V1_PREFIX`, `APP_NAME` are a web server's; `EVENT_STORE_ENABLED`,
+`SNAPSHOT_*` and `RATE_LIMIT_*` describe toggles nothing consults.
+
+**Not removed in slice 9 on purpose.** The relational deletion had a clear
+test -- the module is gone, so its settings are dead -- and these keys fail
+that test in the other direction: they were already dead before slice 9 and
+deleting them is a separate argument. More importantly the replacement is a
+design decision, not a deletion: a library configures itself through its
+constructors (`PgVectorStore.connect(dsn, ...)`, `Neo4jGraphStore(...)`,
+`RateLimiter(cache=...)`), and every adapter here already does. So the honest
+end state is probably that `Settings` disappears entirely and `cache.py` and
+`encryption.py` take their two and three values as arguments -- which changes
+the public API and therefore belongs to slice 10.
+
+Do it there, and do it as a deletion of the class rather than a further prune:
+pruning it key by key is how it survived eight slices.
+
 ### B55. The strategy router was deleted, and the domain schemas now have no caller
 
 Slice 9 deleted `extraction/strategy_router.py` (583 lines) and its 826-line
@@ -446,23 +485,6 @@ constructs a `RedisCache`: both `RateLimiter` and `CircuitBreaker` default to
 `MemoryCache`, so a caller reaches it only by importing it and passing it
 explicitly. The single-process path — which is every current caller — is fully
 covered.
-
-### B39. `settings.PREPROCESSING_ENABLED` is read by nothing
-
-`config.py:239`. The legacy orchestrator was its only reader, and slice 9
-deleted it with the rest of `services/`. Kept for the length of one commit
-only because `config.py` is a single `Settings` object and pruning it wholesale
-is its own change; it goes with the OAuth block (B6) in this slice.
-
-The rest of this entry described the orchestrator's lost chunk/extract/merge
-branch and is deleted with the module. What it recorded and is worth keeping:
-the replacement is `extraction/pipeline.py`, which does chunk/extract/merge on
-domain types and emits `DocumentExtracted`. Nothing calls it from a service
-layer, on purpose -- wiring it in is slice 10's public-API work.
-### B9. Import-linter contract is not exhaustive
-
-`pyproject.toml` sets `exhaustive = false`, so a new top-level package is
-silently unconstrained. Revisit when the per-context contract lands.
 
 ### B27. `child_of` relationship normalization is ambiguous
 

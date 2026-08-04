@@ -7,10 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.12,<3",
     "pydantic-settings>=2.12,<3",
-    "sqlalchemy[asyncio]>=2.0.45,<3",
     "asyncpg>=0.31.0",
-    "psycopg2-binary>=2.9.11",
-    "pgvector>=0.2.0",
     "httpx>=0.25.0",
     "numpy>=1.26.0",
     "python-dateutil>=2.9.0",
@@ -261,15 +258,20 @@ include_external_packages = false
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
 type = "layers"
+# `containers` + `exhaustive` (below) are what make this contract complete
+# rather than merely correct: with them, a new top-level package under
+# `kg_builder` fails the gate until it is placed on a layer. Layer names are
+# relative to the container, which is why they are bare here.
+containers = ["kg_builder"]
 layers = [
-    # `kg_builder.services` was the top layer and is gone as of slice 9. There
+    # `services` was the top layer and is gone as of slice 9. There
     # is no service layer any more: the write model is `aggregates` + `events`,
     # the read model is `projections`, and persistence is the two ports. A new
     # name here should be argued for, not added because something needs
     # somewhere to sit.
     # `llm` is a sibling of `extraction` rather than beneath it, and that is
     # the load-bearing part: siblings may not import each other, so extraction
-    # can depend only on `kg_builder.ports.llm_provider`. Putting `llm` lower
+    # can depend only on `ports.llm_provider`. Putting `llm` lower
     # would let extraction import the LangChain adapter directly and undo the
     # port. Note that import-linter cannot see the *external* langchain
     # imports; `tests/unit/llm/test_port_does_not_leak.py` covers those.
@@ -285,22 +287,22 @@ layers = [
     # specific -- inferred edges would acquire a path into `DocumentExtracted`,
     # which is exactly the persistence decision `temporal/inference.py` argues
     # against.
-    "kg_builder.extraction : kg_builder.consolidation : kg_builder.temporal : kg_builder.graph : kg_builder.vector : kg_builder.llm",
+    "extraction : consolidation : temporal : graph : vector : llm",
     # Projections read the ports and the event schema and write nothing back:
     # nothing below them may import a projection, and they may not import an
     # adapter.
-    "kg_builder.projections",
+    "projections",
     # Aggregates are the write model: they import events and domain, and
     # nothing below them may import an aggregate.
-    "kg_builder.aggregates",
-    # `kg_builder.models` was a layer of its own here and `kg_builder.db` sat
-    # on the line below; both went in slice 9, as did `kg_builder.schemas`
+    "aggregates",
+    # `models` was a layer of its own here and `db` sat
+    # on the line below; both went in slice 9, as did `schemas`
     # from the sibling line above. There is no ORM and no session for a layer
     # to be built around.
-    "kg_builder.events : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
+    "events : cache : encryption : config : context",
     # Ports sit directly above `domain` and below every adapter: an adapter
-    # (kg_builder.graph.adapters) may import its port, never the reverse.
-    "kg_builder.ports",
-    "kg_builder.domain",
+    # (graph.adapters) may import its port, never the reverse.
+    "ports",
+    "domain",
 ]
-exhaustive = false
+exhaustive = true
