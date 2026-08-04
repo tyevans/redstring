@@ -80,6 +80,39 @@ where the suite is green.
 To accept a deliberate drop, edit `.coverage-baseline` in the same commit and say
 why in the message.
 
+Deleting well-covered legacy code lowers the ratio while removing nothing that
+was tested — slices 7, 8 and 9 all hit this. Justify the movement in the commit
+message rather than adding tests to paper over it. Slice 9's two drops were
+declarative ORM columns (which execute at import, so they scored high while
+proving nothing) and a router whose 826-line test file supplied every input as
+a `MagicMock`.
+
+## An exemption list must fail when what it exempts is gone
+
+**A per-file lint or type exemption that matches no file passes silently.**
+ruff and mypy both accept a pattern for a deleted path without complaint, so a
+shrinking-exemption ratchet stops shrinking and nobody is told.
+
+Slice 9 ran the experiment by accident and got both answers at once. Deleting
+`models/extracted_entity.py` **failed the gate** — because one exemption list
+lived in a test that asserts every entry still names a real file. The ruff and
+mypy ignore lists in `pyproject.toml` carried three deleted paths for one and
+two commits, and nothing said a word. Same hazard, same commit, opposite
+outcomes, decided entirely by whether someone had written the staleness check
+as a test.
+
+So: **every exemption list needs a test that its entries still match something.**
+And when a list empties, decide deliberately between two different things —
+keeping it empty (no exceptions admitted, and adding one is visible in review)
+or deleting it. An *exclusion* over an empty set is the one to delete: it
+excludes nothing, and any guard written over it passes vacuously.
+
+The same reasoning applies to a check that finds nothing. `exhaustive = true`
+on the import contract caught zero violations, which is indistinguishable from
+the option being inert — slice 9 proved it bites by adding a throwaway package,
+watching the contract break, and removing it. **A passing check you have never
+seen fail is not yet evidence.**
+
 ## Architecture contract
 
 `lint-imports` enforces a layered contract declared in `pyproject.toml`, highest
