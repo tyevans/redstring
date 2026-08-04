@@ -245,6 +245,7 @@ class ExtractionPipeline:
         tenant_id: TenantId,
         *,
         allow_partial: bool = False,
+        result: PipelineResult | None = None,
     ) -> DocumentExtracted | None:
         """Extract `document` and record the run on `aggregate`.
 
@@ -256,6 +257,16 @@ class ExtractionPipeline:
             document: The content.
             tenant_id: The tenant the run belongs to.
             allow_partial: Record even though chunks failed. See below.
+            result: An extraction of this document already in hand. Supplied
+                by a caller that needed the `PipelineResult`'s counters as
+                well as the event -- `kg_builder.composition.build_graph` is
+                the one in the library. Without it that caller would call
+                `extract` and then this method, and pay the model twice for
+                one document; the second run produces the same entities, so
+                nothing about the resulting graph would show it and only the
+                bill would. Passing a result for a *different* document is
+                the one way to misuse this, and it is why the parameter is
+                keyword-only and documented rather than convenient.
 
         Returns:
             The `DocumentExtracted`, or `None` when this document has already
@@ -272,7 +283,8 @@ class ExtractionPipeline:
                 False. Nothing is recorded -- the aggregate is untouched, so
                 the refusal cannot itself cause the damage it prevents.
         """
-        result = await self.extract(document, tenant_id)
+        if result is None:
+            result = await self.extract(document, tenant_id)
         if result.failed_chunks and not allow_partial:
             raise PartialExtractionError(
                 source_id=document.id,

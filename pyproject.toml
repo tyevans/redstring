@@ -15,6 +15,14 @@ dependencies = [
     "cryptography>=45.0",
     "redis[hiredis]>=5.3,<6",
     "jellyfish>=1.0.0",
+    # Not an extra any more, as of slice 10. `kg_builder/__init__.py` exports
+    # `build_graph`, `Document`, `DocumentExtracted` and the two projections,
+    # and every one of those needs eventsource -- so `import kg_builder`
+    # needed it, and a public API that fails to import without an extra is not
+    # a public API. The events are the write model, not an optional backend.
+    # The `<0.11` cap stays deliberate: this is a pre-1.0 library whose entire
+    # API changed between 0.5 and 0.9. See BACKLOG B38.
+    "eventsource-py>=0.9.1,<0.11",
 ]
 
 [project.optional-dependencies]
@@ -28,11 +36,8 @@ llm = [
     "langchain-core>=0.3,<2",
     "langchain-openai>=0.2,<2",
 ]
-eventsourcing = [
-    "eventsource-py>=0.9.1,<0.11",
-]
 all = [
-    "kg-builder[neo4j,llm,eventsourcing]",
+    "kg-builder[neo4j,llm]",
 ]
 dev = [
     "bandit[toml]>=1.9.4",
@@ -265,6 +270,12 @@ type = "layers"
 # relative to the container, which is why they are bare here.
 containers = ["kg_builder"]
 layers = [
+    # `composition` is the top layer and the only module in it. It exists
+    # because `extraction` may not import `projections` -- that separation is
+    # what stops a store reference growing back into the pipeline -- and yet
+    # something has to hold both, or the library ships two halves and a
+    # diagram. If a second module wants in here, ask what it composes.
+    "composition",
     # `services` was the top layer and is gone as of slice 9. There
     # is no service layer any more: the write model is `aggregates` + `events`,
     # the read model is `projections`, and persistence is the two ports. A new

@@ -1,0 +1,244 @@
+"""`build_graph`: the one function that joins the write model to the read model.
+
+The end-to-end example (`test_end_to_end_example.py`) proves the happy path
+composes. This file covers what the example does not show: the model-call
+budget, domain selection, the partial-extraction refusal, and what the report
+says.
+
+Nothing here is mocked. `FakeLlmProvider` validates its canned payloads
+against the caller's schema, and `InMemoryGraphStore` is the same adapter the
+port-compliance suite runs against.
+"""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from kg_builder import (
+    AUTO,
+    FakeLlmProvider,
+    InMemoryGraphStore,
+    SourceDocument,
+    build_graph,
+    domain_system_prompt,
+)
+from kg_builder.domain.exceptions import LlmProviderError
+from kg_builder.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, PartialExtractionError
+
+TENANT_ID = uuid4()
+
+TWO_PEOPLE = {
+    "entities": [
+        {"name": "Ada Lovelace", "entity_type": "Person"},
+        {"name": "Charles Babbage", "entity_type": "Person"},
+    ],
+    "relationships": [
+        {
+            "source_name": "Ada Lovelace",
+            "target_name": "Charles Babbage",
+            "relationship_type": "WORKED_WITH",
+        }
+    ],
+}
+
+
+class CountingProvider:
+    """A real provider that records every call's text and system prompt."""
+
+    def __init__(self, *, answer=TWO_PEOPLE, fail_on: str | None = None) -> None:
+        self._inner = FakeLlmProvider(by_substring={}, default=answer)
+        self._fail_on = fail_on
+        self.calls: list[tuple[str, str | None]] = []
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
+
+    async def extract(self, text, schema, *, system_prompt=None):
+        self.calls.append((text, system_prompt))
+        if self._fail_on is not None and self._fail_on in text:
+            raise LlmProviderError("the server said no", model=self.model)
+        return await self._inner.extract(text, schema, system_prompt=system_prompt)
+
+
+def document(text: str = "Ada Lovelace worked with Charles Babbage.") -> SourceDocument:
+    return SourceDocument(id="doc-1", text=text)
+
+
+class TestTheModelIsAskedOnce:
+    async def test_a_one_chunk_document_costs_exactly_one_call(self) -> None:
+        # `build_graph` needs both the event (for the projection) and the
+        # counters (for the report), and the obvious way to get both is to
+        # call `extract` and then `record` -- which extracts a second time.
+        # That is invisible in every assertion about the resulting graph,
+        # because the second extraction produces the same entities. It is
+        # only visible here, and on the bill.
+        provider = CountingProvider()
+
+        await build_graph(
+            document(), provider=provider, store=InMemoryGraphStore(), tenant_id=TENANT_ID
+        )
+
+        assert len(provider.calls) == 1
+
+    async def test_a_domain_costs_no_extra_call(self) -> None:
+        provider = CountingProvider()
+
+        await build_graph(
+            document(),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain="literature_fiction",
+        )
+
+        assert len(provider.calls) == 1
+
+    async def test_auto_costs_exactly_one_extra_call_for_the_classifier(self) -> None:
+        # Once per document, not once per chunk: the classifier sees the head
+        # of the text, and a per-chunk classifier would multiply the bill by
+        # the chunk count while producing the same answer each time.
+        classifiable = "Hamlet " * 40
+        provider = CountingProvider(
+            answer={"domain": "literature_fiction", "confidence": 0.9, "reasoning": "a play"}
+        )
+
+        await build_graph(
+            document(classifiable),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain=AUTO,
+        )
+
+        assert len(provider.calls) == 2
+
+
+class TestWhichPromptIsSent:
+    async def test_no_domain_sends_the_general_prompt(self) -> None:
+        provider = CountingProvider()
+
+        report = await build_graph(
+            document(), provider=provider, store=InMemoryGraphStore(), tenant_id=TENANT_ID
+        )
+
+        assert {prompt for _, prompt in provider.calls} == {DEFAULT_SYSTEM_PROMPT}
+        assert report.domain is None
+
+    async def test_a_domain_id_sends_that_domain_s_prompt(self) -> None:
+        provider = CountingProvider()
+
+        report = await build_graph(
+            document(),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain="news_journalism",
+        )
+
+        assert {prompt for _, prompt in provider.calls} == {domain_system_prompt("news_journalism")}
+        assert report.domain == "news_journalism"
+
+    async def test_auto_extracts_with_the_domain_the_classifier_chose(self) -> None:
+        provider = CountingProvider(
+            answer={"domain": "academic_research", "confidence": 0.9, "reasoning": "a paper"}
+        )
+
+        report = await build_graph(
+            document("Hamlet " * 40),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain=AUTO,
+        )
+
+        assert report.domain == "academic_research"
+        # The classification call itself is first and carries the classifier's
+        # own prompt; the extraction call after it is the one that must carry
+        # the chosen domain's. Asserting on the set would pass if they were
+        # swapped.
+        _, extraction_prompt = provider.calls[-1]
+        assert extraction_prompt == domain_system_prompt("academic_research")
+
+
+class TestWhatLandsInTheStore:
+    async def test_the_entities_and_the_edge_between_them(self) -> None:
+        store = InMemoryGraphStore()
+
+        report = await build_graph(
+            document(), provider=CountingProvider(), store=store, tenant_id=TENANT_ID
+        )
+
+        entities = await store.find_entities(TENANT_ID)
+        assert sorted(entity.name for entity in entities) == ["Ada Lovelace", "Charles Babbage"]
+        assert report.entities == 2
+        assert report.relationships == 1
+        assert report.event is not None
+        assert report.event.model_version == CountingProvider().model
+
+    async def test_nothing_is_written_for_another_tenant(self) -> None:
+        store = InMemoryGraphStore()
+        other = uuid4()
+
+        await build_graph(document(), provider=CountingProvider(), store=store, tenant_id=TENANT_ID)
+
+        assert await store.find_entities(other) == []
+
+    async def test_the_returned_event_is_what_the_projection_consumed(self) -> None:
+        # It is returned so a caller with an event store can append it. If it
+        # were a copy, or a different event, the log and the store would
+        # diverge from the first append.
+        store = InMemoryGraphStore()
+
+        report = await build_graph(
+            document(), provider=CountingProvider(), store=store, tenant_id=TENANT_ID
+        )
+
+        assert report.event is not None
+        stored = await store.find_entities(TENANT_ID)
+        assert {entity.id for entity in stored} == {entity.id for entity in report.event.entities}
+
+
+class TestAPartialExtractionIsRefusedBeforeAnythingIsWritten:
+    async def test_it_raises_and_leaves_the_store_empty(self) -> None:
+        store = InMemoryGraphStore()
+        provider = CountingProvider(fail_on="Ada")
+
+        with pytest.raises(PartialExtractionError):
+            await build_graph(
+                document(),
+                provider=provider,
+                store=store,
+                tenant_id=TENANT_ID,
+                skip_failed_chunks=True,
+            )
+
+        # The refusal must not itself create the gap it prevents.
+        assert await store.find_entities(TENANT_ID) == []
+
+    async def test_allow_partial_writes_what_survived_and_counts_what_did_not(self) -> None:
+        store = InMemoryGraphStore()
+
+        report = await build_graph(
+            document(),
+            provider=CountingProvider(fail_on="Ada"),
+            store=store,
+            tenant_id=TENANT_ID,
+            skip_failed_chunks=True,
+            allow_partial=True,
+        )
+
+        assert report.failed_chunks == 1
+        assert report.total_chunks == 1
+        assert report.entities == 0
+
+    async def test_without_skip_failed_chunks_the_provider_error_propagates(self) -> None:
+        with pytest.raises(LlmProviderError):
+            await build_graph(
+                document(),
+                provider=CountingProvider(fail_on="Ada"),
+                store=InMemoryGraphStore(),
+                tenant_id=TENANT_ID,
+            )
