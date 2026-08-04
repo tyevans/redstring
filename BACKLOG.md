@@ -114,6 +114,25 @@ exchange rate. Measure on a real corpus first. The hypothesis suite in
 text-generating properties for this reason; if that is ever tightened, this is
 what will trip it.
 
+### B51. `test_delay_between_retries` asserts on wall-clock time under xdist
+
+`tests/unit/llm/test_retry.py::TestRetryTiming::test_delay_between_retries`
+asserts `0.15 <= second_delay <= 0.25` for a 0.2s backoff. It failed once
+during slice 8 with `second_delay == 0.298` -- not a regression in the retry
+policy, which slept the amount it was asked to, but `pytest-xdist` scheduling
+the coroutine's resumption late on a loaded machine.
+
+An upper bound on how long `asyncio.sleep` takes to return is not a property of
+this code and cannot be made one; the machine can always be busier. What the
+test is really for is that the delay *grows*, so the fix is to assert the shape
+(`second_delay > first_delay`, and each at least its nominal value) and drop
+the ceilings. Left alone here because slice 8 touched nothing in `llm/` and a
+green-run-dependent edit is how a flake becomes two flakes.
+
+Note the failure mode this has in common with B45: a timing assertion that
+fails intermittently in CI reads as infrastructure trouble and gets retried
+rather than investigated.
+
 ### B43. A merge plans against a graph read outside its concurrency window
 
 `consolidation/service.py::merge` reads `get_relationships_for` *before*
