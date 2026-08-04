@@ -184,6 +184,13 @@ class ConsolidationService:
         rejections are the training data for tuning the thresholds, and they
         are being thrown away.
         """
+        # `minimum_score=low` means `decide` below can never answer `REJECT`:
+        # the finder has already dropped everything under the low threshold.
+        # Worth knowing, because it is why two cosmic-ray mutants rewriting the
+        # band comparisons as `>=` and `<=` survived -- they differ from `is`
+        # only on `REJECT`, which is not in this list. The filter is here
+        # rather than after `decide` so the rejected pairs are never scored
+        # into a list only to be dropped from it.
         candidates = await finder.candidates(subject, minimum_score=low)
         if not candidates:
             return None
