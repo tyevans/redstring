@@ -243,7 +243,7 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "kg_builder.services",
-    "kg_builder.extraction : kg_builder.graph : kg_builder.preprocessing : kg_builder.schemas",
+    "kg_builder.extraction : kg_builder.graph : kg_builder.vector : kg_builder.preprocessing : kg_builder.schemas",
     "kg_builder.inference",
     "kg_builder.models",
     "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",

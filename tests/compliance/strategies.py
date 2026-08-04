@@ -141,3 +141,36 @@ def relationships(
 
 
 distinct_tenant_pairs = st.tuples(st.uuids(), st.uuids()).filter(lambda pair: pair[0] != pair[1])
+
+
+# ----------------------------------------------------------------------
+# Vectors
+#
+# `width=32` is not cosmetic. pgvector's `vector` type is float4, so a value
+# that is not exactly representable in single precision cannot round-trip
+# through it -- and the round-trip property would then fail on the real
+# adapter while passing in-memory, which is the exact divergence the shared
+# suite exists to prevent. `width=32` restricts generation to values float32
+# holds exactly, so "the stored vector equals the written one" is a contract
+# every adapter can meet. See the port on precision.
+#
+# The magnitude bounds keep the sum of squares far from float32 overflow, so
+# a norm is never `inf` and cosine is never NaN for a reason unrelated to the
+# property under test.
+# ----------------------------------------------------------------------
+
+vector_components = st.floats(
+    min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, width=32
+)
+
+
+def vectors(dimension: int) -> st.SearchStrategy[list[float]]:
+    """Non-zero vectors of exactly `dimension` components.
+
+    Zero vectors are excluded because cosine is undefined at the origin and
+    the port rejects them; generating one would test the guard, not the
+    property, in every property that draws a vector.
+    """
+    return st.lists(vector_components, min_size=dimension, max_size=dimension).filter(
+        lambda values: any(values)
+    )
