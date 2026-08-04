@@ -149,7 +149,14 @@ reading the code:
   property tests — found that a shallow copy passed everything. Four
   occurrences is one missing habit, not four mistakes. Behavioural tests do
   not imply this one: returning the live internal object is *correct* on
-  every read and wrong only afterwards.
+  every read and wrong only afterwards, so no assertion about the returned
+  value can see the defect.
+
+  For `GraphStore` this is enforced, not merely advised:
+  `tests/unit/graph/test_compliance_coverage.py` derives the read-method list
+  from the Protocol by introspection and fails if any lacks a registered
+  isolation test and tenant-isolation test. **Give every store port the same
+  gate** — a written rule is what failed the first four times.
 - **Bound any loop whose exit depends on adapter-supplied data.** A cursor
   that fails to advance turns a `while True` pagination test into a hang. A
   test that hangs is worse than one that fails: in CI it reads as
