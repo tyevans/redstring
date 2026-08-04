@@ -254,6 +254,9 @@ type = "layers"
 layers = [
     "kg_builder.services",
     "kg_builder.extraction : kg_builder.graph : kg_builder.vector : kg_builder.preprocessing : kg_builder.schemas",
+    # Aggregates are the write model: they import events and domain, and
+    # nothing below them may import an aggregate.
+    "kg_builder.aggregates",
     "kg_builder.inference",
     "kg_builder.models",
     "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
