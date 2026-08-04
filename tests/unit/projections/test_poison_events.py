@@ -145,3 +145,21 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
         assert report.failed == 0
         shape = await rig.shape([TENANT_ID])
         assert str(edge.id) in shape[str(TENANT_ID)]["edges"]
+
+
+class TestResetIsRefusedRatherThanSilentlyDoingNothing:
+    """Both projections refuse `reset()`. See BACKLOG B35.
+
+    Pinned because the alternative -- the library's default no-op
+    `_truncate_read_models` -- is what an inattentive change would restore,
+    and a rebuild over a store still holding the old rows looks successful
+    while carrying stale entities nothing will ever remove.
+    """
+
+    async def test_the_graph_projection_says_how_to_wipe_instead(self, rig):
+        with pytest.raises(NotImplementedError, match="delete_by_tenant"):
+            await rig.projections[0].reset()
+
+    async def test_the_vector_projection_says_how_to_wipe_instead(self, rig):
+        with pytest.raises(NotImplementedError, match="delete_by_tenant"):
+            await rig.projections[1].reset()
