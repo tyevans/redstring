@@ -60,7 +60,7 @@ class TestSchemaYamlValidity:
     def test_schema_is_valid_yaml(self, domain_id: str) -> None:
         """Test that schema files are valid YAML."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
         assert data is not None, f"Schema file is empty: {schema_path}"
         assert isinstance(data, dict), f"Schema must be a mapping: {schema_path}"
@@ -69,7 +69,7 @@ class TestSchemaYamlValidity:
     def test_schema_has_required_keys(self, domain_id: str) -> None:
         """Test that schema files have required top-level keys."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         required_keys = [
@@ -91,7 +91,7 @@ class TestSchemaValidation:
     def test_schema_validates_against_model(self, domain_id: str) -> None:
         """Test that schemas validate against DomainSchema model."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         # Should not raise ValidationError
@@ -104,7 +104,7 @@ class TestSchemaValidation:
     def test_schema_version_is_semver(self, domain_id: str) -> None:
         """Test that schema versions follow semver format."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -122,7 +122,7 @@ class TestSchemaEntityTypes:
     def test_schema_has_minimum_entity_types(self, domain_id: str) -> None:
         """Test that schemas have at least 5 entity types."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -134,7 +134,7 @@ class TestSchemaEntityTypes:
     def test_entity_types_have_descriptions(self, domain_id: str) -> None:
         """Test that all entity types have descriptions."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -148,7 +148,7 @@ class TestSchemaEntityTypes:
     def test_entity_types_have_examples(self, domain_id: str) -> None:
         """Test that entity types have at least one example."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -167,7 +167,7 @@ class TestSchemaRelationshipTypes:
     def test_schema_has_minimum_relationship_types(self, domain_id: str) -> None:
         """Test that schemas have at least 5 relationship types."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -180,7 +180,7 @@ class TestSchemaRelationshipTypes:
     def test_relationship_types_have_descriptions(self, domain_id: str) -> None:
         """Test that all relationship types have descriptions."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -191,7 +191,7 @@ class TestSchemaRelationshipTypes:
     def test_related_to_relationship_exists(self, domain_id: str) -> None:
         """Test that all schemas have a 'related_to' fallback relationship."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -208,7 +208,7 @@ class TestSchemaPromptTemplates:
     def test_schema_has_prompt_template(self, domain_id: str) -> None:
         """Test that schemas have non-empty prompt templates."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -221,7 +221,7 @@ class TestSchemaPromptTemplates:
     def test_prompt_template_has_placeholders(self, domain_id: str) -> None:
         """Test that prompt templates have expected placeholders."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -244,7 +244,7 @@ class TestSchemaConfidenceThresholds:
     def test_schema_has_valid_confidence_thresholds(self, domain_id: str) -> None:
         """Test that confidence thresholds are valid."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -264,7 +264,7 @@ class TestSchemaConfidenceThresholds:
     def test_relationship_threshold_not_higher_than_entity(self, domain_id: str) -> None:
         """Test that relationship threshold is not higher than entity threshold."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -287,7 +287,7 @@ class TestSchemaIntegrity:
     def test_relationship_source_target_types_valid(self, domain_id: str) -> None:
         """Test that relationship source/target types reference valid entity types."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         # This validation is done by DomainSchema model_validator
@@ -312,7 +312,7 @@ class TestSchemaIntegrity:
     def test_no_duplicate_entity_type_ids(self, domain_id: str) -> None:
         """Test that entity type IDs are unique within a schema."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)
@@ -325,7 +325,7 @@ class TestSchemaIntegrity:
     def test_no_duplicate_relationship_type_ids(self, domain_id: str) -> None:
         """Test that relationship type IDs are unique within a schema."""
         schema_path = SCHEMA_DIR / f"{domain_id}.yaml"
-        with open(schema_path, encoding="utf-8") as f:
+        with schema_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         schema = DomainSchema.model_validate(data)

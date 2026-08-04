@@ -1,48 +1,45 @@
 [project]
 name = "kg-builder"
 version = "0.1.0"
-description = "Knowledge graph construction: entity extraction, preprocessing, scraping, consolidation, and Neo4j sync."
+description = "Knowledge graph construction: entity extraction, consolidation, and pluggable graph and vector storage."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Ty Evans", email = "tyler@poorlythoughtout.com" }]
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.12,<3",
-    "pydantic-settings>=2.12,<3",
-    "sqlalchemy[asyncio]>=2.0.45,<3",
     "asyncpg>=0.31.0",
-    "psycopg2-binary>=2.9.11",
-    "pgvector>=0.2.0",
     "httpx>=0.25.0",
     "numpy>=1.26.0",
     "python-dateutil>=2.9.0",
     "dateparser>=1.2.0",
     "pyyaml>=6.0",
-    "cryptography>=45.0",
     "redis[hiredis]>=5.3,<6",
+    "jellyfish>=1.0.0",
+    # Not an extra any more, as of slice 10. `kg_builder/__init__.py` exports
+    # `build_graph`, `Document`, `DocumentExtracted` and the two projections,
+    # and every one of those needs eventsource -- so `import kg_builder`
+    # needed it, and a public API that fails to import without an extra is not
+    # a public API. The events are the write model, not an optional backend.
+    # The `<0.11` cap stays deliberate: this is a pre-1.0 library whose entire
+    # API changed between 0.5 and 0.9. See BACKLOG B38.
+    "eventsource-py>=0.9.1,<0.11",
 ]
 
 [project.optional-dependencies]
 neo4j = ["neo4j>=5.27,<6"]
-scraping = [
-    "scrapy>=2.12,<3",
-    "trafilatura>=1.12.0",
-    "extruct>=0.18.0",
-    "beautifulsoup4>=4.12.0",
+# The LLM transport. `langchain-openai` speaks to any OpenAI-compatible
+# server -- llama.cpp, llama-swap, vLLM, Ollama's shim, OpenAI itself -- so
+# one extra covers every deployment this library has. Ranges rather than pins:
+# the whole point of the `LlmProvider` port is that a breaking change touches
+# `llm/adapters/langchain.py` and nothing else.
+llm = [
+    "langchain-core>=0.3,<2",
+    "langchain-openai>=0.2,<2",
 ]
-openai = ["openai>=1.50.0"]
-anthropic = ["anthropic>=0.42.0"]
-# pinned <1.0: kg_builder.inference.providers uses the pre-1.0
-# `pydantic_ai.models.openai.OpenAIModel` API.
-# pinned to the version knowledge-mapper resolved; kg_builder.extraction and
-# kg_builder.inference use the pre-1.0 pydantic-ai model API.
-llm = ["pydantic-ai==0.0.31"]
-nlp = ["jellyfish>=1.0.0"]
-storage = ["boto3>=1.34.0"]
-# `unstructured` pulls numba/llvmlite, which do not build on Python 3.13 yet,
-# so `documents` is deliberately excluded from `all`.
-documents = ["unstructured>=0.15.0"]
-eventsourcing = ["eventsource-py[all]>=0.5.0"]
 all = [
-    "kg-builder[neo4j,scraping,openai,anthropic,llm,nlp,storage,eventsourcing]",
+    "kg-builder[neo4j,llm]",
 ]
 dev = [
     "bandit[toml]>=1.9.4",
@@ -51,6 +48,7 @@ dev = [
     "hypothesis>=6.165.0",
     "import-linter>=2.13",
     "mutmut>=3.7.0",
+    "mypy>=2.3.0",
     "pre-commit>=4.6.1",
     "pytest>=9.0",
     "pytest-asyncio==1.3.0",
@@ -58,6 +56,9 @@ dev = [
     "pytest-randomly>=4.1.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.14",
+    "types-dateparser>=1.4.1.20260617",
+    "types-python-dateutil>=2.9.0.20260716",
+    "types-pyyaml>=6.0.12.20260724",
 ]
 
 [build-system]
@@ -83,6 +84,15 @@ select = [
     "UP",   # pyupgrade
     "SIM",  # flake8-simplify
     "RUF",  # ruff-specific
+    "ANN",    # flake8-annotations
+    "ASYNC",  # flake8-async
+    "DTZ",    # flake8-datetimez -- tz-aware is a domain invariant here
+    "ERA",    # eradicate (commented-out code)
+    "PT",     # flake8-pytest-style
+    "PTH",    # flake8-use-pathlib
+    "RET",    # flake8-return
+    "TC",     # flake8-type-checking
+    "TID",    # flake8-tidy-imports
 ]
 ignore = [
     # UP042 wants `class X(str, Enum)` rewritten as `enum.StrEnum`. That is a
@@ -94,10 +104,98 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["B011"]
+"tests/**" = [
+    "B011",
+    # Test functions do not earn return annotations: thousands of findings,
+    # zero signal.
+    "ANN",
+    # hypothesis `st.datetimes(min_value=..., max_value=...)` bounds MUST be
+    # naive, and strategies that generate naive datetimes to prove rejection
+    # are the point. DTZ003 (utcnow) stays enforced everywhere.
+    "DTZ001",
+]
+
+# The legacy-package exemption list is empty, and that is the point: every
+# entry was removed in the commit that deleted or repaired its package.
+# Slice 9 took `models`, `services`, `schemas`, `graph/client.py` and
+# `graph/queries.py`; `events/**` went next (its ANN half exempted nothing at
+# all and its TC half was covering for the `runtime-evaluated-base-classes`
+# misconfiguration below). Slice 10 took the last one,
+# `src/kg_builder/extraction/**` = ["ANN", "TC", "RET", "ERA"], together with
+# its test-side twin.
+#
+# Measured with the entry deleted rather than through it, as CLAUDE.md
+# requires: it was hiding ten findings across eight files, two of which were
+# in `prompt_generator.generate_json_schema` and left with that function.
+# BACKLOG B15, closed.
 
 [tool.ruff.lint.isort]
 known-first-party = ["kg_builder"]
+
+# datetime.utcnow() returns a NAIVE datetime and is deprecated from 3.12.
+# DTZ003 catches the call form but not a bare reference such as
+# `default_factory=datetime.utcnow`, which is how it reached this codebase
+# (BACKLOG B29). Banning the attribute catches both shapes.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"datetime.datetime.utcnow".msg = "Naive and deprecated since 3.12 — use datetime.now(UTC)."
+"datetime.datetime.utcfromtimestamp".msg = "Naive — use datetime.fromtimestamp(ts, UTC)."
+
+[tool.ruff.lint.flake8-type-checking]
+# Pydantic BaseModel subclasses resolve their field annotations at runtime
+# (schema building), so imports feeding those annotations must stay real
+# imports, not TYPE_CHECKING-guarded ones -- TC001/TC003 would otherwise
+# flag imports whose removal breaks pydantic at import time.
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    # Ruff matches the base class as *written in the file*, not through the
+    # MRO, so it cannot tell that eventsource's event base is itself a pydantic
+    # model -- every event class here declares `TenantDomainEvent` and got
+    # TC001/TC002/TC003 on its field annotations as a result.
+    #
+    # Those are the dangerous kind of false positive: the suggested fix
+    # compiles, imports, and breaks at model *use*. Measured -- moving
+    # `from uuid import UUID` into a type-checking block in `events/merge.py`
+    # (a fix ruff offers) leaves `import kg_builder.events.merge` succeeding
+    # and then fails 23 tests with `PydanticUserError: MergeUndone is not
+    # fully defined`, because `merge_event_id: UUID` is a field and pydantic
+    # resolves field annotations when it builds the schema.
+    "eventsource.domain.tenant_events.TenantDomainEvent",
+]
+
+[tool.mypy]
+python_version = "3.13"
+# Strict only where the new architecture lives. Legacy packages are excluded
+# rather than weakened, and each exclusion dies with its package.
+files = ["src/kg_builder"]
+# No `exclude`. There was one, and slice 10 emptied it by fixing the last
+# fourteen findings in `extraction/` rather than by deleting the package.
+# CLAUDE.md's rule applies: an exclusion over an empty set excludes nothing
+# and any guard written over it passes vacuously, so it is deleted rather than
+# kept empty. Re-adding one is a visible decision.
+strict = true
+warn_unreachable = true
+warn_return_any = true
+disallow_untyped_defs = true
+# Pydantic 2.13 types well on its own, but the plugin adds checks plain mypy
+# cannot do -- above all `init_typed`, which validates constructor CALLS
+# against field types. Without it `Entity(confidence="high")` type-checks
+# clean and only fails at runtime, which defeats the point of typing a
+# domain model whose whole job is enforcing invariants.
+plugins = ["pydantic.mypy"]
+
+# asyncpg ships no `py.typed`, so mypy cannot see its types at all. The
+# alternative is a stub package, which would have to track asyncpg's releases
+# for the sake of one adapter; `kg_builder.vector.adapters.pgvector` is the
+# only module that imports it, and its own signatures are fully annotated.
+[[tool.mypy.overrides]]
+module = ["asyncpg.*"]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_typed = true
+init_forbid_extra = true
+warn_required_dynamic_aliases = true
+warn_untyped_fields = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -106,11 +204,15 @@ python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-# The accuracy suite measures extraction quality against a live LLM, so it is
-# excluded from the default run (and therefore from the commit gate). Run it
-# deliberately with `uv run pytest -m accuracy tests/accuracy/` -- a CLI `-m`
-# overrides this one.
-addopts = ["-m", "not accuracy"]
+# The accuracy suite measures extraction quality against a live LLM, and the
+# integration suite runs the port-compliance tests against real backends from
+# `docker-compose.test.yml`. Both are excluded from the default run (and so
+# from the commit gate), which keeps it infra-free and fast. Run them
+# deliberately -- a CLI `-m` overrides this one:
+#
+#     uv run pytest -m accuracy tests/accuracy/
+#     KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest -m integration
+addopts = ["-m", "not accuracy and not integration"]
 markers = [
     "unit: unit tests",
     "integration: integration tests",
@@ -122,7 +224,14 @@ markers = [
 source = ["src/kg_builder"]
 branch = true
 parallel = true
-omit = ["*/__pycache__/*"]
+omit = [
+    "*/__pycache__/*",
+    # Deliberately NOT omitted: `graph/adapters/neo4j.py`. Most of it is
+    # exercised by `tests/unit/graph/test_neo4j_adapter_is_wired.py`, which
+    # runs in the default gate; the rest needs a server. Omitting it would
+    # have hidden the untested remainder, which is the opposite of what a
+    # ratchet is for. See BACKLOG B10a.
+]
 
 [tool.coverage.paths]
 source = ["src/kg_builder", "*/src/kg_builder"]
@@ -157,11 +266,67 @@ include_external_packages = false
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
 type = "layers"
+# `containers` + `exhaustive` (below) are what make this contract complete
+# rather than merely correct: with them, a new top-level package under
+# `kg_builder` fails the gate until it is placed on a layer. Layer names are
+# relative to the container, which is why they are bare here.
+containers = ["kg_builder"]
 layers = [
-    "kg_builder.services",
-    "kg_builder.extraction : kg_builder.graph : kg_builder.preprocessing : kg_builder.scraping : kg_builder.schemas",
-    "kg_builder.inference",
-    "kg_builder.models",
-    "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
+    # `composition` is the top layer and the only module in it. It exists
+    # because `extraction` may not import `projections` -- that separation is
+    # what stops a store reference growing back into the pipeline -- and yet
+    # something has to hold both, or the library ships two halves and a
+    # diagram. If a second module wants in here, ask what it composes.
+    "composition",
+    # `services` was the top layer and is gone as of slice 9. There
+    # is no service layer any more: the write model is `aggregates` + `events`,
+    # the read model is `projections`, and persistence is the two ports. A new
+    # name here should be argued for, not added because something needs
+    # somewhere to sit.
+    # `llm` is a sibling of `extraction` rather than beneath it, and that is
+    # the load-bearing part: siblings may not import each other, so extraction
+    # can depend only on `ports.llm_provider`. Putting `llm` lower
+    # would let extraction import the LangChain adapter directly and undo the
+    # port. Note that import-linter cannot see the *external* langchain
+    # imports; `tests/unit/llm/test_port_does_not_leak.py` covers those.
+    # `consolidation` joins the sibling line rather than sitting above
+    # `extraction`. It needs nothing from extraction -- the tie-break both use
+    # moved down to `domain.preference` when consolidation became its third
+    # caller -- and putting it above would let it reach for `mapping.py`, which
+    # is how a second entity-id scheme gets born.
+    # `temporal` is a sibling too, for the same reason `consolidation` is: it
+    # needs nothing from extraction. It reads entities through
+    # `ports.graph_store` and computes over `domain.interval`. Above
+    # `extraction` it could reach `mapping.py`, and the temptation there is
+    # specific -- inferred edges would acquire a path into `DocumentExtracted`,
+    # which is exactly the persistence decision `temporal/inference.py` argues
+    # against.
+    "extraction : consolidation : temporal : graph : vector : llm",
+    # Projections read the ports and the event schema and write nothing back:
+    # nothing below them may import a projection, and they may not import an
+    # adapter.
+    "projections",
+    # Aggregates are the write model: they import events and domain, and
+    # nothing below them may import an aggregate.
+    "aggregates",
+    # `models` was a layer of its own here and `db` sat
+    # on the line below; both went in slice 9, as did `schemas`
+    # from the sibling line above. There is no ORM and no session for a layer
+    # to be built around.
+    # `cache` and `config` left this line in slice 10, with the modules.
+    # `config.py` was a `pydantic_settings.BaseSettings` of 287 lines with four
+    # keys anything read; `cache.py` was a module-level Redis singleton with no
+    # caller at all. A library takes its configuration through constructor
+    # arguments -- `tests/unit/test_library_reads_no_environment.py` is what
+    # keeps that true now.
+    # `cache`, `config`, `context` and `encryption` all left this line in
+    # slice 10 with their modules -- a settings object, a Redis singleton, a
+    # re-export shim, and a field-encryption service, none of them with a
+    # caller. `events` is what is left, and it is the write model.
+    "events",
+    # Ports sit directly above `domain` and below every adapter: an adapter
+    # (graph.adapters) may import its port, never the reverse.
+    "ports",
+    "domain",
 ]
-exhaustive = false
+exhaustive = true

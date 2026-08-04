@@ -1,23 +1,30 @@
-"""
-Unit tests for ContentClassifier.
+"""Classifying content into a domain, over the `LlmProvider` port.
 
-Tests classification functionality including:
-- Successful classification with mocked LLM responses
-- Content sanitization (PII removal)
-- Fallback behavior on errors and timeouts
-- Short content handling
-- Unknown domain handling
-- Confidence threshold enforcement
+Rewritten in slice 6. The classifier used to take an `InferenceProvider` from
+the deleted `kg_builder.inference` package and parse a JSON object out of
+whatever prose came back, so the old suite was built on an `AsyncMock` whose
+`infer` returned a hand-written string. Two whole classes of it --
+`TestJsonExtraction` and the "JSON with surrounding text" cases -- tested that
+hand-rolled parser, which is gone: `LlmProvider.extract` validates against
+`ClassificationResult` and raises when it cannot.
+
+`FakeLlmProvider` replaces the mock, and it validates payloads exactly as the
+LangChain adapter does. So a test that programs a malformed answer really does
+exercise the classifier's failure path rather than a mock returning `None`.
+
+## Why the classifier falls back where extraction raises
+
+They look inconsistent and are not. A misclassified document is extracted with
+the general-purpose schema: a worse answer, but an answer. A silently empty
+*extraction* is a missing answer that looks like a real one -- "this document
+contained nothing" -- which is the thing the port exists to prevent. So the
+classifier degrades and extraction raises.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
-# Import directly from modules to avoid triggering database dependencies
-# through the kg_builder.extraction package init
 from kg_builder.extraction.classifier import (
     CC_PATTERN,
     DEFAULT_CONFIDENCE_THRESHOLD,
@@ -28,822 +35,305 @@ from kg_builder.extraction.classifier import (
     PHONE_PATTERN,
     SSN_PATTERN,
     ContentClassifier,
-    classify_content,
 )
-from kg_builder.extraction.domains.models import ClassificationResult
+from kg_builder.llm.adapters.fake import EMPTY, FakeLlmProvider
 
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def mock_inference_response():
-    """Create a mock inference response."""
-
-    def _create_response(content: str):
-        response = MagicMock()
-        response.content = content
-        return response
-
-    return _create_response
+DOMAINS = {
+    "technical_documentation": "Technical docs and API references",
+    "literature_fiction": "Novels, plays, and narrative works",
+    "news_journalism": "News articles and journalism",
+    "encyclopedia_wiki": "Encyclopedia and wiki content",
+}
 
 
-@pytest.fixture
-def mock_provider(mock_inference_response):
-    """Create a mock inference provider."""
-    provider = AsyncMock()
-    provider.infer = AsyncMock()
-    return provider
+class FakeRegistry:
+    """A real registry of four domains. Small enough not to need a mock.
+
+    The old suite built this out of four `MagicMock`s with `domain_id` and
+    `description` attributes, which is more code than the real thing and
+    silently accepts any attribute a test asks for.
+    """
+
+    def __init__(self, domains: dict[str, str] | None = None) -> None:
+        self._domains = dict(DOMAINS if domains is None else domains)
+
+    def list_domains(self):
+        return [_Domain(domain_id, description) for domain_id, description in self._domains.items()]
+
+    def has_domain(self, domain_id: str) -> bool:
+        return domain_id in self._domains
 
 
-@pytest.fixture
-def mock_registry():
-    """Create a mock domain schema registry."""
-    registry = MagicMock()
-
-    # Mock domain list
-    domain1 = MagicMock()
-    domain1.domain_id = "technical_documentation"
-    domain1.description = "Technical docs and API references"
-
-    domain2 = MagicMock()
-    domain2.domain_id = "literature_fiction"
-    domain2.description = "Novels, plays, and narrative works"
-
-    domain3 = MagicMock()
-    domain3.domain_id = "news_journalism"
-    domain3.description = "News articles and journalism"
-
-    domain4 = MagicMock()
-    domain4.domain_id = "encyclopedia_wiki"
-    domain4.description = "Encyclopedia and wiki content"
-
-    registry.list_domains.return_value = [domain1, domain2, domain3, domain4]
-    registry.has_domain.side_effect = lambda d: (
-        d
-        in [
-            "technical_documentation",
-            "literature_fiction",
-            "news_journalism",
-            "encyclopedia_wiki",
-        ]
-    )
-
-    return registry
+class _Domain:
+    def __init__(self, domain_id: str, description: str) -> None:
+        self.domain_id = domain_id
+        self.description = description
 
 
-@pytest.fixture
-def classifier(mock_provider, mock_registry):
-    """Create a classifier with mocked dependencies."""
+def answer(domain: str, confidence: float, reasoning: str | None = None) -> dict:
+    return {"domain": domain, "confidence": confidence, "reasoning": reasoning}
+
+
+def classifier_answering(*responses, **kwargs) -> ContentClassifier:
     return ContentClassifier(
-        inference_provider=mock_provider,
-        registry=mock_registry,
+        FakeLlmProvider(script=list(responses)),
+        registry=FakeRegistry(),
+        **kwargs,
     )
 
 
 @pytest.fixture
-def sample_long_content():
-    """Sample content long enough for classification."""
+def long_content():
+    """Long enough to pass the minimum-length gate."""
     return (
         "This is a comprehensive technical documentation about Python programming. "
-        "It covers topics like asyncio, type hints, and best practices for writing "
-        "clean, maintainable code. The document includes examples of FastAPI endpoints, "
-        "Pydantic models for validation, and SQLAlchemy ORM patterns. "
-        "Additional content is provided to ensure minimum length requirements are met. "
-    ) * 3  # Repeat to ensure > 100 characters
+        "It covers asyncio, type hints, and best practices for maintainable code. "
+    ) * 3
 
 
-# =============================================================================
-# Initialization Tests
-# =============================================================================
+class TestInitialisation:
+    def test_the_defaults_are_the_module_constants(self):
+        classifier = ContentClassifier(FakeLlmProvider(script=[{}]))
 
-
-class TestClassifierInit:
-    """Tests for ContentClassifier initialization."""
-
-    def test_init_with_defaults(self, mock_provider):
-        """Test initialization with default parameters."""
-        classifier = ContentClassifier(inference_provider=mock_provider)
-
-        assert classifier._provider is mock_provider
         assert classifier._confidence_threshold == DEFAULT_CONFIDENCE_THRESHOLD
         assert classifier._fallback_domain == DEFAULT_FALLBACK_DOMAIN
 
-    def test_init_with_custom_parameters(self, mock_provider, mock_registry):
-        """Test initialization with custom parameters."""
+    def test_every_setting_can_be_overridden(self):
+        registry = FakeRegistry()
         classifier = ContentClassifier(
-            inference_provider=mock_provider,
+            FakeLlmProvider(script=[{}]),
             timeout_seconds=60.0,
             confidence_threshold=0.7,
             fallback_domain="news_journalism",
-            registry=mock_registry,
+            registry=registry,
         )
 
         assert classifier._timeout == 60.0
         assert classifier._confidence_threshold == 0.7
         assert classifier._fallback_domain == "news_journalism"
-        assert classifier._registry is mock_registry
-
-
-# =============================================================================
-# Classification Tests
-# =============================================================================
+        assert classifier._registry is registry
 
 
 class TestClassification:
-    """Tests for the classify method."""
+    async def test_a_confident_answer_is_returned_as_given(self, long_content):
+        classifier = classifier_answering(answer("technical_documentation", 0.92, "API docs"))
 
-    @pytest.mark.asyncio
-    async def test_classify_returns_correct_domain(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test successful classification returns correct domain."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "technical_documentation", "confidence": 0.9, '
-            '"reasoning": "Contains Python and FastAPI references"}'
-        )
+        result = await classifier.classify(long_content)
 
-        result = await classifier.classify(sample_long_content)
-
-        assert isinstance(result, ClassificationResult)
         assert result.domain == "technical_documentation"
-        assert result.confidence == 0.9
-        assert result.reasoning == "Contains Python and FastAPI references"
+        assert result.confidence == 0.92
+        assert result.reasoning == "API docs"
 
-    @pytest.mark.asyncio
-    async def test_classify_with_tenant_id(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test classification logs tenant_id correctly."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "literature_fiction", "confidence": 0.85}'
+    async def test_the_answer_is_a_validated_domain_object(self, long_content):
+        """The port validated it against `ClassificationResult`, so this is typed.
+
+        The old classifier hand-parsed a JSON blob, which meant a confidence
+        of `"high"` or of `1.5` reached callers unchecked.
+        """
+        result = await classifier_answering(answer("news_journalism", 0.8)).classify(long_content)
+
+        assert 0.0 <= result.confidence <= 1.0
+
+    async def test_a_tenant_id_is_accepted_for_logging_and_changes_nothing(self, long_content):
+        classifier = FakeLlmProvider(
+            by_substring={"Python": answer("technical_documentation", 0.9)}
         )
-
-        result = await classifier.classify(sample_long_content, tenant_id="tenant-123")
-
-        assert result.domain == "literature_fiction"
-        # Verify the provider was called
-        mock_provider.infer.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_classify_normalizes_confidence(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test that confidence is normalized to 0.0-1.0 range."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "news_journalism", "confidence": 1.5}'
+        one = await ContentClassifier(classifier, registry=FakeRegistry()).classify(
+            long_content, tenant_id="t-1"
         )
+        two = await ContentClassifier(classifier, registry=FakeRegistry()).classify(long_content)
 
-        result = await classifier.classify(sample_long_content)
-
-        assert result.confidence == 1.0  # Should be clamped
-
-    @pytest.mark.asyncio
-    async def test_classify_handles_negative_confidence(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test that negative confidence is clamped to 0.0."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "news_journalism", "confidence": -0.5}'
-        )
-
-        result = await classifier.classify(sample_long_content)
-
-        assert result.confidence == 0.0  # Should be clamped
-
-
-# =============================================================================
-# Content Length Tests
-# =============================================================================
+        assert one == two
 
 
 class TestContentLength:
-    """Tests for content length handling."""
+    async def test_content_below_the_minimum_falls_back_without_calling_a_model(self):
+        """The script is empty, so calling the provider would raise loudly.
 
-    @pytest.mark.asyncio
-    async def test_short_content_returns_fallback(self, classifier):
-        """Test that short content returns fallback without calling LLM."""
-        result = await classifier.classify("Too short")
+        That is the assertion: a short document must not cost a model call,
+        and a fake that ran out of script is how this test can tell.
+        """
+        classifier = ContentClassifier(FakeLlmProvider(script=[]), registry=FakeRegistry())
 
-        assert result.domain == DEFAULT_FALLBACK_DOMAIN
-        assert result.confidence == 0.0
-        assert "too short" in result.reasoning.lower()
-
-    @pytest.mark.asyncio
-    async def test_minimum_length_content(self, classifier, mock_provider, mock_inference_response):
-        """Test content exactly at minimum length threshold."""
-        # Content just at MIN_CONTENT_LENGTH (100 chars)
-        content = "A" * MIN_CONTENT_LENGTH
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "encyclopedia_wiki", "confidence": 0.6}'
-        )
-
-        result = await classifier.classify(content)
-
-        # Should proceed with classification
-        mock_provider.infer.assert_called_once()
-        assert result.domain == "encyclopedia_wiki"
-
-    @pytest.mark.asyncio
-    async def test_content_truncated_for_long_text(
-        self, classifier, mock_provider, mock_inference_response
-    ):
-        """Test that very long content is truncated."""
-        # Content much longer than MAX_CONTENT_FOR_CLASSIFICATION
-        long_content = "X" * (MAX_CONTENT_FOR_CLASSIFICATION * 2)
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "technical_documentation", "confidence": 0.8}'
-        )
-
-        await classifier.classify(long_content)
-
-        # Verify the prompt was built with truncated content
-        call_args = mock_provider.infer.call_args
-        request = call_args[0][0]
-        # The prompt should not contain the full long content
-        assert len(request.prompt) < len(long_content)
-
-
-# =============================================================================
-# Sanitization Tests
-# =============================================================================
-
-
-class TestSanitization:
-    """Tests for content sanitization."""
-
-    @pytest.mark.asyncio
-    async def test_sanitizes_email_addresses(
-        self, classifier, mock_provider, mock_inference_response
-    ):
-        """Test that email addresses are replaced."""
-        content = (
-            "Contact john.doe@example.com for support. Also admin@company.org is available. " * 5
-        )
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "news_journalism", "confidence": 0.75}'
-        )
-
-        await classifier.classify(content)
-
-        call_args = mock_provider.infer.call_args
-        request = call_args[0][0]
-
-        # Original emails should not be in the prompt
-        assert "john.doe@example.com" not in request.prompt
-        assert "admin@company.org" not in request.prompt
-        # Replacement should be there
-        assert "[EMAIL]" in request.prompt
-
-    @pytest.mark.asyncio
-    async def test_sanitizes_phone_numbers(
-        self, classifier, mock_provider, mock_inference_response
-    ):
-        """Test that phone numbers are replaced."""
-        content = (
-            "Call us at 555-123-4567 or 555.987.6543 for assistance. Some more content here. " * 5
-        )
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "news_journalism", "confidence": 0.7}'
-        )
-
-        await classifier.classify(content)
-
-        call_args = mock_provider.infer.call_args
-        request = call_args[0][0]
-
-        assert "555-123-4567" not in request.prompt
-        assert "555.987.6543" not in request.prompt
-        assert "[PHONE]" in request.prompt
-
-    @pytest.mark.asyncio
-    async def test_sanitizes_ssn_patterns(self, classifier, mock_provider, mock_inference_response):
-        """Test that SSN-like patterns are replaced."""
-        content = (
-            "SSN: 123-45-6789 is sensitive. Also 987-65-4321 should be hidden. "
-            "Additional content for length. " * 5
-        )
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "encyclopedia_wiki", "confidence": 0.65}'
-        )
-
-        await classifier.classify(content)
-
-        call_args = mock_provider.infer.call_args
-        request = call_args[0][0]
-
-        assert "123-45-6789" not in request.prompt
-        assert "987-65-4321" not in request.prompt
-        assert "[REDACTED]" in request.prompt
-
-    @pytest.mark.asyncio
-    async def test_sanitizes_credit_card_patterns(
-        self, classifier, mock_provider, mock_inference_response
-    ):
-        """Test that credit card-like patterns are replaced."""
-        content = (
-            "Card: 1234-5678-9012-3456 is on file. "
-            "Another card 4111 1111 1111 1111 here. "
-            "More content for length requirements. " * 3
-        )
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "news_journalism", "confidence": 0.7}'
-        )
-
-        await classifier.classify(content)
-
-        call_args = mock_provider.infer.call_args
-        request = call_args[0][0]
-
-        assert "1234-5678-9012-3456" not in request.prompt
-        assert "[REDACTED]" in request.prompt
-
-
-class TestSanitizationPatterns:
-    """Tests for individual sanitization regex patterns."""
-
-    def test_email_pattern_matches(self):
-        """Test email pattern matches various email formats."""
-        test_cases = [
-            "user@example.com",
-            "first.last@company.org",
-            "name+tag@domain.co.uk",
-            "123@test.io",
-        ]
-        for email in test_cases:
-            assert EMAIL_PATTERN.search(email) is not None, f"Failed for: {email}"
-
-    def test_phone_pattern_matches(self):
-        """Test phone pattern matches various formats."""
-        test_cases = [
-            "555-123-4567",
-            "555.123.4567",
-            "5551234567",
-        ]
-        for phone in test_cases:
-            assert PHONE_PATTERN.search(phone) is not None, f"Failed for: {phone}"
-
-    def test_ssn_pattern_matches(self):
-        """Test SSN pattern matches various formats."""
-        test_cases = [
-            "123-45-6789",
-            "123456789",
-        ]
-        for ssn in test_cases:
-            assert SSN_PATTERN.search(ssn) is not None, f"Failed for: {ssn}"
-
-    def test_cc_pattern_matches(self):
-        """Test credit card pattern matches various formats."""
-        test_cases = [
-            "1234-5678-9012-3456",
-            "1234 5678 9012 3456",
-            "1234567890123456",
-        ]
-        for cc in test_cases:
-            assert CC_PATTERN.search(cc) is not None, f"Failed for: {cc}"
-
-
-# =============================================================================
-# Error Handling Tests
-# =============================================================================
-
-
-class TestErrorHandling:
-    """Tests for error handling in classify method."""
-
-    @pytest.mark.asyncio
-    async def test_timeout_returns_fallback(self, classifier, mock_provider, sample_long_content):
-        """Test timeout handling returns fallback."""
-        mock_provider.infer.side_effect = TimeoutError("Request timed out")
-
-        result = await classifier.classify(sample_long_content)
+        result = await classifier.classify("too short")
 
         assert result.domain == DEFAULT_FALLBACK_DOMAIN
         assert result.confidence == 0.0
-        assert "timeout" in result.reasoning.lower()
 
-    @pytest.mark.asyncio
-    async def test_provider_timeout_error_returns_fallback(
-        self, classifier, mock_provider, sample_long_content
-    ):
-        """Test provider timeout error handling."""
-        from kg_builder.inference.providers.base import ProviderTimeoutError
+    async def test_the_minimum_is_measured_after_stripping(self):
+        classifier = ContentClassifier(FakeLlmProvider(script=[]), registry=FakeRegistry())
 
-        mock_provider.infer.side_effect = ProviderTimeoutError(
-            "Request timed out", provider_type="ollama"
+        result = await classifier.classify(" " * 500 + "short" + " " * 500)
+
+        assert result.domain == DEFAULT_FALLBACK_DOMAIN
+
+    async def test_content_at_the_minimum_is_classified(self):
+        """Boundary, stated because `<` and `<=` are equally plausible here."""
+        classifier = classifier_answering(answer("literature_fiction", 0.8))
+
+        result = await classifier.classify("x" * MIN_CONTENT_LENGTH)
+
+        assert result.domain == "literature_fiction"
+
+    async def test_very_long_content_is_truncated_before_it_is_sent(self):
+        """A whole book in one classification prompt is a slow, expensive no.
+
+        Asserted behaviourally: the sentinel sits past the truncation point,
+        so a content-addressed fake sees it only if truncation failed.
+        Measuring the prompt's *length* instead would pass against a
+        classifier that truncated in `_build_prompt` and not in `classify`,
+        which is the arrangement that actually ships the whole book.
+        """
+        beyond_the_cut = "x" * (MAX_CONTENT_FOR_CLASSIFICATION + 100) + "SENTINEL"
+        classifier = ContentClassifier(
+            FakeLlmProvider(
+                by_substring={"SENTINEL": answer("literature_fiction", 0.9)},
+                default=answer("news_journalism", 0.9),
+            ),
+            registry=FakeRegistry(),
         )
 
-        result = await classifier.classify(sample_long_content)
+        result = await classifier.classify(beyond_the_cut)
 
-        assert result.domain == DEFAULT_FALLBACK_DOMAIN
-        assert result.confidence == 0.0
-        assert "timeout" in result.reasoning.lower()
+        assert result.domain == "news_journalism"
 
-    @pytest.mark.asyncio
-    async def test_connection_error_returns_fallback(
-        self, classifier, mock_provider, sample_long_content
-    ):
-        """Test connection error handling."""
-        from kg_builder.inference.providers.base import ProviderConnectionError
 
-        mock_provider.infer.side_effect = ProviderConnectionError(
-            "Connection refused", provider_type="ollama"
+class TestSanitisation:
+    @pytest.mark.parametrize(
+        ("secret", "placeholder"),
+        [
+            ("reach me at ada@example.com now", "[EMAIL]"),
+            ("call 555-123-4567 today", "[PHONE]"),
+            ("ssn 123-45-6789 on file", "[REDACTED]"),
+            ("card 4111 1111 1111 1111 charged", "[REDACTED]"),
+        ],
+    )
+    def test_personal_data_is_replaced_before_anything_is_sent(self, secret, placeholder):
+        """Classification ships content to a third party; PII must not go with it."""
+        sanitized = ContentClassifier(FakeLlmProvider(script=[{}]))._sanitize_content(secret)
+
+        assert placeholder in sanitized
+
+    def test_the_original_secret_is_not_merely_annotated(self):
+        """A substitution that appended rather than replaced would pass a
+        naive "placeholder is present" check while sending the data anyway."""
+        sanitized = ContentClassifier(FakeLlmProvider(script=[{}]))._sanitize_content(
+            "reach me at ada@example.com now"
         )
 
-        result = await classifier.classify(sample_long_content)
+        assert "ada@example.com" not in sanitized
+
+    def test_ordinary_prose_survives_sanitisation_unchanged(self):
+        """Over-eager redaction would quietly destroy the thing being classified."""
+        prose = "Ada Lovelace wrote about the Analytical Engine in 1843."
+
+        assert ContentClassifier(FakeLlmProvider(script=[{}]))._sanitize_content(prose) == prose
+
+    @pytest.mark.parametrize(
+        ("pattern", "sample"),
+        [
+            (EMAIL_PATTERN, "ada@example.com"),
+            (PHONE_PATTERN, "555-123-4567"),
+            (SSN_PATTERN, "123-45-6789"),
+            (CC_PATTERN, "4111111111111111"),
+        ],
+    )
+    def test_each_pattern_matches_what_it_is_named_for(self, pattern, sample):
+        assert pattern.search(sample) is not None
+
+
+class TestFailure:
+    async def test_an_empty_completion_falls_back_rather_than_raising(self, long_content):
+        """See the module docstring: a worse answer beats no answer here."""
+        classifier = classifier_answering(EMPTY)
+
+        result = await classifier.classify(long_content)
 
         assert result.domain == DEFAULT_FALLBACK_DOMAIN
         assert result.confidence == 0.0
-        assert "connection" in result.reasoning.lower()
 
-    @pytest.mark.asyncio
-    async def test_generic_exception_returns_fallback(
-        self, classifier, mock_provider, sample_long_content
-    ):
-        """Test generic exception handling."""
-        mock_provider.infer.side_effect = RuntimeError("Something went wrong")
+    async def test_an_answer_that_does_not_validate_falls_back(self, long_content):
+        """A confidence above 1.0 is refused by `ClassificationResult` itself.
 
-        result = await classifier.classify(sample_long_content)
+        The old parser accepted it, so callers ranking on confidence got a
+        value outside the range they were promised.
+        """
+        classifier = classifier_answering({"domain": "news_journalism", "confidence": 1.5})
 
-        assert result.domain == DEFAULT_FALLBACK_DOMAIN
-        assert result.confidence == 0.0
-        assert "error" in result.reasoning.lower()
-
-    @pytest.mark.asyncio
-    async def test_invalid_json_returns_fallback(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test handling of invalid JSON response."""
-        mock_provider.infer.return_value = mock_inference_response("Not valid JSON at all")
-
-        result = await classifier.classify(sample_long_content)
+        result = await classifier.classify(long_content)
 
         assert result.domain == DEFAULT_FALLBACK_DOMAIN
-        assert result.confidence == 0.0
-        # The error message may contain "no json" or "classification error"
-        assert "json" in result.reasoning.lower() or "error" in result.reasoning.lower()
 
-    @pytest.mark.asyncio
-    async def test_json_without_required_fields_returns_fallback(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test handling of JSON without required fields."""
-        mock_provider.infer.return_value = mock_inference_response('{"foo": "bar", "baz": 123}')
+    async def test_an_answer_missing_a_required_field_falls_back(self, long_content):
+        classifier = classifier_answering({"reasoning": "I forgot the domain"})
 
-        result = await classifier.classify(sample_long_content)
+        assert (await classifier.classify(long_content)).domain == DEFAULT_FALLBACK_DOMAIN
 
-        # Should use fallback domain (from missing "domain" field)
-        assert result.domain == DEFAULT_FALLBACK_DOMAIN
+    async def test_the_fallback_explains_itself(self, long_content):
+        """So an operator seeing a wall of fallbacks can tell why."""
+        result = await classifier_answering(EMPTY).classify(long_content)
 
-
-# =============================================================================
-# Unknown Domain Tests
-# =============================================================================
-
-
-class TestUnknownDomainHandling:
-    """Tests for handling unknown domains in responses."""
-
-    @pytest.mark.asyncio
-    async def test_unknown_domain_returns_fallback(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test that unknown domain falls back gracefully."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "unknown_domain_xyz", "confidence": 0.95, '
-            '"reasoning": "This domain does not exist"}'
-        )
-
-        result = await classifier.classify(sample_long_content)
-
-        assert result.domain == DEFAULT_FALLBACK_DOMAIN
-        # Confidence should be reduced
-        assert result.confidence < 0.95
-        assert "unknown" in result.reasoning.lower()
-
-
-# =============================================================================
-# Confidence Threshold Tests
-# =============================================================================
+        assert result.reasoning
+        assert "fail" in result.reasoning.lower()
 
 
 class TestConfidenceThreshold:
-    """Tests for confidence threshold enforcement."""
-
-    @pytest.mark.asyncio
-    async def test_low_confidence_uses_fallback(
-        self, mock_provider, mock_registry, mock_inference_response, sample_long_content
-    ):
-        """Test that low confidence classification uses fallback domain."""
-        classifier = ContentClassifier(
-            inference_provider=mock_provider,
-            registry=mock_registry,
-            confidence_threshold=0.7,
+    async def test_an_answer_below_the_threshold_is_replaced_by_the_fallback(self, long_content):
+        classifier = classifier_answering(
+            answer("literature_fiction", 0.3), confidence_threshold=0.5
         )
 
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "literature_fiction", "confidence": 0.5, "reasoning": "Not very sure"}'
-        )
+        result = await classifier.classify(long_content)
 
-        result = await classifier.classify(sample_long_content)
-
-        # Should use fallback due to low confidence
         assert result.domain == DEFAULT_FALLBACK_DOMAIN
-        assert result.confidence == 0.5  # Original confidence preserved
-        assert "low confidence" in result.reasoning.lower()
-        # Should include alternative
-        assert result.alternatives is not None
-        assert len(result.alternatives) > 0
-        assert result.alternatives[0]["domain"] == "literature_fiction"
 
-    @pytest.mark.asyncio
-    async def test_above_threshold_uses_original(
-        self, mock_provider, mock_registry, mock_inference_response, sample_long_content
-    ):
-        """Test that above-threshold classification uses original domain."""
-        classifier = ContentClassifier(
-            inference_provider=mock_provider,
-            registry=mock_registry,
-            confidence_threshold=0.6,
+    async def test_the_rejected_answer_is_kept_as_an_alternative(self, long_content):
+        """Discarding it would throw away the only evidence about the document.
+
+        A caller reviewing fallbacks needs to see what the model actually
+        thought, and at what confidence, to decide whether the threshold is
+        set wrong.
+        """
+        classifier = classifier_answering(
+            answer("literature_fiction", 0.3), confidence_threshold=0.5
         )
 
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "literature_fiction", "confidence": 0.8}'
+        result = await classifier.classify(long_content)
+
+        assert result.alternatives == [{"domain": "literature_fiction", "confidence": 0.3}]
+
+    async def test_an_answer_exactly_at_the_threshold_is_accepted(self, long_content):
+        """Boundary: `<` and `<=` are equally plausible and disagree here."""
+        classifier = classifier_answering(
+            answer("literature_fiction", 0.5), confidence_threshold=0.5
         )
 
-        result = await classifier.classify(sample_long_content)
+        assert (await classifier.classify(long_content)).domain == "literature_fiction"
 
-        assert result.domain == "literature_fiction"
-        assert result.confidence == 0.8
-
-    @pytest.mark.asyncio
-    async def test_exact_threshold_uses_original(
-        self, mock_provider, mock_registry, mock_inference_response, sample_long_content
-    ):
-        """Test that exact threshold classification uses original domain."""
-        classifier = ContentClassifier(
-            inference_provider=mock_provider,
-            registry=mock_registry,
-            confidence_threshold=0.7,
+    async def test_an_answer_above_the_threshold_is_accepted(self, long_content):
+        classifier = classifier_answering(
+            answer("literature_fiction", 0.51), confidence_threshold=0.5
         )
 
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "news_journalism", "confidence": 0.7}'
-        )
-
-        result = await classifier.classify(sample_long_content)
-
-        assert result.domain == "news_journalism"
-        assert result.confidence == 0.7
-
-
-# =============================================================================
-# Prompt Building Tests
-# =============================================================================
+        assert (await classifier.classify(long_content)).domain == "literature_fiction"
 
 
 class TestPromptBuilding:
-    """Tests for classification prompt building."""
+    def test_every_registered_domain_is_offered_to_the_model(self):
+        """A domain missing from the prompt can never be chosen.
 
-    @pytest.mark.asyncio
-    async def test_prompt_includes_all_domains(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test that the prompt includes all available domains."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "technical_documentation", "confidence": 0.9}'
-        )
-
-        await classifier.classify(sample_long_content)
-
-        call_args = mock_provider.infer.call_args
-        request = call_args[0][0]
-
-        # Check that all domains are in the prompt
-        assert "technical_documentation" in request.prompt
-        assert "literature_fiction" in request.prompt
-        assert "news_journalism" in request.prompt
-        assert "encyclopedia_wiki" in request.prompt
-
-    @pytest.mark.asyncio
-    async def test_prompt_includes_content(
-        self, classifier, mock_provider, mock_inference_response
-    ):
-        """Test that the prompt includes the content to classify."""
-        content = (
-            "This is unique content about machine learning "
-            "and neural networks that should appear in the prompt. " * 3
-        )
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "technical_documentation", "confidence": 0.85}'
-        )
-
-        await classifier.classify(content)
-
-        call_args = mock_provider.infer.call_args
-        request = call_args[0][0]
-
-        assert "machine learning" in request.prompt
-        assert "neural networks" in request.prompt
-
-
-# =============================================================================
-# Convenience Function Tests
-# =============================================================================
-
-
-class TestClassifyContentFunction:
-    """Tests for the classify_content convenience function."""
-
-    @pytest.mark.asyncio
-    async def test_classify_content_function(self, mock_provider, mock_inference_response):
-        """Test the convenience function works correctly."""
-        content = "A" * 150  # Long enough content
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "encyclopedia_wiki", "confidence": 0.75}'
-        )
-
-        with patch("kg_builder.extraction.classifier.get_domain_registry") as mock_get_registry:
-            mock_registry = MagicMock()
-            mock_registry.list_domains.return_value = []
-            mock_registry.has_domain.return_value = True
-            mock_get_registry.return_value = mock_registry
-
-            result = await classify_content(
-                content=content,
-                inference_provider=mock_provider,
-            )
-
-            assert isinstance(result, ClassificationResult)
-            assert result.domain == "encyclopedia_wiki"
-            assert result.confidence == 0.75
-
-    @pytest.mark.asyncio
-    async def test_classify_content_with_custom_threshold(
-        self, mock_provider, mock_inference_response
-    ):
-        """Test convenience function with custom confidence threshold."""
-        content = "A" * 150
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "literature_fiction", "confidence": 0.4}'
-        )
-
-        with patch("kg_builder.extraction.classifier.get_domain_registry") as mock_get_registry:
-            mock_registry = MagicMock()
-            mock_registry.list_domains.return_value = []
-            mock_registry.has_domain.return_value = True
-            mock_get_registry.return_value = mock_registry
-
-            result = await classify_content(
-                content=content,
-                inference_provider=mock_provider,
-                confidence_threshold=0.3,  # Lower threshold
-            )
-
-            # Should use original domain since above threshold
-            assert result.domain == "literature_fiction"
-
-    @pytest.mark.asyncio
-    async def test_classify_content_with_custom_fallback(
-        self, mock_provider, mock_inference_response
-    ):
-        """Test convenience function with custom fallback domain."""
-        content = "A" * 150
-
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "unknown_xyz", "confidence": 0.9}'
-        )
-
-        with patch("kg_builder.extraction.classifier.get_domain_registry") as mock_get_registry:
-            mock_registry = MagicMock()
-            mock_registry.list_domains.return_value = []
-            mock_registry.has_domain.return_value = False  # Unknown domain
-            mock_get_registry.return_value = mock_registry
-
-            result = await classify_content(
-                content=content,
-                inference_provider=mock_provider,
-                fallback_domain="news_journalism",
-            )
-
-            # Should use custom fallback
-            assert result.domain == "news_journalism"
-
-
-# =============================================================================
-# JSON Extraction Tests
-# =============================================================================
-
-
-class TestJsonExtraction:
-    """Tests for JSON extraction from LLM responses."""
-
-    @pytest.mark.asyncio
-    async def test_extracts_json_with_surrounding_text(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test JSON extraction when LLM includes extra text."""
-        mock_provider.infer.return_value = mock_inference_response(
-            "Here is my analysis:\n"
-            '{"domain": "technical_documentation", "confidence": 0.88, '
-            '"reasoning": "Contains code examples"}\n'
-            "That's my classification."
-        )
-
-        result = await classifier.classify(sample_long_content)
-
-        assert result.domain == "technical_documentation"
-        assert result.confidence == 0.88
-
-    @pytest.mark.asyncio
-    async def test_extracts_json_with_markdown_code_block(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test JSON extraction from markdown code blocks."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '```json\n{"domain": "news_journalism", "confidence": 0.77}\n```'
-        )
-
-        result = await classifier.classify(sample_long_content)
-
-        assert result.domain == "news_journalism"
-        assert result.confidence == 0.77
-
-    @pytest.mark.asyncio
-    async def test_handles_missing_reasoning_field(
-        self, classifier, mock_provider, mock_inference_response, sample_long_content
-    ):
-        """Test handling when reasoning field is missing."""
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "literature_fiction", "confidence": 0.82}'
-        )
-
-        result = await classifier.classify(sample_long_content)
-
-        assert result.domain == "literature_fiction"
-        assert result.confidence == 0.82
-        assert result.reasoning is None
-
-
-# =============================================================================
-# Integration-Like Tests
-# =============================================================================
-
-
-class TestClassificationFlow:
-    """End-to-end style tests for complete classification flow."""
-
-    @pytest.mark.asyncio
-    async def test_full_classification_flow(
-        self, mock_provider, mock_registry, mock_inference_response
-    ):
-        """Test complete classification flow from start to finish."""
-        # Create classifier
-        classifier = ContentClassifier(
-            inference_provider=mock_provider,
-            registry=mock_registry,
-            confidence_threshold=0.6,
-        )
-
-        # Sample technical content
-        content = """
-        This is a comprehensive API reference documentation for the
-        FastAPI web framework. It covers decorators like @app.get(),
-        dependency injection with Depends(), and Pydantic model validation.
-        The documentation includes code examples demonstrating how to
-        create RESTful endpoints with proper type hints and validation.
+        And the failure is invisible: the model picks the closest of the ones
+        it was shown, with high confidence, and nothing looks wrong.
         """
+        classifier = ContentClassifier(FakeLlmProvider(script=[{}]), registry=FakeRegistry())
 
-        # Mock LLM response
-        mock_provider.infer.return_value = mock_inference_response(
-            '{"domain": "technical_documentation", "confidence": 0.92, '
-            '"reasoning": "Contains API reference, code examples, and '
-            'framework documentation patterns"}'
-        )
+        prompt = classifier._build_prompt("some content")
 
-        # Execute classification
-        result = await classifier.classify(content, tenant_id="test-tenant")
+        for domain_id, description in DOMAINS.items():
+            assert domain_id in prompt
+            assert description in prompt
 
-        # Verify result
-        assert result.domain == "technical_documentation"
-        assert result.confidence == 0.92
-        assert "API reference" in result.reasoning or result.reasoning is not None
+    def test_the_content_reaches_the_prompt(self):
+        classifier = ContentClassifier(FakeLlmProvider(script=[{}]), registry=FakeRegistry())
 
-        # Verify provider was called
-        mock_provider.infer.assert_called_once()
-
-        # Verify the request had appropriate settings
-        call_args = mock_provider.infer.call_args
-        request = call_args[0][0]
-        assert request.temperature == 0.1  # Low temperature for classification
-        assert request.max_tokens == 500
+        assert "Ada Lovelace" in classifier._build_prompt("Ada Lovelace")

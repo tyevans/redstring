@@ -1,62 +1,72 @@
-"""Content classifier for adaptive extraction.
+"""Deciding which domain schema a document should be extracted with.
 
-This module provides LLM-based content classification to determine
-the appropriate domain schema for extraction.
+One model call, whose answer selects the `system_prompt` the extraction calls
+then use. `kg_builder.composition.build_graph(domain=AUTO)` is the caller;
+this is also usable directly:
 
-The classifier analyzes content samples and determines the most
-appropriate domain schema using a configurable inference provider
-(e.g., Ollama or OpenAI).
+```python
+from kg_builder import domain_system_prompt
+from kg_builder.extraction.classifier import ContentClassifier
 
-Usage:
-    from kg_builder.extraction.classifier import ContentClassifier
-    from kg_builder.inference.providers.ollama import OllamaProvider
+result = await ContentClassifier(provider).classify(document.text)
+prompt = domain_system_prompt(result.domain)
+```
 
-    provider = OllamaProvider(base_url="http://localhost:11434")
-    classifier = ContentClassifier(inference_provider=provider)
+The `provider` is any `LlmProvider` -- `LangChainLlmProvider` against an
+OpenAI-compatible server, or `FakeLlmProvider` in a test. This docstring used
+to construct an `OllamaProvider(base_url=...)`, a class that has not existed
+in this repository since slice 6 replaced the vendor extractors with one port.
+Slice 10 put the module on the public `AUTO` path without reading it; the
+review caught it.
 
-    result = await classifier.classify(content="some text content...")
-    print(f"Domain: {result.domain}, Confidence: {result.confidence}")
+## It never fails, and that is the thing to know about it
 
-    # Or use the convenience function
-    from kg_builder.extraction.classifier import classify_content
+Three paths return `encyclopedia_wiki` with **confidence 0.0**: content under
+`MIN_CONTENT_LENGTH`, which is never sent to the model at all; an answer below
+`confidence_threshold`; and any `LlmProviderError`. Falling back is right
+*here* and wrong in extraction -- a misclassified document is extracted with
+the general-purpose schema, which is a worse answer, while a silently empty
+extraction is a missing answer that looks like a real one.
 
-    result = await classify_content(
-        content="some text...",
-        inference_provider=provider,
-    )
+But a fallback that reports the same shape as a choice is a plausible answer
+nobody investigates, so the confidence is carried out rather than logged and
+dropped: `GraphBuildReport.domain_confidence` is where it surfaces.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 # Import directly from submodules to avoid circular imports through __init__
+from kg_builder.domain.exceptions import LlmProviderError
 from kg_builder.extraction.domains.models import ClassificationResult
 from kg_builder.extraction.domains.registry import get_domain_registry
 
 if TYPE_CHECKING:
+    from kg_builder.domain.ids import TenantId
     from kg_builder.extraction.domains.registry import DomainSchemaRegistry
-    from kg_builder.inference.providers.base import InferenceProvider
+    from kg_builder.ports.llm_provider import LlmProvider
 
 logger = logging.getLogger(__name__)
 
-# Classification prompt template
-CLASSIFICATION_PROMPT = """You are a content classifier. Analyze the following content and classify it into exactly one of these domains:
+# What the classifier asks. The *shape* of the answer is pinned by the JSON
+# schema `ClassificationResult` generates and by the port's validation, so the
+# instructions the old template carried -- "respond with ONLY a JSON object",
+# and a hand-written example of that object -- are gone. They were a second
+# specification of the same thing, free to drift from the first, and they were
+# the reason the classifier needed its own `_parse_response` that dug a JSON
+# object out of surrounding prose.
+CLASSIFICATION_PROMPT = """Classify the following content into exactly one of
+these domains:
 
 {domain_list}
-
-Respond with ONLY a JSON object in this exact format:
-{{"domain": "<domain_id>", "confidence": <0.0-1.0>, "reasoning": "<brief explanation>"}}
 
 Content to classify:
 ---
 {content}
----
-
-Remember: Respond with ONLY the JSON object, no other text."""
+---"""
 
 # Content length limits
 MIN_CONTENT_LENGTH = 100  # Characters
@@ -74,27 +84,6 @@ PHONE_PATTERN = re.compile(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b")
 SSN_PATTERN = re.compile(r"\b\d{3}[-]?\d{2}[-]?\d{4}\b")
 # Credit card patterns (basic - catches most formats)
 CC_PATTERN = re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b")
-
-
-class InferenceProviderProtocol(Protocol):
-    """Protocol for inference providers compatible with the classifier.
-
-    This allows duck typing - any provider with a compatible infer method
-    can be used with the classifier.
-    """
-
-    async def infer(self, request) -> InferenceResponseProtocol:
-        """Execute an inference request."""
-        ...
-
-
-class InferenceResponseProtocol(Protocol):
-    """Protocol for inference response."""
-
-    @property
-    def content(self) -> str:
-        """The generated response content."""
-        ...
 
 
 class ContentClassifier:
@@ -123,7 +112,7 @@ class ContentClassifier:
 
     def __init__(
         self,
-        inference_provider: InferenceProvider,
+        provider: LlmProvider,
         timeout_seconds: float = 30.0,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         fallback_domain: str = DEFAULT_FALLBACK_DOMAIN,
@@ -132,7 +121,7 @@ class ContentClassifier:
         """Initialize the classifier.
 
         Args:
-            inference_provider: The LLM inference provider for classification.
+            provider: The `LlmProvider` used for classification.
             timeout_seconds: Timeout for classification calls.
             confidence_threshold: Minimum confidence to accept classification.
                 Classifications below this threshold will use fallback domain.
@@ -140,7 +129,7 @@ class ContentClassifier:
                 confidence is below threshold.
             registry: Optional custom domain registry (for testing).
         """
-        self._provider = inference_provider
+        self._provider = provider
         self._timeout = timeout_seconds
         self._confidence_threshold = confidence_threshold
         self._fallback_domain = fallback_domain
@@ -158,19 +147,21 @@ class ContentClassifier:
     async def classify(
         self,
         content: str,
-        tenant_id: str | None = None,
+        tenant_id: TenantId | None = None,
     ) -> ClassificationResult:
         """Classify content into a domain.
 
         Args:
             content: The content to classify.
-            tenant_id: Optional tenant ID for logging.
+            tenant_id: Optional, and only for logging -- nothing here is
+                scoped by tenant. Typed `TenantId` (a `UUID`) rather than the
+                `str` it was, because every other tenant parameter in the
+                library is a `UUID` and a lone `str` here is a trap for the
+                next caller rather than a flexibility anyone wanted.
 
         Returns:
-            ClassificationResult with domain, confidence, and reasoning.
-
-        Note:
-            On error or timeout, returns fallback domain with 0.0 confidence.
+            A `ClassificationResult`. **Confidence 0.0 means it gave up** --
+            see the module docstring for the three ways that happens.
         """
         # Check minimum content length
         content_stripped = content.strip()
@@ -189,29 +180,14 @@ class ContentClassifier:
         prompt = self._build_prompt(truncated)
 
         try:
-            # Import here to avoid circular imports
-            from kg_builder.inference.providers.base import (
-                InferenceRequest,
-                ProviderConnectionError,
-                ProviderTimeoutError,
-            )
-
-            # Create inference request
-            request = InferenceRequest(
-                prompt=prompt,
-                model="",  # Use provider's default model
-                temperature=0.1,  # Low temperature for consistent classification
-                max_tokens=500,  # Short response expected
+            result = await self._provider.extract(
+                prompt,
+                ClassificationResult,
                 system_prompt=(
-                    "You are a content classifier. Respond with only valid JSON, no other text."
+                    "You are a content classifier. Classify the text into one "
+                    "of the domains listed, and say how confident you are."
                 ),
             )
-
-            # Call LLM for classification
-            response = await self._provider.infer(request)
-
-            # Parse response
-            result = self._parse_response(response.content)
 
             # Check confidence threshold
             if result.confidence < self._confidence_threshold:
@@ -246,19 +222,18 @@ class ContentClassifier:
             )
             return result
 
-        except ProviderTimeoutError:
+        except LlmProviderError as error:
+            # The port's whole failure family: an empty completion, or one
+            # that did not validate as a ClassificationResult. Falling back
+            # is right *here* and wrong in extraction: a misclassified
+            # document is extracted with the general-purpose schema, which is
+            # a worse answer, while a silently empty extraction is a missing
+            # answer that looks like a real one.
             logger.warning(
-                "Classification timeout",
-                extra={"tenant_id": tenant_id, "timeout": self._timeout},
+                "Classification failed; using the fallback domain",
+                extra={"tenant_id": tenant_id, "error": str(error)},
             )
-            return self._fallback_result("Classification timeout")
-
-        except ProviderConnectionError as e:
-            logger.warning(
-                "Classification connection error",
-                extra={"tenant_id": tenant_id, "error": str(e)},
-            )
-            return self._fallback_result(f"Connection error: {e}")
+            return self._fallback_result(f"Classification failed: {error}")
 
         except TimeoutError:
             logger.warning(
@@ -266,13 +241,6 @@ class ContentClassifier:
                 extra={"tenant_id": tenant_id, "timeout": self._timeout},
             )
             return self._fallback_result("Classification timeout")
-
-        except Exception as e:
-            logger.exception(
-                "Classification failed",
-                extra={"tenant_id": tenant_id, "error": str(e)},
-            )
-            return self._fallback_result(f"Classification error: {e}")
 
     def _sanitize_content(self, content: str) -> str:
         """Remove PII and sensitive data before classification.
@@ -299,9 +267,7 @@ class ContentClassifier:
         sanitized = SSN_PATTERN.sub("[REDACTED]", sanitized)
 
         # Remove credit card-like patterns
-        sanitized = CC_PATTERN.sub("[REDACTED]", sanitized)
-
-        return sanitized
+        return CC_PATTERN.sub("[REDACTED]", sanitized)
 
     def _build_prompt(self, content: str) -> str:
         """Build the classification prompt.
@@ -325,67 +291,6 @@ class ContentClassifier:
             content=content,
         )
 
-    def _parse_response(self, response: str) -> ClassificationResult:
-        """Parse LLM classification response.
-
-        Extracts the JSON object from the LLM response and converts it
-        to a ClassificationResult. Handles cases where the LLM includes
-        extra text around the JSON.
-
-        Args:
-            response: Raw LLM response text.
-
-        Returns:
-            Parsed ClassificationResult.
-
-        Raises:
-            ValueError: If response cannot be parsed.
-        """
-        # Try to extract JSON from response
-        try:
-            # Find JSON object in response
-            start = response.find("{")
-            end = response.rfind("}") + 1
-            if start == -1 or end == 0:
-                raise ValueError("No JSON object found in response")
-
-            json_str = response[start:end]
-            data = json.loads(json_str)
-
-            domain = data.get("domain", self._fallback_domain)
-            confidence = float(data.get("confidence", 0.5))
-            reasoning = data.get("reasoning")
-
-            # Validate domain exists
-            registry = self._get_registry()
-            if not registry.has_domain(domain):
-                logger.warning(
-                    "Unknown domain in classification response",
-                    extra={"domain": domain, "fallback": self._fallback_domain},
-                )
-                # Keep original confidence but reduce it
-                return ClassificationResult(
-                    domain=self._fallback_domain,
-                    confidence=max(0.3, confidence - 0.3),
-                    reasoning=(
-                        f"Unknown domain '{domain}' in response, "
-                        f"using fallback. Original reasoning: {reasoning}"
-                    ),
-                )
-
-            return ClassificationResult(
-                domain=domain,
-                confidence=min(max(confidence, 0.0), 1.0),
-                reasoning=reasoning,
-            )
-
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
-            logger.warning(
-                "Failed to parse classification response",
-                extra={"error": str(e), "response_preview": response[:200]},
-            )
-            return self._fallback_result(f"Parse error: {e}")
-
     def _fallback_result(self, reason: str) -> ClassificationResult:
         """Create a fallback classification result.
 
@@ -405,54 +310,15 @@ class ContentClassifier:
         )
 
 
-async def classify_content(
-    content: str,
-    inference_provider: InferenceProvider,
-    tenant_id: str | None = None,
-    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
-    fallback_domain: str = DEFAULT_FALLBACK_DOMAIN,
-) -> ClassificationResult:
-    """Convenience function for content classification.
-
-    Creates a ContentClassifier instance and classifies the provided
-    content. Use this for one-off classifications. For repeated
-    classifications, create a ContentClassifier instance directly.
-
-    Args:
-        content: Content to classify.
-        inference_provider: LLM inference provider to use.
-        tenant_id: Optional tenant ID for logging.
-        confidence_threshold: Minimum confidence for accepting classification.
-        fallback_domain: Domain to use when classification fails.
-
-    Returns:
-        ClassificationResult with domain and confidence.
-
-    Example:
-        from kg_builder.inference.providers.ollama import OllamaProvider
-        from kg_builder.extraction.classifier import classify_content
-
-        provider = OllamaProvider(base_url="http://localhost:11434")
-        result = await classify_content(
-            content="The quick brown fox...",
-            inference_provider=provider,
-        )
-        print(f"Classified as: {result.domain}")
-    """
-    classifier = ContentClassifier(
-        inference_provider=inference_provider,
-        confidence_threshold=confidence_threshold,
-        fallback_domain=fallback_domain,
-    )
-    return await classifier.classify(content, tenant_id)
-
-
-# Type alias for exported symbols
 __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "DEFAULT_FALLBACK_DOMAIN",
     "MAX_CONTENT_FOR_CLASSIFICATION",
     "MIN_CONTENT_LENGTH",
+    # `classify_content` was here: a module-level wrapper that built a
+    # `ContentClassifier` and called it. `ContentClassifier(provider).classify(text)`
+    # is the same line without the indirection, and the wrapper had no caller.
+    # Same test slice 10 applied to `prompt_generator`'s three dead halves,
+    # applied here in the fix round rather than skipped again.
     "ContentClassifier",
-    "classify_content",
 ]

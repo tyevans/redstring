@@ -1,92 +1,122 @@
-"""
-Schema.org and Open Graph entity extraction.
+"""Schema.org and Open Graph entity extraction.
 
-Extracts entities from structured data embedded in web pages:
+Extracts entities from structured data embedded in a document:
+
 - JSON-LD Schema.org markup
 - Microdata
 - Open Graph metadata
+
+## Entity type is a string, and that is a decision (slice 9)
+
+`SCHEMA_TYPE_MAP` used to map onto `models.extracted_entity.EntityType`, an
+enum that died with the relational layer. It was **not** replaced with an enum
+in `domain/`, and the reasons are worth keeping because "a deleted module
+defined one, so we need one" is the argument that would put it back:
+
+- `domain/entity.py` already decided this. `Entity.entity_type` is a `str`,
+  and `extraction/mapping.py::entity_id_for` hashes it as one. A `domain`
+  enum would either duplicate that freedom or contradict it, and if it
+  contradicted it, every id in the log would depend on which.
+- **The deleted enum had already conceded the point.** Its own docstring said
+  the column was `String(100)` "to support dynamic domain-specific types",
+  and it carried `is_valid` / `get_or_none` -- two helpers whose entire
+  purpose was to answer "this is not one of mine" without raising. An enum
+  that needs a way to say a value is legitimately outside it is a vocabulary,
+  not a type.
+- `extraction/domains/` defines entity types per domain in YAML, an open set
+  by construction. A closed enum beside an open registry is two answers to
+  one question.
+- The live-model suite deliberately does not pin which `entity_type` a model
+  assigns (see BACKLOG B12); an enum would make that unpinnable claim a
+  validation error instead.
+
+So the eight values below are **this extractor's vocabulary** -- what
+Schema.org's type hierarchy collapses to here -- and not the library's. They
+are pinned as literals in `tests/unit/extraction/test_schema_org.py`, which
+is now the only record of what the enum's members were.
 """
 
 import logging
+from typing import Any
 
-from kg_builder.models.extracted_entity import EntityType, ExtractionMethod
+from kg_builder.domain.entity import ExtractionMethod
 
 logger = logging.getLogger(__name__)
 
 # Mapping from Schema.org types to our entity types
 SCHEMA_TYPE_MAP = {
     # Person types
-    "Person": EntityType.PERSON,
-    "Author": EntityType.PERSON,
+    "Person": "person",
+    "Author": "person",
     # Organization types
-    "Organization": EntityType.ORGANIZATION,
-    "Corporation": EntityType.ORGANIZATION,
-    "LocalBusiness": EntityType.ORGANIZATION,
-    "Company": EntityType.ORGANIZATION,
-    "EducationalOrganization": EntityType.ORGANIZATION,
-    "GovernmentOrganization": EntityType.ORGANIZATION,
-    "NGO": EntityType.ORGANIZATION,
-    "SportsOrganization": EntityType.ORGANIZATION,
+    "Organization": "organization",
+    "Corporation": "organization",
+    "LocalBusiness": "organization",
+    "Company": "organization",
+    "EducationalOrganization": "organization",
+    "GovernmentOrganization": "organization",
+    "NGO": "organization",
+    "SportsOrganization": "organization",
     # Location types
-    "Place": EntityType.LOCATION,
-    "City": EntityType.LOCATION,
-    "Country": EntityType.LOCATION,
-    "AdministrativeArea": EntityType.LOCATION,
-    "GeoCoordinates": EntityType.LOCATION,
-    "PostalAddress": EntityType.LOCATION,
-    "Landmark": EntityType.LOCATION,
+    "Place": "location",
+    "City": "location",
+    "Country": "location",
+    "AdministrativeArea": "location",
+    "GeoCoordinates": "location",
+    "PostalAddress": "location",
+    "Landmark": "location",
     # Event types
-    "Event": EntityType.EVENT,
-    "BusinessEvent": EntityType.EVENT,
-    "ChildrensEvent": EntityType.EVENT,
-    "ComedyEvent": EntityType.EVENT,
-    "CourseInstance": EntityType.EVENT,
-    "DanceEvent": EntityType.EVENT,
-    "DeliveryEvent": EntityType.EVENT,
-    "EducationEvent": EntityType.EVENT,
-    "ExhibitionEvent": EntityType.EVENT,
-    "Festival": EntityType.EVENT,
-    "FoodEvent": EntityType.EVENT,
-    "Hackathon": EntityType.EVENT,
-    "LiteraryEvent": EntityType.EVENT,
-    "MusicEvent": EntityType.EVENT,
-    "PublicationEvent": EntityType.EVENT,
-    "SaleEvent": EntityType.EVENT,
-    "ScreeningEvent": EntityType.EVENT,
-    "SocialEvent": EntityType.EVENT,
-    "SportsEvent": EntityType.EVENT,
-    "TheaterEvent": EntityType.EVENT,
-    "VisualArtsEvent": EntityType.EVENT,
+    "Event": "event",
+    "BusinessEvent": "event",
+    "ChildrensEvent": "event",
+    "ComedyEvent": "event",
+    "CourseInstance": "event",
+    "DanceEvent": "event",
+    "DeliveryEvent": "event",
+    "EducationEvent": "event",
+    "ExhibitionEvent": "event",
+    "Festival": "event",
+    "FoodEvent": "event",
+    "Hackathon": "event",
+    "LiteraryEvent": "event",
+    "MusicEvent": "event",
+    "PublicationEvent": "event",
+    "SaleEvent": "event",
+    "ScreeningEvent": "event",
+    "SocialEvent": "event",
+    "SportsEvent": "event",
+    "TheaterEvent": "event",
+    "VisualArtsEvent": "event",
     # Product types
-    "Product": EntityType.PRODUCT,
-    "ProductModel": EntityType.PRODUCT,
-    "IndividualProduct": EntityType.PRODUCT,
-    "SoftwareApplication": EntityType.PRODUCT,
-    "MobileApplication": EntityType.PRODUCT,
-    "WebApplication": EntityType.PRODUCT,
-    "Book": EntityType.PRODUCT,
-    "Movie": EntityType.PRODUCT,
-    "MusicAlbum": EntityType.PRODUCT,
-    "VideoGame": EntityType.PRODUCT,
+    "Product": "product",
+    "ProductModel": "product",
+    "IndividualProduct": "product",
+    "SoftwareApplication": "product",
+    "MobileApplication": "product",
+    "WebApplication": "product",
+    "Book": "product",
+    "Movie": "product",
+    "MusicAlbum": "product",
+    "VideoGame": "product",
     # Document types
-    "Article": EntityType.DOCUMENT,
-    "NewsArticle": EntityType.DOCUMENT,
-    "BlogPosting": EntityType.DOCUMENT,
-    "ScholarlyArticle": EntityType.DOCUMENT,
-    "TechArticle": EntityType.DOCUMENT,
-    "Report": EntityType.DOCUMENT,
-    "WebPage": EntityType.DOCUMENT,
-    "CreativeWork": EntityType.DOCUMENT,
+    "Article": "document",
+    "NewsArticle": "document",
+    "BlogPosting": "document",
+    "ScholarlyArticle": "document",
+    "TechArticle": "document",
+    "Report": "document",
+    "WebPage": "document",
+    "CreativeWork": "document",
     # Date-related
-    "Date": EntityType.DATE,
-    "DateTime": EntityType.DATE,
+    "Date": "date",
+    "DateTime": "date",
     # Concept types
-    "Thing": EntityType.CONCEPT,
-    "Intangible": EntityType.CONCEPT,
+    "Thing": "concept",
+    "Intangible": "concept",
 }
 
 
-def extract_entities_from_schema_org(schema_data: list) -> list[dict]:
+def extract_entities_from_schema_org(schema_data: list[Any]) -> list[dict[str, Any]]:
     """
     Extract entities from Schema.org JSON-LD data.
 
@@ -119,7 +149,7 @@ def extract_entities_from_schema_org(schema_data: list) -> list[dict]:
     return entities
 
 
-def _extract_entity_from_schema_item(item: dict) -> dict | None:
+def _extract_entity_from_schema_item(item: dict[str, Any]) -> dict[str, Any] | None:
     """
     Extract an entity from a single Schema.org item.
 
@@ -142,7 +172,7 @@ def _extract_entity_from_schema_item(item: dict) -> dict | None:
     entity_type = SCHEMA_TYPE_MAP.get(schema_type)
     if not entity_type:
         # Use CONCEPT as fallback for unknown types
-        entity_type = EntityType.CONCEPT
+        entity_type = "concept"
 
     # Get name
     name = _get_name_from_item(item)
@@ -179,7 +209,7 @@ def _extract_entity_from_schema_item(item: dict) -> dict | None:
     }
 
 
-def _get_name_from_item(item: dict) -> str | None:
+def _get_name_from_item(item: dict[str, Any]) -> str | None:
     """Get the name from a Schema.org item."""
     # Try various name fields
     for field in ["name", "headline", "title", "alternateName", "legalName"]:
@@ -200,7 +230,7 @@ def _get_name_from_item(item: dict) -> str | None:
     return None
 
 
-def _extract_properties(item: dict) -> dict:
+def _extract_properties(item: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant properties from Schema.org item."""
     properties = {}
 
@@ -253,7 +283,7 @@ def _extract_properties(item: dict) -> dict:
     return properties
 
 
-def _extract_nested_entities(item: dict) -> list[dict]:
+def _extract_nested_entities(item: dict[str, Any]) -> list[dict[str, Any]]:
     """Extract entities from nested Schema.org objects."""
     entities = []
 
@@ -294,7 +324,7 @@ def _extract_nested_entities(item: dict) -> list[dict]:
     return entities
 
 
-def extract_entities_from_open_graph(og_data: dict) -> list[dict]:
+def extract_entities_from_open_graph(og_data: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Extract entities from Open Graph metadata.
 
@@ -304,7 +334,7 @@ def extract_entities_from_open_graph(og_data: dict) -> list[dict]:
     Returns:
         List of entity dictionaries
     """
-    entities = []
+    entities: list[dict[str, Any]] = []
 
     if not og_data:
         return entities
@@ -354,19 +384,18 @@ def extract_entities_from_open_graph(og_data: dict) -> list[dict]:
     return entities
 
 
-def _map_og_type(og_type: str) -> EntityType:
+def _map_og_type(og_type: str) -> str:
     """Map Open Graph type to entity type."""
     og_type = og_type.lower()
 
     if og_type in ("website", "article", "blog"):
-        return EntityType.DOCUMENT
-    elif og_type == "profile":
-        return EntityType.PERSON
-    elif og_type in ("product", "book", "music.album", "video.movie"):
-        return EntityType.PRODUCT
-    elif og_type in ("place", "business.business"):
-        return EntityType.LOCATION
-    elif og_type in ("music.song", "music.playlist", "video.episode"):
-        return EntityType.DOCUMENT
-    else:
-        return EntityType.CONCEPT
+        return "document"
+    if og_type == "profile":
+        return "person"
+    if og_type in ("product", "book", "music.album", "video.movie"):
+        return "product"
+    if og_type in ("place", "business.business"):
+        return "location"
+    if og_type in ("music.song", "music.playlist", "video.episode"):
+        return "document"
+    return "concept"

@@ -19,7 +19,6 @@ from kg_builder.extraction.domains.registry import (
     get_default_domain_schema,
     get_domain_registry,
     get_domain_schema,
-    get_registry_dependency,
     is_valid_domain,
     list_available_domains,
     reset_registry_cache,
@@ -545,12 +544,6 @@ class TestConvenienceFunctions:
     def test_get_domain_registry(self):
         """Test get_domain_registry convenience function."""
         registry = get_domain_registry()
-        assert isinstance(registry, DomainSchemaRegistry)
-        assert registry.is_loaded
-
-    def test_get_registry_dependency(self):
-        """Test get_registry_dependency for FastAPI."""
-        registry = get_registry_dependency()
         assert isinstance(registry, DomainSchemaRegistry)
         assert registry.is_loaded
 
