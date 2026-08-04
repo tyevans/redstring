@@ -35,17 +35,16 @@ class Preprocessor(Protocol):
             def preprocessor_type(self) -> str:
                 return "my_preprocessor"
 
-            def preprocess(self, content: str, content_type: str, url: str | None) -> PreprocessingResult:
+            def preprocess(
+                self, content: str, content_type: str, url: str | None
+            ) -> PreprocessingResult:
                 # Clean content
                 return PreprocessingResult(clean_text=cleaned, ...)
     """
 
     @property
     def preprocessor_type(self) -> str:
-        """Return the type identifier for this preprocessor.
-
-        This should match the PreprocessorType enum value used for registration.
-        """
+        """Return the type identifier for this preprocessor."""
         ...
 
     def preprocess(
@@ -85,7 +84,9 @@ class Chunker(Protocol):
             def chunker_type(self) -> str:
                 return "my_chunker"
 
-            def chunk(self, text: str, max_chunk_size: int | None, overlap_size: int | None) -> ChunkingResult:
+            def chunk(
+                self, text: str, max_chunk_size: int | None, overlap_size: int | None
+            ) -> ChunkingResult:
                 # Split text
                 return ChunkingResult(chunks=[...], ...)
     """
@@ -135,7 +136,9 @@ class EntityMerger(Protocol):
             def merger_type(self) -> str:
                 return "my_merger"
 
-            async def merge_entities(self, entities_by_chunk, relationships_by_chunk, document_context):
+            async def merge_entities(
+                self, entities_by_chunk, relationships_by_chunk, document_context
+            ):
                 # Merge entities
                 return merged_entities, merged_relationships
 

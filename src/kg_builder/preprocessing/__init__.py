@@ -1,17 +1,19 @@
 """
-Modular text preprocessing and chunking for entity extraction.
+Modular text chunking and entity merging for entity extraction.
 
 This module provides:
-- Preprocessors: Clean and extract main content from HTML/text
-- Chunkers: Split documents into smaller pieces for processing
+- Chunkers: Split content into smaller pieces for processing
 - Entity Mergers: Combine entities from multiple chunks
+
+Preprocessing (HTML boilerplate removal) is sourcing, which this library does
+not do -- callers supply already-clean content.
 
 Example:
     from kg_builder.preprocessing import PreprocessingPipeline, PipelineConfig
 
     config = PipelineConfig(chunk_size=3000, chunk_overlap=200)
     pipeline = PreprocessingPipeline(config)
-    result = await pipeline.process(content=html, extractor=extractor, url=url)
+    result = await pipeline.process(content=clean_text, extractor=extractor, url=url)
 """
 
 # Import implementations to trigger factory registration
@@ -19,7 +21,6 @@ Example:
 from kg_builder.preprocessing import (
     chunkers,  # noqa: F401
     mergers,  # noqa: F401
-    preprocessors,  # noqa: F401
 )
 from kg_builder.preprocessing.base import Chunker, EntityMerger, Preprocessor
 from kg_builder.preprocessing.exceptions import (
@@ -29,15 +30,12 @@ from kg_builder.preprocessing.exceptions import (
     EntityMergerNotRegisteredError,
     PreprocessingError,
     PreprocessorError,
-    PreprocessorNotRegisteredError,
 )
 from kg_builder.preprocessing.factory import (
     ChunkerFactory,
     ChunkerType,
     EntityMergerFactory,
     EntityMergerType,
-    PreprocessorFactory,
-    PreprocessorType,
 )
 
 # Import pipeline after all factories are populated
@@ -51,34 +49,31 @@ from kg_builder.preprocessing.schemas import (
 )
 
 __all__ = [
-    # Protocols
-    "Preprocessor",
-    "Chunker",
-    "EntityMerger",
-    # Factories
-    "PreprocessorFactory",
-    "ChunkerFactory",
-    "EntityMergerFactory",
-    # Types
-    "PreprocessorType",
-    "ChunkerType",
-    "EntityMergerType",
-    # Schemas
-    "PreprocessingResult",
     "Chunk",
+    "Chunker",
+    "ChunkerError",
+    # Factories
+    "ChunkerFactory",
+    "ChunkerNotRegisteredError",
+    # Types
+    "ChunkerType",
     "ChunkingResult",
     "EntityMergeCandidate",
     "EntityMergeDecision",
-    # Pipeline
-    "PreprocessingPipeline",
+    "EntityMerger",
+    "EntityMergerError",
+    "EntityMergerFactory",
+    "EntityMergerNotRegisteredError",
+    "EntityMergerType",
     "PipelineConfig",
     "PipelineResult",
     # Exceptions
     "PreprocessingError",
+    # Pipeline
+    "PreprocessingPipeline",
+    # Schemas
+    "PreprocessingResult",
+    # Protocols
+    "Preprocessor",
     "PreprocessorError",
-    "PreprocessorNotRegisteredError",
-    "ChunkerError",
-    "ChunkerNotRegisteredError",
-    "EntityMergerError",
-    "EntityMergerNotRegisteredError",
 ]

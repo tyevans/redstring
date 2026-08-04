@@ -33,28 +33,6 @@ class PreprocessorError(PreprocessingError):
     pass
 
 
-class PreprocessorNotRegisteredError(PreprocessorError):
-    """Raised when attempting to create an unregistered preprocessor type.
-
-    This indicates a configuration error where the requested preprocessor
-    type is not available in the factory registry.
-    """
-
-    pass
-
-
-class ContentExtractionError(PreprocessorError):
-    """Raised when content extraction fails.
-
-    This may occur when:
-    - HTML is malformed and cannot be parsed
-    - No main content can be identified
-    - External extraction library fails
-    """
-
-    pass
-
-
 # =============================================================================
 # Chunker Exceptions
 # =============================================================================

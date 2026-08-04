@@ -2,32 +2,31 @@
 Factory classes for preprocessing components.
 
 Implements the Factory pattern with decorator-based registry for dynamically
-creating preprocessors, chunkers, and entity mergers.
+creating chunkers and entity mergers.
 
 This follows the Open/Closed principle - new implementations can be added
 without modifying the factory code.
 
 Example:
-    # Register a new preprocessor
-    @PreprocessorFactory.register(PreprocessorType.MY_PREPROCESSOR)
-    class MyPreprocessor:
-        def preprocess(self, content, content_type, url):
+    # Register a new chunker
+    @ChunkerFactory.register(ChunkerType.MY_CHUNKER)
+    class MyChunker:
+        def chunk(self, text, max_chunk_size, overlap_size):
             ...
 
     # Create instance
-    preprocessor = PreprocessorFactory.create(PreprocessorType.MY_PREPROCESSOR, config={})
+    chunker = ChunkerFactory.create(ChunkerType.MY_CHUNKER, config={})
 """
 
 import logging
 from collections.abc import Callable
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
-from kg_builder.preprocessing.base import Chunker, EntityMerger, Preprocessor
+from kg_builder.preprocessing.base import Chunker, EntityMerger
 from kg_builder.preprocessing.exceptions import (
     ChunkerNotRegisteredError,
     EntityMergerNotRegisteredError,
-    PreprocessorNotRegisteredError,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,16 +35,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Type Enums
 # =============================================================================
-
-
-class PreprocessorType(str, Enum):
-    """Supported preprocessor types.
-
-    Add new types here when implementing additional preprocessors.
-    """
-
-    TRAFILATURA = "trafilatura"
-    PASSTHROUGH = "passthrough"
 
 
 class ChunkerType(str, Enum):
@@ -70,109 +59,6 @@ class EntityMergerType(str, Enum):
 
 
 # =============================================================================
-# Preprocessor Factory
-# =============================================================================
-
-
-class PreprocessorFactory:
-    """Factory for creating preprocessor instances.
-
-    Uses a decorator-based registry pattern for extensibility.
-
-    Example:
-        @PreprocessorFactory.register(PreprocessorType.TRAFILATURA)
-        class TrafilaturaPreprocessor:
-            ...
-
-        preprocessor = PreprocessorFactory.create(PreprocessorType.TRAFILATURA)
-    """
-
-    _registry: dict[PreprocessorType, type[Preprocessor]] = {}
-
-    @classmethod
-    def register(
-        cls,
-        preprocessor_type: PreprocessorType,
-    ) -> Callable[[type[Preprocessor]], type[Preprocessor]]:
-        """Decorator to register a preprocessor implementation.
-
-        Args:
-            preprocessor_type: The type identifier for this preprocessor
-
-        Returns:
-            Decorator function that registers the class
-
-        Example:
-            @PreprocessorFactory.register(PreprocessorType.MY_TYPE)
-            class MyPreprocessor:
-                ...
-        """
-
-        def decorator(preprocessor_class: type[Preprocessor]) -> type[Preprocessor]:
-            cls._registry[preprocessor_type] = preprocessor_class
-            logger.debug(f"Registered preprocessor: {preprocessor_type.value}")
-            return preprocessor_class
-
-        return decorator
-
-    @classmethod
-    def create(
-        cls,
-        preprocessor_type: PreprocessorType,
-        config: dict[str, Any] | None = None,
-    ) -> Preprocessor:
-        """Create a preprocessor instance from configuration.
-
-        Args:
-            preprocessor_type: Type of preprocessor to create
-            config: Configuration dict passed to constructor
-
-        Returns:
-            Preprocessor instance
-
-        Raises:
-            PreprocessorNotRegisteredError: If type is not registered
-        """
-        if preprocessor_type not in cls._registry:
-            available = [t.value for t in cls._registry.keys()]
-            raise PreprocessorNotRegisteredError(
-                f"Preprocessor type '{preprocessor_type.value}' is not registered. "
-                f"Available types: {available}"
-            )
-        return cls._registry[preprocessor_type](**(config or {}))
-
-    @classmethod
-    def get_default(cls) -> Preprocessor:
-        """Get the default preprocessor (trafilatura).
-
-        Returns:
-            Default Preprocessor instance
-        """
-        return cls.create(PreprocessorType.TRAFILATURA)
-
-    @classmethod
-    def is_registered(cls, preprocessor_type: PreprocessorType) -> bool:
-        """Check if a preprocessor type is registered.
-
-        Args:
-            preprocessor_type: Type to check
-
-        Returns:
-            True if registered, False otherwise
-        """
-        return preprocessor_type in cls._registry
-
-    @classmethod
-    def list_registered(cls) -> list[PreprocessorType]:
-        """List all registered preprocessor types.
-
-        Returns:
-            List of registered PreprocessorType values
-        """
-        return list(cls._registry.keys())
-
-
-# =============================================================================
 # Chunker Factory
 # =============================================================================
 
@@ -190,7 +76,7 @@ class ChunkerFactory:
         chunker = ChunkerFactory.create(ChunkerType.SLIDING_WINDOW)
     """
 
-    _registry: dict[ChunkerType, type[Chunker]] = {}
+    _registry: ClassVar[dict[ChunkerType, type[Chunker]]] = {}
 
     @classmethod
     def register(
@@ -232,7 +118,7 @@ class ChunkerFactory:
             ChunkerNotRegisteredError: If type is not registered
         """
         if chunker_type not in cls._registry:
-            available = [t.value for t in cls._registry.keys()]
+            available = [t.value for t in cls._registry]
             raise ChunkerNotRegisteredError(
                 f"Chunker type '{chunker_type.value}' is not registered. "
                 f"Available types: {available}"
@@ -288,7 +174,7 @@ class EntityMergerFactory:
         merger = EntityMergerFactory.create(EntityMergerType.LLM)
     """
 
-    _registry: dict[EntityMergerType, type[EntityMerger]] = {}
+    _registry: ClassVar[dict[EntityMergerType, type[EntityMerger]]] = {}
 
     @classmethod
     def register(
@@ -330,7 +216,7 @@ class EntityMergerFactory:
             EntityMergerNotRegisteredError: If type is not registered
         """
         if merger_type not in cls._registry:
-            available = [t.value for t in cls._registry.keys()]
+            available = [t.value for t in cls._registry]
             raise EntityMergerNotRegisteredError(
                 f"Entity merger type '{merger_type.value}' is not registered. "
                 f"Available types: {available}"

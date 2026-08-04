@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # Application runtime uses knowledge_mapper_app_user (NO BYPASSRLS - RLS policies enforced)
     DATABASE_URL: str = "postgresql+asyncpg://knowledge_mapper_app_user:app_password_dev@postgres:5435/knowledge_mapper_db"
 
-    # Migration database URL uses knowledge_mapper_migration_user (with BYPASSRLS for schema management)
+    # Migration database URL uses knowledge_mapper_migration_user (with BYPASSRLS for schema management)  # noqa: E501
     MIGRATION_DATABASE_URL: str = "postgresql+asyncpg://knowledge_mapper_migration_user:migration_password_dev@postgres:5435/knowledge_mapper_db"
 
     # Server
@@ -160,7 +160,10 @@ class Settings(BaseSettings):
     X_FRAME_OPTIONS: str = "DENY"  # DENY, SAMEORIGIN, or empty to disable
     X_CONTENT_TYPE_OPTIONS: str = "nosniff"
     REFERRER_POLICY: str = "strict-origin-when-cross-origin"
-    PERMISSIONS_POLICY: str = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+    PERMISSIONS_POLICY: str = (
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), "
+        "microphone=(), payment=(), usb=()"
+    )
     X_XSS_PROTECTION: str = "1; mode=block"  # Legacy but still useful
 
     # ==========================================================================
@@ -228,19 +231,13 @@ class Settings(BaseSettings):
 
     # ==========================================================================
     # Text Preprocessing Configuration
-    # Content preprocessing and chunking before LLM extraction
-    # Modular architecture with swappable preprocessors, chunkers, and mergers
+    # Chunking and entity merging before LLM extraction
+    # Modular architecture with swappable chunkers and mergers
     # ==========================================================================
 
     # Master toggles
-    PREPROCESSING_ENABLED: bool = True  # Enable content preprocessing pipeline
+    PREPROCESSING_ENABLED: bool = True  # Use the chunk/extract/merge pipeline
     CHUNKING_ENABLED: bool = True  # Enable document chunking
-
-    # Preprocessor settings
-    # Options: "trafilatura" (default), "passthrough"
-    PREPROCESSOR_TYPE: str = "trafilatura"
-    PREPROCESSOR_FAVOR_RECALL: bool = True  # Prioritize getting more content
-    PREPROCESSOR_INCLUDE_TABLES: bool = True  # Include table content
 
     # Chunker settings
     # Options: "sliding_window" (default)
@@ -266,7 +263,7 @@ class Settings(BaseSettings):
 
     ENCRYPTION_ENABLED: bool = True  # Enable/disable field encryption
     # Master encryption key (Fernet format - 32-byte URL-safe base64)
-    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"  # noqa: E501
     # CRITICAL: Change this in production and keep it secret!
     ENCRYPTION_MASTER_KEY: str = ""  # Required when ENCRYPTION_ENABLED=True
 

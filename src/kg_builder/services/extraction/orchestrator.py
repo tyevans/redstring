@@ -315,20 +315,15 @@ class ExtractionOrchestrator:
         Extract using the full preprocessing pipeline.
 
         Pipeline stages:
-        1. Preprocess (trafilatura): Clean HTML, remove boilerplate
-        2. Chunk (sliding window): Split into overlapping chunks
-        3. Extract (Ollama): Run LLM on each chunk
-        4. Merge (LLM-assisted): Combine entities across chunks
+        1. Chunk (sliding window): Split into overlapping chunks
+        2. Extract (Ollama): Run LLM on each chunk
+        3. Merge (LLM-assisted): Combine entities across chunks
 
         Returns:
             Tuple of (entities, relationships)
         """
         from kg_builder.extraction.ollama_extractor import get_ollama_extraction_service
-        from kg_builder.preprocessing.factory import (
-            ChunkerType,
-            EntityMergerType,
-            PreprocessorType,
-        )
+        from kg_builder.preprocessing.factory import ChunkerType, EntityMergerType
         from kg_builder.preprocessing.pipeline import PipelineConfig, PreprocessingPipeline
 
         logger.info(
@@ -336,7 +331,6 @@ class ExtractionOrchestrator:
             extra={
                 "page_url": page_url,
                 "text_length": len(text),
-                "preprocessor": settings.PREPROCESSOR_TYPE,
                 "chunker": settings.CHUNKER_TYPE,
                 "merger": settings.MERGER_TYPE,
                 "chunk_size": settings.CHUNK_SIZE,
@@ -348,11 +342,6 @@ class ExtractionOrchestrator:
         try:
             # Build pipeline configuration from settings
             config = PipelineConfig(
-                preprocessor_type=PreprocessorType(settings.PREPROCESSOR_TYPE),
-                preprocessor_config={
-                    "favor_recall": settings.PREPROCESSOR_FAVOR_RECALL,
-                    "include_tables": settings.PREPROCESSOR_INCLUDE_TABLES,
-                },
                 chunker_type=ChunkerType(settings.CHUNKER_TYPE),
                 chunk_size=settings.CHUNK_SIZE,
                 chunk_overlap=settings.CHUNK_OVERLAP,
@@ -363,7 +352,6 @@ class ExtractionOrchestrator:
                     "low_threshold": settings.MERGER_LOW_SIMILARITY_THRESHOLD,
                     "batch_size": settings.MERGER_LLM_BATCH_SIZE,
                 },
-                skip_preprocessing=not settings.PREPROCESSING_ENABLED,
                 skip_chunking=not settings.CHUNKING_ENABLED,
                 max_chunks=settings.MAX_CHUNKS_PER_DOCUMENT,
             )

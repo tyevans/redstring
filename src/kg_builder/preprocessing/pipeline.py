@@ -1,8 +1,7 @@
 """
 Preprocessing pipeline orchestration.
 
-Coordinates preprocessors, chunkers, and entity mergers into
-a complete document processing pipeline.
+Coordinates chunkers and entity mergers over content the caller supplies.
 """
 
 import logging
@@ -11,15 +10,13 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
-from kg_builder.preprocessing.base import Chunker, EntityMerger, Preprocessor
+from kg_builder.preprocessing.base import Chunker, EntityMerger
 from kg_builder.preprocessing.exceptions import PipelineConfigError
 from kg_builder.preprocessing.factory import (
     ChunkerFactory,
     ChunkerType,
     EntityMergerFactory,
     EntityMergerType,
-    PreprocessorFactory,
-    PreprocessorType,
 )
 from kg_builder.preprocessing.schemas import PipelineMetrics
 
@@ -51,8 +48,6 @@ class PipelineConfig:
     via constructor or settings.
 
     Attributes:
-        preprocessor_type: Type of preprocessor to use
-        preprocessor_config: Additional config for preprocessor
         chunker_type: Type of chunker to use
         chunk_size: Maximum characters per chunk
         chunk_overlap: Characters of overlap between chunks
@@ -60,14 +55,9 @@ class PipelineConfig:
         merger_type: Type of entity merger to use
         use_llm_merging: Whether to use LLM for ambiguous merges
         merger_config: Additional config for merger
-        skip_preprocessing: Skip the preprocessing step
         skip_chunking: Skip the chunking step (use full content)
         max_chunks: Safety limit on number of chunks
     """
-
-    # Preprocessor settings
-    preprocessor_type: PreprocessorType = PreprocessorType.TRAFILATURA
-    preprocessor_config: dict[str, Any] = field(default_factory=dict)
 
     # Chunker settings
     chunker_type: ChunkerType = ChunkerType.SLIDING_WINDOW
@@ -81,7 +71,6 @@ class PipelineConfig:
     merger_config: dict[str, Any] = field(default_factory=dict)
 
     # Pipeline behavior
-    skip_preprocessing: bool = False
     skip_chunking: bool = False
     max_chunks: int = 20  # Safety limit
 
@@ -129,20 +118,22 @@ class PipelineResult:
 
 
 class PreprocessingPipeline:
-    """Orchestrates preprocessing, chunking, and entity merging.
+    """Orchestrates chunking and entity merging over content it is given.
 
-    The pipeline processes documents through four stages:
-    1. Preprocess: Clean HTML, remove boilerplate
-    2. Chunk: Split into smaller pieces
-    3. Extract: Run LLM extraction on each chunk
-    4. Merge: Combine entities across chunks
+    The pipeline processes content through three stages:
+    1. Chunk: Split into smaller pieces
+    2. Extract: Run LLM extraction on each chunk
+    3. Merge: Combine entities across chunks
+
+    Callers are responsible for supplying already-clean text; the pipeline
+    does not fetch, parse, or clean source documents.
 
     Example:
         config = PipelineConfig(chunk_size=3000, chunk_overlap=200)
         pipeline = PreprocessingPipeline(config)
 
         result = await pipeline.process(
-            content=html_content,
+            content=clean_text,
             extractor=ollama_extraction_service,
             url="https://example.com/article",
         )
@@ -159,30 +150,18 @@ class PreprocessingPipeline:
         self._config = config or PipelineConfig()
 
         # Create components (lazy - only create when needed)
-        self._preprocessor: Preprocessor | None = None
         self._chunker: Chunker | None = None
         self._merger: EntityMerger | None = None
 
         logger.info(
             "PreprocessingPipeline initialized",
             extra={
-                "preprocessor_type": self._config.preprocessor_type.value,
                 "chunker_type": self._config.chunker_type.value,
                 "merger_type": self._config.merger_type.value,
                 "chunk_size": self._config.chunk_size,
                 "chunk_overlap": self._config.chunk_overlap,
             },
         )
-
-    @property
-    def preprocessor(self) -> Preprocessor:
-        """Get or create preprocessor instance."""
-        if self._preprocessor is None:
-            self._preprocessor = PreprocessorFactory.create(
-                self._config.preprocessor_type,
-                self._config.preprocessor_config,
-            )
-        return self._preprocessor
 
     @property
     def chunker(self) -> Chunker:
@@ -239,42 +218,14 @@ class PreprocessingPipeline:
             },
         )
 
-        # =================================================================
-        # Step 1: Preprocess
-        # =================================================================
-        preprocess_start = time.time()
-
-        if not self._config.skip_preprocessing:
-            try:
-                preprocess_result = self.preprocessor.preprocess(
-                    content=content,
-                    content_type=content_type,
-                    url=url,
-                )
-                clean_text = preprocess_result.clean_text
-                preprocessing_method = preprocess_result.preprocessing_method
-            except Exception as e:
-                logger.error(f"Preprocessing failed: {e}, using raw content")
-                clean_text = content
-                preprocessing_method = "failed"
-        else:
-            clean_text = content
-            preprocessing_method = "skipped"
-
+        # The pipeline receives content as given -- it does not fetch, parse,
+        # or clean source documents. That is the caller's responsibility.
+        clean_text = content
+        preprocessing_method = "none"
         preprocessed_length = len(clean_text)
-        metrics.preprocessing_time_ms = (time.time() - preprocess_start) * 1000
-
-        logger.debug(
-            "Preprocessing complete",
-            extra={
-                "original_length": original_length,
-                "preprocessed_length": preprocessed_length,
-                "method": preprocessing_method,
-            },
-        )
 
         # =================================================================
-        # Step 2: Chunk
+        # Step 1: Chunk
         # =================================================================
         chunk_start = time.time()
 
@@ -326,7 +277,7 @@ class PreprocessingPipeline:
         )
 
         # =================================================================
-        # Step 3: Extract from each chunk
+        # Step 2: Extract from each chunk
         # =================================================================
         extract_start = time.time()
 
@@ -411,7 +362,7 @@ class PreprocessingPipeline:
         )
 
         # =================================================================
-        # Step 4: Merge entities across chunks
+        # Step 3: Merge entities across chunks
         # =================================================================
         merge_start = time.time()
 

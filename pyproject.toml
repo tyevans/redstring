@@ -1,7 +1,7 @@
 [project]
 name = "kg-builder"
 version = "0.1.0"
-description = "Knowledge graph construction: entity extraction, preprocessing, scraping, consolidation, and Neo4j sync."
+description = "Knowledge graph construction: entity extraction, preprocessing, consolidation, and Neo4j sync."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -22,12 +22,6 @@ dependencies = [
 
 [project.optional-dependencies]
 neo4j = ["neo4j>=5.27,<6"]
-scraping = [
-    "scrapy>=2.12,<3",
-    "trafilatura>=1.12.0",
-    "extruct>=0.18.0",
-    "beautifulsoup4>=4.12.0",
-]
 openai = ["openai>=1.50.0"]
 anthropic = ["anthropic>=0.42.0"]
 # pinned <1.0: kg_builder.inference.providers uses the pre-1.0
@@ -36,13 +30,9 @@ anthropic = ["anthropic>=0.42.0"]
 # kg_builder.inference use the pre-1.0 pydantic-ai model API.
 llm = ["pydantic-ai==0.0.31"]
 nlp = ["jellyfish>=1.0.0"]
-storage = ["boto3>=1.34.0"]
-# `unstructured` pulls numba/llvmlite, which do not build on Python 3.13 yet,
-# so `documents` is deliberately excluded from `all`.
-documents = ["unstructured>=0.15.0"]
 eventsourcing = ["eventsource-py[all]>=0.5.0"]
 all = [
-    "kg-builder[neo4j,scraping,openai,anthropic,llm,nlp,storage,eventsourcing]",
+    "kg-builder[neo4j,openai,anthropic,llm,nlp,eventsourcing]",
 ]
 dev = [
     "bandit[toml]>=1.9.4",
@@ -159,7 +149,7 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "kg_builder.services",
-    "kg_builder.extraction : kg_builder.graph : kg_builder.preprocessing : kg_builder.scraping : kg_builder.schemas",
+    "kg_builder.extraction : kg_builder.graph : kg_builder.preprocessing : kg_builder.schemas",
     "kg_builder.inference",
     "kg_builder.models",
     "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
