@@ -3,9 +3,11 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **1930 tests pass, 0 fail**,
+Status of the tree as of the last update: **1852 tests pass, 0 fail**,
 full `pre-commit` gate green, nothing skipped at collection. The accuracy
-suite is deselected by default (see B12).
+suite is deselected by default (see B12). (Slice 1 of the ring migration
+deleted document sourcing -- scraping, storage, document parsing, and HTML
+preprocessors -- which accounts for the drop from the previous count.)
 
 Ordering within a section is roughly by priority. Ordering between sections
 is not meaningful.
@@ -69,8 +71,6 @@ drives.
 Recorded here so they are not "discovered" again mid-migration:
 
 - `services/consolidation` reaches directly into the embedding services.
-- `scraping/pipelines.py` dispatches extraction through the mutable
-  `scraping/hooks.py::set_extraction_dispatcher` global instead of a port.
 - `services/extraction/orchestrator.py` pulls `preprocessing` directly.
 
 ### B9. Import-linter contract is not exhaustive
@@ -263,12 +263,6 @@ without redesign.
 
 `extraction` and `inference.providers` use the pre-1.0
 `pydantic_ai.models.openai.OpenAIModel` API. Unpinning means porting both.
-
-### B20. `documents` extra excluded from `all`
-
-`unstructured` pulls numba/llvmlite, which do not build on Python 3.13.
-`services/document_parser.py` is therefore untested against its real
-dependency.
 
 ---
 
