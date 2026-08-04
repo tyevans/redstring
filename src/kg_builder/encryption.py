@@ -26,6 +26,7 @@ Security Considerations:
 
 import base64
 import logging
+from typing import Any
 from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -335,10 +336,10 @@ class EncryptionService:
 
     def encrypt_dict_field(
         self,
-        data: dict,
+        data: dict[str, Any],
         field_path: str,
         tenant_id: UUID,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Encrypt a specific field within a dictionary.
 
@@ -377,10 +378,10 @@ class EncryptionService:
 
     def decrypt_dict_field(
         self,
-        data: dict,
+        data: dict[str, Any],
         field_path: str,
         tenant_id: UUID,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Decrypt a specific field within a dictionary.
 

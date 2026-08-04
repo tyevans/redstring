@@ -55,7 +55,8 @@ async def get_redis_client() -> redis.Redis | None:
 
     # Initialize Redis client
     try:
-        _redis_client = redis.from_url(
+        # redis-py ships no inline type annotations for from_url.
+        _redis_client = redis.from_url(  # type: ignore[no-untyped-call]
             settings.REDIS_URL,
             encoding="utf-8",
             decode_responses=True,

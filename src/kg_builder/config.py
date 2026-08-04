@@ -299,7 +299,7 @@ class Settings(BaseSettings):
     # Conservative: Lower limits for expensive/slow providers
     # Balanced: Good for most use cases
     # Permissive: For local providers with no cost concerns
-    INFERENCE_RATE_LIMIT_PRESETS: dict = {
+    INFERENCE_RATE_LIMIT_PRESETS: dict[str, dict[str, int]] = {
         "conservative": {"rpm": 10, "burst": 2},
         "balanced": {"rpm": 30, "burst": 5},
         "permissive": {"rpm": 100, "burst": 20},
@@ -327,7 +327,7 @@ class Settings(BaseSettings):
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
+    def parse_cors_origins(cls, v: object) -> list[str]:
         """Parse comma-separated CORS origins into a list."""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]

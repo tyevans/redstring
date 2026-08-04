@@ -41,6 +41,7 @@ dev = [
     "hypothesis>=6.165.0",
     "import-linter>=2.13",
     "mutmut>=3.7.0",
+    "mypy>=2.3.0",
     "pre-commit>=4.6.1",
     "pytest>=9.0",
     "pytest-asyncio==1.3.0",
@@ -131,6 +132,31 @@ known-first-party = ["kg_builder"]
 # imports, not TYPE_CHECKING-guarded ones -- TC001/TC003 would otherwise
 # flag imports whose removal breaks pydantic at import time.
 runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
+[tool.mypy]
+python_version = "3.13"
+# Strict only where the new architecture lives. Legacy packages are excluded
+# rather than weakened, and each exclusion dies with its package.
+files = ["src/kg_builder"]
+exclude = [
+    "^src/kg_builder/(models|services|inference|extraction|preprocessing|graph|schemas|events)/",
+]
+strict = true
+warn_unreachable = true
+warn_return_any = true
+disallow_untyped_defs = true
+# Pydantic 2.13 types well on its own, but the plugin adds checks plain mypy
+# cannot do -- above all `init_typed`, which validates constructor CALLS
+# against field types. Without it `Entity(confidence="high")` type-checks
+# clean and only fails at runtime, which defeats the point of typing a
+# domain model whose whole job is enforcing invariants.
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_typed = true
+init_forbid_extra = true
+warn_required_dynamic_aliases = true
+warn_untyped_fields = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
