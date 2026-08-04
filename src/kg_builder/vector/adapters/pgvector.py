@@ -5,11 +5,16 @@ domain types, so nothing above this module knows Postgres is involved.
 
 ## Four decisions worth knowing before reading the queries
 
-**asyncpg directly, no ORM.** The brief permits SQLAlchemy inside this adapter,
-and it earns nothing here: there are six statements, three of them shaped by
-pgvector operators an ORM would only get in the way of, and two of them
-(`EXPLAIN`, and the `unnest` batch insert) are exactly the kind of SQL an ORM
-makes harder to write and read. asyncpg is already a dependency.
+**asyncpg directly, no ORM.** Slice 5's brief permitted SQLAlchemy inside this
+adapter, and it earned nothing here: there are six statements, three of them
+shaped by pgvector operators an ORM would only get in the way of, and two of
+them (`EXPLAIN`, and the `unnest` batch insert) are exactly the kind of SQL an
+ORM makes harder to write and read.
+
+That decision is why **SQLAlchemy is no longer a dependency of this project at
+all.** Slice 9 deleted the relational layer, and this module was the only
+thing that could have kept SQLAlchemy installed; because it never reached for
+it, the removal cost nothing. asyncpg is the sole database driver now.
 
 **No ANN index, deliberately -- and this is the most important line in the
 file.** The obvious build is an `hnsw` or `ivfflat` index on `embedding`. It is
