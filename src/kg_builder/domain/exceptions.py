@@ -48,6 +48,45 @@ class DimensionMismatchError(KgBuilderError):
         super().__init__(f"expected a vector of dimension {expected}, got {actual}")
 
 
+class LlmProviderError(KgBuilderError):
+    """An `LlmProvider` could not produce a validated extraction.
+
+    Deliberately *not* recoverable-by-default. Every alternative to raising
+    here degrades to "the document contained nothing", which is a legitimate
+    answer that the caller cannot distinguish from a failure, and which erodes
+    a knowledge graph silently rather than stopping a run.
+    """
+
+    def __init__(self, message: str, *, model: str) -> None:
+        self.model = model
+        super().__init__(f"[{model}] {message}")
+
+
+class EmptyCompletionError(LlmProviderError):
+    """The model returned no usable content.
+
+    The reference deployment's reasoning model reaches this by spending its
+    whole token budget on `reasoning_content` before `content` begins, and
+    still answering HTTP 200. `finish_reason` is carried when the transport
+    reported one, because "length" and "stop" call for different fixes: raise
+    the token budget, or look at the prompt.
+    """
+
+    def __init__(self, *, model: str, finish_reason: str | None = None) -> None:
+        self.finish_reason = finish_reason
+        detail = "" if finish_reason is None else f" (finish_reason={finish_reason!r})"
+        super().__init__(f"returned empty content{detail}", model=model)
+
+
+class MalformedCompletionError(LlmProviderError):
+    """Content came back, but did not validate against the requested schema."""
+
+    def __init__(self, *, model: str, schema: str, cause: str) -> None:
+        self.schema = schema
+        self.cause = cause
+        super().__init__(f"returned content that is not a valid {schema}: {cause}", model=model)
+
+
 class ConsolidationInvariantError(KgBuilderError):
     """A merge or undo would violate a rule the consolidation log enforces.
 
