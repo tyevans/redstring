@@ -3,11 +3,16 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **2373 tests pass, 0 fail, 0 skipped**
-in the default gate, plus **185 `integration` tests** — 106 against a real Neo4j
-(slice 4), 63 against real pgvector (slice 5), and 8 against a live
+Status of the tree as of the last update: **2323 tests pass, 0 fail, 0 skipped**
+in the default gate, plus **196 `integration` tests** — 118 against a real Neo4j
+(slices 4 and 7), 70 against real pgvector (slice 5), and 8 against a live
 `qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`). The first two need
-`docker-compose.test.yml`. Slice 5b added the event log, the two aggregates and
+`docker-compose.test.yml`. The default-gate count falls because slice 7 deleted
+`services/consolidation/` and its 9706 lines of source and tests, replacing
+them with 116 tests over `kg_builder/consolidation/`.
+
+Slice 7 rebuilt consolidation on the ports (`kg_builder/consolidation/`),
+closing B34, B10b and B40. Slice 5b added the event log, the two aggregates and
 the projections, and moved the project onto eventsource-py 0.9.1+ (see B38);
 slice 6 rebuilt extraction on the `LlmProvider` port and deleted the
 vendor-specific extractors, `kg_builder.inference` and `kg_builder.preprocessing`
