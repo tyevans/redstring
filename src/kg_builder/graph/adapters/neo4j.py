@@ -315,11 +315,16 @@ class Neo4jGraphStore:
             # session per query -- so an endpoint deleted in between would
             # otherwise leave the caller told a batch succeeded that was
             # never written. The port's contract here is write-or-raise.
-            "RETURN r.id AS id",
+            "RETURN r.tenant_id AS tenant_id, r.id AS id",
             rows=[_relationship_row(r) for r in deduplicated],
         )
-        written = {record["id"] for record in records}
-        missing = [r for r in deduplicated if str(r.id) not in written]
+        # Keyed on the pair, because that is what identifies a relationship
+        # here -- the same key the deduplication above uses. Keyed on `id`
+        # alone, one tenant's successful write would vouch for another
+        # tenant's dropped row carrying the same id, which defeats the check
+        # in exactly the case it exists for.
+        written = {(record["tenant_id"], record["id"]) for record in records}
+        missing = [r for r in deduplicated if (str(r.tenant_id), str(r.id)) not in written]
         if missing:
             # Normal path: re-checking names *which* endpoint went away, and
             # the error is the same one a dangling edge raises up front.

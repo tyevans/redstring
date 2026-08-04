@@ -332,12 +332,14 @@ class _ScriptedStore(adapter.Neo4jGraphStore):
                 {"tenant_id": tenant_id, "id": entity_id} for tenant_id, entity_id in self._present
             ]
         rows = cast("list[dict[str, Any]]", parameters["rows"])
-        return [{"id": row["id"]} for row in rows[: self._written]]
+        # Both keys, because that is what the write query returns: a
+        # relationship is identified by (tenant_id, id), not by id.
+        return [{"tenant_id": row["tenant_id"], "id": row["id"]} for row in rows[: self._written]]
 
 
-def _edge(tenant: UUID, source: UUID, target: UUID) -> Relationship:
+def _edge(tenant: UUID, source: UUID, target: UUID, edge_id: UUID | None = None) -> Relationship:
     return Relationship(
-        id=uuid4(),
+        id=edge_id or uuid4(),
         tenant_id=tenant,
         source_entity_id=source,
         target_entity_id=target,
@@ -374,6 +376,34 @@ class TestTheWriteReportsWhatItFailedToWrite:
 
         with pytest.raises(MissingEntityError):
             await store.upsert_relationships([_edge(tenant, a, b), _edge(tenant, b, c)])
+
+    async def test_one_tenants_write_does_not_vouch_for_anothers(self):
+        """A relationship is `(tenant_id, id)`, so the check must be too.
+
+        Every other test here draws ids from `uuid4()`, which means the two
+        tenants never collide and a check keyed on `id` alone agrees with one
+        keyed on the pair for every input in the suite -- the third row of
+        CLAUDE.md's table. Pinning the id makes them disagree: tenant A's row
+        writes, tenant B's identically-numbered row is dropped, and an
+        id-keyed check finds B's id in `written` and reports success for a
+        write that never happened.
+        """
+        shared_id = uuid4()
+        tenant_a, tenant_b = uuid4(), uuid4()
+        source, target = uuid4(), uuid4()
+        store = _ScriptedStore(
+            {(str(t), str(e)) for t in (tenant_a, tenant_b) for e in (source, target)},
+            # A writes, B does not.
+            written=1,
+        )
+
+        with pytest.raises(MissingEntityError):
+            await store.upsert_relationships(
+                [
+                    _edge(tenant_a, source, target, edge_id=shared_id),
+                    _edge(tenant_b, source, target, edge_id=shared_id),
+                ]
+            )
 
     async def test_a_complete_write_does_not_raise(self):
         """Guard the guard: a check that always raises would pass the above."""
