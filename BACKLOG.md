@@ -777,6 +777,53 @@ Replace with `ConfigDict`. Removed in Pydantic v3.
 
 These were decided against *for now*, with reasons. Revisit consciously.
 
+### B34. The graph fold needs order-preserving redelivery, and cannot detect otherwise
+
+`projections/graph.py` -- a redelivered `DocumentExtracted` that arrives
+*after* an `EntitiesMerged` which redirected one of its edges writes that
+edge's original endpoints back. The merge is undone in the read model, and
+nothing notices.
+
+The cause is `GraphStore`'s shape rather than the fold's: the store has
+nowhere to record that a merge happened. There is no alias node, no canonical
+pointer, nothing a later write could consult, so the handler has no way to
+tell "this edge belongs to an entity that has since been absorbed" from "this
+edge is new". Slice 3 declined `delete_entity` and any alias representation
+deliberately, and that was right for a store; it is the projection that
+discovers the gap.
+
+Why it is safe today: redelivery from a checkpointed feed is always a
+contiguous suffix replayed in order, so the *last* occurrence of every event
+is still in log order and the final state is the log's. The tests exercise
+exactly that -- each event twice, and the whole log twice -- and both hold.
+What would break it is an at-most-once bus that could deliver e1, e2, e1, or a
+partitioned feed with per-partition ordering only. `docs/` says in-memory bus
+only; anyone adding Kafka must read this entry first.
+
+The fix, when one is wanted: give the graph an alias representation, so the
+`EntitiesMerged` fold records the redirection as *state* and the
+`DocumentExtracted` fold resolves each endpoint through it before writing.
+That is a `GraphStore` port change (an `upsert_alias`/`resolve` pair), which
+is slice 7's territory since slice 7 is what needs aliases readable anyway.
+
+### B35. `GraphProjection.reset()` raises instead of truncating
+
+`projections/graph.py` and `projections/vector.py` --
+`_truncate_read_models` raises `NotImplementedError`. Neither port has a
+cross-tenant delete, deliberately: "there is no cross-tenant read, ever", and
+the same argument forbids a cross-tenant delete. So `reset()`, which the
+library's `CheckpointTrackingProjection` offers, cannot be honoured.
+
+Raising was chosen over a silent no-op because a rebuild over a store that
+still held the old rows looks successful while carrying stale entities that
+nothing will ever remove -- a worse failure than a loud one. Callers wipe with
+`delete_by_tenant(tenant_id)` per tenant, which is what the replay tests do.
+
+The real fix is a `rebuild(tenant_id)` entry point on the projection that
+wipes and replays one tenant, which needs a tenant-filtered feed read
+(`FeedReadOptions.tenant_id` already exists) and belongs with whatever slice
+first needs to rebuild a single tenant in anger.
+
 ### B32. Re-extraction cannot remove an entity a previous run found
 
 `events/document.py` -- `DocumentExtracted` carries the whole result of one

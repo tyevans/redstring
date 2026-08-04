@@ -254,6 +254,10 @@ type = "layers"
 layers = [
     "kg_builder.services",
     "kg_builder.extraction : kg_builder.graph : kg_builder.vector : kg_builder.preprocessing : kg_builder.schemas",
+    # Projections read the ports and the event schema and write nothing back:
+    # nothing below them may import a projection, and they may not import an
+    # adapter.
+    "kg_builder.projections",
     # Aggregates are the write model: they import events and domain, and
     # nothing below them may import an aggregate.
     "kg_builder.aggregates",
