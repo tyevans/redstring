@@ -17,6 +17,7 @@ implementation would fail them:
 from __future__ import annotations
 
 import random
+from itertools import pairwise
 from uuid import UUID
 
 from hypothesis import given
@@ -91,6 +92,55 @@ class TestTheOverlapChunkingCreates:
         ]
 
         assert len(merge_extractions(both).relationships) == 1
+
+    def test_a_tie_on_edge_confidence_is_broken_without_letting_chunk_order_decide(self):
+        """Two overlapping chunks reporting one edge, one of them with evidence.
+
+        `_relationship_preference` was `(confidence, relationship_type)`, and
+        the type is already fixed by the id -- it is one of the three inputs
+        to `_relationship_id_for` -- so the tuple degenerated to
+        `(confidence,)` and the strict `>` fell through to "keep what's
+        there". Which `properties` survived was decided by chunk arrival
+        order, so the same document extracted twice produced different
+        `DocumentExtracted` payloads in a durable, replayable log.
+        """
+        pair = (entity("Ada Lovelace"), entity("Charles Babbage"))
+        evidenced = chunk(
+            *pair,
+            links=[
+                ExtractedRelationship(
+                    source_name="Ada Lovelace",
+                    target_name="Charles Babbage",
+                    relationship_type="KNOWS",
+                    properties={"evidence": "letters"},
+                )
+            ],
+        )
+        bare = chunk(*pair, links=[link("Ada Lovelace", "Charles Babbage", "KNOWS")])
+
+        forwards = merge_extractions([evidenced, bare]).relationships
+        backwards = merge_extractions([bare, evidenced]).relationships
+
+        assert [edge.properties for edge in forwards] == [{"evidence": "letters"}]
+        assert [edge.properties for edge in backwards] == [{"evidence": "letters"}]
+
+    def test_within_one_answer_and_across_chunks_pick_the_same_edge(self):
+        """The consistency claim, asserted rather than assumed.
+
+        One `map_extraction` seeing both statements and two chunks seeing one
+        each must agree about which survives. They used different rules --
+        `setdefault` versus `_relationship_preference` -- so they did not.
+        """
+        pair = (entity("Ada Lovelace"), entity("Charles Babbage"))
+        hedged = link("Ada Lovelace", "Charles Babbage", "KNOWS", confidence=0.2)
+        certain = link("Ada Lovelace", "Charles Babbage", "KNOWS", confidence=0.9)
+
+        [within] = chunk(*pair, links=[hedged, certain]).relationships
+        [across] = merge_extractions(
+            [chunk(*pair, links=[hedged]), chunk(*pair, links=[certain])]
+        ).relationships
+
+        assert within.confidence == across.confidence
 
     def test_every_surviving_edge_still_has_both_endpoints_present(self):
         """`DocumentExtracted` feeds a projection that raises on a missing endpoint.
@@ -203,36 +253,77 @@ class TestCounters:
         assert (merged.unresolved_relationships, merged.self_loops) == (1, 1)
 
 
-TIED = st.lists(
-    st.text(alphabet=st.characters(min_codepoint=97, max_codepoint=122), min_size=1, max_size=6),
-    min_size=1,
-    max_size=6,
-)
+NAMES = st.text(alphabet=st.characters(min_codepoint=97, max_codepoint=122), min_size=1, max_size=6)
+
+#: Distinct *content* under an identical identity key.
+#:
+#: This is what makes the properties below able to fail. `entity_id_for`
+#: reads only the name and type, so two mentions with the same name and
+#: different descriptions are one entity that the tie-break must choose
+#: between -- whereas mentions built from a bare name alone are fully **equal
+#: objects**, and "first wins" and "last wins" then return the same result for
+#: any implementation at all. That vacuity is exactly what let the
+#: relationship tie-break defect through review (fix round 1, Important 1).
+#:
+#: Confidence is deliberately left at `DEFAULT_CONFIDENCE` throughout: a tie
+#: on confidence is the case the order has to resolve on its later fields, and
+#: it is the realistic case, since an unscored mention is what a model
+#: usually returns.
+DESCRIPTIONS = st.one_of(st.none(), st.text(min_size=0, max_size=12))
+
+MENTIONS = st.lists(st.tuples(NAMES, DESCRIPTIONS), min_size=1, max_size=6)
+
+
+def mentions_of(pairs) -> list[ExtractedEntity]:
+    return [entity(name, description=description) for name, description in pairs]
+
+
+def edges_among(pairs) -> list[ExtractedRelationship]:
+    """Every consecutive pair, so a chunk's edges reference its own entities.
+
+    An edge naming an entity the same chunk did not list is unresolvable and
+    would be dropped before the merge ever sees it, which would make the
+    relationship half of every property below vacuous in a second way.
+    """
+    names = [name for name, _ in pairs]
+    return [link(earlier, later, "KNOWS") for earlier, later in pairwise(names) if earlier != later]
+
+
+def part_from(pairs):
+    return chunk(*mentions_of(pairs), links=edges_among(pairs))
+
+
+def by_id(items):
+    return sorted(items, key=lambda item: item.id)
 
 
 class TestProperties:
-    @given(chunks=st.lists(TIED, min_size=1, max_size=5), seed=st.integers())
+    @given(chunks=st.lists(MENTIONS, min_size=1, max_size=5), seed=st.integers())
     def test_permuting_the_chunks_changes_nothing(self, chunks, seed):
-        """Order-independence, over entities that are *tied* on every field.
+        """Order-independence, over duplicates tied on confidence but not content.
 
-        With distinct confidences this property holds even for a merge whose
-        tie-break is "keep whichever arrived first", because no tie ever
-        arises. Ties are what make it a real test -- and they are also the
-        realistic case, since `DEFAULT_CONFIDENCE` is what an unscored entity
-        gets.
+        The version of this property that shipped in the slice drew entities
+        from a bare name, which made duplicates fully *equal objects* -- and
+        "first wins" and "last wins" agree on equal objects, so the property
+        held for a partial tie-break as readily as a total one. It is the
+        CLAUDE.md failure shape one level up from the one it was written to
+        catch, and it is why Important 1 survived review.
+
+        `DESCRIPTIONS` supplies the content that differs; the confidence tie
+        stays, because that is the case the later fields of the order exist
+        to resolve.
         """
-        parts = [chunk(*[entity(name) for name in group]) for group in chunks]
+        parts = [part_from(group) for group in chunks]
         shuffled = list(parts)
         random.Random(seed).shuffle(shuffled)
 
         forwards = merge_extractions(parts)
         backwards = merge_extractions(shuffled)
 
-        assert sorted(forwards.entities, key=lambda e: e.id) == sorted(
-            backwards.entities, key=lambda e: e.id
-        )
+        assert by_id(forwards.entities) == by_id(backwards.entities)
+        assert by_id(forwards.relationships) == by_id(backwards.relationships)
 
-    @given(groups=st.lists(TIED, min_size=1, max_size=4))
+    @given(groups=st.lists(MENTIONS, min_size=1, max_size=4))
     def test_merging_the_same_chunk_twice_equals_merging_it_once(self, groups):
         """Idempotence, over freshly built parts rather than the same object twice.
 
@@ -241,14 +332,15 @@ class TestProperties:
         built from an equal payload -- which is what a re-delivered chunk
         actually is.
         """
-        once = [chunk(*[entity(name) for name in group]) for group in groups]
-        twice = once + [chunk(*[entity(name) for name in group]) for group in groups]
+        once = [part_from(group) for group in groups]
+        twice = once + [part_from(group) for group in groups]
 
-        assert sorted(merge_extractions(once).entities, key=lambda e: e.id) == sorted(
-            merge_extractions(twice).entities, key=lambda e: e.id
+        assert by_id(merge_extractions(once).entities) == by_id(merge_extractions(twice).entities)
+        assert by_id(merge_extractions(once).relationships) == by_id(
+            merge_extractions(twice).relationships
         )
 
-    @given(groups=st.lists(TIED, min_size=1, max_size=4))
+    @given(groups=st.lists(MENTIONS, min_size=1, max_size=4))
     def test_merging_an_already_merged_result_is_a_no_op(self, groups):
         """The other idempotence, and the one a fold has to have.
 
@@ -256,26 +348,25 @@ class TestProperties:
         multiply, this one says the operation is stable under reapplication,
         which is what makes chunk-at-a-time folding equal all-at-once.
         """
-        parts = [chunk(*[entity(name) for name in group]) for group in groups]
+        parts = [part_from(group) for group in groups]
         merged = merge_extractions(parts)
 
         assert merge_extractions([merged]) == merged
 
-    @given(groups=st.lists(TIED, min_size=2, max_size=5))
+    @given(groups=st.lists(MENTIONS, min_size=2, max_size=5))
     def test_folding_pairwise_equals_merging_everything_at_once(self, groups):
         """Associativity. A streaming caller must get the same answer as a batch one."""
-        parts = [chunk(*[entity(name) for name in group]) for group in groups]
+        parts = [part_from(group) for group in groups]
 
         one_shot = merge_extractions(parts)
         folded = parts[0]
         for part in parts[1:]:
             folded = merge_extractions([folded, part])
 
-        assert sorted(one_shot.entities, key=lambda e: e.id) == sorted(
-            folded.entities, key=lambda e: e.id
-        )
+        assert by_id(one_shot.entities) == by_id(folded.entities)
+        assert by_id(one_shot.relationships) == by_id(folded.relationships)
 
-    @given(names_=TIED)
+    @given(names_=st.lists(NAMES, min_size=1, max_size=6))
     def test_every_entity_that_went_in_comes_out(self, names_):
         """Deduplication must never lose an id, only copies of one."""
         parts = [chunk(entity(name)) for name in names_]

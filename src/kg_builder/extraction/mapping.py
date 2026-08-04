@@ -41,7 +41,8 @@ are what make this a decision rather than a bug.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+import json
+from typing import TYPE_CHECKING, Any, NamedTuple
 from uuid import NAMESPACE_URL, uuid5
 
 from kg_builder.domain.entity import Entity, ExtractionMethod
@@ -49,6 +50,7 @@ from kg_builder.domain.normalization import normalize_name
 from kg_builder.domain.relationship import Relationship
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from uuid import UUID
 
     from kg_builder.domain.ids import EntityId, SourceId, TenantId
@@ -118,7 +120,7 @@ def _relationship_id_for(
     return uuid5(to_target, relationship_type)
 
 
-def preference(entity: Entity) -> tuple[float, int, str, str]:
+def preference(entity: Entity) -> tuple[float, int, bool, str, str, int, str]:
     """A **total** order on two mappings of one entity. Higher wins.
 
     Total, and that is the whole point. An earlier version compared
@@ -139,10 +141,27 @@ def preference(entity: Entity) -> tuple[float, int, str, str]:
 
     - description length, preferring the mention that said more, which is
       usually the chunk holding the whole sentence rather than its tail;
-    - then the description text and the name, which carry no meaning at all
-      and are there purely so that no two distinct objects compare equal.
+    - then whether a description was given *at all*, the description text,
+      the name, and a stable rendering of `properties` -- all of which carry
+      no meaning and are there purely so that no two distinct objects compare
+      equal.
 
-    Property-level merging is not attempted: the winner keeps its own
+    The "at all" slot is not padding. `description or ""` maps `None` and
+    `""` onto the same value, so two mentions differing only in which of
+    those they carry tied on every field of the order and arrival order
+    decided between them. The strengthened order-independence property in
+    `test_merging.py` found it on its first run, with the minimal example
+    `[("a", None)], [("a", "")]`.
+
+    That last one is what makes the order genuinely total rather than merely
+    long. `_build_entity` sets `tenant_id`, `source_id`, `entity_type`,
+    `extraction_method` and `model` identically for every mention in a
+    bucket, and never populates `external_ids`, `source_text`, `temporal` or
+    `blocking_keys` at all -- so `confidence`, `name`, `description` and
+    `properties` are exactly the fields two mappings of one entity can
+    disagree about, and all four are here.
+
+    Property-level *merging* is still not attempted: the winner keeps its own
     `properties` and the loser's are discarded. That is BACKLOG B28.
 
     Shared with `kg_builder.extraction.merging`, which folds across chunks
@@ -153,9 +172,55 @@ def preference(entity: Entity) -> tuple[float, int, str, str]:
     return (
         entity.confidence,
         len(entity.description or ""),
+        entity.description is not None,
         entity.description or "",
         entity.name,
+        *_stably(entity.properties),
     )
+
+
+def _stably(properties: Mapping[str, Any]) -> tuple[int, str]:
+    """A deterministic, orderable rendering of a free-form property bag.
+
+    Size first, so "the mention that said more" wins by the same instinct
+    description length encodes for entities. Then a canonical JSON rendering,
+    which exists purely to make the order **total**: two bags of equal size
+    that are not equal must still compare unequal, or the comparison falls
+    through to "keep the one already there" and the answer depends on arrival
+    order.
+
+    `sort_keys=True` so two equal dicts built in different key orders render
+    identically. `default=repr` because these values come from a model and the
+    port only guarantees they parsed as JSON *once* -- a caller mapping a
+    hand-built `Extraction` can put anything in here, and a `TypeError` from
+    deep inside a sort would be an appalling way to find out.
+    """
+    return len(properties), json.dumps(properties, sort_keys=True, default=repr)
+
+
+def relationship_preference(relationship: Relationship) -> tuple[float, int, str]:
+    """A **total** order on two mappings of one edge. Higher wins.
+
+    Total over everything that can vary, and the argument is short: within one
+    id bucket the endpoints and the relationship type are fixed, because all
+    three are inputs to `_relationship_id_for`. `tenant_id` is fixed by the
+    caller. So `confidence` and `properties` are the only fields two mappings
+    of one edge can disagree about, and both are here.
+
+    The order this replaces was `(confidence, relationship_type)` -- and the
+    type is constant inside every bucket, so the tuple degenerated to
+    `(confidence,)`. Ties are the common case, because every relationship the
+    model declines to score carries `DEFAULT_CONFIDENCE` and overlapping
+    windows manufacture duplicate edges on purpose. Which `properties`
+    survived was therefore decided by arrival order, which means the same
+    document extracted twice could produce different `DocumentExtracted`
+    payloads in a durable, replayable log.
+
+    Shared with `kg_builder.extraction.merging` for the reason `preference`
+    is: the within-answer and across-chunk deduplications must not disagree
+    about which mention wins, and two definitions are two chances to.
+    """
+    return (relationship.confidence, *_stably(relationship.properties))
 
 
 def map_extraction(
@@ -323,5 +388,12 @@ def _map_relationships(
             properties=dict(stated.properties),
             confidence=stated.confidence,
         )
-        by_id.setdefault(edge.id, edge)
+        # Not `setdefault`. That kept the first mention and ignored
+        # confidence entirely, while `merge_extractions` kept the most
+        # confident -- so one model answer stating an edge twice, hedged then
+        # certain, recorded the hedge, and the same two statements arriving in
+        # separate chunks recorded the certainty.
+        seen = by_id.get(edge.id)
+        if seen is None or relationship_preference(edge) > relationship_preference(seen):
+            by_id[edge.id] = edge
     return list(by_id.values()), unresolved, self_loops

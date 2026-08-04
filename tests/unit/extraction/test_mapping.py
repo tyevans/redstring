@@ -306,6 +306,60 @@ class TestRelationships:
 
         assert first.id == again.id
 
+    def test_a_duplicated_edge_keeps_the_more_confident_statement(self):
+        """`setdefault` ignored confidence entirely: first mention won.
+
+        A model that states the same edge twice, hedged and then certain, had
+        the hedge recorded. Worse, `merge_extractions` used a *different* rule
+        and kept the confident one -- so "dedup within one answer" and "dedup
+        across chunks" disagreed, which is the inconsistency the unified
+        `preference` was introduced to remove for entities and left in place
+        for edges.
+        """
+        result = mapped(
+            Extraction(
+                entities=[entity("Ada Lovelace"), entity("Charles Babbage")],
+                relationships=[
+                    link("Ada Lovelace", "Charles Babbage", "KNOWS", confidence=0.2),
+                    link("Ada Lovelace", "Charles Babbage", "KNOWS", confidence=0.9),
+                ],
+            )
+        )
+
+        assert [edge.confidence for edge in result.relationships] == [0.9]
+
+    def test_it_still_keeps_the_more_confident_one_when_it_comes_first(self):
+        result = mapped(
+            Extraction(
+                entities=[entity("Ada Lovelace"), entity("Charles Babbage")],
+                relationships=[
+                    link("Ada Lovelace", "Charles Babbage", "KNOWS", confidence=0.9),
+                    link("Ada Lovelace", "Charles Babbage", "KNOWS", confidence=0.2),
+                ],
+            )
+        )
+
+        assert [edge.confidence for edge in result.relationships] == [0.9]
+
+    def test_a_tie_on_edge_confidence_is_broken_without_letting_order_decide(self):
+        """The common case, because every unscored edge carries DEFAULT_CONFIDENCE.
+
+        Within one id bucket the endpoints and the type are fixed -- all three
+        feed `_relationship_id_for` -- so `properties` is the only other field
+        that can differ, and it is what the order has to reach to be total.
+        The failure this prevents: the same document extracted twice yields
+        different `DocumentExtracted` payloads, in a durable replayable log.
+        """
+        rich = link("Ada Lovelace", "Charles Babbage", "KNOWS", properties={"evidence": "letters"})
+        bare = link("Ada Lovelace", "Charles Babbage", "KNOWS")
+        pair = [entity("Ada Lovelace"), entity("Charles Babbage")]
+
+        forwards = mapped(Extraction(entities=pair, relationships=[rich, bare])).relationships
+        backwards = mapped(Extraction(entities=pair, relationships=[bare, rich])).relationships
+
+        assert [edge.properties for edge in forwards] == [{"evidence": "letters"}]
+        assert [edge.properties for edge in backwards] == [{"evidence": "letters"}]
+
     def test_two_relationship_types_between_one_pair_are_two_edges(self):
         result = mapped(
             Extraction(
@@ -374,6 +428,24 @@ class TestDuplicatesWithinOneCall:
 
         assert [e.description for e in forwards] == ["A mathematician."]
         assert [e.description for e in backwards] == ["A mathematician."]
+
+    def test_an_absent_description_and_an_empty_one_resolve_the_same_way(self):
+        """Found by the strengthened order-independence property, first run.
+
+        `description or ""` maps `None` and `""` onto one value, so two
+        mentions differing only in which they carry tied on *every* field of
+        the order and arrival order decided -- while the two `Entity` objects
+        are genuinely different. Pinned as an example as well as a property,
+        because the property's minimal counterexample is one nobody would
+        think to write by hand.
+        """
+        absent = entity("Ada Lovelace")
+        empty = entity("Ada Lovelace", description="")
+
+        forwards = mapped(Extraction(entities=[absent, empty])).entities
+        backwards = mapped(Extraction(entities=[empty, absent])).entities
+
+        assert [e.description for e in forwards] == [e.description for e in backwards]
 
     def test_two_mentions_tied_on_everything_but_name_still_resolve_the_same_way(self):
         """The last field of the order, so the order really is total.

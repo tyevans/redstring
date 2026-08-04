@@ -34,17 +34,24 @@ iteration order. That is what the hypothesis property in
 `tests/unit/extraction/test_merging.py` checks, by permuting chunks whose
 entities are deliberately tied.
 
-It is **imported** rather than defined here, and shared with the within-call
-deduplication in `mapping.py`. Two definitions would be two tie-breaks, and
-"dedup within one model answer" and "dedup across chunks" disagreeing about
-which mention wins is a difference nobody would ever go looking for.
+Both orders are **imported** rather than defined here, and shared with the
+within-answer deduplication in `mapping.py`. Two definitions are two
+tie-breaks, and "dedup within one model answer" disagreeing with "dedup across
+chunks" about which mention wins is a difference nobody would go looking for.
+That is not hypothetical: this module and `mapping.py` did disagree about
+relationships until fix round 1, because one used `setdefault` and the other a
+partial order over a field the id had already fixed.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kg_builder.extraction.mapping import MappedExtraction, preference
+from kg_builder.extraction.mapping import (
+    MappedExtraction,
+    preference,
+    relationship_preference,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -52,15 +59,6 @@ if TYPE_CHECKING:
 
     from kg_builder.domain.entity import Entity
     from kg_builder.domain.relationship import Relationship
-
-
-def _relationship_preference(relationship: Relationship) -> tuple[float, str]:
-    """The same idea for an edge, over the only two fields that can differ.
-
-    Id already fixes the endpoints and the type, so two mappings of one edge
-    can disagree about confidence and `properties` and nothing else.
-    """
-    return (relationship.confidence, relationship.relationship_type)
 
 
 def merge_extractions(parts: Iterable[MappedExtraction]) -> MappedExtraction:
@@ -94,9 +92,9 @@ def merge_extractions(parts: Iterable[MappedExtraction]) -> MappedExtraction:
                 entities[entity.id] = entity
         for relationship in part.relationships:
             seen_edge = relationships.get(relationship.id)
-            if seen_edge is None or _relationship_preference(
-                relationship
-            ) > _relationship_preference(seen_edge):
+            if seen_edge is None or relationship_preference(relationship) > (
+                relationship_preference(seen_edge)
+            ):
                 relationships[relationship.id] = relationship
         dropped += part.dropped_entities
         unresolved += part.unresolved_relationships
