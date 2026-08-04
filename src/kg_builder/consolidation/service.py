@@ -153,6 +153,17 @@ class ConsolidationService:
             subject: The entity to consolidate around. It becomes the canonical
                 entity, so a caller choosing which of two duplicates to pass is
                 choosing which survives.
+
+                An entity that has itself been merged away raises
+                `MergeIntoAliasError` rather than returning `None`, and that
+                asymmetry with the *candidates* -- which are silently excluded
+                -- is deliberate. An aliased candidate is one of many and
+                dropping it costs nothing; an aliased subject means the caller
+                asked to consolidate around an entity that no longer stands
+                for itself, and answering `None` would be indistinguishable
+                from "no duplicates found". A caller sweeping a whole tenant
+                should resolve its ids first: `find_entities` returns absorbed
+                entities too, because a merge is not a delete.
             finder: Supplies and scores the candidates.
             adjudicator: Consulted for the band between `low` and `high`.
                 Without one the band is **rejected**, not merged: the whole

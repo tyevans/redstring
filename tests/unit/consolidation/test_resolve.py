@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
 from eventsource.adapters.memory import (
     InMemoryCheckpointRepository,
     InMemoryDLQRepository,
@@ -290,6 +291,33 @@ class TestResolveRespectsTheInvariants:
 
         assert again is None
         assert len([e for e in await rig.events() if isinstance(e, EntitiesMerged)]) == 1
+
+    async def test_an_aliased_subject_raises_rather_than_returning_none(self):
+        """The asymmetry with candidates, pinned. An aliased *candidate* is
+        dropped silently -- it is one of many. An aliased *subject* means the
+        caller asked to consolidate around an entity that no longer stands for
+        itself, and `None` there is indistinguishable from "no duplicates".
+
+        A caller sweeping a tenant has to resolve its ids first, because
+        `find_entities` returns absorbed entities too: a merge is not a delete.
+        """
+        from kg_builder.domain.exceptions import MergeIntoAliasError
+
+        rig, tenant = Rig(), uuid4()
+        canonical = keyed(tenant, "Ada Lovelace")
+        absorbed = keyed(tenant, "Ada Lovelace")
+        third = keyed(tenant, "Ada Lovelace")
+        await rig.seed(canonical, absorbed, third)
+
+        await rig.service.merge(
+            tenant_id=tenant,
+            canonical_entity_id=canonical.id,
+            merged_entity_ids=[absorbed.id],
+        )
+        await rig.catch_up()
+
+        with pytest.raises(MergeIntoAliasError):
+            await rig.service.resolve(absorbed, finder=rig.finder)
 
     async def test_a_resolved_merge_can_be_undone(self):
         """The property the deleted in-extraction resolver could not have: a
