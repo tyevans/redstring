@@ -18,7 +18,7 @@ renumbering means editing shipped source for a cosmetic gain that the section
 headings already deliver. Treat a number as a stable handle and nothing more.
 
 **Closed entries are deleted, and tracked code still cites eight of them.**
-`docs/ring-migration.md` indexes B10b, B10d, B26, B33, B34, B40, B55 and B56 —
+`docs/plans/ring-migration.md` indexes B10b, B10d, B26, B33, B34, B40, B55 and B56 —
 what each was and where its reasoning lives now — so those pointers resolve.
 
 ## State of the tree
@@ -1449,7 +1449,7 @@ actually wanted (`eventsource-py[postgresql]`) rather than `[all]`.
 `docs/plans/` and an empty `docs/adrs/`, no ADRs, no mkdocs, no CHANGELOG" and
 claimed the ring migration would create "ADR 0001 and a CHANGELOG with the
 breaking-path entries". The ADRs exist — there are six, plus
-`docs/ring-migration.md`, `docs/history/` and `docs/examples/`. **The CHANGELOG
+`docs/plans/ring-migration.md`, `docs/history/` and `docs/examples/`. **The CHANGELOG
 was never written**, and that half of the claim was simply false for ten
 slices.
 
@@ -1458,7 +1458,7 @@ What is actually missing:
 - **A CHANGELOG.** This matters more than it did, because `0.1.0` is
   unreleased and the whole migration is one breaking change from whatever
   callers existed. Keep-a-Changelog format; the first entry writes itself from
-  `docs/ring-migration.md`'s deletion table.
+  `docs/plans/ring-migration.md`'s deletion table.
 - **Published docs.** No mkdocs, no rendered API reference. The README plus the
   `__init__` docstring plus `docs/examples/build_a_graph.py` is the whole user-
   facing surface, and for a library this size that may be the right amount —
@@ -1538,3 +1538,55 @@ should not — the capability left with the file it happened to live in. If
 relationship-type normalization is ever wanted back, the taxonomy question is
 still open (is `child_of` containment or association?), and the answer needs
 to be a test, which is what was missing the first time.
+
+### B62. Orphaned `:BlockingKey` nodes are not reaped on upsert, and ADR 0003 says they are
+
+Found while writing `docs/reference/neo4j-graph-store.md` against the source.
+
+`graph/adapters/neo4j.py::_write_blocking_keys` deletes an entity's previous
+`:BLOCKED_BY` edges and then merges new ones. It never deletes a key node that
+the delete has just left with no incoming edges. The only place a
+`:BlockingKey` node is ever removed is `delete_by_tenant`, which wipes the
+whole tenant's keys.
+
+So a tenant that re-upserts entities with churning keys — which is what a
+re-extraction of a changed document does — accumulates one node per distinct
+key ever seen, and only a full tenant wipe clears them. An orphan matches
+nothing, so no read is wrong; it is a growth problem, not a correctness one.
+
+ADR 0003's "The trap this decision creates" section states "Orphaned
+`:BlockingKey` nodes are cleaned up because an orphan matches nothing and
+leaving it would be a slow leak." **That sentence does not describe the
+code.** Either the reap was intended and dropped, or the sentence was written
+about `delete_by_tenant` and reads as if it were about the upsert path.
+
+Deferred rather than fixed because the size of the leak is unmeasured: nobody
+has run a churning-key workload against the Neo4j container, and the obvious
+fix (a `WHERE NOT EXISTS { (k)<-[:BLOCKED_BY]-() } DELETE k` pass after the
+delete statement) adds a third statement to every batch upsert, whose write
+cost ADR 0003 measured carefully. Measure the leak before paying for it, and
+correct the ADR either way.
+
+## `RedisCache` is not held to `tests/compliance/cache.py`
+
+`tests/compliance/cache.py` is written as the port-level contract for every
+`Cache` adapter and its module docstring claims it is "asserted identically
+for both adapters". Only one subclass exists:
+`tests/unit/llm/test_memory_cache.py:23` (`TestMemoryCache(CacheCompliance)`).
+There is no `tests/unit/llm/test_redis_cache.py`, so nothing checks
+`RedisCache` against the suite.
+
+This matters most for the cases the suite exists for, which are exactly the
+ones where Redis and memory could diverge: `decode_responses=True` (the
+`str`-not-`bytes` test), `ZADD` member uniqueness for two hits at the same
+instant, the `f"{key}:hits"` namespacing that keeps a window and a value from
+a `WRONGTYPE`, and the sub-second TTL that `EX` would truncate to zero. Every
+one of those is asserted today only against `MemoryCache`, which cannot fail
+them.
+
+Deferred rather than fixed because it needs a Redis server in the unit tier —
+either an integration-marked subclass against the container, or `fakeredis`,
+which reintroduces the "in-memory reference more forgiving than production"
+problem the suite's docstring names. Decide that first; the subclass itself is
+about five lines once the fixture exists. ADR 0007's "For adapter authors"
+section now states the gap, so fixing this means deleting that paragraph too.

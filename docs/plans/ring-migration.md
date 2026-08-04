@@ -1,23 +1,58 @@
 # The ring migration
 
-Between commits `94b9ae1` and the head of `rearchitect/graph-vector-ports`,
-kg-builder was rebuilt from a service-and-ORM application into a library with
-pluggable storage. 164 commits, **32579 insertions and 61699 deletions across
-354 files**, `src/` going from 123 Python files to 81.
+Between commit `94b9ae1` and `341be8d`, the head of
+`rearchitect/graph-vector-ports` as it was merged, kg-builder was rebuilt from
+a service-and-ORM application into a library with pluggable storage. 171
+commits, **33912 insertions and 62029 deletions across 362 files**, `src/`
+going from 123 Python files to 81.
+
+Those figures are the one part of this document that decays, so they name the
+range that produces them rather than standing on their own:
+
+```
+git diff --shortstat 94b9ae1 341be8d
+git rev-list --count 94b9ae1..341be8d
+```
+
+`341be8d` is the second parent of the merge commit `15a948c`; work landing on
+`main` afterwards is not part of the migration and is deliberately outside the
+range.
 
 This document exists because the reasoning behind that has no other home. The
 working notes it was extracted from — eleven briefs, eleven implementer
-reports, ten reviews, 4.2 MB — were never tracked and are gone.
+reports, ten reviews, 4.2 MB — were never tracked and are gone. What survives
+is the tree, the commit messages, the ADRs in `docs/adr/`, and twelve
+`recovery/*` tags.
 
 Everything below is either verifiable from the tree today or names the git ref
-that holds the evidence.
+that holds the evidence. Where a claim is about something that no longer
+exists, the ref is the evidence, and the next section explains how to read
+one.
 
 > **Every recovery ref below is also an annotated tag**, so it survives a
-> squash-merge, a rebase, or `gc`. `git tag -l 'recovery/*'` lists them, and
+> squash-merge, a rebase, or `gc`. `git tag -l 'recovery/*'` lists all twelve —
+> the same set the two tables below account for, no more and no fewer — and
 > each tag message says what it holds and which `BACKLOG` entry discusses it.
 >
 > Recover a deleted file with `git show recovery/<name>:<path>`, e.g.
 > `git show recovery/strategy-router:src/kg_builder/extraction/strategy_router.py`.
+>
+> **Eleven of the twelve mark a deletion. One does not.**
+> `recovery/schema-org-preport` marks a *port*: `extraction/schema_org.py` is
+> still in the tree today, and the tag exists to hold the state it was in
+> before it moved off the `EntityType` enum. The `git show` recipe applies to
+> it unchanged — it is an ordinary commit-ish — with one adjustment, because
+> the tag names the port commit rather than the state before it:
+>
+> ```
+> git show recovery/schema-org-preport~1:src/kg_builder/extraction/schema_org.py
+> ```
+>
+> The tag itself (`1b915f8`) already has the ported file; `~1` is the pre-port
+> one, importing `EntityType` and `ExtractionMethod` from
+> `models/extracted_entity.py`. Reading both is the diff, and the diff is the
+> point of the tag.
+>
 > **Push the tags along with the branch** — `git push origin --tags` — or they
 > exist only on the machine that made them.
 
@@ -44,8 +79,17 @@ library expects a caller to have migrated, and no code that fetches a document.
 
 ## What was deleted, and where to get it back
 
-Each ref below is the last commit at which the path exists. `git show <ref>:<path>`
-works today; all were verified resolvable when this document was written.
+The contract this section keeps is **every `recovery/*` tag is accounted for
+below** — the twelve `git tag -l 'recovery/*'` prints appear here, and nothing
+appears here that is not one of them. That is the property worth checking when
+a tag is added or this document is edited.
+
+The tags are not all the same kind of thing, so they are split into two tables.
+
+**Deletion refs.** Each ref in the table below is the last commit at which the
+path exists; the path is gone from the tree today, and `git show <ref>:<path>`
+is how you read it back. All were verified resolvable when this document was
+written.
 
 | Capability | Path | Ref | Replaced by |
 |---|---|---|---|
@@ -62,6 +106,39 @@ works today; all were verified resolvable when this document was written.
 | Settings object, Redis singleton | `src/kg_builder/config.py`, `cache.py` | `6a473ff`<br>`recovery/settings` | Explicit constructor arguments |
 | Prompt library, JSON-schema generator | `src/kg_builder/extraction/prompts.py` | `e063faa`<br>`recovery/prompts-encryption` | `extraction/domains/` + `prompt_generator.domain_system_prompt` |
 | Encryption at rest | `src/kg_builder/encryption.py` | `e063faa`<br>`recovery/prompts-encryption` | Nothing — see `BACKLOG` B58 |
+
+That is thirteen rows against eleven tags, because `recovery/prompts-encryption`
+covers two of them: `prompts.py` and `encryption.py` went in the same commit.
+
+### Refs that preserve a prior state rather than a deleted path
+
+One tag is not a deletion, and reading it as one sends you to the wrong commit.
+
+| What it preserves | Path | Ref | Superseded by |
+|---|---|---|---|
+| `schema_org.py` before it moved off the ORM enum | `src/kg_builder/extraction/schema_org.py` | `1b915f8`<br>`recovery/schema-org-preport`<br>(pre-port state is at `~1`) | Free-string `entity_type`; `ExtractionMethod` from `domain/entity.py` |
+
+The path still exists in the tree today. What the tag holds is the *before*
+side of a port: at `recovery/schema-org-preport~1` the module opens with
+
+```python
+from kg_builder.models.extracted_entity import EntityType, ExtractionMethod
+```
+
+and `SCHEMA_TYPE_MAP` maps `"Person"` onto `EntityType.PERSON` rather than onto
+the string `"person"`. The tagged commit itself already has the ported file, so
+the diff across the tag is the whole record — thirteen lines each way, which is
+exactly why it needed a tag: a change that small is invisible in a 171-commit
+range and unrecoverable once the enum's module is deleted.
+
+That deleted module is the second thing the tag preserves. `EntityType`'s
+members survive in only two places now: this ref (which still contains
+`models/extracted_entity.py` on both sides of `~1`) and
+`tests/unit/extraction/test_schema_org.py`, which continues to assert the
+mappings by their string values. `recovery/orm-layer` (`1b9f9f3`) is the
+*last* commit at which `models/extracted_entity.py` exists and is the ref to
+use for the enum in full — including the docstring quoted under the
+module-docstring decisions below.
 
 The deletions were not uniformly costly. Three of the four modules that looked
 like live dependents of the relational layer were dead code that merely still
@@ -81,6 +158,29 @@ These are the ones expensive enough to revisit that they got an ADR:
 | [0005](adr/0005-temporal-inference-on-read.md) | Temporal inference is computed on read |
 | [0006](adr/0006-the-public-surface-is-gated.md) | The public surface is gated by three tests, not curated |
 
+Those are the numbers that have been allocated. `docs/adr/` also holds a set of
+drafts still carrying `0007`, and that is the numbering rule working rather
+than failing: numbers are allocated at merge, against the highest on `main` at
+that moment, so parallel slices all draft the same next one and whichever
+merges second renumbers (`.claude/rules/definition-of-done.md`;
+`.claude/rules/recurring-defects.md` §6). Cite a draft by its **filename**,
+never by `0007` — the number is not yet a fact about it:
+
+| Draft | Decision |
+|---|---|
+| [`no-ann-index-in-a-multi-tenant-vector-store`](adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md) | pgvector carries no ANN index, and the reason is not performance |
+| [`resilience-behind-the-cache-port`](adr/0007-resilience-behind-the-cache-port.md) | Retry, rate limiting and circuit breaking live in `llm/`, over the `Cache` port |
+| [`the-extraction-fold-resolves-through-aliases`](adr/0007-the-extraction-fold-resolves-through-aliases.md) | The extraction fold resolves endpoints through the alias table |
+| [`one-total-order-for-preference`](adr/0007-one-total-order-for-preference.md) | One total order decides which mapping of a thing survives |
+| [`the-two-non-store-ports`](adr/0007-the-two-non-store-ports.md) | Why `Cache` and `LlmProvider` are ports, which 0002 does not cover |
+| [`composition-is-the-only-top-layer`](adr/0007-composition-is-the-only-top-layer.md) | `composition` is the only top layer, and `build_graph` writes without a log |
+| [`domain-schemas-prompt-but-do-not-constrain`](adr/0007-domain-schemas-prompt-but-do-not-constrain.md) | Domain schemas prompt the model; they do not constrain it |
+| [`exemption-lists-are-empty-and-must-stay-falsifiable`](adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md) | Both exemption lists are empty, and an emptied one is deleted rather than kept |
+
+A draft constrains a new spec exactly as much as an accepted ADR does, so run
+against the content and ignore the number. The two tables together are the
+whole of `docs/adr/`; if a file there appears in neither, one of them is stale.
+
 Several other decisions live in module docstrings rather than here, and that is
 deliberate — a reason belongs next to the code it constrains when the code is
 the only thing that could contradict it. The substantial ones:
@@ -94,7 +194,11 @@ the only thing that could contradict it. The substantial ones:
 - `consolidation/service.py`, `consolidation/policy.py` — read/plan/emit, and
   the concurrency window (`BACKLOG` B43).
 - `projections/graph.py` — why the extraction fold resolves through aliases.
-- `extraction/schema_org.py` — why `entity_type` is a free string. The deleted
+- `extraction/schema_org.py` — why `entity_type` is a free string. The
+  docstring argues the decision; the port that carried it out is at
+  `recovery/schema-org-preport`, whose `~1` side still maps `"Person"` onto
+  `EntityType.PERSON`, so the two readings of `SCHEMA_TYPE_MAP` sit either
+  side of one tag. The deleted
   enum had conceded the point in its own docstring: `String(100)` "to support
   dynamic domain-specific types", with `is_valid`/`get_or_none` helpers whose
   only job was to say "legitimately not one of mine" without raising. An enum
@@ -102,9 +206,12 @@ the only thing that could contradict it. The substantial ones:
 
 ## Backlog entries that were closed
 
-`BACKLOG.md` carries only open work, and closing an entry deletes it. Tracked
-code still cites eight closed entries by number; without this index those
-pointers resolve to nothing.
+`BACKLOG.md` carries only open work, and closing an entry deletes it. Docstrings
+and tests still cite closed entries by number, and without this index those
+pointers resolve to nothing. Seven of the eight below are cited from `src/` or
+`tests/`; B26 is cited only by the archived plan and is indexed here because it
+is the one whose closure is invisible in the tree — the duplicate it names was
+removed, so nothing is left to point at it.
 
 | Id | What it was | Closed by | Where the reasoning lives now |
 |---|---|---|---|
@@ -145,3 +252,25 @@ Two campaign-level facts that belong with it:
 It is history — written in the future tense about work that is done, including
 slices that were re-scoped mid-campaign. Its Global Constraints section is the
 part still worth reading; it is what the eleven slices were held to.
+
+## Where this file lives
+
+This document is `docs/plans/ring-migration.md`. It was `docs/ring-migration.md`
+for most of the campaign, and it was moved with `git mv`, so its history is
+intact and `git log --follow docs/plans/ring-migration.md` reads across the
+rename.
+
+The old path is dead, and every reference to it has been corrected: `README.md`,
+three lines in `BACKLOG.md`, and the reciprocal link at the top of
+`docs/history/2026-08-ring-migration-plan.md` — that last one both in its link
+text and in its relative target, which is now `../plans/ring-migration.md`.
+`git grep 'docs/ring-migration.md'` should return exactly one hit,
+`.claude/rules/recurring-defects.md`, where the wrong path is quoted on purpose
+as the example of a stale reference surviving several slices.
+
+That one deliberate hit is why the check is a grep and not a link checker: a
+relative link that resolves is not evidence the path in the prose beside it is
+right, and a path quoted as an example of a mistake must not be swept. When
+this file moves again, grep for the symbol across `docs/`, `README.md`,
+`CLAUDE.md`, `.claude/` and docstrings rather than a remembered list of files —
+the sweep that fails is always the one that fixed the pages it thought of.

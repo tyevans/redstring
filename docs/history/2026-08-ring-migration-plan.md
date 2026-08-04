@@ -3,7 +3,7 @@
 > **This is history, not a plan.** Every slice below is done, and it is written
 > in the future tense about work that has been finished, re-scoped, or
 > abandoned. Do not read it as a description of the library — read
-> [`docs/ring-migration.md`](../ring-migration.md) for what actually happened
+> [`docs/plans/ring-migration.md`](../plans/ring-migration.md) for what actually happened
 > and the ADRs in [`docs/adr/`](../adr/) for the decisions that outlived it.
 >
 > It is kept for two things. **Global Constraints** below is what all eleven
