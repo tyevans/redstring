@@ -156,11 +156,13 @@ class GraphStoreCompliance:
     async def test_relationship_upsert_replaces_by_id(self, store: GraphStore) -> None:
         """A re-upserted relationship id replaces the edge; it does not add one.
 
-        `neighbors` deduplicates by entity, so a store that appends duplicate
-        edges looks identical to a correct one until the second write differs
-        from the first. Changing both endpoint and type makes the duplicate
-        observable, which is what makes replay-safety testable through this
-        port at all.
+        `neighbors` deduplicates by entity, so through traversal alone a store
+        that appends duplicate edges looks identical to a correct one until the
+        second write differs from the first. Changing both endpoint and type
+        makes the duplicate observable in the traversal path specifically --
+        `test_re_upserting_a_relationship_yields_exactly_one_row` asserts the
+        same contract directly via `get_relationships`, and both are kept
+        because they exercise different code.
         """
         tenant = uuid4()
         a, b, c = (_example_entity(tenant=tenant) for _ in range(3))
@@ -318,8 +320,10 @@ class GraphStoreCompliance:
         assert await store.neighbors(doomed_source.id, doomed) == []
 
         # Re-adding the entities must not resurrect the deleted edges. Without
-        # this step a store that drops entities but keeps relationships passes,
-        # because `neighbors` on a missing entity returns [] either way.
+        # this step a store that drops entities but keeps relationships passes
+        # the traversal path, because `neighbors` on a missing entity returns
+        # [] either way. `test_delete_by_tenant_leaves_no_orphan_relationships`
+        # asserts the same thing directly.
         await store.upsert_entities([doomed_source, doomed_target])
         assert await store.neighbors(doomed_source.id, doomed, depth=5) == []
         assert sorted(await store.find_entities(spared), key=lambda e: str(e.id)) == sorted(
@@ -517,6 +521,216 @@ class GraphStoreCompliance:
 
     async def test_neighbours_of_an_unknown_entity_is_empty(self, store: GraphStore) -> None:
         assert await store.neighbors(uuid4(), uuid4()) == []
+
+    # ------------------------------------------------------------------
+    # get_relationships
+    #
+    # The edge read path. Before it existed, relationship state was only
+    # observable through `neighbors`, which returns entities -- so a stored
+    # relationship's type, confidence and properties were unverifiable, and
+    # two real defects (orphaned edges after a tenant delete, duplicate rows
+    # on re-upsert) could only be caught by indirect inference.
+    # ------------------------------------------------------------------
+
+    @compliance_settings
+    @given(data=st.data())
+    async def test_relationship_round_trips(self, data: st.DataObject) -> None:
+        store = await self.new_store()
+        tenant = data.draw(st.uuids())
+        source, target = await self._two_entities(store, tenant, data)
+        relationship = data.draw(
+            gen.relationships(
+                tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+            )
+        )
+
+        await store.upsert_relationship(relationship)
+
+        assert await store.get_relationships(source.id, tenant) == [relationship]
+        assert await store.get_relationships(target.id, tenant) == [relationship]
+
+    @compliance_settings
+    @given(tenants=gen.distinct_tenant_pairs, data=st.data())
+    async def test_relationships_are_never_readable_from_another_tenant(
+        self, tenants: tuple[UUID, UUID], data: st.DataObject
+    ) -> None:
+        tenant_a, tenant_b = tenants
+        store = await self.new_store()
+        a_source, a_target = await self._two_entities(store, tenant_a, data)
+        await store.upsert_relationship(
+            data.draw(
+                gen.relationships(
+                    tenant_id=tenant_a,
+                    source_entity_id=a_source.id,
+                    target_entity_id=a_target.id,
+                )
+            )
+        )
+        # Same entity ids under tenant B, with no edge between them.
+        await store.upsert_entities(
+            [
+                data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_source.id)),
+                data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_target.id)),
+            ]
+        )
+
+        for entity_id in (a_source.id, a_target.id):
+            assert await store.get_relationships(entity_id, tenant_b) == []
+            assert len(await store.get_relationships(entity_id, tenant_a)) == 1
+
+    @compliance_settings
+    @given(data=st.data())
+    async def test_mutating_a_relationship_result_does_not_change_the_store(
+        self, data: st.DataObject
+    ) -> None:
+        """The gap that closed BACKLOG B32.
+
+        With no edge read path, an adapter storing a shallow copy of a
+        relationship was unobservable through the port -- a surviving mutant
+        that no test could kill.
+        """
+        store = await self.new_store()
+        tenant = data.draw(st.uuids())
+        source, target = await self._two_entities(store, tenant, data)
+        relationship = data.draw(
+            gen.relationships(
+                tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+            )
+        )
+        await store.upsert_relationship(relationship)
+        pristine = relationship.model_copy(deep=True)
+
+        for found in await store.get_relationships(source.id, tenant):
+            found.relationship_type += "-tampered"
+            found.properties["__tampered__"] = True
+            for value in found.properties.values():
+                if isinstance(value, dict):
+                    value["__nested_tamper__"] = True
+                elif isinstance(value, list):
+                    value.append("__nested_tamper__")
+
+        assert await store.get_relationships(source.id, tenant) == [pristine]
+
+    @compliance_settings
+    @given(data=st.data())
+    async def test_mutating_the_relationship_argument_after_a_write_is_ignored(
+        self, data: st.DataObject
+    ) -> None:
+        store = await self.new_store()
+        tenant = data.draw(st.uuids())
+        source, target = await self._two_entities(store, tenant, data)
+        relationship = data.draw(
+            gen.relationships(
+                tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+            )
+        )
+        pristine = relationship.model_copy(deep=True)
+        await store.upsert_relationship(relationship)
+
+        relationship.relationship_type += "-tampered"
+        relationship.properties["__tampered__"] = True
+
+        assert await store.get_relationships(source.id, tenant) == [pristine]
+
+    async def test_get_relationships_filters_by_direction(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        hub, upstream, downstream = (_example_entity(tenant=tenant) for _ in range(3))
+        await store.upsert_entities([hub, upstream, downstream])
+        incoming = _example_relationship(tenant, source=upstream.id, target=hub.id)
+        outgoing = _example_relationship(tenant, source=hub.id, target=downstream.id)
+        await store.upsert_relationships([incoming, outgoing])
+
+        assert await store.get_relationships(hub.id, tenant, direction="out") == [outgoing]
+        assert await store.get_relationships(hub.id, tenant, direction="in") == [incoming]
+        assert {r.id for r in await store.get_relationships(hub.id, tenant, direction="both")} == {
+            incoming.id,
+            outgoing.id,
+        }
+
+    async def test_get_relationships_defaults_to_both_directions(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        hub, upstream, downstream = (_example_entity(tenant=tenant) for _ in range(3))
+        await store.upsert_entities([hub, upstream, downstream])
+        await store.upsert_relationships(
+            [
+                _example_relationship(tenant, source=upstream.id, target=hub.id),
+                _example_relationship(tenant, source=hub.id, target=downstream.id),
+            ]
+        )
+
+        assert len(await store.get_relationships(hub.id, tenant)) == 2
+
+    async def test_get_relationships_filters_by_type(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        a, b, c = (_example_entity(tenant=tenant) for _ in range(3))
+        await store.upsert_entities([a, b, c])
+        # The excluded edge is written first, so an adapter that stops at the
+        # first non-matching edge rather than skipping it fails here.
+        excluded = _example_relationship(tenant, source=a.id, target=b.id, kind="works_at")
+        wanted = _example_relationship(tenant, source=a.id, target=c.id, kind="knows")
+        await store.upsert_relationships([excluded, wanted])
+
+        assert await store.get_relationships(a.id, tenant, relationship_types=["knows"]) == [wanted]
+        assert await store.get_relationships(a.id, tenant, relationship_types=[]) == []
+        assert len(await store.get_relationships(a.id, tenant, relationship_types=None)) == 2
+
+    async def test_get_relationships_combines_direction_and_type(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        hub, other = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([hub, other])
+        await store.upsert_relationships(
+            [
+                _example_relationship(tenant, source=hub.id, target=other.id, kind="knows"),
+                _example_relationship(tenant, source=other.id, target=hub.id, kind="knows"),
+                _example_relationship(tenant, source=hub.id, target=other.id, kind="works_at"),
+            ]
+        )
+
+        found = await store.get_relationships(
+            hub.id, tenant, direction="out", relationship_types=["knows"]
+        )
+        assert [r.relationship_type for r in found] == ["knows"]
+        assert [r.source_entity_id for r in found] == [hub.id]
+
+    async def test_get_relationships_of_an_unknown_entity_is_empty(self, store: GraphStore) -> None:
+        assert await store.get_relationships(uuid4(), uuid4()) == []
+
+    async def test_get_relationships_rejects_an_unknown_direction(self, store: GraphStore) -> None:
+        with pytest.raises(ValueError, match="direction"):
+            await store.get_relationships(uuid4(), uuid4(), direction="sideways")  # type: ignore[arg-type]
+
+    async def test_re_upserting_a_relationship_yields_exactly_one_row(
+        self, store: GraphStore
+    ) -> None:
+        """Direct assertion of what `test_relationship_upsert_replaces_by_id`
+        could previously only infer through `neighbors`."""
+        tenant = uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        edge = _example_relationship(tenant, source=a.id, target=b.id)
+
+        await store.upsert_relationship(edge)
+        await store.upsert_relationship(edge)
+        await store.upsert_relationships([edge, edge])
+
+        assert await store.get_relationships(a.id, tenant) == [edge]
+
+    async def test_delete_by_tenant_leaves_no_orphan_relationships(self, store: GraphStore) -> None:
+        """Direct assertion of the second defect found by injection.
+
+        Previously this could only be inferred by re-adding the entities and
+        re-checking `neighbors`.
+        """
+        tenant = uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        await store.upsert_relationship(_example_relationship(tenant, source=a.id, target=b.id))
+
+        await store.delete_by_tenant(tenant)
+
+        assert await store.get_relationships(a.id, tenant) == []
+        await store.upsert_entities([a, b])
+        assert await store.get_relationships(a.id, tenant) == []
 
     # ------------------------------------------------------------------
     # Traversal

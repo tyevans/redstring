@@ -19,7 +19,7 @@ Every method is tenant-scoped. There is no cross-tenant read, ever.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -94,6 +94,29 @@ class GraphStore(Protocol):
         Not atomic: a `MissingEntityError` part-way through leaves earlier
         elements written. Callers replaying an event log get the same final
         state on retry because every element is individually idempotent.
+        """
+        ...
+
+    async def get_relationships(
+        self,
+        entity_id: EntityId,
+        tenant_id: TenantId,
+        *,
+        direction: Literal["out", "in", "both"] = "both",
+        relationship_types: Sequence[str] | None = None,
+    ) -> list[Relationship]:
+        """Return this tenant's relationships touching `entity_id`.
+
+        `neighbors` answers "which entities is this connected to" and loses the
+        edge; this answers "how is it connected", preserving type, confidence
+        and properties. Consolidation needs it to redirect a merged entity's
+        edges onto the canonical one.
+
+        `direction` selects edges where the entity is the source (`"out"`), the
+        target (`"in"`), or either (`"both"`, the default). Any other value
+        raises `ValueError`. `relationship_types` restricts by type; `None`
+        means no filter and `[]` means no type matches. An unknown
+        `entity_id` yields `[]`.
         """
         ...
 

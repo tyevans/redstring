@@ -20,7 +20,7 @@ Two design notes:
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from kg_builder.domain.exceptions import MissingEntityError
 
@@ -97,6 +97,35 @@ class InMemoryGraphStore:
     async def upsert_relationships(self, relationships: Sequence[Relationship]) -> None:
         for relationship in relationships:
             await self.upsert_relationship(relationship)
+
+    async def get_relationships(
+        self,
+        entity_id: EntityId,
+        tenant_id: TenantId,
+        *,
+        direction: Literal["out", "in", "both"] = "both",
+        relationship_types: Sequence[str] | None = None,
+    ) -> list[Relationship]:
+        if direction not in ("out", "in", "both"):
+            raise ValueError(f"direction must be 'out', 'in' or 'both', not {direction!r}")
+
+        allowed = None if relationship_types is None else set(relationship_types)
+        return [
+            relationship.model_copy(deep=True)
+            for relationship in self._relationships.get(tenant_id, {}).values()
+            if self._touches(relationship, entity_id, direction)
+            and (allowed is None or relationship.relationship_type in allowed)
+        ]
+
+    @staticmethod
+    def _touches(
+        relationship: Relationship, entity_id: EntityId, direction: Literal["out", "in", "both"]
+    ) -> bool:
+        if direction == "out":
+            return relationship.source_entity_id == entity_id
+        if direction == "in":
+            return relationship.target_entity_id == entity_id
+        return entity_id in (relationship.source_entity_id, relationship.target_entity_id)
 
     # ------------------------------------------------------------------
     # Traversal
