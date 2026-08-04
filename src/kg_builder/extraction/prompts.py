@@ -29,7 +29,8 @@ class DocumentationType(str, Enum):
     GENERAL = "general"
 
 
-# Entity types matching EntityTypeLiteral in schemas.py
+# This module's own entity vocabulary. It used to be kept in step with
+# `EntityTypeLiteral` in `extraction/schemas.py`, deleted in slice 9.
 # Kept in sync manually to avoid circular/database imports
 _ENTITY_TYPES: list[str] = [
     "function",
@@ -51,7 +52,7 @@ _ENTITY_TYPES: list[str] = [
     "custom",
 ]
 
-# Relationship types matching RelationshipTypeLiteral in schemas.py
+# Likewise the relationship vocabulary; `RelationshipTypeLiteral` is gone.
 # Kept in sync manually to avoid circular/database imports
 _RELATIONSHIP_TYPES: list[str] = [
     "uses",
@@ -348,7 +349,7 @@ def get_entity_types() -> list[str]:
 
     Returns:
         List of entity type strings that can be used in extraction.
-        These match the EntityTypeLiteral values from schemas.py.
+        The vocabulary is this module's own as of slice 9.
     """
     return _ENTITY_TYPES.copy()
 
@@ -358,6 +359,6 @@ def get_relationship_types() -> list[str]:
 
     Returns:
         List of relationship type strings that can be used in extraction.
-        These match the RelationshipTypeLiteral values from schemas.py.
+        The vocabulary is this module's own as of slice 9.
     """
     return _RELATIONSHIP_TYPES.copy()

@@ -33,16 +33,12 @@ build_user_prompt = _prompts.build_user_prompt
 get_entity_types = _prompts.get_entity_types
 get_relationship_types = _prompts.get_relationship_types
 
-# Direct import from schemas.py file as well
-_schemas_path = (
-    Path(__file__).parent.parent.parent.parent / "src" / "kg_builder" / "extraction" / "schemas.py"
-)
-_schemas_spec = spec_from_file_location("extraction_schemas", _schemas_path)
-_schemas = module_from_spec(_schemas_spec)
-_schemas_spec.loader.exec_module(_schemas)
-
-EntityTypeLiteral = _schemas.EntityTypeLiteral
-RelationshipTypeLiteral = _schemas.RelationshipTypeLiteral
+# `extraction/schemas.py` was loaded here by path, to cross-check that this
+# module's type lists were a subset of its `EntityTypeLiteral` and
+# `RelationshipTypeLiteral`. It was the ORM-shaped schema module and slice 9
+# deleted it with the relational layer (BACKLOG B42), so the check has no
+# counterparty left and the two `test_all_types_are_valid_literals` cases went
+# with it. `prompts.py` is now the sole owner of its vocabulary.
 
 
 # =============================================================================
@@ -353,18 +349,6 @@ class TestGetEntityTypes:
         types1.append("test")
         assert "test" not in types2
 
-    def test_all_types_are_valid_literals(self):
-        """Test that all returned types are valid EntityTypeLiteral values."""
-        entity_types = get_entity_types()
-
-        # Get the valid literal values from the schema
-        from typing import get_args
-
-        valid_types = set(get_args(EntityTypeLiteral))
-
-        for entity_type in entity_types:
-            assert entity_type in valid_types, f"{entity_type} is not a valid EntityTypeLiteral"
-
 
 class TestGetRelationshipTypes:
     """Tests for the get_relationship_types function."""
@@ -407,17 +391,6 @@ class TestGetRelationshipTypes:
 
         types1.append("test")
         assert "test" not in types2
-
-    def test_all_types_are_valid_literals(self):
-        """Test that all returned types are valid RelationshipTypeLiteral values."""
-        rel_types = get_relationship_types()
-
-        from typing import get_args
-
-        valid_types = set(get_args(RelationshipTypeLiteral))
-
-        for rel_type in rel_types:
-            assert rel_type in valid_types, f"{rel_type} is not a valid RelationshipTypeLiteral"
 
 
 # =============================================================================

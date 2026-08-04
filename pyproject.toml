@@ -111,24 +111,31 @@ ignore = [
     "DTZ001",
 ]
 
-# Legacy packages pending deletion (slices 7/9). Each entry is removed in the
-# commit that deletes its package -- this list may only shrink.
-"src/kg_builder/models/**" = ["ANN", "TC"]
-"src/kg_builder/services/**" = ["ANN", "TC", "RET", "ERA"]
+# Legacy packages pending deletion. Each entry is removed in the commit that
+# deletes its package -- this list may only shrink. Slice 9 removed
+# `models`, `services`, `schemas`, `graph/client.py` and `graph/queries.py`
+# along with their test-side entries.
+#
+# Two survivors, and they are different in kind:
+# - `extraction/**` still holds the pre-rewrite `classifier`, `prompts`,
+#   `prompt_generator` and `domains/` (BACKLOG B55). Narrowing this to those
+#   paths is worth doing when one of them is next touched.
+# - `events/**` is no longer legacy at all -- as of slice 9 every module in it
+#   is live schema. The exemption is now unearned rather than pending, and is
+#   left only because removing it is a strictness change, not a deletion, and
+#   belongs in a commit that can be judged on its own findings.
 "src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]
-# Narrowed from `graph/**` in slice 3: graph/adapters/ is new architecture and
-# is held to the full rule set.
-"src/kg_builder/graph/client.py" = ["ANN", "TC", "RET"]
-"src/kg_builder/graph/queries.py" = ["ANN", "TC", "RET"]
-"src/kg_builder/schemas/**" = ["ANN", "TC"]
+# E501 only, and only here. Every long line in `prompts.py` is inside a
+# triple-quoted prompt literal -- the entity-type property lists and the task
+# description that reach the model verbatim. Wrapping them inserts newlines
+# into the string, which changes what the model is asked, so this is a case
+# where obeying the rule would alter behaviour to satisfy a style check. Same
+# reasoning as `extraction/schema.py`, whose field descriptions are prompt
+# rather than documentation. BACKLOG B15.
+"src/kg_builder/extraction/prompts.py" = ["ANN", "TC", "RET", "ERA", "E501"]
 "src/kg_builder/events/**" = ["ANN", "TC"]
 
-# Tests exercising the same legacy packages above. Same ratchet: each entry
-# dies with the test module for the package it covers (slices 6-9).
 "tests/unit/extraction/**" = ["PT", "PTH", "RET", "ERA"]
-"tests/unit/models/**" = ["PT", "PTH", "RET"]
-"tests/unit/schemas/**" = ["PT", "PTH", "RET"]
-"tests/unit/services/**" = ["PT", "PTH", "RET", "ERA"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["kg_builder"]
@@ -154,10 +161,11 @@ python_version = "3.13"
 # rather than weakened, and each exclusion dies with its package.
 files = ["src/kg_builder"]
 exclude = [
-    "^src/kg_builder/(models|services|extraction|schemas|events)/",
-    # graph/ is half legacy: the Neo4j client and Cypher templates predate the
-    # rewrite, while graph/adapters/ is new architecture and is type-checked.
-    "^src/kg_builder/graph/(client|queries)\\.py$",
+    # `models`, `services` and `schemas` left this list in slice 9, with the
+    # packages. `graph/(client|queries).py` did too -- all of `graph/` is now
+    # new architecture and type-checked. See the ruff list above for why
+    # `events` should follow and has not yet.
+    "^src/kg_builder/(extraction|events)/",
 ]
 strict = true
 warn_unreachable = true
@@ -277,7 +285,7 @@ layers = [
     # specific -- inferred edges would acquire a path into `DocumentExtracted`,
     # which is exactly the persistence decision `temporal/inference.py` argues
     # against.
-    "kg_builder.extraction : kg_builder.consolidation : kg_builder.temporal : kg_builder.graph : kg_builder.vector : kg_builder.llm : kg_builder.schemas",
+    "kg_builder.extraction : kg_builder.consolidation : kg_builder.temporal : kg_builder.graph : kg_builder.vector : kg_builder.llm",
     # Projections read the ports and the event schema and write nothing back:
     # nothing below them may import a projection, and they may not import an
     # adapter.
@@ -285,8 +293,11 @@ layers = [
     # Aggregates are the write model: they import events and domain, and
     # nothing below them may import an aggregate.
     "kg_builder.aggregates",
-    "kg_builder.models",
-    "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
+    # `kg_builder.models` was a layer of its own here and `kg_builder.db` sat
+    # on the line below; both went in slice 9, as did `kg_builder.schemas`
+    # from the sibling line above. There is no ORM and no session for a layer
+    # to be built around.
+    "kg_builder.events : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
     # Ports sit directly above `domain` and below every adapter: an adapter
     # (kg_builder.graph.adapters) may import its port, never the reverse.
     "kg_builder.ports",

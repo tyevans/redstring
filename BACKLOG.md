@@ -420,31 +420,6 @@ decide first, which is why it is not done:
   exactly where a missing extra goes unnoticed, so the baseline must run
   *there*, not in the main tree where it would pass.
 
-### B46. Two tests still describe SQL blocking, which nothing does any more
-
-`tests/unit/test_blocking_indexes.py` checks that a migration declares
-`pg_trgm` and a set of blocking indexes; `tests/unit/test_soundex_column.py`
-checks jellyfish's soundex "as a reference for the PostgreSQL soundex
-function". Both describe the *relational* blocking implementation that slice 7
-replaced: blocking keys are now computed in `domain/blocking.py` and looked up
-through `GraphStore`, trigram matching went to `VectorStore.search`, and
-nothing in `src/` reads either the extension or the column.
-
-**Not deleted here because the migration and the ORM columns they describe are
-still present**, and removing those is slice 9's. Deleting the tests first
-would leave the migration unexercised in the window between; deleting both is
-one change, in the slice that owns it.
-
-Two details worth keeping for whoever does:
-
-- `test_soundex_column.py` guards on `try: import jellyfish` with a `skipif`.
-  That guard is dead as of slice 7 -- jellyfish is a required dependency now,
-  not the `nlp` extra -- so the skip can never fire.
-- Its assertions are about jellyfish's behaviour rather than this project's,
-  and `tests/unit/domain/test_blocking.py` now covers the parts that matter,
-  including the cases where jellyfish's own output is unusable
-  (`soundex("2024") == "2000"`).
-
 ### B41. `RedisCache` has no test against a real Redis
 
 `llm/cache/redis.py` is the only `Cache` adapter with no run of
@@ -472,32 +447,6 @@ constructs a `RedisCache`: both `RateLimiter` and `CircuitBreaker` default to
 explicitly. The single-process path — which is every current caller — is fully
 covered.
 
-### B42. `extraction/schema.py` and `extraction/schemas.py` both exist
-
-One character apart, and they are unrelated.
-
-- `schema.py` (new, slice 6) is what a model is *asked* for: `Extraction`,
-  `ExtractedEntity`, `ExtractedRelationship`. Its field descriptions are prompt,
-  not documentation — they reach the model as part of the JSON schema.
-- `schemas.py` (old) is the ORM-shaped `ExtractedEntitySchema` /
-  `ExtractionResult` family, kept alive only by
-  `services/extraction/temporal_enrichment.py` (which imports
-  `ExtractedEntitySchema` and `TemporalEventProperties` at module scope) and by
-  `extraction/strategy_router.py`.
-
-An import of the wrong one type-checks in plenty of places, because both hold
-a class with "entity" in its name and a `properties` dict.
-
-**Why not renamed now.** Renaming the new one buries the good name under the
-dead one. Renaming the old one touches a module slice 8 is about to rewrite for
-temporal, and every rename is a merge conflict against that work. It resolves
-itself when `schemas.py` dies with the relational layer in slice 9 — the fix is
-to *delete*, not to rename, and doing it early costs a conflict for a few weeks
-of ambiguity.
-
-If it bites before then, rename the old one to `orm_schemas.py`: it has the
-smaller import surface (two modules) and is the one leaving.
-
 ### B39. `settings.PREPROCESSING_ENABLED` is read by nothing
 
 `config.py:239`. The legacy orchestrator was its only reader, and slice 9
@@ -510,60 +459,10 @@ branch and is deleted with the module. What it recorded and is worth keeping:
 the replacement is `extraction/pipeline.py`, which does chunk/extract/merge on
 domain types and emits `DocumentExtracted`. Nothing calls it from a service
 layer, on purpose -- wiring it in is slice 10's public-API work.
-### B5. Timeline events do not populate involved entities
-
-`services/timeline_query.py:640` — `involved_entities=[]` with a TODO to
-populate from relationships.
-
----
-
-## 2. Architecture and library shape
-
-### B6. Auth vestiges from knowledge-mapper
-
-This is a library with no auth, still carrying an application's auth surface.
-Slice 1 of the ring migration plan.
-
-- `config.py` declares `OAUTH_ISSUER_URL`, `OAUTH_CLIENT_ID`,
-  `OAUTH_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`, `OAUTH_SCOPES`,
-  `OAUTH_USE_PKCE`, and a full `APP_JWT_*` block (private/public keys,
-  algorithm, issuer, expiry, key id).
-- `models/user.py`, `models/user_tenant_membership.py`, and
-  `models/oauth_provider.py` exist only because the knowledge-graph models
-  declare SQLAlchemy relationships to them and the mapper registry will not
-  resolve without them.
-- Decision already taken: strip these, replace the relationships with plain
-  `tenant_id` scoping columns. `tenant_id` stays as a scoping key, not auth.
-
-### B7. `db.py` is FastAPI-shaped, not library-shaped
-
-`init_db()` and `close_db()` embed example FastAPI `startup_event` /
-`shutdown_event` handlers; the module assumes an application lifecycle a
-library does not own. Needs reshaping into a session provider the caller
-drives.
-
 ### B9. Import-linter contract is not exhaustive
 
 `pyproject.toml` sets `exhaustive = false`, so a new top-level package is
 silently unconstrained. Revisit when the per-context contract lands.
-
-### B24. No schema migration tooling — added columns have no migration path
-
-**This is the most consequential open item.** There is no `alembic/`, no
-`migrations/`, and Alembic is not even a dependency; the migrations were left
-behind in knowledge-mapper. Meanwhile the ORM has grown columns that no
-database will have:
-
-- `ScrapingJob.enable_timeline_extraction` (slice 0)
-- `ExtractedEntity.start_date`, `end_date`, `date_precision`,
-  `uncertainty_marker`, `original_temporal_text`, `sequence_position`,
-  `publication_date` (slice 0b)
-
-Nothing catches this, because the test suite has no database at all (B10).
-The models and any real Postgres are now out of sync with no mechanism to
-reconcile them. Either adopt Alembic here or document that schema ownership
-stays with the consuming application — but decide, because "the ORM says so"
-is currently the only record that these columns exist.
 
 ### B27. `child_of` relationship normalization is ambiguous
 
@@ -578,25 +477,6 @@ it and both groupings are semantically defensible. Someone who knows the
 intended taxonomy should decide whether `child_of` is a containment
 relationship (`part_of`) or a generic association (`related_to`) — and then
 add the test that was missing.
-
-### B26. `DatePrecision` / `UncertaintyMarker` live in the ORM layer
-
-They are defined in `models/extracted_entity.py` and re-exported from
-`schemas/timeline.py`, because `models` sits below `schemas` in the
-import-linter contract and needs them for its temporal columns.
-
-That is correct for the current layering but not their real home. As of
-slice 2, `kg_builder.domain.temporal` now also has copies of both enums —
-required so the new `TemporalExtent` value object doesn't depend on the ORM
-layer. The `models/extracted_entity.py` / `schemas/timeline.py` originals are
-intentionally left in place until slice 9 deletes the relational layer;
-until then the definitions exist in two places. Delete the originals and
-re-point any remaining internal references to `kg_builder.domain.temporal`
-in slice 9.
-
----
-
-## 3. Test suite
 
 ### B10. No database anywhere in the test suite
 
@@ -1089,46 +969,36 @@ areas are the ones with no database (B10).
 
 ## 4. Code health
 
-### B15. 98 ruff findings outstanding (pre-existing rule sets)
+### B15. Pre-existing ruff findings in the surviving legacy modules
 
-Repo-wide, excluding the files already cleaned. The README's claim of "~617"
-is stale — the ruff configuration changed since it was written. As of slice
-2b, `uv run ruff check src tests` run standalone (not scoped to a commit's
-touched files) still finds these under rule sets that were already selected
-before 2b. They pre-date the tightening and sit in files pre-commit has not
-re-linted yet: the `ruff-check` hook lints whole files, but only files that
-get staged in a commit. Anyone who touches one of the listed files will hit
-these on commit and must fix them there (slice 2b did exactly this for
-`cache.py`, `config.py`, `db.py`, `encryption.py`, and a handful of
-`models`/`schemas` files it happened to touch).
+Repo-wide, excluding files already cleaned. These pre-date the slice-2b
+tightening and sit in files pre-commit has not re-linted yet: the `ruff-check`
+hook lints whole files, but only files that get staged in a commit. Anyone who
+touches one of the listed files hits these on commit and must fix them there.
 
-| Rule | Count | Rule | Count |
-|---|---|---|---|
-| `E501` line-too-long | 40 | `RUF022` unsorted-`__all__` | 9 |
-| `B904` raise-without-from | 12 | `RUF059` unused-unpacked-variable | 6 |
-| `F841` unused-variable | 5 | `RUF012` mutable-class-default | 5 |
-| `B007`/`B905`/`RUF013`/`RUF043` | 3 each | others | 14 |
+**Slice 9 removed most of them by deleting the files.** What is left is 15
+findings in four modules, all of them in the surviving pre-rewrite half of
+`extraction/` (B55):
 
-`RUF012` and `RUF013` are the ones most likely to be hiding real defects.
+| File | Findings |
+|---|---|
+| `extraction/prompts.py` | 9 x E501 |
+| `extraction/prompt_generator.py` | 2 x RUF005 |
+| `extraction/domains/__init__.py` | 1 x RUF022 (unsorted `__all__`) |
+| `tests/unit/extraction/test_prompt_generator.py` | E501, RUF015, E741 |
 
-The nine new rule sets added in slice 2b (`ANN`, `ASYNC`, `DTZ`, `ERA`, `PT`,
-`PTH`, `RET`, `TC`, `TID`) are **not** in this table — they are fully clean
-across `src/` and `tests/`, either fixed directly or covered by the
-per-file-ignore ratchet in `pyproject.toml`.
+**`prompts.py`'s nine are now ignored by rule rather than outstanding, and
+that is a decision.** Every long line there is inside a triple-quoted prompt
+literal -- the entity-type property lists and the task description that reach
+the model verbatim. Wrapping them inserts newlines into the string, so obeying
+E501 would change what the model is asked in order to satisfy a style check.
+`pyproject.toml` carries a per-file `E501` ignore for that one file with the
+reasoning; it is the same argument `extraction/schema.py` makes for its field
+descriptions being prompt rather than documentation.
 
-### B16. 14 Pydantic v1-style `class Config` blocks
-
-`PydanticDeprecatedSince20` warnings across 16 sites in
-`schemas/extraction_provider.py`, `schemas/consolidation.py`,
-`schemas/timeline.py`, `schemas/document.py`, `schemas/scraping.py`.
-Replace with `ConfigDict`. Removed in Pydantic v3.
-
----
-
-## 5. Deliberately deferred decisions
-
-These were decided against *for now*, with reasons. Revisit consciously.
-
+The other six are ordinary and should be fixed by whoever next touches those
+files. `RUF012`/`RUF013`, called out in the old version of this entry as the
+most likely to hide real defects, no longer appear anywhere.
 ### B36. Free-form event payload dicts can hold a NUL that `jsonb` refuses
 
 `domain/entity.py` (`properties`, `external_ids`) and
@@ -1284,18 +1154,6 @@ server, so this needs the integration suite that B10 asks for); or take the
 narrow extras actually wanted (`eventsource-py[postgresql]`) rather than
 `[all]`.
 
-### B17. Column defaults do not hold at construction time
-
-`ExtractedEntity.is_canonical` and `ScrapingJob.enable_timeline_extraction`
-declare `default=`, which SQLAlchemy applies at INSERT. With no database in
-the suite (B10), an unflushed instance reads `None`. Their tests now assert
-the declared default rather than instance state.
-
-If these invariants should hold on construction, that is a model-level change
-to make once, across all models, rather than per-column. Relevant to the ring
-migration: a domain entity should carry its invariants without needing a
-session.
-
 ### B18. `UP042` is ignored project-wide
 
 Rewriting `class X(str, Enum)` as `enum.StrEnum` changes `str(X.A)` from
@@ -1378,6 +1236,30 @@ This list may only shrink — delete a package's entry in the same commit that
 deletes the package (slices 6-9). `domain/`, `ports/`, and every package
 created after slice 2b get full strictness from birth and must never be
 added here.
+
+**As of slice 9 the list is `extraction` and `events`, and they are different
+in kind.** `extraction/**` is genuine legacy -- the pre-rewrite `classifier`,
+`prompts`, `prompt_generator` and `domains/` (B55) -- and narrowing the
+exemption to those paths, so the slice-6 modules beside them are held to the
+full rule set, is worth doing when one of them is next touched.
+
+`events/**` is **not** legacy any more. Slice 9 deleted `events/scraping.py`
+and `events/base.py`, so every module in that package is now live schema
+written after slice 2b, and by this entry's own rule it should never have been
+exemptable. It was left in place in the deleting commit on purpose: removing
+it is a strictness change that will produce findings, and findings deserve a
+commit that can be judged on them rather than being buried in a 15000-line
+deletion. It is the next thing to close here.
+
+Slice 9 also found that `services`, `graph/client.py` and `graph/queries.py`
+outlived their packages in both lists by one and two commits respectively. A
+ratchet entry naming a package that is not there is exactly the hole the
+ratchet exists to prevent, and nothing catches it -- ruff and mypy both accept
+a per-file pattern that matches no file. **A test asserting every path in both
+lists exists would**, and is the cheap fix; it is the same shape as
+`test_the_exemption_list_has_no_stale_entries` in
+`tests/unit/graph/test_neo4j_adapter_is_wired.py`, which did catch its
+equivalent, in the same slice, because someone had written it.
 
 ### B31. `InferenceProvider.close` trips B027, silenced with `noqa`
 

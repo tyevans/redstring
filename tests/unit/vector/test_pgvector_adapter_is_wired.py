@@ -400,16 +400,18 @@ class TestStructure:
 #: Python call ending in `_vector(`.
 PGVECTOR_MARKERS = ("<=>", "::vector", " vector(", "Vector(")
 
-#: The pre-rewrite embedding column, condemned by the migration plan and
-#: deleted in slice 9. Exempt because it is already on the way out, not
-#: because the rule does not apply to it.
+#: **Empty, and staying that way.** This exempted the pre-rewrite embedding
+#: column on `models/extracted_entity.py`, which slice 9 deleted; that entry
+#: was still here when the module went, and
+#: `test_the_exemption_list_has_no_stale_entries` is what said so.
 #:
-#: **This list may only shrink.** Delete the entry in the commit that deletes
-#: its module; `test_the_exemption_list_has_no_stale_entries` fails if it names
-#: a file that is gone, and the main test fails if a *new* module grows
-#: pgvector syntax. Between them, the only way to add pgvector detail outside
-#: the adapter is to edit this list, which is a visible decision in review.
-LEGACY_PGVECTOR = frozenset({"models/extracted_entity.py"})
+#: Kept rather than removed with its last entry, for the same reason as
+#: `LEGACY_CYPHER` in `tests/unit/graph/test_neo4j_adapter_is_wired.py`: it is
+#: the seam the rule is enforced at. Empty, it means
+#: `test_no_module_outside_the_adapter_speaks_pgvector` admits no exceptions,
+#: and adding one means adding a name here, which is visible in review rather
+#: than argued in a comment.
+LEGACY_PGVECTOR: frozenset[str] = frozenset()
 
 SOURCE_ROOT = Path(adapter.__file__).parent.parent.parent
 
