@@ -192,10 +192,21 @@ class ConsolidationLog(AggregateRoot[ConsolidationLogState]):
             if record.merge_event_id == event.merge_event_id:
                 record.undone = True
         # The entities stop being aliases, which is what makes correcting a bad
-        # merge possible rather than merely recorded. Keyed on the ids the undo
-        # names, and only while they still point at this merge's canonical
-        # entity -- a later merge may have claimed one, and clearing that would
-        # undo two merges with one event.
+        # merge possible rather than merely recorded.
+        #
+        # Unconditional, after a guard here turned out to be unreachable. It
+        # read `if state.alias_of.get(entity_id) == event.canonical_entity_id`
+        # -- "clear this only if a later merge has not claimed the entity" --
+        # but a later merge cannot have. `merge` refuses any entity already in
+        # `alias_of`, so between a merge and its undo the entity has exactly
+        # one canonical parent, and replay applies each event once, in order.
+        # No valid history can falsify the condition, and a branch no valid
+        # history reaches is worse than no branch: it describes a situation
+        # that cannot arise, so a reader reasons about the wrong invariant.
+        # Found by a cosmic-ray mutant that rewrote the `==` as `<=` and
+        # survived, which is what an unreachable guard looks like from outside.
+        #
+        # `pop` with a default rather than `del`: a redelivered `MergeUndone`
+        # finds the entry already gone, and that is idempotent, not an error.
         for entity_id in event.unmerged_entity_ids:
-            if state.alias_of.get(entity_id) == event.canonical_entity_id:
-                del state.alias_of[entity_id]
+            state.alias_of.pop(entity_id, None)
