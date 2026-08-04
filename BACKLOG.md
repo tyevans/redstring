@@ -8,7 +8,7 @@ default gate, plus **177 `integration` tests** — 106 against a real Neo4j
 (slice 4) and 63 against real pgvector (slice 5) — from
 `docker-compose.test.yml`. Coverage baseline 70.12. Slice 5b added the event
 log, the two aggregates, and the projections, and moved the project onto
-eventsource-py 0.9.1+ (see B31); the replay-equivalence suite runs in the
+eventsource-py 0.9.1+ (see B38); the replay-equivalence suite runs in the
 default gate, not under `integration`. Note that the two suites
 must be run in **separate pytest invocations**; see B10m. Full `pre-commit`
 gate green (now
@@ -953,7 +953,7 @@ subprocess and its survivors in slice 5b matched hand verification once the
 cache was cleared -- but nothing proves it is immune either, and a run that
 disagrees with a hand check should suspect this first.
 
-### B31. The `eventsourcing` extra no longer pulls `eventsource-py[all]`
+### B38. The `eventsourcing` extra no longer pulls `eventsource-py[all]`
 
 `pyproject.toml` declares `eventsourcing = ["eventsource-py>=0.9.1,<0.11"]`.
 It used to be `eventsource-py[all]>=0.5.0`, and the `[all]` was dropped in

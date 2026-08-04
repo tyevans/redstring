@@ -165,15 +165,49 @@ So `MergeUndone` is that recovery materialised once, at the boundary, by the
 aggregate that could compute it. Replay is the source of truth; the payload is
 its cached answer.
 
+### The asymmetry this leaves, recorded rather than resolved
+
+`EntitiesMerged.redirections` has to be **computed by reading the projection
+from the write path**: something must know which edges currently touch the
+absorbed entity, and edges live in `Document` streams, so the
+`ConsolidationLog` aggregate cannot derive them from its own history.
+
+That is the same coupling Decision 2 rejects, where "diffing means reading the
+projection from the write path" was the argument against retraction events.
+The asymmetry is real and is recorded rather than argued away: a retraction
+event is avoidable, a redirection is not, and putting it in the payload is
+what keeps the *read* side free of the coupling.
+
+The consequence, which the payload shape makes permanent: computed against a
+lagging projection, an `EntitiesMerged` records an edge set that never existed
+at that position in the log, and a `MergeUndone` derived from it later
+restores edges to a state the log never held. Nothing bounds that staleness
+today, because nothing emits yet. The emitter is slice 7, and slice 7 owns the
+choice: read through the same process that writes (fresh by construction),
+require the projection to be caught up to the log's head before merging, or
+accept the staleness and say so. This paragraph exists so that the decision is
+made rather than inherited.
+
 ## Consequences
 
 - The 67 classes are gone. Five modules with no consumers were deleted
   outright; `consolidation.py` and `scraping.py` survive only until the legacy
   services that import them die in slices 7 and 9, and are un-registered so
   they no longer hold wire names the live schema needs.
-- `eventsource-py` moved from 0.5.0 to 0.9.1+. The pinned version predates the
-  library's own ring migration and has none of the API this design needs.
-- The graph fold requires **order-preserving redelivery** and cannot detect
-  its absence, because `GraphStore` has nowhere to record that a merge
-  happened. A checkpointed feed provides it; a partitioned bus might not.
-  BACKLOG B34.
+- `eventsource-py` moved from 0.5.0 to `>=0.9.1,<0.11`. 0.5.0 predates the
+  library's own ring migration: `eventsource.domain`, `eventsource.ports` and
+  `eventsource.application` do not exist there, and neither does `StreamId`,
+  so every import in this slice is unresolvable against it. The concepts are
+  not all absent -- 0.5.0 has optimistic concurrency (as `int` sentinels on
+  `append_events(aggregate_id, aggregate_type, events, expected_version)`) and
+  a `TenantAwareRepository` under `eventsource.multitenancy` -- but the API
+  carrying them is a different one, and the stream-based design here is built
+  on the shape 0.9 introduced. Verified against the 0.5.0 sdist rather than
+  from memory.
+- **A later `DocumentExtracted` silently reverts a merge**, and the fold
+  cannot detect it, because `GraphStore` has nowhere to record that a merge
+  happened. This needs no redelivery and no reordering: re-extracting a
+  document under a new model version after consolidation is enough, and
+  `Document.record_extraction` exists to permit exactly that. BACKLOG B34,
+  pinned as deliberately-wrong tests in
+  `tests/unit/projections/test_known_gaps.py`.
