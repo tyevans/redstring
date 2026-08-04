@@ -187,6 +187,32 @@ class TestFiltering:
         with pytest.raises(ValueError, match="max_pairs"):
             infer_relations(entities, max_pairs=10)
 
+    def test_the_cap_is_compared_against_the_actual_pair_count(self):
+        """Ten entities is forty-five pairs, and the message says so.
+
+        Asserting only that *some* limit was exceeded lets the count itself be
+        wrong: cosmic-ray rewrote `n * (n - 1) // 2` several ways, and every
+        version still exceeded a cap of ten, so nothing failed. The exact
+        number is what distinguishes them."""
+        entities = [dated(str(y), year(y)) for y in range(1900, 1910)]
+        with pytest.raises(ValueError, match=r"10 dated entities is 45 pairs"):
+            infer_relations(entities, max_pairs=10)
+
+    def test_the_cap_is_a_maximum_rather_than_a_strict_bound(self):
+        """Exactly at the cap is allowed; one below it is not. Off-by-one on
+        the comparison is invisible without both halves."""
+        entities = [dated(str(y), year(y)) for y in range(1900, 1910)]
+        assert infer_relations(entities, max_pairs=45)
+        with pytest.raises(ValueError, match="max_pairs"):
+            infer_relations(entities, max_pairs=44)
+
+    def test_a_single_dated_entity_is_no_pairs_and_never_trips_the_cap(self):
+        """`n * (n - 1) // 2` must be 0 here, not negative and not 1. A
+        formula that comes out negative would pass any cap while being
+        nonsense, and the empty case is where that shows."""
+        assert infer_relations([dated("alone", year(1900))], max_pairs=0) == []
+        assert infer_relations([], max_pairs=0) == []
+
 
 class TestInferredRelationIsOrderable:
     def test_relations_are_comparable_so_a_result_can_be_sorted_stably(self):
