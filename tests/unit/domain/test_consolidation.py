@@ -35,16 +35,30 @@ def test_a_dropped_edge_has_no_after():
     assert RelationshipRedirection(before=before, after=None).after is None
 
 
-def test_after_must_keep_the_same_relationship_id():
-    before = _relationship()
-    other = _relationship(tenant_id=before.tenant_id)
+#: Two ids that bracket `PIVOT`, one sorting below it and one above.
+#:
+#: Pinned rather than `uuid4()`, because the checks under test are `!=` and a
+#: mutant rewriting one as `<` or `>` passes a random pair about half the time
+#: -- depending on how the ids happened to sort. That is the exact shape
+#: CLAUDE.md records from slice 3, and a random pair is what put it there.
+BELOW = UUID("00000000-0000-4000-8000-000000000001")
+PIVOT = UUID("88888888-8888-4888-8888-888888888888")
+ABOVE = UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
+
+
+@pytest.mark.parametrize("other_id", [BELOW, ABOVE], ids=["sorts-below", "sorts-above"])
+def test_after_must_keep_the_same_relationship_id(other_id):
+    before = _relationship(id=PIVOT)
+    other = _relationship(id=other_id, tenant_id=before.tenant_id)
     with pytest.raises(ValidationError, match="same relationship"):
         RelationshipRedirection(before=before, after=other)
 
 
-def test_after_must_keep_the_same_tenant():
-    before = _relationship()
-    after = before.model_copy(update={"tenant_id": uuid4()})
+@pytest.mark.parametrize("other_tenant", [BELOW, ABOVE], ids=["sorts-below", "sorts-above"])
+def test_after_must_keep_the_same_tenant(other_tenant):
+    """Both directions, for the reason `BELOW`/`ABOVE` exist."""
+    before = _relationship(tenant_id=PIVOT)
+    after = before.model_copy(update={"tenant_id": other_tenant})
     with pytest.raises(ValidationError, match="same tenant"):
         RelationshipRedirection(before=before, after=after)
 
