@@ -3,9 +3,12 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **2070 tests pass, 0 fail** in the
-default gate, plus **106 `integration` tests** against a real Neo4j from
-`docker-compose.test.yml` (slice 4). Full `pre-commit` gate green (now
+Status of the tree as of the last update: **2218 tests pass, 0 fail** in the
+default gate, plus **169 `integration` tests** — 106 against a real Neo4j
+(slice 4) and 63 against real pgvector (slice 5) — from
+`docker-compose.test.yml`. Coverage baseline 68.47. Note that the two suites
+must be run in **separate pytest invocations**; see B10m. Full `pre-commit`
+gate green (now
 including `mypy`, see B30), nothing skipped at collection. The accuracy and
 integration suites are deselected by default (see B12, B10a); a run now prints
 what it deselected and how to run it. (Slice 1 of the ring migration deleted
