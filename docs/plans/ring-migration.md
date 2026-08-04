@@ -88,11 +88,37 @@ independently prove the store ports.
 re-exports `eventsource.multitenancy`, `events/base.py` re-exports
 `TenantDomainEvent`, and four modules call `register_event`.
 
-**What we take from it, and what we don't.** Take the event store, the event
-bus, and the projection system. **Skip the aggregate pattern** — a document
-yielding ten thousand entities is not ten thousand transactional aggregates
-with optimistic locking, and forcing that shape onto bulk extraction would
-be a serious mistake.
+**What we take from it.** The event store, the event bus, the projection
+system, **and aggregates** — at the right granularity.
+
+An earlier revision of this plan said to skip the aggregate pattern, on the
+grounds that "a document yielding ten thousand entities is not ten thousand
+transactional aggregates". That argued against `Entity` as the aggregate and
+wrongly concluded against the pattern. With **`Document`** as the aggregate,
+ten thousand entities are *one* aggregate. It was also self-contradictory:
+the stream design had already chosen `document` and `consolidation`
+categories, and those *are* aggregate boundaries. And `append()` takes
+`expected: ExpectedVersion` as a required argument, so declining aggregates
+never avoided optimistic concurrency — it only meant hand-rolling it.
+
+| Aggregate | Id | Streams | Owns |
+|---|---|---|---|
+| `Document` | `SourceDocument.id` | short, one per document, parallel across documents | extraction is idempotent per model version |
+| `ConsolidationLog` | `tenant_id` | long, serialised per tenant, `EveryNEvents` snapshots | the merge invariants below |
+
+**Not `Entity`** — that part of the original objection stands.
+
+`ConsolidationLog` is deliberately serialised per tenant: two concurrent
+merges touching the same entities must not interleave. It is also the home
+for three invariants that today are enforced by **nothing** — an entity
+cannot be merged into something that is itself an alias, cannot be merged
+twice, and an undo must reference a merge that happened. Those are precisely
+the rules whose violation silently corrupts a graph, and having nowhere to
+live is the real argument for the pattern.
+
+`TenantAwareRepository` validates tenant consistency on the write path.
+Tenant isolation is the property this project treats as most important, so
+having it enforced by tested library code beats re-deriving it.
 
 ## What kg-builder is not
 
@@ -395,6 +421,39 @@ when undo was still a storage problem. Once undo is a compensating event
 that field is redundant with the log. Decide there whether the projection
 still wants it as a read optimisation, and delete it if not.
 
+## Test infrastructure
+
+Slices 4 and 5 need backends that cannot be faked. Neither is reachable
+today, and Docker is available.
+
+**kg-builder owns its own test backends.** A `docker-compose.test.yml` in the
+repo root provides Neo4j on host port **7688** and
+**`pgvector/pgvector:pg16`** on **5434** — deliberately off the default
+ports so nothing collides with a local install, and specifically *not* plain
+`postgres`, which does not ship the `vector` extension.
+
+Do not borrow another project's test containers. eventsource-py runs its own
+on 5433/6380; using them would couple two repos' test infrastructure so that
+one suite can break the other, and a kg-builder failure would have a cause
+outside kg-builder.
+
+**Adapter compliance runs are `integration`-marked** and excluded from the
+default gate (`addopts = -m "not accuracy and not integration"`). This is
+what that long-declared, never-used marker is for (BACKLOG B10). The
+in-memory adapters run the *same* compliance suite in the default gate,
+always — if a test only passes in-memory, the suite is not doing its job.
+
+**Skip fixtures must prove the backend serves, not that a port is open.**
+Neo4j gets `RETURN 1`; pgvector gets `CREATE EXTENSION IF NOT EXISTS vector`
+plus a round-trip row. This repo has already been burned by the weaker
+check: the accuracy suite probed Ollama's model list, the model was listed
+but could not load, and eight tests failed instead of skipping (BACKLOG B12).
+
+Not using `testcontainers`: starting containers implicitly from inside a
+`pytest` run lets an ordinary test invocation pull images and consume
+resources without the developer asking. `docker compose up -d` is one
+command and keeps that explicit.
+
 ## Slices
 
 Slices 0 and 0b are complete. Dispatch the rest one at a time.
@@ -408,7 +467,7 @@ Slices 0 and 0b are complete. Dispatch the rest one at a time.
 | 3 | **`GraphStore` port + in-memory adapter + compliance suite.** The compliance suite is the real artifact. | Compliance suite green against memory |
 | 4 | **Neo4j adapter.** Same compliance suite, no new tests of its own beyond Cypher specifics. | Compliance suite green against Neo4j |
 | 5 | **`VectorStore` port + in-memory + pgvector adapters.** | Compliance suite green against both |
-| 5b | **Event-sourcing foundation.** Rebuild `events/` on the domain model — the 67 existing classes are the raw material, but they are shaped for the old ORM and none is emitted today. Wire `eventsource-py`'s store and bus. Build the projection handlers that fold events into `GraphStore` and `VectorStore`, with checkpoints and DLQ. **Prove replay:** a test that projects a log into an empty in-memory store and gets a byte-identical graph is this slice's real deliverable. Skip the aggregate pattern. | Replay-equivalence test green; compliance suites still green |
+| 5b | **Event-sourcing foundation.** Rebuild `events/` on the domain model — the 67 existing classes are the raw material, but they are shaped for the old ORM and none is emitted today. Wire `eventsource-py`'s store and bus. Build the projection handlers that fold events into `GraphStore` and `VectorStore`, with checkpoints and DLQ. **Prove replay:** a test that projects a log into an empty in-memory store and gets a byte-identical graph — and stays identical when every event is delivered twice — is this slice's real deliverable. Aggregates: `Document` and `ConsolidationLog`, not `Entity`. | Replay-equivalence test green; compliance suites still green |
 | 6 | **Extraction onto the domain model.** Absorb chunkers and mergers. Provider config passed in, not loaded. Extraction **emits events** rather than writing to a store. | Targeted + `lint-imports` |
 | 7 | **Consolidation onto the ports.** Key-based blocking as pure domain logic, fuzzy blocking via `VectorStore.search`; `MergeStrategy` port with the simple implementations only. Merges emit events; **undo becomes a compensating event, not displaced values on an edge** — see "Consolidation design". Prove it: merge, undo, and assert the projection matches the pre-merge graph. | Targeted + `lint-imports` |
 | 8 | **Temporal onto the ports.** | Targeted + `lint-imports` |
