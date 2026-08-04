@@ -140,7 +140,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape five times,
+  testing the difference.** This project has hit the same shape seven times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -150,6 +150,18 @@ reading the code:
   | a *chain* graph | first-found where shortest-path was meant — on a chain they are the same function |
   | results only, never the query plan | a full scan where an index seek was meant — same answers, catastrophic cost |
   | ids drawn from `uuid4()`, never colliding across tenants | a `(tenant_id, id)` key compared on `id` alone — one tenant's write vouches for another's |
+  | a *small* integer (CPython caches -5..256) | `is not` where `!=` was meant — correct at a test dimension of 8, rejects every legitimate write at 768 |
+  | a fixture reusing state a previous run left behind | setup that does nothing — the DDL loop can be replaced by an empty iterable and nothing notices |
+
+  The last two came from one cosmic-ray run over the vector adapters. The
+  small-integer row is the string-interning row's sibling: **the two
+  identity-vs-equality rows both fired because the test value sat inside a
+  CPython cache.** Test numeric bounds at a *realistic* magnitude —
+  `nomic-embed-text` is 768, and a dimension check written with `is not`
+  passes at 8 and rejects everything real. The fixture row is the one
+  reviewers never look for: at least one test per stateful setup path must
+  start from genuinely nothing, or the setup is unverified no matter how many
+  tests depend on it.
 
   **When a key is a tuple, write one test where its components collide.**
   This is narrower than the rule above, and it is the form that actually
