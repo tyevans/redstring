@@ -1230,6 +1230,23 @@ class GraphStoreCompliance:
     async def test_get_relationships_for_with_no_ids_is_empty(self, store: GraphStore) -> None:
         assert await store.get_relationships_for([], uuid4()) == []
 
+    async def test_mutating_a_batched_relationship_does_not_change_the_store(
+        self, store: GraphStore
+    ) -> None:
+        tenant = uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        edge = _example_relationship(tenant, source=a.id, target=b.id)
+        edge.properties["nested"] = {"k": "v"}
+        await store.upsert_relationship(edge)
+        pristine = edge.model_copy(deep=True)
+
+        for found in await store.get_relationships_for([a.id], tenant):
+            found.relationship_type += "-tampered"
+            found.properties["nested"]["k"] = "tampered"
+
+        assert await store.get_relationships_for([a.id], tenant) == [pristine]
+
     @compliance_settings
     @given(tenants=gen.distinct_tenant_pairs, data=st.data())
     async def test_get_relationships_for_never_crosses_tenants(
