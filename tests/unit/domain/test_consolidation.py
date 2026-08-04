@@ -1,6 +1,6 @@
 """Tests for kg_builder.domain.consolidation."""
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -46,4 +46,31 @@ def test_after_must_keep_the_same_tenant():
     before = _relationship()
     after = before.model_copy(update={"tenant_id": uuid4()})
     with pytest.raises(ValidationError, match="same tenant"):
+        RelationshipRedirection(before=before, after=after)
+
+
+class TestComparisonsAreByValueNotIdentity:
+    """Both checks compare ids, and the tests above build `after` with
+    `model_copy`, which shares the id object with `before`.
+
+    A `!=` meaning `is not` would then pass every test above and *reject* the
+    real case: a redirection reconstructed from a stored event, whose two ids
+    are equal and not identical.
+    """
+
+    def test_an_after_whose_id_arrived_as_a_string_is_the_same_edge(self):
+        before = _relationship()
+        after = before.model_copy(
+            update={
+                "id": UUID(str(before.id)),
+                "source_entity_id": uuid4(),
+            }
+        )
+        assert after.id is not before.id
+        RelationshipRedirection(before=before, after=after)
+
+    def test_an_after_whose_tenant_arrived_as_a_string_is_the_same_tenant(self):
+        before = _relationship()
+        after = before.model_copy(update={"tenant_id": UUID(str(before.tenant_id))})
+        assert after.tenant_id is not before.tenant_id
         RelationshipRedirection(before=before, after=after)

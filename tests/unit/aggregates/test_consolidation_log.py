@@ -213,3 +213,45 @@ class TestRehydration:
         assert log.version == 0
         with pytest.raises(UnknownMergeError):
             log.undo_merge(tenant_id=tenant_id, merge_event_id=uuid4())
+
+
+class TestRehydrationFromSerialisedEvents:
+    """Replay from events that went through JSON, which is what a stored log
+    is.
+
+    `load_from_history` with the objects the aggregate just emitted shares
+    every id, so `==` and `is` agree throughout `_apply`. Round-tripping
+    through `model_dump(mode="json")` and back gives equal-but-distinct UUIDs,
+    which is the only way these comparisons are exercised as comparisons.
+    """
+
+    @staticmethod
+    def _round_trip(events):
+        return [type(event).model_validate(event.model_dump(mode="json")) for event in events]
+
+    def test_an_undo_replayed_from_json_still_marks_its_merge_undone(self, tenant_id):
+        emitter = ConsolidationLog(tenant_id)
+        a, b = uuid4(), uuid4()
+        emitter.merge(tenant_id=tenant_id, canonical_entity_id=a, merged_entity_ids=[b])
+        emitter.undo_merge(
+            tenant_id=tenant_id, merge_event_id=emitter.uncommitted_events[0].event_id
+        )
+
+        replayed = ConsolidationLog(tenant_id)
+        replayed.load_from_history(self._round_trip(emitter.uncommitted_events))
+
+        assert [record.undone for record in replayed.state.merges] == [True]
+
+    def test_an_undo_replayed_from_json_still_frees_its_entities(self, tenant_id):
+        emitter = ConsolidationLog(tenant_id)
+        a, b, c = uuid4(), uuid4(), uuid4()
+        emitter.merge(tenant_id=tenant_id, canonical_entity_id=a, merged_entity_ids=[b])
+        emitter.undo_merge(
+            tenant_id=tenant_id, merge_event_id=emitter.uncommitted_events[0].event_id
+        )
+
+        replayed = ConsolidationLog(tenant_id)
+        replayed.load_from_history(self._round_trip(emitter.uncommitted_events))
+
+        assert replayed.state.alias_of == {}
+        replayed.merge(tenant_id=tenant_id, canonical_entity_id=c, merged_entity_ids=[b])

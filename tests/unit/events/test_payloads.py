@@ -5,7 +5,7 @@ it writes each payload under the payload's own `tenant_id`, so a foreign
 tenant in a payload is a silent cross-tenant write rather than a failure.
 """
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -176,3 +176,65 @@ class TestMergeUndone:
             unmerged_entity_ids=[uuid4()],
         )
         assert event.merge_event_id == merge_event_id
+
+
+class TestComparisonsAreByValueNotIdentity:
+    """Every check above compares two ids or two strings, and every test above
+    supplies them as the *same object* -- so `is` and `==` agree and nothing
+    distinguishes them.
+
+    That is not theoretical here. An event round-tripped through JSON, which is
+    what a stored event is, has values that are equal and not identical; and
+    CPython interns string literals, so a `source_id` built at runtime is a
+    different object from the one in a test. A `!=` silently meaning `is not`
+    would *reject* perfectly good payloads, and only in production.
+    """
+
+    def test_a_tenant_that_arrived_as_a_string_is_still_this_tenant(self):
+        tenant_id = uuid4()
+        entity = _entity(UUID(str(tenant_id)))
+        assert entity.tenant_id is not tenant_id
+        _extracted(tenant_id, entities=[entity])
+
+    def test_a_relationship_tenant_that_arrived_as_a_string_is_accepted(self):
+        tenant_id = uuid4()
+        relationship = _relationship(UUID(str(tenant_id)))
+        assert relationship.tenant_id is not tenant_id
+        _extracted(tenant_id, relationships=[relationship])
+
+    def test_an_embedding_tenant_that_arrived_as_a_string_is_accepted(self):
+        tenant_id = uuid4()
+        record = VectorRecord(entity_id=uuid4(), tenant_id=UUID(str(tenant_id)), vector=[1.0, 0.0])
+        EntitiesEmbedded(
+            aggregate_id=uuid4(),
+            tenant_id=tenant_id,
+            source_id=SOURCE_ID,
+            embedding_model="ollama/nomic-embed-text",
+            embeddings=[record],
+        )
+
+    def test_a_source_id_built_at_runtime_is_still_this_document(self):
+        """CPython interns literals, so `"doc-1"` in two places is one object.
+        A source id assembled from parts is not, which is what a real
+        extractor produces."""
+        tenant_id = uuid4()
+        built_at_runtime = "".join(["doc", "-", "1"])
+        assert built_at_runtime is not SOURCE_ID
+        assert built_at_runtime == SOURCE_ID
+        _extracted(tenant_id, entities=[_entity(tenant_id, source_id=built_at_runtime)])
+
+    def test_a_redirection_tenant_that_arrived_as_a_string_is_accepted(self):
+        tenant_id = uuid4()
+        redirection = RelationshipRedirection(before=_relationship(UUID(str(tenant_id))))
+        _merged(tenant_id, redirections=[redirection])
+
+    def test_a_restored_relationship_tenant_that_arrived_as_a_string_is_accepted(self):
+        tenant_id = uuid4()
+        MergeUndone(
+            aggregate_id=tenant_id,
+            tenant_id=tenant_id,
+            merge_event_id=uuid4(),
+            canonical_entity_id=uuid4(),
+            unmerged_entity_ids=[uuid4()],
+            restored_relationships=[_relationship(UUID(str(tenant_id)))],
+        )
