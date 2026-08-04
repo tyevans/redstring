@@ -113,6 +113,43 @@ the option being inert — slice 9 proved it bites by adding a throwaway package
 watching the contract break, and removing it. **A passing check you have never
 seen fail is not yet evidence.**
 
+### The command that measures an exemption must not be subject to it
+
+Before deleting an exemption you have to know what it hides, and the obvious
+way to find out is silently wrong:
+
+```
+$ uv run ruff check --select ANN,TC src/kg_builder/events/
+All checks passed!
+```
+
+That result was **unconditional**. `per-file-ignores` applies on top of
+`--select`, and the ignore for that path was exactly `["ANN", "TC"]`, so the
+command could not have reported a finding whatever the code said. Deleting the
+entry for real surfaced ten. Same for mypy: naming files explicitly on the
+command line bypasses `exclude`, so it answers a different question than the
+configured run does.
+
+**Delete the entry and run the configured gate.** That is the only measurement
+that means anything — it is the failure-shape rule applied to a lint
+invocation rather than a test, and the two spellings of "prove it can fail"
+are the same instruction.
+
+What the ten findings turned out to be is its own lesson. Nine were false
+positives from a *misconfiguration*, not from strictness: ruff's
+`runtime-evaluated-base-classes` exists to stop TC00x moving pydantic field
+annotations into a type-checking block, but ruff matches the base class **as
+written in the file**, not through the MRO — and every event here declares
+`TenantDomainEvent`, not `pydantic.BaseModel`. Applying ruff's own suggested
+fix left the module importable and broke 23 tests with
+`PydanticUserError: not fully defined`, because pydantic resolves field
+annotations at schema-build time. **An import smoke test passes; only using the
+model catches it.** The fix was to name the real base in that setting.
+
+So an exemption can hide a misconfiguration rather than debt, and then it
+absorbs that misconfiguration indefinitely — which is a better argument for
+removing exemptions promptly than any amount of accumulated strictness debt.
+
 ## Architecture contract
 
 `lint-imports` enforces a layered contract declared in `pyproject.toml`, highest
