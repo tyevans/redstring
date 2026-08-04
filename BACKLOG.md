@@ -245,26 +245,103 @@ The session config used is worth recreating rather than rediscovering:
 (the `-m integration` is required — `addopts` deselects it otherwise, and the
 run then silently mutates code no test executes, which is how B10a happened).
 
-### B10b. `find_by_blocking_key` scans the tenant on Neo4j
+### B10b. Model blocking keys as nodes — decided, scheduled for slice 7
 
-`src/kg_builder/graph/adapters/neo4j.py` —
-`$key IN e.blocking_keys` cannot use an index. A Neo4j range index over a list
-property indexes the list as a single value, so it serves equality on the
-whole array and not membership; measured with `EXPLAIN` on 5000 entities, a
-`(tenant_id, blocking_keys)` index left the plan unchanged. The index was
-therefore *not* created — it would cost write throughput for nothing.
+**The design is decided; do not re-litigate it. Implement in slice 7.**
+Blocking keys become nodes:
 
-The query is narrowed to one tenant by the `_TENANT_SEEK` predicate, so it
-reads a tenant rather than the database, which is acceptable while tenants
-are small. If consolidation makes this hot, the two real options are a
-full-text index on `blocking_keys` (Lucene, works on arrays, but changes
-matching semantics — it tokenises) or promoting blocking keys to their own
-nodes, `(e:Entity)-[:BLOCKED_BY]->(:BlockingKey {tenant_id, key})`, which is
-graph-native and exactly indexed. The node form is the better answer and was
-deferred only because it complicates the upsert: a re-upsert must delete the
-entity's previous key edges, and
-`test_find_by_blocking_key_reflects_the_latest_write` is the test that
-enforces it.
+```cypher
+(e:Entity)-[:BLOCKED_BY]->(:BlockingKey {tenant_id, key})
+```
+
+**Why the property form cannot work, with the evidence, so slice 7 need not
+re-measure it.** `find_by_blocking_key` asks `$key IN e.blocking_keys`. A
+Neo4j range index over a list property indexes **the list as a single value**,
+so it answers "which entities have exactly this array" and cannot answer
+membership. Measured with `EXPLAIN` on **5000 entities across 100 tenants**:
+
+| query | plan |
+|---|---|
+| `WHERE $key IN e.blocking_keys`, with a `(tenant_id, blocking_keys)` index | `NodeByLabelScan` + `Filter` |
+| the same, without the index | `NodeByLabelScan` + `Filter` — *identical* |
+| with `_TENANT_SEEK` added | `NodeUniqueIndexSeek` + `Filter` |
+
+The index made no difference to the plan, so `src/kg_builder/graph/adapters/
+neo4j.py` deliberately does **not** create one: it would cost write
+throughput on every upsert and buy nothing. `_TENANT_SEEK` narrows the scan
+from the whole database to one tenant, which is the best plain Cypher can do
+and is why this is survivable in the meantime.
+
+**Why it matters more than "a scan is a bit slow".** Consolidation does not
+look up one key — it blocks a whole tenant and then, for each candidate,
+fetches that candidate's block. A per-entity lookup that scans the tenant is
+**O(n) per entity and therefore O(n²) across a tenant**. That is the real
+cost, and it is why the acceptable-today reading expires exactly when
+consolidation lands.
+
+The rejected alternative, recorded so it is not revisited: a full-text index
+on `blocking_keys` works on arrays but **tokenises**, which changes matching
+semantics — blocking keys are opaque identifiers (`"A430"`, `"person:ad"`)
+and must match exactly.
+
+**The one implementation trap.** A re-upsert must delete the entity's
+*previous* key edges before writing the new ones, or a stale key keeps
+matching.
+`tests/compliance/graph_store.py::test_find_by_blocking_key_reflects_the_latest_write`
+is the test that enforces it, and it is the reason this is a second write
+path rather than a one-line change. That is what made it wrong to land
+speculatively in slice 4.
+
+### B10c. `neighbors` at a large `depth` is unbounded work
+
+`src/kg_builder/graph/adapters/neo4j.py` — traversal is one
+`-[rels:RELATES_TO*1..N]-` pattern. Cypher's relationship-uniqueness rule
+terminates cycles, so the *result* is always correct and finite, but the
+number of paths explored can grow exponentially with `N` in a dense graph
+even though the number of distinct neighbours cannot. The compliance suite
+only reaches `depth=99` on a three-node graph, so nothing here is slow today.
+
+The fix is not a smaller depth limit — it is to stop enumerating paths, e.g.
+expanding level by level with a visited set server-side. That was not done
+because the port asks for one round trip and the plain-Cypher forms that
+avoid path enumeration either need apoc (`apoc.path.subgraphNodes`) or a
+`CALL {}` loop that is harder to read than the win justifies at current
+scale. Revisit if slice 8's temporal traversal raises typical depths above
+about 3.
+
+### B10c1. Hop distance from `neighbors` — deliberately not added
+
+`kg_builder/ports/graph_store.py::neighbors` returns entities without how far
+away they are. **This is a decided deferral, not an oversight**, taken with
+the trade-off explicit: the need is speculative (slice 8 *may* want it), the
+port had just been through review, and widening a contract that three
+adapters must implement on speculation is worse than retrofitting later. It
+knowingly cuts against "change the port before the second adapter exists",
+because the retrofit here is mechanical rather than structural.
+
+Both adapters can supply it cheaply, which is what makes the deferral safe:
+
+- **In-memory** (`graph/adapters/memory.py`) already carries the hop count —
+  its BFS frontier is `deque[tuple[EntityId, int]]` and `hops` is in hand at
+  the moment a neighbour is appended. It is thrown away, not computed.
+- **Neo4j** needs `min(length(p))`. It is *not* free in the current shape:
+  the query is `RETURN DISTINCT e ORDER BY e.id`, and `DISTINCT` collapses
+  exactly the paths that carry the length. The form is
+
+  ```cypher
+  MATCH p = (origin)-[rels:RELATES_TO*1..N]-(e:Entity)
+  WHERE ...
+  RETURN e, min(length(p)) AS hops
+  ORDER BY e.id
+  ```
+
+  — an aggregation grouped by `e`, replacing the `DISTINCT`. Cheap, but a
+  different query rather than an extra return column.
+
+Whoever adds it must also extend `tests/compliance/graph_store.py`: shortest
+distance, not first-found, is the contract worth pinning, and a diamond-shaped
+graph (two paths of different length to the same node) is the case that
+separates them.
 
 ### B10c. `neighbors` at a large `depth` is unbounded work
 
@@ -294,18 +371,51 @@ the real adapter's driver, in a test that had nothing to do with that file.
 That one is fixed: the originals are saved and restored once the module under
 test has been exec'd.
 
-Six sibling modules still do the same thing to other names and are not fixed:
-`test_circuit_breaker.py` (`kg_builder.config`, `redis`, `redis.asyncio`),
-`test_retry.py` (`kg_builder.config`), `test_neo4j_schema.py`,
-`test_neo4j_tenant.py`, `test_neo4j_queries.py` (each
-`kg_builder.services.neo4j`), and `test_neo4j_errors.py` itself for
-`kg_builder.events.scraping`. None is breaking anything *today*, which is
-exactly why they are worth writing down: the failure is silent, arrives in an
-unrelated test, and depends on collection order — `pytest-randomly` can make
-it appear and disappear between runs. They exist because these modules load
-their subject with `importlib` to dodge a heavy `__init__.py`; the fix is the
-same save/restore, or `monkeypatch.syspath_prepend`-style fixtures, applied
-when slices 7 and 9 delete the services they cover.
+**Slice 5 will probably hit this, so here is how to recognise it.** The
+symptom never points at the cause. You get, in a test you just wrote, against
+a library you are using correctly:
+
+```
+TypeError: object MagicMock can't be used in 'await' expression
+AttributeError: 'MagicMock' object has no attribute '<something real>'
+TypeError: 'MagicMock' object is not subscriptable
+```
+
+...or a mock that silently returns another `MagicMock` where you expected a
+real value, so an assertion fails with a nonsense comparison instead of
+raising. The tell is that **the fake object is a library you never mocked**.
+Confirm it in one line before debugging anything else:
+
+```python
+import neo4j; print(neo4j.__file__)   # a real path, or "<MagicMock ...>"
+```
+
+It is also **order-dependent**: `pytest-randomly` reshuffles collection, so
+the same test passes and fails between runs, and running the file alone
+always passes. That combination reads as flakiness or infrastructure trouble,
+which is the trap — do not pin the seed, find the poisoner.
+
+**Which modules, and what each replaces.** Six are still unfixed:
+
+| module | replaces in `sys.modules` |
+|---|---|
+| `tests/unit/extraction/test_circuit_breaker.py` | `kg_builder.config`, `redis`, `redis.asyncio` |
+| `tests/unit/extraction/test_retry.py` | `kg_builder.config` |
+| `tests/unit/services/test_neo4j_schema.py` | `kg_builder.services.neo4j` |
+| `tests/unit/services/test_neo4j_tenant.py` | `kg_builder.services.neo4j` |
+| `tests/unit/services/test_neo4j_queries.py` | `kg_builder.services.neo4j` |
+| `tests/unit/services/test_neo4j_errors.py` | `kg_builder.events.scraping` |
+
+**`redis` is the one to watch for slice 5** — it is a real installed package
+being replaced process-wide, the same shape as the `neo4j` bug, and any new
+test touching redis inherits the fake.
+
+None is breaking anything *today*, which is exactly why they are worth
+writing down. They exist because these modules load their subject with
+`importlib` to dodge a heavy `__init__.py`; the fix is the same save/restore
+applied in `test_neo4j_errors.py`, or `monkeypatch.setitem(sys.modules, ...)`
+in a fixture so pytest undoes it. Apply when slices 7 and 9 delete the
+services they cover — or sooner, for `redis`, if slice 5 trips on it.
 
 ### B11. `AsyncMock` misuse still warns in two tests
 
