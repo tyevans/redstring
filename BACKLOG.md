@@ -120,6 +120,31 @@ the report, and refuses to start if the baseline is red. Not done here because
 the right shape depends on whether mutmut gets the same wrapper, and the
 one-line habit works today.
 
+### B46. Two tests still describe SQL blocking, which nothing does any more
+
+`tests/unit/test_blocking_indexes.py` checks that a migration declares
+`pg_trgm` and a set of blocking indexes; `tests/unit/test_soundex_column.py`
+checks jellyfish's soundex "as a reference for the PostgreSQL soundex
+function". Both describe the *relational* blocking implementation that slice 7
+replaced: blocking keys are now computed in `domain/blocking.py` and looked up
+through `GraphStore`, trigram matching went to `VectorStore.search`, and
+nothing in `src/` reads either the extension or the column.
+
+**Not deleted here because the migration and the ORM columns they describe are
+still present**, and removing those is slice 9's. Deleting the tests first
+would leave the migration unexercised in the window between; deleting both is
+one change, in the slice that owns it.
+
+Two details worth keeping for whoever does:
+
+- `test_soundex_column.py` guards on `try: import jellyfish` with a `skipif`.
+  That guard is dead as of slice 7 -- jellyfish is a required dependency now,
+  not the `nlp` extra -- so the skip can never fire.
+- Its assertions are about jellyfish's behaviour rather than this project's,
+  and `tests/unit/domain/test_blocking.py` now covers the parts that matter,
+  including the cases where jellyfish's own output is unusable
+  (`soundex("2024") == "2000"`).
+
 ### B41. `RedisCache` has no test against a real Redis
 
 `llm/cache/redis.py` is the only `Cache` adapter with no run of
