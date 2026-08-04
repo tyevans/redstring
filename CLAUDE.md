@@ -100,6 +100,43 @@ uv run cr-report session.sqlite
 Both are kept because mutmut 3.x will not mutate decorated functions and
 cosmic-ray will.
 
+### Never gate on a raw survivor count
+
+**A large fraction of cosmic-ray's survivors are unkillable by construction,
+and the proportion grows with how well-annotated the code is.** Measured on
+`graph/adapters/memory.py`: 230 mutants, 78 survivors, of which **73 were
+equivalent mutants** — 55 of those were annotations alone.
+
+Every module here has `from __future__ import annotations`, so annotations are
+strings that are never evaluated. cosmic-ray rewrites the `|` in `X | None` as
+each of eleven other binary operators:
+
+```
+-    async def get_entity(self, ...) -> Entity | None:
++    async def get_entity(self, ...) -> Entity + None:
+```
+
+No test can kill those, in this codebase or any other using PEP 563. A gate on
+raw survival percentage would therefore reward *deleting type annotations*.
+Other routine equivalents: `if TYPE_CHECKING:` negated, `*,` turned into `/,`,
+and comparisons on a value a guard clause has already narrowed (`>=` for `==`
+over a three-element `Literal`).
+
+Classify survivors before drawing any conclusion. The bar is **"every survivor
+is understood"**, never a number. Group them by diff hunk first — the same
+source line usually accounts for a dozen mutants.
+
+The survivors worth your attention are the ones where a test passes for an
+accidental reason. Two real examples from slice 3, neither findable by
+reading the code:
+
+- `==` replaced by `is` on a string filter survived, because the tests queried
+  with string *literals* and CPython interns those. A caller passing a
+  runtime-built string would have got an empty result.
+- `==` replaced by `<=` on a UUID endpoint comparison survived, because the
+  test used random `uuid4`s — it would have caught the bug only about half
+  the time, depending on how the ids happened to sort.
+
 ## Testing notes
 
 - `pytest-randomly` randomises test order. Order-dependent tests are bugs; fix
