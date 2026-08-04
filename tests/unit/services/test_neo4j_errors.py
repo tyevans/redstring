@@ -56,7 +56,17 @@ mock_neo4j_exceptions.SessionExpired = MockSessionExpired
 mock_neo4j_exceptions.TransientError = MockTransientError
 mock_neo4j_exceptions.DatabaseError = MockDatabaseError
 
-# Mock the neo4j.exceptions module
+# Mock the neo4j.exceptions module.
+#
+# These assignments are process-wide and permanent unless undone, so the
+# originals are kept and restored below once `neo4j_errors` has been executed
+# against them. Slice 4 found out the hard way: `neo4j` stayed a MagicMock for
+# the whole session, and `tests/integration/graph/test_neo4j_store.py` --
+# collected after this module, deselected or not -- got
+# `TypeError: object MagicMock can't be used in 'await' expression` from the
+# real adapter's driver. A module-level `sys.modules` write is a landmine for
+# every test that runs afterwards, not just for this file.
+_real_neo4j_modules = {name: sys.modules.get(name) for name in ("neo4j", "neo4j.exceptions")}
 sys.modules["neo4j"] = MagicMock()
 sys.modules["neo4j.exceptions"] = mock_neo4j_exceptions
 
@@ -89,6 +99,17 @@ spec = importlib.util.spec_from_file_location(
 neo4j_errors = importlib.util.module_from_spec(spec)
 sys.modules["kg_builder.services.neo4j_errors"] = neo4j_errors
 spec.loader.exec_module(neo4j_errors)
+
+# `neo4j_errors` bound the mock exception classes during the exec above, so the
+# substitution has done its job and the real modules can come back. Anything
+# imported later -- including the Neo4j adapter's driver -- then gets the real
+# package. Names absent before are removed rather than set to None, so a later
+# `import neo4j` re-imports properly instead of finding a None entry.
+for _name, _module in _real_neo4j_modules.items():
+    if _module is None:
+        sys.modules.pop(_name, None)
+    else:
+        sys.modules[_name] = _module
 
 # Import symbols from the loaded module
 Neo4jErrorHandler = neo4j_errors.Neo4jErrorHandler

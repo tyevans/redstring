@@ -179,11 +179,15 @@ python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-# The accuracy suite measures extraction quality against a live LLM, so it is
-# excluded from the default run (and therefore from the commit gate). Run it
-# deliberately with `uv run pytest -m accuracy tests/accuracy/` -- a CLI `-m`
-# overrides this one.
-addopts = ["-m", "not accuracy"]
+# The accuracy suite measures extraction quality against a live LLM, and the
+# integration suite runs the port-compliance tests against real backends from
+# `docker-compose.test.yml`. Both are excluded from the default run (and so
+# from the commit gate), which keeps it infra-free and fast. Run them
+# deliberately -- a CLI `-m` overrides this one:
+#
+#     uv run pytest -m accuracy tests/accuracy/
+#     KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest -m integration
+addopts = ["-m", "not accuracy and not integration"]
 markers = [
     "unit: unit tests",
     "integration: integration tests",
@@ -195,7 +199,15 @@ markers = [
 source = ["src/kg_builder"]
 branch = true
 parallel = true
-omit = ["*/__pycache__/*"]
+omit = [
+    "*/__pycache__/*",
+    # Covered by `tests/integration/`, which `addopts` excludes from the
+    # default run and so from the ratchet. Measuring it here would report 0%
+    # for a module with 106 passing tests against it and drag the baseline
+    # down. See BACKLOG B10a for the combined-coverage run that would let this
+    # omission go away.
+    "*/graph/adapters/neo4j.py",
+]
 
 [tool.coverage.paths]
 source = ["src/kg_builder", "*/src/kg_builder"]

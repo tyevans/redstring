@@ -148,13 +148,17 @@ in slice 9.
 (`src/kg_builder/graph/adapters/memory.py`) is a real, contract-enforcing
 `GraphStore` backend, and `tests/compliance/graph_store.py` is the shared
 suite every adapter must pass — so graph storage is now genuinely exercised
-rather than only constructed. What remains uncovered:
+rather than only constructed.
+
+**Further addressed in slice 4.** `Neo4jGraphStore`
+(`src/kg_builder/graph/adapters/neo4j.py`) passes the identical compliance
+suite against a real Neo4j from `docker-compose.test.yml`, so the port is now
+demonstrably implementable against a graph database and not merely against a
+dictionary. `tests/integration/` exists and the `integration` marker is used.
+What remains uncovered:
 
 - **The vector store.** No `VectorStore` port, no in-memory adapter, no
   compliance suite. That is slice 5, and it is the larger half of this item.
-- **The Neo4j adapter** (slice 4) will run the same compliance suite; until
-  it exists, nothing proves the port is implementable against a real graph
-  database. The in-memory adapter alone cannot show that.
 - Everything in the original list below still stands for the SQL paths.
 
 There is no sqlite, no `create_async_engine`, no `sessionmaker`, and no
@@ -167,7 +171,88 @@ integration fixture. Consequences:
   them at INSERT. Two tests were rewritten to assert the *declared* default
   instead (see B17).
 - The `integration` marker is declared in `pyproject.toml` but no test uses
-  it, and `tests/integration/` does not exist.
+  it, and `tests/integration/` does not exist. **Both done in slice 4.**
+
+### B10a. Integration-only code is invisible to the coverage ratchet
+
+`src/kg_builder/graph/adapters/neo4j.py` is fully exercised, but only by
+`tests/integration/`, which `addopts` excludes from the default run and
+therefore from `scripts/coverage_ratchet.py`. It is listed in
+`[tool.coverage.run] omit` so the ratchet does not read "0% covered" for code
+that has 106 passing tests against it.
+
+The cost of that omission: a genuinely untested branch added to the adapter
+would not be caught by the commit gate. What is needed is a second coverage
+run over `-m integration` whose data is combined with the default run's
+(`coverage combine` — `parallel = true` is already set, so the data files
+already accumulate rather than overwrite). It was deferred because the
+integration run needs Docker, and making the ratchet conditional on Docker
+being up turns a deterministic gate into a flaky one. The right shape is
+probably a separate `make coverage-full` for CI that starts the compose file,
+runs both, and combines — not a change to the commit hook. Slice 5 will hit
+this again with pgvector, so it is worth solving once, then.
+
+### B10b. `find_by_blocking_key` scans the tenant on Neo4j
+
+`src/kg_builder/graph/adapters/neo4j.py` —
+`$key IN e.blocking_keys` cannot use an index. A Neo4j range index over a list
+property indexes the list as a single value, so it serves equality on the
+whole array and not membership; measured with `EXPLAIN` on 5000 entities, a
+`(tenant_id, blocking_keys)` index left the plan unchanged. The index was
+therefore *not* created — it would cost write throughput for nothing.
+
+The query is narrowed to one tenant by the `_TENANT_SEEK` predicate, so it
+reads a tenant rather than the database, which is acceptable while tenants
+are small. If consolidation makes this hot, the two real options are a
+full-text index on `blocking_keys` (Lucene, works on arrays, but changes
+matching semantics — it tokenises) or promoting blocking keys to their own
+nodes, `(e:Entity)-[:BLOCKED_BY]->(:BlockingKey {tenant_id, key})`, which is
+graph-native and exactly indexed. The node form is the better answer and was
+deferred only because it complicates the upsert: a re-upsert must delete the
+entity's previous key edges, and
+`test_find_by_blocking_key_reflects_the_latest_write` is the test that
+enforces it.
+
+### B10c. `neighbors` at a large `depth` is unbounded work
+
+`src/kg_builder/graph/adapters/neo4j.py` — traversal is one
+`-[rels:RELATES_TO*1..N]-` pattern. Cypher's relationship-uniqueness rule
+terminates cycles, so the *result* is always correct and finite, but the
+number of paths explored can grow exponentially with `N` in a dense graph
+even though the number of distinct neighbours cannot. The compliance suite
+only reaches `depth=99` on a three-node graph, so nothing here is slow today.
+
+The fix is not a smaller depth limit — it is to stop enumerating paths, e.g.
+expanding level by level with a visited set server-side. That was not done
+because the port asks for one round trip and the plain-Cypher forms that
+avoid path enumeration either need apoc (`apoc.path.subgraphNodes`) or a
+`CALL {}` loop that is harder to read than the win justifies at current
+scale. Revisit if slice 8's temporal traversal raises typical depths above
+about 3.
+
+### B10d. Legacy service tests still poison `sys.modules` at import time
+
+`tests/unit/services/test_neo4j_errors.py` set `sys.modules["neo4j"]` to a
+`MagicMock` at module level and never restored it, so *every* test collected
+afterwards saw a fake `neo4j` — deselected modules included, since pytest
+imports before it deselects. Slice 4 hit this as
+`TypeError: object MagicMock can't be used in 'await' expression` raised from
+the real adapter's driver, in a test that had nothing to do with that file.
+That one is fixed: the originals are saved and restored once the module under
+test has been exec'd.
+
+Six sibling modules still do the same thing to other names and are not fixed:
+`test_circuit_breaker.py` (`kg_builder.config`, `redis`, `redis.asyncio`),
+`test_retry.py` (`kg_builder.config`), `test_neo4j_schema.py`,
+`test_neo4j_tenant.py`, `test_neo4j_queries.py` (each
+`kg_builder.services.neo4j`), and `test_neo4j_errors.py` itself for
+`kg_builder.events.scraping`. None is breaking anything *today*, which is
+exactly why they are worth writing down: the failure is silent, arrives in an
+unrelated test, and depends on collection order — `pytest-randomly` can make
+it appear and disappear between runs. They exist because these modules load
+their subject with `importlib` to dodge a heavy `__init__.py`; the fix is the
+same save/restore, or `monkeypatch.syspath_prepend`-style fixtures, applied
+when slices 7 and 9 delete the services they cover.
 
 ### B11. `AsyncMock` misuse still warns in two tests
 
