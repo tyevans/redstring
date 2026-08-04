@@ -9,6 +9,53 @@ This supersedes the original ring-migration plan (commits `edced18`,
 Slices 0 and 0b from that plan are done and still stand; everything after
 them is replaced.
 
+## Global Constraints
+
+These bind every slice. Implementers and reviewers are held to all of them.
+
+### Testing
+
+1. **Red/green TDD, no exceptions.** Write the test, *run it, watch it fail
+   for the right reason*, then write the minimal code to pass. A test that
+   passed the first time it ran proves nothing — delete it and start over.
+   Report the observed failure message, not just "tested".
+2. **Property-based tests with `hypothesis` wherever a property is easier to
+   state than a table of examples.** Mandatory, not optional, for:
+   - the store port-compliance suites (any valid sequence of writes then
+     reads must round-trip; tenant isolation must hold for all inputs)
+   - normalization and parsing (idempotence: `f(f(x)) == f(x)`)
+   - similarity and scoring (bounds, symmetry, identity)
+   Prefer a stated property over five hand-picked examples.
+3. **Mutation testing on new domain and port logic.** After a slice lands,
+   run `uv run mutmut run` scoped to the new modules. Surviving mutants are
+   findings: either the tests are too weak or the code is unreachable.
+   Report the survivor count and what each survivor revealed. Do not chase
+   100% — chase "every survivor is understood".
+4. **No mocking what you own.** The in-memory adapters exist precisely so
+   tests can use real implementations. Mock only genuinely external I/O
+   (an HTTP call to an LLM). A test that asserts on a mock's call args and
+   nothing else is a defect.
+5. Tests must fail for exactly one reason. `pytest-randomly` randomises
+   order; order-dependent tests are bugs to fix, never seeds to pin.
+
+### Process
+
+6. **The `pre-commit` hook is the gate.** Do not run ruff, bandit,
+   lint-imports, or the full pytest suite as separate pre-commit steps —
+   write the change and commit. Targeted `pytest <file>` during the TDD loop
+   is expected and encouraged.
+7. **Deferred work goes in `BACKLOG.md` in the same commit that defers it**,
+   with the reasoning that made deferring right. Delete an entry in the
+   commit that resolves it. Hard project rule (`CLAUDE.md`).
+8. **Clean breaks.** No deprecation shims, no compatibility re-exports, no
+   "keep the old path working just in case". Delete and move on.
+9. **Never edit `pyproject.toml` dependency tables by hand** — use
+   `uv add`, `uv add --optional <extra>`, `uv remove`.
+10. **Coverage may not fall.** The ratchet enforces it. A deliberate drop
+    requires editing `.coverage-baseline` in the same commit, with the
+    reason in the message.
+11. Small commits. Every hook run stays fast; every commit stays reviewable.
+
 ## What kg-builder is
 
 **Given content, produce a knowledge graph.** Entity and relationship
@@ -199,7 +246,7 @@ Slices 0 and 0b are complete. Dispatch the rest one at a time.
 |---|---|---|
 | 0 | **Stabilize.** ✅ 1798 passed, coverage baseline 60.79. | ✅ |
 | 0b | **Land the temporal/strategy-router work.** ✅ 1930 passed, nothing skipped. | ✅ |
-| 1 | **Scope cut.** Delete `scraping/`, document parsing, object storage, HTML preprocessors, and their tests and dependencies. Remove `unstructured` from `llm_extractor`. Pure deletion — no new abstractions. | Full suite green; coverage baseline reset with justification |
+| 1 | **Scope cut.** Delete `scraping/`, document parsing, object storage, HTML preprocessors, and their tests and dependencies. Remove `unstructured` from `llm_extractor`. Pure deletion — no new abstractions, no new tests. Constraint 1 (red/green TDD) does not apply: nothing is being built. The gate is that the surviving suite is green, no test is orphaned or weakened to accommodate a deletion, and no surviving module imports a deleted one. | Full suite green; no orphaned tests; coverage baseline reset with justification |
 | 2 | **Domain model.** `Entity`, `Relationship`, `Alias`, `SourceDocument`, temporal value objects as pure types. `DatePrecision`/`UncertaintyMarker` land here (BACKLOG B26). | Unit tests; no I/O in `domain/` |
 | 3 | **`GraphStore` port + in-memory adapter + compliance suite.** The compliance suite is the real artifact. | Compliance suite green against memory |
 | 4 | **Neo4j adapter.** Same compliance suite, no new tests of its own beyond Cypher specifics. | Compliance suite green against Neo4j |
