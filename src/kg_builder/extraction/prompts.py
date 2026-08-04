@@ -172,7 +172,7 @@ Return a JSON object with:
 Each entity must have: name, entity_type, confidence (0.0-1.0)
 Each relationship must have: source_name, target_name, relationship_type, confidence
 
-Only include relationships where both source and target entities are in the entities list."""
+Only include relationships where both source and target entities are in the entities list."""  # noqa: E501
 
 
 SYSTEM_PROMPT_API_REFERENCE = (
@@ -341,7 +341,7 @@ URL: {page_url}{type_hint}{context_section}
 
 Extract all code entities (functions, classes, modules, exceptions, parameters) and conceptual entities (concepts, patterns, examples).
 Identify relationships between entities.
-Focus on accuracy - only include entities and relationships you're confident about (confidence >= 0.7)."""
+Focus on accuracy - only include entities and relationships you're confident about (confidence >= 0.7)."""  # noqa: E501
 
 
 def get_entity_types() -> list[str]:

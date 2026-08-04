@@ -121,14 +121,6 @@ ignore = [
 # its TC half was covering for a misconfiguration rather than for legacy code
 # -- see `runtime-evaluated-base-classes` below.
 "src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]
-# E501 only, and only here. Every long line in `prompts.py` is inside a
-# triple-quoted prompt literal -- the entity-type property lists and the task
-# description that reach the model verbatim. Wrapping them inserts newlines
-# into the string, which changes what the model is asked, so this is a case
-# where obeying the rule would alter behaviour to satisfy a style check. Same
-# reasoning as `extraction/schema.py`, whose field descriptions are prompt
-# rather than documentation. BACKLOG B15.
-"src/kg_builder/extraction/prompts.py" = ["ANN", "TC", "RET", "ERA", "E501"]
 
 "tests/unit/extraction/**" = ["PT", "PTH", "RET", "ERA"]
 

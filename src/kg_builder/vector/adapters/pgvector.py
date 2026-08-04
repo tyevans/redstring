@@ -11,10 +11,19 @@ shaped by pgvector operators an ORM would only get in the way of, and two of
 them (`EXPLAIN`, and the `unnest` batch insert) are exactly the kind of SQL an
 ORM makes harder to write and read.
 
-That decision is why **SQLAlchemy is no longer a dependency of this project at
-all.** Slice 9 deleted the relational layer, and this module was the only
-thing that could have kept SQLAlchemy installed; because it never reached for
-it, the removal cost nothing. asyncpg is the sole database driver now.
+That decision is why **kg-builder has no first-party SQLAlchemy import and no
+declared SQLAlchemy dependency.** Slice 9 deleted the relational layer, and
+this module was the only thing that could have kept SQLAlchemy in
+`pyproject.toml`; because it never reached for it, the removal cost nothing.
+asyncpg is the only database driver this library drives itself.
+
+Stated that precisely because the stronger claim is false and worth knowing:
+**SQLAlchemy is still installed.** `eventsource-py` requires it in its *base*
+dependencies -- not behind an extra -- so any environment with the
+`eventsourcing` extra has it importable, and that is a runtime path rather
+than a dev one. cosmic-ray pulls it too. The distinction that matters is
+therefore "no code here imports it and nothing here asks for it", not "it is
+absent"; a reader who assumes the latter would be surprised by `uv.lock`.
 
 **No ANN index, deliberately -- and this is the most important line in the
 file.** The obvious build is an `hnsw` or `ivfflat` index on `embedding`. It is

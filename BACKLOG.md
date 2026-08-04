@@ -1030,19 +1030,29 @@ findings in four modules, all of them in the surviving pre-rewrite half of
 
 | File | Findings |
 |---|---|
-| `extraction/prompts.py` | 9 x E501 |
+| `extraction/prompts.py` | 9 x E501 -- silenced per-literal, see below |
 | `extraction/prompt_generator.py` | 2 x RUF005 |
 | `extraction/domains/__init__.py` | 1 x RUF022 (unsorted `__all__`) |
 | `tests/unit/extraction/test_prompt_generator.py` | E501, RUF015, E741 |
 
-**`prompts.py`'s nine are now ignored by rule rather than outstanding, and
-that is a decision.** Every long line there is inside a triple-quoted prompt
-literal -- the entity-type property lists and the task description that reach
-the model verbatim. Wrapping them inserts newlines into the string, so obeying
-E501 would change what the model is asked in order to satisfy a style check.
-`pyproject.toml` carries a per-file `E501` ignore for that one file with the
-reasoning; it is the same argument `extraction/schema.py` makes for its field
-descriptions being prompt rather than documentation.
+**`prompts.py`'s nine are silenced per-literal, not per-file.** Every long
+line there is inside a triple-quoted prompt literal -- the entity-type
+property lists and the task description that reach the model verbatim -- so
+wrapping them inserts newlines into the string and changes what the model is
+asked. Same argument `extraction/schema.py` makes for its field descriptions
+being prompt rather than documentation.
+
+The scope is worth recording because the obvious placement does not work: a
+`# noqa` on the offending physical line would land *inside* the string and
+become part of the prompt, which is the exact harm being avoided. **Ruff
+accepts the `# noqa: E501` on the line carrying the closing `"""`**, outside
+the literal, where it covers every violation within that string -- so two
+comments cover all nine, and the file-wide ignore that would also have
+covered future long lines of ordinary code is gone.
+
+Verified that this changed nothing the model sees: all five module-level
+string constants, and the output of `get_system_prompt`, `get_entity_types`
+and `get_relationship_types`, are byte-identical to the pre-change module.
 
 The other six are ordinary and should be fixed by whoever next touches those
 files. `RUF012`/`RUF013`, called out in the old version of this entry as the
