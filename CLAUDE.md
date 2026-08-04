@@ -166,7 +166,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape eleven times,
+  testing the difference.** This project has hit the same shape thirteen times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -182,12 +182,30 @@ reading the code:
   | a fixture reusing state a previous run left behind | setup that does nothing — the DDL loop can be replaced by an empty iterable and nothing notices |
   | duplicates built from a bare name, so they are *fully equal objects* | a partial tie-break where a total one was meant — "first wins" and "last wins" agree on equal objects, for any implementation |
   | a collection grouped *after* the deduplication being tested | any invariant about duplicates — every group is a singleton and the assertion cannot fail |
+  | ids compared after a *store* handed them back | `is` where `==` was meant — both adapters happen to return the same object, and any adapter that rebuilds the id finds nothing |
+  | two `len()` calls on collections under 257 items | `is not` where `!=` was meant — the two calls return the *same* int object, and the check inverts above the cache |
 
-  The small-integer row is the string-interning row's sibling: **both
-  identity-vs-equality rows fired because the test value sat inside a CPython
-  cache.** Test numeric bounds at a *realistic* magnitude — `nomic-embed-text`
-  is 768, and a dimension check written with `is not` passes at 8 and rejects
-  everything real.
+  **Four of the thirteen rows are identity-vs-equality**, and they are the
+  ones to expect rather than to be surprised by. Three fired because the test
+  value sat inside a CPython cache — interned strings, cached small ints, and
+  `len()` on a short collection returning that same cached int. Test numeric
+  bounds at a *realistic* magnitude: `nomic-embed-text` is 768, and a
+  dimension check written with `is not` passes at 8 and rejects everything
+  real.
+
+  The fourth is not a cache at all and is the one to watch for next. Ids that
+  come back **through a port** compared with `is` pass because both adapters
+  in this repo happen to return the object they were handed — a property no
+  port promises. The fix is not a bigger test value but a second adapter that
+  behaves differently in the permitted way: a `GraphStore` returning
+  equal-but-distinct ids is a real adapter, and a contract two implementations
+  satisfy by accident is not a contract.
+
+  When a length comparison is what is being checked, prefer a form with **no
+  int comparison in it at all** — `zip(..., strict=True)` over
+  `len(a) != len(b)`, and collecting the offending items over counting them.
+  Both spellings this project has fixed were fixed that way, and neither can
+  regress.
 
   The one-item-loop row is the chain-graph row in miniature: every test stated
   exactly one relationship, and on a one-element remainder `break` and
