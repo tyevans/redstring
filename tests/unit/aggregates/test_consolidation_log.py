@@ -7,7 +7,7 @@ entity merged twice ends up with two canonical parents; an undo of a merge
 that never happened restores edges that were never displaced.
 """
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -111,6 +111,25 @@ class TestUndo:
         log.undo_merge(tenant_id=tenant_id, merge_event_id=merge_event_id)
         with pytest.raises(UnknownMergeError):
             log.undo_merge(tenant_id=tenant_id, merge_event_id=merge_event_id)
+
+    def test_an_undo_matches_a_merge_id_that_arrived_as_a_string(self, log, tenant_id):
+        """The id a real caller passes was parsed from a request or a row, so
+        it is a *different object* from the one the aggregate emitted.
+
+        Every other test here hands back `uncommitted_events[0].event_id`
+        itself, so `is` and `==` agree and the lookup could be comparing
+        identity without a single test noticing -- which it was, until a
+        cosmic-ray mutant rewrote `==` as `is` and survived. Round-tripping
+        through `str` is what a caller does and what the mutant cannot pass.
+        """
+        a, b = uuid4(), uuid4()
+        log.merge(tenant_id=tenant_id, canonical_entity_id=a, merged_entity_ids=[b])
+        as_a_caller_would_have_it = UUID(str(log.uncommitted_events[0].event_id))
+        assert as_a_caller_would_have_it is not log.uncommitted_events[0].event_id
+
+        log.undo_merge(tenant_id=tenant_id, merge_event_id=as_a_caller_would_have_it)
+
+        assert isinstance(log.uncommitted_events[1], MergeUndone)
 
     def test_an_undo_restores_the_edges_the_merge_displaced(self, log, tenant_id):
         """This is the pre-merge recovery path: the aggregate replayed its own
