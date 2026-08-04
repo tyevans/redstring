@@ -895,6 +895,35 @@ their consumers, which is slice 7 (`merge_service`) and slice 9
 consumer; nothing else needs to happen first. Note `events/base.py` exists
 only to serve them.
 
+### B37. Hand-applied mutants can be masked by a stale `__pycache__`
+
+Found the hard way in slice 5b. Verifying a mutant by editing a source file,
+running pytest, and reverting works **except** when the edit leaves the file
+the same size and lands within the same mtime second -- `==` for `is`, `1.0`
+for `2.0`, `> 1` for `> 2`. CPython validates a `.pyc` on `(mtime, size)`, so
+the interpreter keeps running the *previous* bytecode and the result is a lie
+in whichever direction is least helpful: a mutant that appears to survive was
+never loaded at all.
+
+It cost about an hour, presenting as `Entity` accepting `confidence=1.5`
+against a validator whose source plainly rejected it. `dis.dis` on the loaded
+function is what settles it -- the constant in the bytecode was `2.0` while
+the file said `1.0`.
+
+Two mitigations, neither yet adopted as a rule:
+
+- `PYTHONDONTWRITEBYTECODE=1` for any hand-mutation session. Cheap, and the
+  slice 5b verifications were all re-run under it.
+- Consider setting it in the `pytest` pre-commit hook's environment. That
+  would also close the same hazard for anyone bisecting or reverting by hand.
+  Not done here because it slows every run slightly and the trade needs
+  measuring rather than guessing.
+
+cosmic-ray itself is not obviously affected -- it runs each mutant in a fresh
+subprocess and its survivors in slice 5b matched hand verification once the
+cache was cleared -- but nothing proves it is immune either, and a run that
+disagrees with a hand check should suspect this first.
+
 ### B31. The `eventsourcing` extra no longer pulls `eventsource-py[all]`
 
 `pyproject.toml` declares `eventsourcing = ["eventsource-py>=0.9.1"]`. It used

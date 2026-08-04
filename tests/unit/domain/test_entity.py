@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
@@ -157,7 +157,20 @@ def test_confidence_in_range_accepted(confidence):
     assert entity.confidence == confidence
 
 
+#: Values just outside the bound, pinned rather than left to the sampler.
+#:
+#: `st.floats().filter(...)` reaches the far extremes readily and the
+#: immediate neighbourhood of 1.0 rarely, so a mutant widening the bound to
+#: `<= 2.0` survived the property test entirely. A property test is a sampler,
+#: not a proof about a value.
+JUST_OUTSIDE_CONFIDENCE = [-1e-9, 1.0 + 1e-9, 1.5, 2.0]
+
+
 @given(st.floats(allow_nan=False, allow_infinity=False).filter(lambda f: f < 0.0 or f > 1.0))
+@example(confidence=-1e-9)
+@example(confidence=1.0 + 1e-9)
+@example(confidence=1.5)
+@example(confidence=2.0)
 def test_confidence_out_of_range_rejected(confidence):
     with pytest.raises(ValidationError):
         _entity(confidence=confidence)

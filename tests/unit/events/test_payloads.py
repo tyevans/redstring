@@ -181,6 +181,21 @@ class TestMergeUndone:
                 restored_relationships=[_relationship(other)],
             )
 
+    def test_an_undo_must_name_at_least_one_entity(self):
+        """An undo that frees nothing is not an undo. Without this the field's
+        `min_length=1` is decoration -- a mutant relaxing it to 0 survived
+        until this test existed, and `EntitiesMerged` had the equivalent test
+        from the start, which is how the asymmetry went unnoticed."""
+        tenant_id = uuid4()
+        with pytest.raises(ValidationError, match="at least 1"):
+            MergeUndone(
+                aggregate_id=tenant_id,
+                tenant_id=tenant_id,
+                merge_event_id=uuid4(),
+                canonical_entity_id=uuid4(),
+                unmerged_entity_ids=[],
+            )
+
     def test_an_undo_names_the_merge_it_reverses(self):
         """A `MergeUndone` that only carried restorations would be
         indistinguishable from an unrelated correction, and the aggregate
