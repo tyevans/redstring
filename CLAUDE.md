@@ -139,6 +139,25 @@ reading the code:
 
 ## Testing notes
 
+- **When a test's input makes two candidate implementations agree, it is not
+  testing the difference.** This project has hit the same shape four times,
+  and every one passed review while proving nothing:
+
+  | Test used | Wrong implementation it could not distinguish |
+  |---|---|
+  | string *literals* (CPython interns them) | `is` where `==` was meant — a runtime-built string returns nothing |
+  | random `uuid4`s | `<=` where `==` was meant — passes about half the time, depending on how ids sort |
+  | a *chain* graph | first-found where shortest-path was meant — on a chain they are the same function |
+  | results only, never the query plan | a full scan where an index seek was meant — same answers, catastrophic cost |
+
+  Before trusting a test, ask what *other* implementation would also pass it.
+  If a plausible wrong one would, the input is the problem: pin the values so
+  the candidates disagree (one neighbour sorting below the hub and one above,
+  a diamond rather than a chain, a runtime-built string rather than a
+  literal). These are found by mutation testing and essentially nothing else,
+  which is why a surviving mutant in well-tested code deserves investigation
+  rather than an "equivalent" label.
+
 - **A new read method needs its mutation-isolation test in the same edit.**
   If a store method hands back objects the caller can mutate, there must be a
   test that mutates the result and asserts a later read is unaffected. This
