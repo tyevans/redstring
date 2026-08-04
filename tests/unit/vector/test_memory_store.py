@@ -54,3 +54,31 @@ class TestMemoryVectorStoreSpecifics:
             await store.upsert_many([good, bad])
 
         assert await store.get(good.entity_id, tenant) is None
+
+
+class TestDimensionIsComparedByValue:
+    """Two boundaries that a suite fixed at `DIMENSION = 8` cannot see.
+
+    Both were found by cosmic-ray, and the first is the interned-small-int
+    version of the trap `CLAUDE.md` tabulates: replacing `!=` with `is not` in
+    the length check **survived every test**, because CPython caches integers
+    up to 256 and the compliance suite's dimension is 8. At 768 -- the
+    dimension of `nomic-embed-text`, the model this library is moving to --
+    `len(vector) is not 768` is true for a vector of exactly the right length,
+    so the store would reject every legitimate write. The test therefore uses
+    a dimension above the cache.
+    """
+
+    async def test_a_correct_length_is_accepted_at_a_realistic_dimension(self):
+        store = InMemoryVectorStore(dimension=768)
+        entity_id, tenant = uuid4(), uuid4()
+        vector = [0.0] * 767 + [1.0]
+
+        await store.upsert(entity_id, vector, tenant)
+
+        assert (await store.get(entity_id, tenant)).vector == vector
+
+    async def test_a_dimension_of_one_is_legal(self):
+        """Degenerate but permitted: the port says positive, not "more than
+        one". Pinning the boundary stops it drifting to `<= 1` unnoticed."""
+        assert InMemoryVectorStore(dimension=1).dimension == 1

@@ -83,6 +83,31 @@ class TestConstruction:
     def test_the_dimension_is_reported(self):
         assert _store(dimension=768).dimension == 768
 
+    def test_a_dimension_of_one_is_legal(self):
+        """Degenerate but permitted: the port says positive, not "more than
+        one". Pinning the boundary stops `<= 0` drifting to `<= 1` unnoticed --
+        a cosmic-ray mutant that did exactly that survived on the in-memory
+        adapter."""
+        assert _store(dimension=1).dimension == 1
+
+    async def test_a_correct_length_is_accepted_at_a_realistic_dimension(self):
+        """The interned-small-int trap, in the form `CLAUDE.md` tabulates.
+
+        Replacing `!=` with `is not` in the length check survived every test
+        on the in-memory adapter, because CPython caches integers up to 256
+        and the compliance suite's dimension is 8. At 768 -- the dimension of
+        `nomic-embed-text`, the model this library is moving to --
+        `len(vector) is not 768` is true for a vector of exactly the right
+        length, so the store would reject every legitimate write.
+
+        The guard must therefore *pass* here, and the only way to observe that
+        with an `_ExplodingPool` is that the failure is the pool's, not the
+        guard's.
+        """
+        store = _store(dimension=768)
+        with pytest.raises(AssertionError, match="reached the database"):
+            await store.upsert(uuid4(), [0.0] * 767 + [1.0], uuid4())
+
     @pytest.mark.parametrize(
         "table",
         [

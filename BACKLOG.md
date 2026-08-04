@@ -440,6 +440,75 @@ the float32 norm being zero (which is what any adapter would hit) and say so
 in the port. Nothing depends on this today: real embeddings are unit-norm or
 close to it.
 
+### B10m. Two adapters of one compliance suite cannot run in the same pytest invocation
+
+Measured, on both suites:
+
+```
+pytest -m "not accuracy" tests/unit/graph tests/integration/graph   -> 21 failed
+pytest -m "not accuracy" tests/unit/vector tests/integration/vector -> 13 failed
+```
+
+Every failure is `hypothesis.errors.FailedHealthCheck: The method
+GraphStoreCompliance.test_… was called from multiple different executors`.
+Hypothesis attaches its per-test state to the **function object**, and the
+`@given` methods live on the shared base class, so `TestMemoryStore` and
+`TestNeo4jStore` — or `TestMemoryVectorStore` and `TestPgVectorStore` — are two
+executors of one function. Running either suite alone is fine, which is why
+this has never been seen: `addopts` deselects `integration`, so the default
+gate runs only the in-memory subclass and an explicit `-m integration` runs
+only the real one.
+
+**This is a direct trap for B10a**, which is the reason it is filed rather
+than merely noted. The combined coverage run B10a asks for is naturally
+written as one invocation over both suites, and it will fail 34 times with an
+error that names hypothesis and looks like flakiness. B10a should be
+implemented as **two invocations combined by `coverage combine`** — which
+`parallel = true` already supports — not as one invocation with a widened
+marker expression.
+
+The other fixes, if a single invocation is ever wanted: add
+`suppress_health_check=[HealthCheck.differing_executors]` to both suites'
+shared `settings()` (cheap, and suppresses a check that exists to catch a real
+class of bug elsewhere), or stop sharing the function object by generating the
+property tests per subclass in `__init_subclass__` (correct, and a
+considerable amount of machinery for a problem only the CI target has).
+
+### B10n. `cosine_score`'s upper clamp is not reachable from float64 input
+
+`src/kg_builder/domain/vector.py::cosine_score` ends with
+`min(1.0, max(0.0, ...))`. A cosmic-ray mutant changing `min(1.0, …)` to
+`min(2.0, …)` **survived**, and the survivor is understood rather than
+equivalent: the clamp is genuinely unenforced by any test.
+
+Searched, not assumed: over roughly 2 × 10^6 random vectors (dimensions 2–768,
+magnitudes to 10^6) the unclamped value never exceeded 1.0. The reason is that
+the overshoot is about one ulp of the *ratio* `dot / magnitude`, and the
+`(1 + ratio) / 2` that follows halves it into the ulp below 1.0, where it
+rounds away. Slice 0's `cosine_similarity` did exceed its bound because it
+returned the raw ratio with no such halving.
+
+**`PgVectorStore.search`'s clamp is in the same position, and was measured
+too.** Over 4000 random 8-dimension vectors, each queried against itself and
+against its negation, `1 - (embedding <=> $1) / 2` returned exactly `0.0` and
+exactly `1.0` at the extremes and never stepped outside — pgvector clamps
+`<=>` internally. So both of its mutants (`min(1.0, …)` → `min(2.0, …)` and
+`max(0.0, …)` → `max(-1.0, …)`) survive for the same reason, and the clamp is
+dead code against **pgvector 0.8.5 specifically**.
+
+Both clamps are kept, and this is the argument to preserve. The guarantee is
+needed at precisions and backends this repo does not yet have: any store that
+reports a raw cosine, or computes the mapping itself without clamping, hands
+`VectorMatch` a value its `le=1` bound rejects outright — turning a
+one-ulp rounding artefact into a hard `ValidationError` for the caller. A
+Qdrant adapter is the next candidate.
+
+Resolving this means either constructing an input that reaches a clamp — which
+may not exist in float64 or in pgvector, in which case the honest answer is a
+comment recording the measurement — or moving the clamp into a single shared
+helper both call, so one test covers both. Do **not** resolve it by deleting a
+clamp.
+
 ### B10b. Model blocking keys as nodes — decided, scheduled for slice 7
 
 **The design is decided; do not re-litigate it. Implement in slice 7.**

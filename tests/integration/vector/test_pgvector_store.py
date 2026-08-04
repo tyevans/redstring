@@ -230,14 +230,65 @@ class TestPgVectorSpecifics:
         Pointing a 768-dimension store at a 1024-dimension table would
         otherwise fail on the first insert, with a Postgres error naming
         neither the store nor the model.
-        """
-        await store.ensure_schema()
-        mismatched = PgVectorStore(pool, dimension=DIMENSION + 1, table=TABLE)
 
-        with pytest.raises(DimensionMismatchError) as raised:
-            await mismatched.ensure_schema()
-        assert raised.value.expected == DIMENSION
-        assert raised.value.actual == DIMENSION + 1
+        The dimension used is **768, not the suite's 8**, and both directions
+        of mismatch are checked. Both details are load-bearing, and cosmic-ray
+        found each:
+
+        - `!=` replaced by `is not` survived at dimension 8, because CPython
+          caches integers to 256. At 768 the mutant rejects a table that
+          matches exactly -- every store would refuse to start.
+        - `!=` replaced by `<` survived while only the too-small-table case
+          was tested. A table *larger* than the store then passed silently and
+          failed later on an insert, which is the error this check exists to
+          replace.
+        """
+        table = f"{TABLE}_realistic"
+        await pool.execute(f"DROP TABLE IF EXISTS {table}")
+        await PgVectorStore(pool, dimension=768, table=table).ensure_schema()
+
+        # The matching store starts, and says so by not raising.
+        await PgVectorStore(pool, dimension=768, table=table).ensure_schema()
+
+        for offered in (767, 769):
+            with pytest.raises(DimensionMismatchError) as raised:
+                await PgVectorStore(pool, dimension=offered, table=table).ensure_schema()
+            assert raised.value.expected == 768
+            assert raised.value.actual == offered
+
+        await pool.execute(f"DROP TABLE {table}")
+
+    async def test_ensure_schema_creates_the_table_from_nothing(
+        self, pool: asyncpg.Pool[Any]
+    ) -> None:
+        """The DDL must actually run.
+
+        Every other test in this module works against a table an earlier run
+        already created, so **the schema statements could do nothing at all
+        and nothing would notice** -- cosmic-ray proved it by replacing the
+        loop's iterable with `[]`, which survived the whole suite. The only
+        test that can see this is one that starts from no table.
+        """
+        table = f"{TABLE}_fresh"
+        await pool.execute(f"DROP TABLE IF EXISTS {table}")
+        assert not await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", table)
+
+        store = PgVectorStore(pool, dimension=DIMENSION, table=table)
+        await store.ensure_schema()
+
+        assert await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", table)
+        # Usable, not merely present: the column types and the primary key
+        # have to be right or the round trip below fails.
+        entity_id, tenant = uuid4(), uuid4()
+        vector = [1.0, *([0.0] * (DIMENSION - 1))]
+        await store.upsert(entity_id, vector, tenant, metadata={"entity_type": "person"})
+        found = await store.get(entity_id, tenant)
+        assert found is not None
+        assert found.vector == vector
+        matches = await store.search(vector, tenant, entity_types=["person"])
+        assert [match.entity_id for match in matches] == [entity_id]
+
+        await pool.execute(f"DROP TABLE {table}")
 
     # ------------------------------------------------------------------
     # Query plans
@@ -300,14 +351,22 @@ class TestPgVectorSpecifics:
             f"the top of the plan is not the Limit, so something runs *after* "
             f"`k` has been taken:\n{plan}"
         )
-        # Both filters resolved by the index, underneath the Limit. A
-        # post-filter would appear as a `Filter:` above it instead, and would
-        # be free to discard rows the Limit had already committed to.
+        # The tenant predicate is resolved by an index, and **both** filters
+        # are evaluated below the Limit. A post-filter would appear above it
+        # instead, free to discard rows the Limit had already committed to.
+        #
+        # Deliberately not asserted: *which* node evaluates `entity_type`. On
+        # a well-populated table the planner folds it into the same `Index
+        # Cond`; on a nearly empty one it leaves it as a `Filter` under the
+        # scan. Both satisfy the contract, and pinning the richer plan made
+        # this test pass or fail according to whether a 20k-row test had run
+        # before it -- an order dependency, which is a bug in the test.
         conditions = [line for line in plan.splitlines() if "Index Cond" in line]
         assert conditions, f"no index condition at all:\n{plan}"
         assert "tenant_id" in conditions[0]
-        assert "entity_type" in conditions[0]
-        assert plan.index("Limit") < plan.index("tenant_id")
+        below_limit = plan.split("Limit", 1)[1]
+        assert "tenant_id" in below_limit
+        assert "entity_type" in below_limit
 
     @staticmethod
     async def _explain(
