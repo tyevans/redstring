@@ -131,7 +131,7 @@ async def _wipe(rig, tenant_ids):
         await rig.graph_store.delete_by_tenant(tenant_id)
         await rig.vector_store.delete_by_tenant(tenant_id)
     assert await rig.dump(tenant_ids) == {
-        str(tenant_id): {"entities": [], "relationships": [], "vectors": []}
+        str(tenant_id): {"entities": [], "relationships": [], "aliases": [], "vectors": []}
         for tenant_id in sorted(tenant_ids, key=str)
     }
 

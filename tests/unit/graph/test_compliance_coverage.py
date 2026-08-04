@@ -21,6 +21,7 @@ import inspect
 import typing
 from collections.abc import Sequence
 
+from kg_builder.domain.alias import Alias
 from kg_builder.domain.entity import Entity
 from kg_builder.domain.ids import EntityId, RelationshipId, TenantId
 from kg_builder.domain.relationship import Relationship
@@ -30,6 +31,7 @@ from tests.compliance.graph_store import GraphStoreCompliance
 # The port annotates under `if TYPE_CHECKING`, so resolving its hints at
 # runtime needs the names supplied explicitly.
 _PORT_NAMESPACE = {
+    "Alias": Alias,
     "Entity": Entity,
     "Relationship": Relationship,
     "EntityId": EntityId,
@@ -101,17 +103,22 @@ def read_methods() -> set[str]:
     """Port methods that hand domain objects back to the caller.
 
     Derived from return annotations rather than names: a method returning an
-    `Entity` or `Relationship` -- at any nesting depth, so `list[Entity]` and
-    `dict[str, list[Entity]]` both count -- can leak a mutable view of stored
-    state. `delete_relationship() -> bool` and the `upsert_*` methods cannot,
-    and are excluded automatically.
+    `Entity`, `Relationship` or `Alias` -- at any nesting depth, so
+    `list[Entity]` and `dict[str, list[Entity]]` both count -- can leak a
+    mutable view of stored state. `delete_relationship() -> bool` and the
+    `upsert_*` methods cannot, and are excluded automatically.
+
+    `Alias` was added to this set the moment the port gained one, rather than
+    after a mutation run found the leak. That is the whole point of deriving
+    the list: a new *type* on the port is the one thing introspection cannot
+    infer, so it is the one thing that has to be written down.
     """
     found = set()
     for name, function in inspect.getmembers(GraphStore, inspect.isfunction):
         if name.startswith("_"):
             continue
         hints = typing.get_type_hints(function, localns=_PORT_NAMESPACE)
-        if _mentions(hints.get("return"), {Entity, Relationship}):
+        if _mentions(hints.get("return"), {Entity, Relationship, Alias}):
             found.add(name)
     return found
 

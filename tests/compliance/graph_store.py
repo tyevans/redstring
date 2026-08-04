@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -62,6 +63,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from kg_builder.domain.alias import Alias
 from kg_builder.domain.entity import Entity, ExtractionMethod
 from kg_builder.domain.exceptions import MissingEntityError
 from kg_builder.domain.relationship import Relationship
@@ -1408,6 +1410,152 @@ class GraphStoreCompliance:
         assert await store.get_relationships(a.id, tenant) == [edge]
 
     # ------------------------------------------------------------------
+    # Aliases
+    # ------------------------------------------------------------------
+
+    async def test_an_unmerged_id_resolves_to_itself(self, store: GraphStore) -> None:
+        """Including an id the tenant has never seen.
+
+        Resolution answers "has this been merged away", not "does this exist" --
+        so it must not need the entity, and must not report absence as `None`.
+        A caller looks up the mapping unconditionally.
+        """
+        tenant = uuid4()
+        known = _example_entity(tenant=tenant)
+        await store.upsert_entity(known)
+        stranger = uuid4()
+
+        assert await store.resolve_entity_ids([known.id, stranger], tenant) == {
+            known.id: known.id,
+            stranger: stranger,
+        }
+
+    async def test_an_alias_resolves_to_its_canonical(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        canonical, absorbed = (_example_entity(tenant=tenant) for _ in range(2))
+        await store.upsert_entities([canonical, absorbed])
+        await store.upsert_alias(_example_alias(tenant, canonical=canonical.id, alias=absorbed.id))
+
+        assert await store.resolve_entity_ids([absorbed.id], tenant) == {absorbed.id: canonical.id}
+
+    async def test_resolution_follows_a_chain_to_the_end(self, store: GraphStore) -> None:
+        """`B -> A` then `A -> C` is a legal pair of merges, so `B` must give `C`.
+
+        A one-hop implementation passes every single-merge test and fails only
+        here, which is why the chain is three deep rather than two: at depth
+        two, "follow one hop" and "follow to a fixed point" agree for `B` in
+        exactly the way `CLAUDE.md` warns about. `d -> c -> b -> a` separates
+        them for `d` *and* for `c`, so a fold-once implementation cannot pass
+        by accident.
+        """
+        tenant = uuid4()
+        a, b, c, d = (_example_entity(tenant=tenant) for _ in range(4))
+        await store.upsert_entities([a, b, c, d])
+        await store.upsert_alias(_example_alias(tenant, canonical=a.id, alias=b.id))
+        await store.upsert_alias(_example_alias(tenant, canonical=b.id, alias=c.id))
+        await store.upsert_alias(_example_alias(tenant, canonical=c.id, alias=d.id))
+
+        assert await store.resolve_entity_ids([d.id, c.id, b.id, a.id], tenant) == {
+            d.id: a.id,
+            c.id: a.id,
+            b.id: a.id,
+            a.id: a.id,
+        }
+
+    async def test_an_alias_is_keyed_by_the_absorbed_entity(self, store: GraphStore) -> None:
+        """Last write wins on the alias id: an entity has one canonical parent."""
+        tenant = uuid4()
+        first, second, absorbed = (_example_entity(tenant=tenant) for _ in range(3))
+        await store.upsert_entities([first, second, absorbed])
+        await store.upsert_alias(_example_alias(tenant, canonical=first.id, alias=absorbed.id))
+        await store.upsert_alias(_example_alias(tenant, canonical=second.id, alias=absorbed.id))
+
+        assert await store.resolve_entity_ids([absorbed.id], tenant) == {absorbed.id: second.id}
+        assert await store.find_aliases(first.id, tenant) == []
+
+    async def test_removing_an_alias_restores_the_identity(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        canonical, absorbed = (_example_entity(tenant=tenant) for _ in range(2))
+        await store.upsert_entities([canonical, absorbed])
+        await store.upsert_alias(_example_alias(tenant, canonical=canonical.id, alias=absorbed.id))
+
+        assert await store.remove_alias(absorbed.id, tenant) is True
+        assert await store.resolve_entity_ids([absorbed.id], tenant) == {absorbed.id: absorbed.id}
+        # Idempotent: replaying an undo must not raise.
+        assert await store.remove_alias(absorbed.id, tenant) is False
+
+    async def test_find_aliases_is_direct_and_ordered(self, store: GraphStore) -> None:
+        """Direct absorptions only, ascending by alias id.
+
+        `B -> A` and `C -> B` means `find_aliases(A)` is `[B]`, not `[B, C]`:
+        an undo asks "what did *this* merge absorb", and a transitive answer
+        makes that unanswerable. The two ids are chosen so their canonical
+        strings sort one way and their creation order the other, so an
+        implementation returning insertion order fails.
+        """
+        tenant = uuid4()
+        a = _example_entity(tenant=tenant)
+        low = _example_entity(tenant=tenant, id=UUID("00000000-0000-4000-8000-00000000000a"))
+        high = _example_entity(tenant=tenant, id=UUID("ffffffff-0000-4000-8000-00000000000f"))
+        deeper = _example_entity(tenant=tenant)
+        await store.upsert_entities([a, low, high, deeper])
+        await store.upsert_alias(_example_alias(tenant, canonical=a.id, alias=high.id))
+        await store.upsert_alias(_example_alias(tenant, canonical=a.id, alias=low.id))
+        await store.upsert_alias(_example_alias(tenant, canonical=high.id, alias=deeper.id))
+
+        assert [alias.alias_entity_id for alias in await store.find_aliases(a.id, tenant)] == [
+            low.id,
+            high.id,
+        ]
+
+    async def test_find_aliases_returns_copies(self, store: GraphStore) -> None:
+        tenant = uuid4()
+        canonical, absorbed = (_example_entity(tenant=tenant) for _ in range(2))
+        alias = _example_alias(tenant, canonical=canonical.id, alias=absorbed.id)
+        await store.upsert_entities([canonical, absorbed])
+        await store.upsert_alias(alias)
+        pristine = alias.model_copy(deep=True)
+
+        for found in await store.find_aliases(canonical.id, tenant):
+            found.alias_name = found.alias_name + "-tampered"
+            found.merge_reason = "tampered"
+
+        assert await store.find_aliases(canonical.id, tenant) == [pristine]
+
+    async def test_find_aliases_never_crosses_tenants(self, store: GraphStore) -> None:
+        tenant, other = uuid4(), uuid4()
+        canonical, absorbed = (_example_entity(tenant=tenant) for _ in range(2))
+        await store.upsert_entities([canonical, absorbed])
+        await store.upsert_alias(_example_alias(tenant, canonical=canonical.id, alias=absorbed.id))
+
+        assert await store.find_aliases(canonical.id, other) == []
+
+    async def test_resolve_entity_ids_never_crosses_tenants(self, store: GraphStore) -> None:
+        """The dangerous direction: a leak here silently rewrites another
+        tenant's edges onto an entity it has never heard of."""
+        tenant, other = uuid4(), uuid4()
+        canonical, absorbed = (_example_entity(tenant=tenant) for _ in range(2))
+        await store.upsert_entities([canonical, absorbed])
+        await store.upsert_alias(_example_alias(tenant, canonical=canonical.id, alias=absorbed.id))
+
+        assert await store.resolve_entity_ids([absorbed.id], other) == {absorbed.id: absorbed.id}
+        assert await store.remove_alias(absorbed.id, other) is False
+        assert await store.resolve_entity_ids([absorbed.id], tenant) == {absorbed.id: canonical.id}
+
+    async def test_deleting_a_tenant_takes_its_aliases(self, store: GraphStore) -> None:
+        """Otherwise a rebuild replays merges over aliases that survived the
+        wipe, and `delete_by_tenant` stops being a reset."""
+        tenant = uuid4()
+        canonical, absorbed = (_example_entity(tenant=tenant) for _ in range(2))
+        await store.upsert_entities([canonical, absorbed])
+        await store.upsert_alias(_example_alias(tenant, canonical=canonical.id, alias=absorbed.id))
+
+        await store.delete_by_tenant(tenant)
+
+        assert await store.resolve_entity_ids([absorbed.id], tenant) == {absorbed.id: absorbed.id}
+        assert await store.find_aliases(canonical.id, tenant) == []
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -1464,6 +1612,19 @@ def _example_entity(*, tenant: UUID, **overrides: Any) -> Entity:
     }
     fields.update(overrides)
     return Entity(**fields)
+
+
+def _example_alias(tenant: UUID, *, canonical: UUID, alias: UUID) -> Alias:
+    """A minimal valid alias. `merged_at` is fixed so equality is stable."""
+    return Alias(
+        id=uuid4(),
+        tenant_id=tenant,
+        canonical_entity_id=canonical,
+        alias_entity_id=alias,
+        alias_name="A. Lovelace",
+        alias_normalized_name="a. lovelace",
+        merged_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
 
 
 def _example_relationship(

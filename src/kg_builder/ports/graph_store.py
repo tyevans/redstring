@@ -15,6 +15,20 @@ these stores are fed by projections, exists between the event log and the
 store -- never inside the store.
 
 Every method is tenant-scoped. There is no cross-tenant read, ever.
+
+## Aliases, and why the store has to know about them
+
+A merge does not delete the absorbed entity -- there is no `delete_entity` and
+there never will be. What it does is record an `Alias`, and the store keeps it
+because **a later write has to be able to consult it**. Without that, a
+`DocumentExtracted` folded after an `EntitiesMerged` writes the pre-merge
+endpoints back and silently reverts the merge, in strict log order, with every
+event delivered once (BACKLOG B34, closed by this pair).
+
+So `resolve_entity_ids` is the read a fold makes before writing an edge, and
+`upsert_alias`/`remove_alias` are how the merge and undo folds maintain what it
+reads. This is not consolidation logic leaking into the store: it is the store
+having somewhere to put a fact that already happened.
 """
 
 from __future__ import annotations
@@ -24,6 +38,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from kg_builder.domain.alias import Alias
     from kg_builder.domain.entity import Entity
     from kg_builder.domain.ids import EntityId, RelationshipId, TenantId
     from kg_builder.domain.relationship import Relationship
@@ -128,6 +143,68 @@ class GraphStore(Protocol):
         """
         ...
 
+    async def upsert_alias(self, alias: Alias) -> None:
+        """Record that `alias.alias_entity_id` was absorbed by its canonical.
+
+        Idempotent, last-write-wins, keyed by `(tenant_id, alias_entity_id)`:
+        an entity has at most one canonical parent, which is the same fact
+        `ConsolidationLog`'s double-merge rule enforces on the write side.
+
+        Neither endpoint needs to exist. An alias is a statement about ids, and
+        requiring the entities would make the merge fold depend on the
+        extraction fold having run first -- which is exactly the ordering
+        assumption aliases exist to remove.
+        """
+        ...
+
+    async def remove_alias(self, alias_entity_id: EntityId, tenant_id: TenantId) -> bool:
+        """Forget one alias; return whether it existed.
+
+        Idempotent: removing an absent alias returns `False` rather than
+        raising, so replaying an undo is not an error.
+        """
+        ...
+
+    async def find_aliases(self, canonical_entity_id: EntityId, tenant_id: TenantId) -> list[Alias]:
+        """Return the aliases absorbed *directly* into `canonical_entity_id`.
+
+        Directly, not transitively: `find_aliases(C)` after `B -> A -> C` gives
+        `A` alone. A transitive answer would make "which entities did this
+        merge absorb" unanswerable, and that is the question an undo asks.
+
+        Ordered ascending by `alias_entity_id` compared as its canonical
+        lowercase hyphenated string, so two adapters agree. An id with no
+        aliases yields `[]`.
+        """
+        ...
+
+    async def resolve_entity_ids(
+        self, entity_ids: Sequence[EntityId], tenant_id: TenantId
+    ) -> dict[EntityId, EntityId]:
+        """Map each id to the entity that now stands for it.
+
+        An id that is not an alias maps to itself, so every requested id
+        appears in the result and a caller can look up unconditionally. Ids
+        this tenant has never seen map to themselves too -- resolution answers
+        "has this been merged away", not "does this exist".
+
+        **Transitive.** Chains do form: `ConsolidationLog` refuses to merge
+        *into* an alias, which is what stops cycles, but it does not refuse to
+        merge a canonical entity away. So `B -> A` followed by `A -> C` is a
+        legal pair of merges and `B` must resolve to `C`.
+
+        **Terminating.** A cycle would need some merge to name an alias as its
+        canonical, and the write model refuses exactly that. Adapters must
+        still bound the walk rather than trust it: this is a projection over
+        adapter-supplied data, and a `while` loop that fails to advance turns a
+        corrupt row into a hang, which reads as infrastructure trouble and gets
+        retried instead of investigated. Raise `AliasCycleError` naming the id.
+
+        Batch because the caller is a fold resolving both endpoints of every
+        edge in a document. As a loop it is two round trips per edge.
+        """
+        ...
+
     async def upsert_relationship(self, relationship: Relationship) -> None:
         """Insert or replace `relationship`, keyed by `(tenant_id, id)`.
 
@@ -202,6 +279,11 @@ class GraphStore(Protocol):
         duplicate is removed. **Whether merge dedupes parallel edges at all is
         slice 7's decision, not this port's** -- the port only provides the
         means.
+
+        Merge deduplicates parallel edges: when redirecting an edge onto the
+        canonical entity would reproduce an edge the canonical already has --
+        same endpoints, same type -- the merge drops it instead, recording
+        `after=None` so undo can recreate it. This is the method that drops it.
 
         There is deliberately no `delete_entity`. An entity merged away
         survives as an alias node rather than disappearing, so single-entity

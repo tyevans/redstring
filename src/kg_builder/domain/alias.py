@@ -28,8 +28,17 @@ class Alias(BaseModel):
     tenant_id: TenantId
     canonical_entity_id: EntityId
     alias_entity_id: EntityId
-    alias_name: str
-    alias_normalized_name: str
+    #: The absorbed entity's name, when it is known. `None` when it is not.
+    #:
+    #: Optional because the projection that writes aliases folds
+    #: `EntitiesMerged`, which carries ids and no names -- it is a permanent
+    #: event schema (ADR 0001) and will not gain them. The fold looks the names
+    #: up in the store, and an entity whose extraction has not been folded yet
+    #: simply has none to look up. A required field would have forced a
+    #: fabricated one, and `str(entity_id)` sitting in a `name` field is worse
+    #: than an honest absence: it reads as a name everywhere it is displayed.
+    alias_name: str | None = None
+    alias_normalized_name: str | None = None
     merged_at: datetime
     merge_reason: str | None = None
 

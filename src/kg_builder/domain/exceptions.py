@@ -48,6 +48,28 @@ class DimensionMismatchError(KgBuilderError):
         super().__init__(f"expected a vector of dimension {expected}, got {actual}")
 
 
+class AliasCycleError(KgBuilderError):
+    """Resolving an entity through its aliases did not terminate.
+
+    Unreachable through legal history: a cycle needs some merge to name an
+    entity that is already an alias as its canonical, and `ConsolidationLog`
+    refuses precisely that. It is raised anyway because resolution is a walk
+    over adapter-supplied data, and the alternative to a bounded walk is a
+    hang -- which in CI reads as infrastructure trouble and gets retried
+    rather than investigated. A loud error naming the id is the cheap half of
+    that trade.
+    """
+
+    def __init__(self, *, entity_id: EntityId, tenant_id: TenantId) -> None:
+        self.entity_id = entity_id
+        self.tenant_id = tenant_id
+        super().__init__(
+            f"alias resolution for entity {entity_id} in tenant {tenant_id} did not "
+            f"terminate: the alias graph has a cycle, which no legal merge history "
+            f"can produce"
+        )
+
+
 class LlmProviderError(KgBuilderError):
     """An `LlmProvider` could not produce a validated extraction.
 

@@ -113,9 +113,18 @@ async def dump_stores(graph_store, vector_store, tenant_ids):
             record = await vector_store.get(entity.id, tenant_id)
             if record is not None:
                 vectors.append(record.model_dump(mode="json"))
+        # Aliases are part of the state a rebuild must reproduce, and the only
+        # part with a generated id -- so leaving them out would let a `uuid4`
+        # alias id pass every replay-equivalence test in the suite.
+        aliases = [
+            alias.model_dump(mode="json")
+            for entity in entities
+            for alias in await graph_store.find_aliases(entity.id, tenant_id)
+        ]
         state[str(tenant_id)] = {
             "entities": sorted((e.model_dump(mode="json") for e in entities), key=str),
             "relationships": sorted((r.model_dump(mode="json") for r in relationships), key=str),
+            "aliases": sorted(aliases, key=str),
             "vectors": sorted(vectors, key=str),
         }
     return state

@@ -40,12 +40,14 @@ from __future__ import annotations
 
 import ast
 import inspect
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
 
+from kg_builder.domain.alias import Alias
 from kg_builder.domain.entity import Entity, ExtractionMethod
 from kg_builder.domain.exceptions import MissingEntityError
 from kg_builder.domain.relationship import Relationship
@@ -231,12 +233,18 @@ class TestNoUnparameterisedInterpolation:
                 if isinstance(part, ast.FormattedValue):
                     interpolated.add(ast.unparse(part.value))
 
-        # EDGE and the direction patterns are module constants, not caller
-        # input; `depth` is the only value that reaches here from an argument,
-        # and `neighbors` proves it is an int before formatting it.
-        assert interpolated <= {"EDGE", "depth", "_TENANT_SEEK", "_PATTERNS[direction]"}, (
-            f"unexpected interpolation into Cypher: {sorted(interpolated)}"
-        )
+        # EDGE, ALIAS_NODE, ALIAS_EDGE and the direction patterns are module
+        # constants, not caller input; `depth` is the only value that reaches
+        # here from an argument, and `neighbors` proves it is an int before
+        # formatting it.
+        assert interpolated <= {
+            "EDGE",
+            "ALIAS_NODE",
+            "ALIAS_EDGE",
+            "depth",
+            "_TENANT_SEEK",
+            "_PATTERNS[direction]",
+        }, f"unexpected interpolation into Cypher: {sorted(interpolated)}"
 
 
 class _ExplodingDriver:
@@ -496,6 +504,66 @@ class TestEncodingIsPureAndReversible:
         )
         row = adapter._relationship_row(relationship)
         assert adapter._relationship_from(_as_node(row)) == relationship
+
+    @pytest.mark.parametrize(
+        "merged_at",
+        [
+            datetime(2026, 1, 1, tzinfo=UTC),
+            datetime(2026, 6, 1, 12, 30, 45, 123456, tzinfo=UTC),
+            datetime(2026, 6, 1, tzinfo=timezone(timedelta(hours=5, minutes=30))),
+            datetime(2026, 6, 1, tzinfo=timezone(timedelta(hours=-8))),
+        ],
+    )
+    def test_an_alias_round_trips_with_its_offset_intact(self, merged_at):
+        """`merged_at` is ISO text, not a native Neo4j `DateTime`.
+
+        The driver's `neo4j.time.DateTime` converts back to a `datetime` whose
+        `tzinfo` is a fixed offset even when the value was written as UTC, and
+        `Alias` is compared for equality by the port -- so a native column
+        would fail for `+05:30` and pass for `+00:00`, which is the shape of
+        bug that ships. The parametrisation is what separates them.
+        """
+        alias = Alias(
+            id=uuid4(),
+            tenant_id=uuid4(),
+            canonical_entity_id=uuid4(),
+            alias_entity_id=uuid4(),
+            alias_name="A. Lovelace",
+            alias_normalized_name="a. lovelace",
+            merged_at=merged_at,
+            merge_reason="jaro-winkler 0.94",
+        )
+        row = adapter._alias_row(alias)
+        decoded = adapter._alias_from(_as_node(row))
+
+        assert decoded == alias
+        assert decoded.merged_at.utcoffset() == merged_at.utcoffset()
+
+    def test_an_alias_with_no_name_round_trips(self):
+        """The fold writes these: `EntitiesMerged` carries ids, not names, so
+        an entity whose extraction has not been folded yet has none to find.
+        Neo4j drops a null property, so the decoder sees the key *absent*."""
+        alias = Alias(
+            id=uuid4(),
+            tenant_id=uuid4(),
+            canonical_entity_id=uuid4(),
+            alias_entity_id=uuid4(),
+            merged_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        assert adapter._alias_from(_as_node(adapter._alias_row(alias))) == alias
+
+    def test_the_alias_row_holds_only_values_neo4j_can_store(self):
+        alias = Alias(
+            id=uuid4(),
+            tenant_id=uuid4(),
+            canonical_entity_id=uuid4(),
+            alias_entity_id=uuid4(),
+            merged_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        for key, value in adapter._alias_row(alias).items():
+            assert value is None or isinstance(value, str | int | float | bool), (
+                f"{key} is a {type(value).__name__}, which Neo4j cannot store"
+            )
 
     def test_the_row_holds_only_values_neo4j_can_store(self):
         """The whole reason the JSON columns exist.

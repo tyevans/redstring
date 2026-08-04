@@ -36,13 +36,15 @@ which a real database is easier to be correct in than a dictionary.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Self, cast
 from uuid import UUID
 
 from neo4j import AsyncGraphDatabase
 
+from kg_builder.domain.alias import Alias
 from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.exceptions import MissingEntityError
+from kg_builder.domain.exceptions import AliasCycleError, MissingEntityError
 from kg_builder.domain.relationship import Relationship
 from kg_builder.domain.temporal import TemporalExtent
 
@@ -57,6 +59,16 @@ if TYPE_CHECKING:
 
 #: The single relationship type. See the module docstring.
 EDGE = "RELATES_TO"
+
+#: Aliases live on their own nodes rather than on `:Entity`.
+#:
+#: Two reasons, both from the port. An alias may name an entity this tenant has
+#: not extracted yet -- the merge fold must not depend on the extraction fold
+#: having run -- so it cannot be an edge between `:Entity` nodes. And
+#: resolution is transitive, which wants a variable-length path, which wants an
+#: edge rather than a property.
+ALIAS_NODE = "AliasRef"
+ALIAS_EDGE = "ALIAS_OF"
 
 _DIRECTIONS = ("out", "in", "both")
 
@@ -97,6 +109,11 @@ _SCHEMA = (
     # which deletes any existing edge of that id before creating the new one.
     f"CREATE INDEX relationship_tenant_id IF NOT EXISTS "
     f"FOR ()-[r:{EDGE}]-() ON (r.tenant_id, r.id)",
+    # Unique rather than merely indexed: `upsert_alias` MERGEs on this pair
+    # from two places in one query, and a duplicate node would fork the chain
+    # so that resolution's answer depended on which copy it walked into.
+    f"CREATE CONSTRAINT alias_ref_tenant_entity_unique IF NOT EXISTS "
+    f"FOR (a:{ALIAS_NODE}) REQUIRE (a.tenant_id, a.entity_id) IS UNIQUE",
 )
 
 #: A predicate that is always true, added to make the planner use the
@@ -281,6 +298,98 @@ class Neo4jGraphStore:
         for record in records:
             grouped[record["key"]].append(_entity_from(record["e"]))
         return grouped
+
+    # ------------------------------------------------------------------
+    # Aliases
+    # ------------------------------------------------------------------
+
+    async def upsert_alias(self, alias: Alias) -> None:
+        await self._run(
+            # `MERGE` both ends: the port says neither entity need exist, so a
+            # `MATCH (:Entity)` here would silently drop the write for an alias
+            # recorded before the extraction that creates its entities is
+            # folded -- which is exactly the ordering aliases exist to survive.
+            f"MERGE (a:{ALIAS_NODE} {{tenant_id: $tenant_id, entity_id: $alias_entity_id}}) "
+            f"MERGE (c:{ALIAS_NODE} {{tenant_id: $tenant_id, entity_id: $canonical_entity_id}}) "
+            "WITH a, c "
+            # At most one canonical parent per entity, which is the store's
+            # half of `ConsolidationLog`'s double-merge rule. Deleting the
+            # previous edge by pattern rather than upserting it in place is
+            # what makes a re-record with a *different* canonical replace
+            # rather than fork the chain.
+            f"OPTIONAL MATCH (a)-[old:{ALIAS_EDGE}]->() "
+            "DELETE old "
+            "WITH a, c "
+            f"CREATE (a)-[r:{ALIAS_EDGE}]->(c) "
+            "SET r = $row",
+            tenant_id=str(alias.tenant_id),
+            alias_entity_id=str(alias.alias_entity_id),
+            canonical_entity_id=str(alias.canonical_entity_id),
+            row=_alias_row(alias),
+        )
+
+    async def remove_alias(self, alias_entity_id: EntityId, tenant_id: TenantId) -> bool:
+        # The `:AliasRef` node survives with no outgoing edge, which resolution
+        # reads as "not an alias" -- the same answer as no node at all. Leaving
+        # it costs one empty node and avoids a delete that would have to check
+        # for incoming edges first; `delete_by_tenant` reaps them.
+        records = await self._run(
+            f"MATCH (a:{ALIAS_NODE} {{tenant_id: $tenant_id, entity_id: $alias_entity_id}})"
+            f"-[r:{ALIAS_EDGE}]->() "
+            "DELETE r "
+            "RETURN count(*) AS removed",
+            tenant_id=str(tenant_id),
+            alias_entity_id=str(alias_entity_id),
+        )
+        return bool(records[0]["removed"])
+
+    async def find_aliases(self, canonical_entity_id: EntityId, tenant_id: TenantId) -> list[Alias]:
+        records = await self._run(
+            f"MATCH (a:{ALIAS_NODE} {{tenant_id: $tenant_id}})-[r:{ALIAS_EDGE}]->"
+            f"(:{ALIAS_NODE} {{tenant_id: $tenant_id, entity_id: $canonical_entity_id}}) "
+            # One hop, not `*1..`: the question is what this merge absorbed.
+            "RETURN r ORDER BY a.entity_id",
+            tenant_id=str(tenant_id),
+            canonical_entity_id=str(canonical_entity_id),
+        )
+        return [_alias_from(record["r"]) for record in records]
+
+    async def resolve_entity_ids(
+        self, entity_ids: Sequence[EntityId], tenant_id: TenantId
+    ) -> dict[EntityId, EntityId]:
+        if not entity_ids:
+            return {}
+
+        wanted = list(dict.fromkeys(entity_ids))
+        records = await self._run(
+            "UNWIND $entity_ids AS wanted "
+            f"OPTIONAL MATCH (a:{ALIAS_NODE} {{tenant_id: $tenant_id, entity_id: wanted}}) "
+            # Variable-length, because chains form: merging `B` into `A` and
+            # then `A` into `C` is two legal merges and `B` must give `C`.
+            # Cypher's relationship-uniqueness rule terminates a cycle, so this
+            # cannot hang -- it returns nothing, which is what `is_alias`
+            # below turns into a loud error rather than a wrong answer.
+            f"OPTIONAL MATCH (a)-[:{ALIAS_EDGE}*1..]->(c:{ALIAS_NODE}) "
+            f"WHERE NOT EXISTS {{ (c)-[:{ALIAS_EDGE}]->() }} "
+            "RETURN wanted, "
+            "  c.entity_id AS canonical, "
+            f"  EXISTS {{ (a)-[:{ALIAS_EDGE}]->() }} AS is_alias",
+            tenant_id=str(tenant_id),
+            entity_ids=[str(entity_id) for entity_id in wanted],
+        )
+
+        by_id = {record["wanted"]: record for record in records}
+        resolved: dict[EntityId, EntityId] = {}
+        for entity_id in wanted:
+            record = by_id[str(entity_id)]
+            if record["canonical"] is not None:
+                resolved[entity_id] = UUID(record["canonical"])
+            elif record["is_alias"]:
+                # It has an outgoing edge but no chain end: a cycle.
+                raise AliasCycleError(entity_id=entity_id, tenant_id=tenant_id)
+            else:
+                resolved[entity_id] = entity_id
+        return resolved
 
     # ------------------------------------------------------------------
     # Relationships
@@ -468,6 +577,15 @@ class Neo4jGraphStore:
             "MATCH (e:Entity {tenant_id: $tenant_id}) DETACH DELETE e RETURN count(e) AS removed",
             tenant_id=str(tenant_id),
         )
+        # Separate statement, and counted separately: the port's return value
+        # is entities removed, and alias bookkeeping is not an entity. Without
+        # this, a wiped tenant replays its merges over aliases that survived,
+        # so `delete_by_tenant` stops being a reset in exactly the case a
+        # rebuild needs it to be one.
+        await self._run(
+            f"MATCH (a:{ALIAS_NODE} {{tenant_id: $tenant_id}}) DETACH DELETE a",
+            tenant_id=str(tenant_id),
+        )
         return int(records[0]["removed"])
 
 
@@ -526,6 +644,42 @@ def _entity_from(node: Node) -> Entity:
         blocking_keys=(
             None if node.get("blocking_keys") is None else frozenset(node["blocking_keys"])
         ),
+    )
+
+
+def _alias_row(alias: Alias) -> dict[str, Any]:
+    """Alias properties for the `:ALIAS_OF` edge.
+
+    `merged_at` is ISO text rather than a native Neo4j `DateTime`, so the
+    timezone survives verbatim: the driver returns a `neo4j.time.DateTime`
+    whose conversion back is lossy for offsets Python spells differently, and
+    the port compares `Alias`es for equality.
+    """
+    return {
+        "id": str(alias.id),
+        "tenant_id": str(alias.tenant_id),
+        "canonical_entity_id": str(alias.canonical_entity_id),
+        "alias_entity_id": str(alias.alias_entity_id),
+        "alias_name": alias.alias_name,
+        "alias_normalized_name": alias.alias_normalized_name,
+        "merged_at": alias.merged_at.isoformat(),
+        "merge_reason": alias.merge_reason,
+    }
+
+
+def _alias_from(edge: Edge) -> Alias:
+    return Alias(
+        id=UUID(edge["id"]),
+        tenant_id=UUID(edge["tenant_id"]),
+        canonical_entity_id=UUID(edge["canonical_entity_id"]),
+        alias_entity_id=UUID(edge["alias_entity_id"]),
+        # `.get`, because Neo4j drops a property written as null and both
+        # names are legitimately absent -- the fold writes an alias with no
+        # name when the absorbed entity's extraction has not been folded yet.
+        alias_name=edge.get("alias_name"),
+        alias_normalized_name=edge.get("alias_normalized_name"),
+        merged_at=datetime.fromisoformat(edge["merged_at"]),
+        merge_reason=edge.get("merge_reason"),
     )
 
 

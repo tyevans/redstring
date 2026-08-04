@@ -922,64 +922,6 @@ onto `domain/normalization.py`), and apply it in field validators on the three
 fields above. The `VectorRecord` docstring explains why stripping or escaping
 the NUL was rejected in favour of raising.
 
-### B34. A later `DocumentExtracted` silently reverts a merge
-
-**Read this before slice 6.** Slice 6 is what turns this on.
-
-`projections/graph.py` -- `GraphProjection` folds `DocumentExtracted` by
-upserting the document's relationships by id. If an `EntitiesMerged` has
-already moved one of those edges onto a canonical entity, the upsert writes
-the *original* endpoints back and the merge is undone in the read model.
-Nothing notices.
-
-**This needs no redelivery, no reordering and no bus.** The first version of
-this entry framed the hazard as a delivery-ordering problem; that was too
-narrow, and dangerously so. The same defect occurs in strict log order with
-every event delivered exactly once:
-
-```
-DocumentExtracted(doc-1, model=A)   entities e0,e1,e2 and edge e1->e2
-EntitiesMerged(e1 into e0)          edge redirected to e0->e2
-DocumentExtracted(doc-1, model=B)   the same edge, endpoints e1->e2 again
-```
-
-Re-extraction is not a pathology. `Document.record_extraction` exists to
-support it and is keyed on the model version precisely so a newer model can
-re-run the same document. So the assumption the fold actually makes is not
-"the bus preserves order" but **"no `DocumentExtracted` ever follows a merge
-that touched its entities"** -- a property of what the write side emits, which
-no delivery mechanism can supply.
-
-Pinned as three tests in `tests/unit/projections/test_known_gaps.py`, which
-assert the *wrong* answer on purpose. When they start failing, the fold has
-gained aliases and this entry can close.
-
-The redelivery framing was not wrong, only incomplete, and the verified part
-stands: redelivery from a checkpointed feed is always a contiguous suffix
-replayed in order, so the last occurrence of every event is still in log order.
-The replay tests exercise both shapes -- each event twice, and the whole log
-twice -- and both hold. An at-most-once bus delivering e1, e2, e1, or a
-partitioned feed ordered only within a partition, would break that half too.
-
-The cause is `GraphStore`'s shape rather than the fold's: the store has
-nowhere to record that a merge happened. There is no alias node, no canonical
-pointer, nothing a later write could consult, so the handler cannot tell "this
-edge belongs to an entity that has since been absorbed" from "this edge is
-new". Slice 3 declined `delete_entity` and any alias representation
-deliberately, and that was right for a store; the projection is what
-discovers the gap.
-
-The fix: give the graph an alias representation, so the `EntitiesMerged` fold
-records the redirection as *state* and the `DocumentExtracted` fold resolves
-each endpoint through it before writing. That is a `GraphStore` port change
-(an `upsert_alias`/`resolve` pair), which is slice 7's territory since slice 7
-needs aliases readable anyway.
-
-**Until it lands, a graph whose documents are re-extracted after consolidation
-is wrong, and replaying does not repair it** -- the log faithfully reproduces
-the same wrong state, which is why no amount of replay-equivalence testing
-would have found this.
-
 ### B35. `GraphProjection.reset()` raises instead of truncating
 
 `projections/graph.py` and `projections/vector.py` --

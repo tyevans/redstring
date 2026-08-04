@@ -22,11 +22,12 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Literal
 
-from kg_builder.domain.exceptions import MissingEntityError
+from kg_builder.domain.exceptions import AliasCycleError, MissingEntityError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from kg_builder.domain.alias import Alias
     from kg_builder.domain.entity import Entity
     from kg_builder.domain.ids import EntityId, RelationshipId, TenantId
     from kg_builder.domain.relationship import Relationship
@@ -38,6 +39,12 @@ class InMemoryGraphStore:
     def __init__(self) -> None:
         self._entities: dict[TenantId, dict[EntityId, Entity]] = {}
         self._relationships: dict[TenantId, dict[RelationshipId, Relationship]] = {}
+        # Keyed by the *alias* id, not the canonical one: an entity has at most
+        # one canonical parent, so that key is unique, while a canonical entity
+        # has many aliases. `find_aliases` pays a scan for it, which is the
+        # right way round -- resolution runs per edge endpoint on every
+        # extraction fold, and `find_aliases` runs once per undo.
+        self._aliases: dict[TenantId, dict[EntityId, Alias]] = {}
 
     # ------------------------------------------------------------------
     # Entities
@@ -112,6 +119,49 @@ class InMemoryGraphStore:
                 if key in grouped:
                     grouped[key].append(entity.model_copy(deep=True))
         return grouped
+
+    # ------------------------------------------------------------------
+    # Aliases
+    # ------------------------------------------------------------------
+
+    async def upsert_alias(self, alias: Alias) -> None:
+        tenant = self._aliases.setdefault(alias.tenant_id, {})
+        tenant[alias.alias_entity_id] = alias.model_copy(deep=True)
+
+    async def remove_alias(self, alias_entity_id: EntityId, tenant_id: TenantId) -> bool:
+        return self._aliases.get(tenant_id, {}).pop(alias_entity_id, None) is not None
+
+    async def find_aliases(self, canonical_entity_id: EntityId, tenant_id: TenantId) -> list[Alias]:
+        return sorted(
+            (
+                alias.model_copy(deep=True)
+                for alias in self._aliases.get(tenant_id, {}).values()
+                if alias.canonical_entity_id == canonical_entity_id
+            ),
+            key=lambda alias: str(alias.alias_entity_id),
+        )
+
+    async def resolve_entity_ids(
+        self, entity_ids: Sequence[EntityId], tenant_id: TenantId
+    ) -> dict[EntityId, EntityId]:
+        aliases = self._aliases.get(tenant_id, {})
+        # Bounded by the number of aliases: a walk longer than that has
+        # revisited a node, so it is a cycle. Cheaper and tighter than a
+        # visited set, and it cannot be fooled by a chain that merely happens
+        # to be long. `+ 1` so a chain using every alias still resolves.
+        limit = len(aliases) + 1
+        resolved: dict[EntityId, EntityId] = {}
+        for entity_id in entity_ids:
+            current = entity_id
+            for _ in range(limit):
+                alias = aliases.get(current)
+                if alias is None:
+                    break
+                current = alias.canonical_entity_id
+            else:
+                raise AliasCycleError(entity_id=entity_id, tenant_id=tenant_id)
+            resolved[entity_id] = current
+        return resolved
 
     # ------------------------------------------------------------------
     # Relationships
@@ -239,4 +289,5 @@ class InMemoryGraphStore:
     async def delete_by_tenant(self, tenant_id: TenantId) -> int:
         removed = len(self._entities.pop(tenant_id, {}))
         self._relationships.pop(tenant_id, None)
+        self._aliases.pop(tenant_id, None)
         return removed

@@ -208,6 +208,12 @@ made rather than inherited.
   cannot detect it, because `GraphStore` has nowhere to record that a merge
   happened. This needs no redelivery and no reordering: re-extracting a
   document under a new model version after consolidation is enough, and
-  `Document.record_extraction` exists to permit exactly that. BACKLOG B34,
-  pinned as deliberately-wrong tests in
-  `tests/unit/projections/test_known_gaps.py`.
+  `Document.record_extraction` exists to permit exactly that. This was BACKLOG
+  B34, pinned as deliberately-wrong tests. **Closed in slice 7**, the slice
+  that began emitting `EntitiesMerged`: `GraphStore` gained
+  `upsert_alias`/`remove_alias`/`resolve_entity_ids`, the extraction fold now
+  resolves each endpoint before writing, and the pinned tests were inverted
+  into `tests/unit/projections/test_aliases_survive_re_extraction.py`. Note
+  that neither event schema changed to fix it -- the gap was in the read
+  model's shape, which is what this ADR predicted by making the events
+  permanent and the projections disposable.

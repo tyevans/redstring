@@ -81,6 +81,14 @@ class TestResumingFromAPosition:
         await project(whole_rig.event_store, whole_rig.projections)
         whole = await whole_rig.dump(built.tenant_ids)
 
+        # A *second build* of the same scenario, deliberately -- the two rigs
+        # need independent checkpoint state, which sharing one log would not
+        # give. The scenario fixes every id, so the two logs agree on
+        # everything except wall-clock timestamps, which `_undated` drops. An
+        # alias records `merged_at` from the merge event, so it is the only
+        # dumped value that differs between two runs of the same scenario;
+        # within one log it is fixed, which is what the replay-equivalence
+        # suite checks and this test cannot.
         halves_rig, halves_built = await _built(WITH_MERGE)
         envelopes = [envelope async for envelope in halves_rig.event_store.read_all()]
         midpoint = envelopes[len(envelopes) // 2].position
@@ -94,4 +102,20 @@ class TestResumingFromAPosition:
         )
         assert stopped_early.applied > 0
 
-        assert await halves_rig.dump(halves_built.tenant_ids) == whole
+        assert _undated(await halves_rig.dump(halves_built.tenant_ids)) == _undated(whole)
+
+
+def _undated(dump):
+    """`dump` with alias `merged_at` removed. See the caller for why."""
+    return {
+        tenant_id: {
+            key: [
+                {field: value for field, value in row.items() if field != "merged_at"}
+                for row in rows
+            ]
+            if key == "aliases"
+            else rows
+            for key, rows in state.items()
+        }
+        for tenant_id, state in dump.items()
+    }
