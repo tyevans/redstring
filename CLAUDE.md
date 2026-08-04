@@ -174,6 +174,24 @@ reading the code:
   `(tenant_id, something)`, so the collision to force is almost always the
   same one.
 
+- **A property test is a sampler, not a proof about a specific value. Pin
+  boundaries as examples.** Two mutants in `InMemoryVectorStore.search` —
+  `k < 0` widened to `k <= 0` and to `k < 1`, both making a legal `k=0`
+  raise — were *killed on one cosmic-ray run and survived the next, with
+  nothing about the adapter changed between them.* `k=0` was covered only by
+  a property drawing `k` from `0..12`, so whether the boundary was tested at
+  all depended on the sampler and on `KG_COMPLIANCE_MAX_EXAMPLES`, which
+  mutation runs lower to 5.
+
+  This is not the failure shape above — the input does distinguish the
+  implementations when it is drawn. It is worse in one way: **coverage of the
+  boundary is non-deterministic**, so the same suite against the same code
+  gives different mutation results run to run, and the natural reading of a
+  survivor that used to die is "something changed in the source." Nothing had.
+  Where a guard names a specific value (`0`, `1`, empty, the maximum), write
+  that value as an example alongside the property. `hypothesis` has
+  `@example` for exactly this.
+
   Before trusting a test, ask what *other* implementation would also pass it.
   If a plausible wrong one would, the input is the problem: pin the values so
   the candidates disagree (one neighbour sorting below the hub and one above,
