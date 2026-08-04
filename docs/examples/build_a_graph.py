@@ -2,7 +2,10 @@
 
 Everything here comes from `kg_builder`'s public surface. `FakeLlmProvider`
 and `InMemoryGraphStore` are real implementations, not mocks -- swap them for
-`LangChainLlmProvider` and `Neo4jGraphStore` and nothing else changes.
+`LangChainLlmProvider` and `Neo4jGraphStore` and *this composition* does not
+change. The program does: both need their extra installed, and the LangChain
+one needs a chat model constructed first, which is langchain's step rather
+than this library's. README.md shows it.
 
 Executed by `tests/unit/test_end_to_end_example.py`, which also asserts that
 every import in this file is from `kg_builder` itself. An example nothing runs

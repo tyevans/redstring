@@ -21,7 +21,10 @@ Python 3.13+.
 ```python
 from kg_builder import InMemoryGraphStore, SourceDocument, build_graph
 from kg_builder.llm.adapters.langchain import LangChainLlmProvider
+from langchain_openai import ChatOpenAI
 
+# Any OpenAI-compatible server: llama.cpp, vLLM, Ollama's shim, OpenAI itself.
+chat_model = ChatOpenAI(model="qwen3-30b", base_url="http://localhost:8080/v1", api_key="-")
 store = InMemoryGraphStore()
 
 report = await build_graph(
@@ -35,8 +38,10 @@ people = await store.find_entities(tenant_id, entity_type="Person")
 neighbours = await store.neighbors(people[0].id, tenant_id)
 ```
 
-`docs/examples/build_a_graph.py` is the same thing, complete and runnable against the
-fake provider. It is executed by the test suite on every commit, so it cannot go stale.
+`docs/examples/build_a_graph.py` is the same composition, complete and runnable against
+`FakeLlmProvider` — no server, no extra. It is executed by the test suite on every
+commit, so it cannot go stale. Constructing the chat model above is the one step it does
+not show, because it is the one step that is langchain's rather than this library's.
 
 Pass `domain="literature_fiction"` to specialise the prompt to one of the bundled domain
 schemas, or `domain=AUTO` to have the content classifier choose (one extra model call).
