@@ -23,7 +23,11 @@ from uuid import UUID
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kg_builder.extraction.mapping import map_extraction
+from kg_builder.extraction.mapping import (
+    map_extraction,
+    preference,
+    relationship_preference,
+)
 from kg_builder.extraction.merging import merge_extractions
 from kg_builder.extraction.schema import (
     DEFAULT_CONFIDENCE,
@@ -365,6 +369,73 @@ class TestProperties:
 
         assert by_id(one_shot.entities) == by_id(folded.entities)
         assert by_id(one_shot.relationships) == by_id(folded.relationships)
+
+    @given(mentions=MENTIONS)
+    def test_two_mentions_of_one_entity_with_equal_preference_are_equal(self, mentions):
+        """The claim "the order is total", stated as a property instead of a belief.
+
+        It is also what makes the two `>` -> `>=` mutants in
+        `merge_extractions` equivalent rather than uncaught. `>` keeps the
+        incumbent on a tie and `>=` takes the challenger, so they differ
+        **only** when two distinct objects compare equal -- precisely what
+        totality forbids. Without this property those survivors would be
+        indistinguishable from the partial-order defect the review found, and
+        that defect already survived once by looking like an equivalent
+        mutant.
+
+        Each mention is mapped **alone**, then grouped. Mapping them together
+        would be vacuous: `map_extraction` deduplicates, so its output holds
+        one entity per id and every group would be a singleton -- which is
+        how the first version of this test passed while the order was still
+        partial.
+
+        Scoped to what `map_extraction` produces, which is the claim being
+        made: it fixes tenant, source, type, method and model across a bucket
+        and never populates `external_ids`, `source_text`, `temporal` or
+        `blocking_keys`, leaving confidence, name, description and properties
+        -- all four of which are in the key.
+        """
+        grouped: dict[tuple, list] = {}
+        for name, description in mentions:
+            [produced] = chunk(entity(name, description=description)).entities
+            grouped.setdefault((produced.id, preference(produced)), []).append(produced)
+
+        for tied in grouped.values():
+            assert all(other == tied[0] for other in tied)
+
+    @given(
+        statements=st.lists(
+            st.tuples(st.floats(0.0, 1.0), st.dictionaries(NAMES, NAMES, max_size=3)),
+            min_size=1,
+            max_size=6,
+        )
+    )
+    def test_two_statements_of_one_edge_with_equal_preference_are_equal(self, statements):
+        """The same claim for relationships, where the argument is shorter.
+
+        The endpoints and the type are all inputs to `_relationship_id_for`,
+        so within one id bucket only `confidence` and `properties` can differ
+        -- and both are generated here, and both are in the key.
+        """
+        pair = (entity("Ada Lovelace"), entity("Charles Babbage"))
+        grouped: dict[tuple, list] = {}
+        for confidence, properties in statements:
+            [edge] = chunk(
+                *pair,
+                links=[
+                    ExtractedRelationship(
+                        source_name="Ada Lovelace",
+                        target_name="Charles Babbage",
+                        relationship_type="KNOWS",
+                        confidence=confidence,
+                        properties=properties,
+                    )
+                ],
+            ).relationships
+            grouped.setdefault((edge.id, relationship_preference(edge)), []).append(edge)
+
+        for tied in grouped.values():
+            assert all(other == tied[0] for other in tied)
 
     @given(names_=st.lists(NAMES, min_size=1, max_size=6))
     def test_every_entity_that_went_in_comes_out(self, names_):
