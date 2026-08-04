@@ -205,9 +205,18 @@ class Adjudicator:
         except LlmProviderError:
             return [None] * len(batch)
 
-        if len(answer.verdicts) != len(batch):
+        try:
+            # `zip(strict=True)` rather than comparing two `len()`s, and the
+            # difference is not style. CPython interns small ints, so
+            # `len(a) != len(b)` and `len(a) is not len(b)` agree for every
+            # batch any test uses and disagree above 256 -- a cosmic-ray
+            # mutant rewriting `!=` as `is not` survived this file's whole
+            # suite. `EntitiesMerged._the_merge_is_coherent` hit the same trap
+            # and sidestepped it the same way: express the check so no int
+            # comparison exists to get wrong.
+            return [verdict for _, verdict in zip(batch, answer.verdicts, strict=True)]
+        except ValueError:
             return [None] * len(batch)
-        return list(answer.verdicts)
 
 
 def _render(questions: Sequence[AdjudicationQuestion]) -> str:

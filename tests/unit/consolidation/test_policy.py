@@ -296,6 +296,45 @@ class TestWhenTheModelDoesNotAnswer:
 
         assert verdicts == [None, None, None]
 
+    async def test_a_mismatch_is_caught_above_the_interning_boundary(self):
+        """Deliberately larger than 256, where CPython stops interning ints.
+
+        The check used to be `len(answer.verdicts) != len(batch)`, and a
+        cosmic-ray mutant rewriting that `!=` as `is not` survived every test
+        here -- because every batch was small enough that the two `len()`
+        calls returned the *same object*. Above the boundary they do not, and
+        `is not` would discard every correctly-sized batch. The check is now
+        `zip(strict=True)`, which has no int comparison to get wrong; this
+        pins the size at which the old shape came apart.
+        """
+        tenant = uuid4()
+        candidates = [_candidate(tenant, f"Ada {index}") for index in range(300)]
+        provider = FakeProvider(
+            answers=[AdjudicationBatch(verdicts=[_verdict() for _ in range(299)])]
+        )
+
+        verdicts = await Adjudicator(provider, batch_size=300).adjudicate(
+            entity(tenant), candidates
+        )
+
+        assert verdicts == [None] * 300
+
+    async def test_a_correctly_sized_large_batch_is_accepted(self):
+        """The other half. An implementation that rejected everything above
+        the interning boundary would pass the test above and fail here."""
+        tenant = uuid4()
+        candidates = [_candidate(tenant, f"Ada {index}") for index in range(300)]
+        provider = FakeProvider(
+            answers=[AdjudicationBatch(verdicts=[_verdict() for _ in range(300)])]
+        )
+
+        verdicts = await Adjudicator(provider, batch_size=300).adjudicate(
+            entity(tenant), candidates
+        )
+
+        assert all(verdict is not None for verdict in verdicts)
+        assert len(verdicts) == 300
+
     async def test_a_long_answer_invalidates_its_whole_batch_too(self):
         tenant = uuid4()
         candidates = [_candidate(tenant, "Ada")]
