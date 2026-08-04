@@ -3,12 +3,14 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **1966 tests pass, 0 fail**,
-full `pre-commit` gate green (now including `mypy`, see B30), nothing skipped
-at collection. The accuracy suite is deselected by default (see B12). (Slice
-1 of the ring migration deleted document sourcing -- scraping, storage,
-document parsing, and HTML preprocessors -- which accounts for the drop from
-the previous count.)
+Status of the tree as of the last update: **2070 tests pass, 0 fail** in the
+default gate, plus **106 `integration` tests** against a real Neo4j from
+`docker-compose.test.yml` (slice 4). Full `pre-commit` gate green (now
+including `mypy`, see B30), nothing skipped at collection. The accuracy and
+integration suites are deselected by default (see B12, B10a); a run now prints
+what it deselected and how to run it. (Slice 1 of the ring migration deleted
+document sourcing -- scraping, storage, document parsing, and HTML
+preprocessors -- which accounts for the earlier drop in count.)
 
 Ordering within a section is roughly by priority. Ordering between sections
 is not meaningful.
@@ -215,6 +217,33 @@ commit hook conditional on Docker turns a deterministic gate into a flaky one
 — the right shape is a separate CI target that starts the compose file, runs
 both suites, and combines, not a change to the hook. Slice 5 hits this again
 with pgvector, so solve it once, there.
+
+### B10e. The Neo4j adapter's mutation coverage is unestablished
+
+A cosmic-ray run over `src/kg_builder/graph/adapters/neo4j.py` completed **16
+of 289 mutants (5.5%)** before being interrupted: 11 killed, 5 survived, and
+all 5 survivors were `ReplaceBinaryOperator_BitOr_*` — the `|` in `X | None`
+annotations, unkillable under `from __future__ import annotations` and exactly
+the equivalent class CLAUDE.md describes. So nothing of concern was found, and
+also nothing much was looked at. **Do not read the adapter as mutation-tested.**
+
+Two things to fix before re-running, both learned the hard way:
+
+1. **cosmic-ray mutates tracked source in place and a killed process leaves
+   the mutant behind.** One escaped into the working tree here. Run it from a
+   `git worktree` or a copy, or wrap it so the file is restored on exit —
+   `git diff --quiet` afterwards is the minimum check.
+2. **Each mutant runs the whole 106-test integration suite against a live
+   Neo4j**, about 16 s, so a full run is 1.5–2 hours and needs the container
+   up throughout. `KG_COMPLIANCE_MAX_EXAMPLES` is already the lever; a
+   narrower per-mutant command (the compliance suite only, not the adapter
+   specifics) would cut it further without losing killing power.
+
+The session config used is worth recreating rather than rediscovering:
+`module-path` pointed at the single file, and `test-command` was
+`env KG_COMPLIANCE_MAX_EXAMPLES=5 ./.venv/bin/pytest -x -q --no-header -p no:randomly -m integration tests/integration`
+(the `-m integration` is required — `addopts` deselects it otherwise, and the
+run then silently mutates code no test executes, which is how B10a happened).
 
 ### B10b. `find_by_blocking_key` scans the tenant on Neo4j
 
