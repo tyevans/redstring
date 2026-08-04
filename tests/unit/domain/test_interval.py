@@ -77,7 +77,95 @@ class TestBounds:
         extent never made, and would make an exact timestamp swallow a whole
         day's worth of other events."""
         extent = TemporalExtent(start_date=utc(2023, 5, 4, 12, 30))
-        assert bounds(extent) == Bounds(utc(2023, 5, 4, 12, 30), utc(2023, 5, 4, 12, 30) + INSTANT)
+        # Spelled out rather than written as `start + INSTANT`. Phrasing the
+        # expectation in terms of the constant under test makes the assertion
+        # true for *any* value of it -- cosmic-ray set `INSTANT` to zero and
+        # this test still passed, while the interval it describes became empty.
+        assert bounds(extent) == Bounds(utc(2023, 5, 4, 12, 30), utc(2023, 5, 4, 12, 30, 0, 1))
+        assert INSTANT.total_seconds() > 0
+
+
+class TestUncertaintyOtherThanTheOpenOnes:
+    """`bounds` branches on `uncertainty`, and only BEFORE and AFTER change
+    anything. The other four must fall through to the ordinary closed
+    interval -- which no test checked until a mutation run pointed it out.
+
+    `UncertaintyMarker` is a `str` Enum, so `is` mutated to `>=` compares the
+    *strings*: "circa" >= "before" is true, and a circa-dated extent silently
+    became open-ended in one direction. Every test at the time either left
+    `uncertainty` at `None`, skipping the branch entirely, or set exactly the
+    marker being tested."""
+
+    @pytest.mark.parametrize(
+        "marker",
+        [
+            UncertaintyMarker.EXACT,
+            UncertaintyMarker.CIRCA,
+            UncertaintyMarker.APPROXIMATE,
+            UncertaintyMarker.INFERRED,
+        ],
+    )
+    def test_a_marker_that_is_not_an_open_bound_leaves_the_interval_closed(self, marker):
+        extent = TemporalExtent(
+            start_date=utc(2023, 1, 1), precision=DatePrecision.YEAR, uncertainty=marker
+        )
+        assert bounds(extent) == Bounds(utc(2023, 1, 1), utc(2024, 1, 1))
+
+    def test_a_circa_extent_relates_like_an_exact_one(self):
+        circa = TemporalExtent(
+            start_date=utc(2023, 1, 1),
+            precision=DatePrecision.YEAR,
+            uncertainty=UncertaintyMarker.CIRCA,
+        )
+        assert relate(circa, year(2023)) is TemporalRelation.EQUALS
+        assert relate(circa, year(2050)) is TemporalRelation.BEFORE
+
+
+class TestSharedEndpoints:
+    """Two intervals agreeing at one end and differing at the other. Allen
+    calls these `starts` and `finishes`; here they collapse into DURING and
+    CONTAINS, which is only true if the bound comparisons are inclusive.
+
+    Found by mutation: weakening either `<=` to `<` turns both of these into
+    OVERLAPS, and the whole suite passed -- every closed-interval example
+    happened to differ at both ends."""
+
+    def test_a_shorter_interval_starting_at_the_same_instant_is_during(self):
+        shorter = TemporalExtent(
+            start_date=utc(2000, 1, 1), end_date=utc(2005, 1, 1), precision=DatePrecision.YEAR
+        )
+        longer = TemporalExtent(
+            start_date=utc(2000, 1, 1), end_date=utc(2010, 1, 1), precision=DatePrecision.YEAR
+        )
+        assert relate(shorter, longer) is TemporalRelation.DURING
+        assert relate(longer, shorter) is TemporalRelation.CONTAINS
+
+    def test_a_shorter_interval_ending_at_the_same_instant_is_during(self):
+        shorter = TemporalExtent(
+            start_date=utc(2005, 1, 1), end_date=utc(2010, 1, 1), precision=DatePrecision.YEAR
+        )
+        longer = TemporalExtent(
+            start_date=utc(2000, 1, 1), end_date=utc(2010, 1, 1), precision=DatePrecision.YEAR
+        )
+        assert relate(shorter, longer) is TemporalRelation.DURING
+        assert relate(longer, shorter) is TemporalRelation.CONTAINS
+
+    def test_a_month_starting_its_year_is_during_that_year(self):
+        assert relate(month(2023, 1), year(2023)) is TemporalRelation.DURING
+
+    def test_a_month_ending_its_year_is_during_that_year(self):
+        assert relate(month(2023, 12), year(2023)) is TemporalRelation.DURING
+
+    def test_open_bounds_sharing_their_finite_end_nest_rather_than_overlap(self):
+        wider = TemporalExtent(
+            start_date=utc(2000, 1, 1),
+            precision=DatePrecision.YEAR,
+            uncertainty=UncertaintyMarker.AFTER,
+        )
+        narrower = TemporalExtent(
+            start_date=utc(2001, 1, 1), end_date=utc(2010, 1, 1), precision=DatePrecision.YEAR
+        )
+        assert relate(narrower, wider) is TemporalRelation.DURING
 
 
 class TestPrecisionIsNotExtent:
