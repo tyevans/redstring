@@ -39,7 +39,9 @@ wiping and handing back its test database.
 
 from __future__ import annotations
 
-from typing import Any
+import os
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -52,11 +54,29 @@ from kg_builder.domain.relationship import Relationship
 from kg_builder.ports.graph_store import GraphStore
 from tests.compliance import strategies as gen
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+#: Hypothesis examples per property test.
+#:
+#: An adapter backed by a real database calls `new_store()` once per example,
+#: so this number multiplies into database resets: at 50, a Neo4j run is
+#: roughly 750 of them. Tune it **without editing this file**:
+#:
+#:     KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest -m integration
+#:
+#: An explicit `max_examples` inside a `settings()` decorator outranks every
+#: hypothesis profile, so a hard-coded value here would also make
+#: `--hypothesis-profile` inert for every adapter. Reading it from the
+#: environment keeps the promise that an adapter opts in solely by
+#: implementing `new_store()`.
+DEFAULT_MAX_EXAMPLES = int(os.environ.get("KG_COMPLIANCE_MAX_EXAMPLES", "50"))
+
 # Store construction dominates the per-example cost for real backends, so the
 # deadline is off; a slow adapter is a performance finding, not a flaky test.
 compliance_settings = settings(
     deadline=None,
-    max_examples=50,
+    max_examples=DEFAULT_MAX_EXAMPLES,
     suppress_health_check=[HealthCheck.too_slow],
 )
 
@@ -84,9 +104,27 @@ class GraphStoreCompliance:
         """Return a fresh, empty store. Adapters must override this."""
         raise NotImplementedError
 
+    async def dispose(self, store: GraphStore) -> None:
+        """Release whatever `new_store` acquired. No-op by default.
+
+        An in-memory store is garbage; a Neo4j store holds a driver and
+        sessions. Adapters that own a connection must override this, or a run
+        leaks one connection per hypothesis example.
+        """
+
+    @asynccontextmanager
+    async def _store(self) -> AsyncIterator[GraphStore]:
+        """A store for the duration of one example, disposed afterwards."""
+        store = await self.new_store()
+        try:
+            yield store
+        finally:
+            await self.dispose(store)
+
     @pytest.fixture
-    async def store(self) -> GraphStore:
-        return await self.new_store()
+    async def store(self) -> AsyncIterator[GraphStore]:
+        async with self._store() as store:
+            yield store
 
     # ------------------------------------------------------------------
     # The port itself
@@ -102,16 +140,16 @@ class GraphStoreCompliance:
     @compliance_settings
     @given(entity=gen.entities())
     async def test_upsert_then_get_round_trips(self, entity: Entity) -> None:
-        store = await self.new_store()
-        await store.upsert_entity(entity)
-        assert await store.get_entity(entity.id, entity.tenant_id) == entity
+        async with self._store() as store:
+            await store.upsert_entity(entity)
+            assert await store.get_entity(entity.id, entity.tenant_id) == entity
 
     @compliance_settings
     @given(entity=gen.entities())
     async def test_upsert_entities_round_trips(self, entity: Entity) -> None:
-        store = await self.new_store()
-        await store.upsert_entities([entity])
-        assert await store.get_entity(entity.id, entity.tenant_id) == entity
+        async with self._store() as store:
+            await store.upsert_entities([entity])
+            assert await store.get_entity(entity.id, entity.tenant_id) == entity
 
     # ------------------------------------------------------------------
     # Property 2 -- idempotency
@@ -120,38 +158,37 @@ class GraphStoreCompliance:
     @compliance_settings
     @given(entity=gen.entities())
     async def test_upserting_twice_is_indistinguishable_from_once(self, entity: Entity) -> None:
-        once = await self.new_store()
-        await once.upsert_entity(entity)
+        async with self._store() as once, self._store() as twice:
+            await once.upsert_entity(entity)
 
-        twice = await self.new_store()
-        await twice.upsert_entity(entity)
-        await twice.upsert_entity(entity)
+            await twice.upsert_entity(entity)
+            await twice.upsert_entity(entity)
 
-        assert await twice.find_entities(entity.tenant_id) == await once.find_entities(
-            entity.tenant_id
-        )
-        assert len(await twice.find_entities(entity.tenant_id)) == 1
+            assert await twice.find_entities(entity.tenant_id) == await once.find_entities(
+                entity.tenant_id
+            )
+            assert len(await twice.find_entities(entity.tenant_id)) == 1
 
     @compliance_settings
     @given(data=st.data())
     async def test_upserting_a_relationship_twice_leaves_one_edge(
         self, data: st.DataObject
     ) -> None:
-        store = await self.new_store()
-        tenant = data.draw(st.uuids())
-        source, target = await self._two_entities(store, tenant, data)
-        relationship = data.draw(
-            gen.relationships(
-                tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+        async with self._store() as store:
+            tenant = data.draw(st.uuids())
+            source, target = await self._two_entities(store, tenant, data)
+            relationship = data.draw(
+                gen.relationships(
+                    tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+                )
             )
-        )
 
-        await store.upsert_relationship(relationship)
-        after_once = await store.neighbors(source.id, tenant)
-        await store.upsert_relationship(relationship)
+            await store.upsert_relationship(relationship)
+            after_once = await store.neighbors(source.id, tenant)
+            await store.upsert_relationship(relationship)
 
-        assert await store.neighbors(source.id, tenant) == after_once
-        assert after_once == [target]
+            assert await store.neighbors(source.id, tenant) == after_once
+            assert after_once == [target]
 
     async def test_relationship_upsert_replaces_by_id(self, store: GraphStore) -> None:
         """A re-upserted relationship id replaces the edge; it does not add one.
@@ -188,17 +225,17 @@ class GraphStoreCompliance:
     @compliance_settings
     @given(data=st.data())
     async def test_last_write_wins(self, data: st.DataObject) -> None:
-        store = await self.new_store()
-        tenant = data.draw(st.uuids())
-        entity_id = data.draw(st.uuids())
-        first = data.draw(gen.entities(tenant_id=tenant, entity_id=entity_id))
-        second = data.draw(gen.entities(tenant_id=tenant, entity_id=entity_id))
+        async with self._store() as store:
+            tenant = data.draw(st.uuids())
+            entity_id = data.draw(st.uuids())
+            first = data.draw(gen.entities(tenant_id=tenant, entity_id=entity_id))
+            second = data.draw(gen.entities(tenant_id=tenant, entity_id=entity_id))
 
-        await store.upsert_entity(first)
-        await store.upsert_entity(second)
+            await store.upsert_entity(first)
+            await store.upsert_entity(second)
 
-        assert await store.get_entity(entity_id, tenant) == second
-        assert len(await store.find_entities(tenant)) == 1
+            assert await store.get_entity(entity_id, tenant) == second
+            assert len(await store.find_entities(tenant)) == 1
 
     # ------------------------------------------------------------------
     # Property 4 -- tenant isolation (the one that matters most)
@@ -210,46 +247,46 @@ class GraphStoreCompliance:
         self, tenants: tuple[UUID, UUID], data: st.DataObject
     ) -> None:
         tenant_a, tenant_b = tenants
-        store = await self.new_store()
-
-        a_source, a_target = await self._two_entities(store, tenant_a, data)
-        await store.upsert_relationship(
-            data.draw(
-                gen.relationships(
-                    tenant_id=tenant_a,
-                    source_entity_id=a_source.id,
-                    target_entity_id=a_target.id,
+        async with self._store() as store:
+            a_source, a_target = await self._two_entities(store, tenant_a, data)
+            await store.upsert_relationship(
+                data.draw(
+                    gen.relationships(
+                        tenant_id=tenant_a,
+                        source_entity_id=a_source.id,
+                        target_entity_id=a_target.id,
+                    )
                 )
             )
-        )
-        # Tenant B is populated too: an isolation test against an empty tenant
-        # would pass on a store that simply lost the writes.
-        b_entity = data.draw(gen.entities(tenant_id=tenant_b))
-        await store.upsert_entity(b_entity)
+            # Tenant B is populated too: an isolation test against an empty tenant
+            # would pass on a store that simply lost the writes.
+            b_entity = data.draw(gen.entities(tenant_id=tenant_b))
+            await store.upsert_entity(b_entity)
 
-        # Every read under B is asserted against the exact expected answer,
-        # not merely "does not contain A". Generated ids may collide across
-        # tenants, and the collision is the interesting case: the store must
-        # answer with B's value, never A's.
-        b_only = [b_entity]
-        for entity in (a_source, a_target):
-            expected = b_entity if entity.id == b_entity.id else None
-            assert await store.get_entity(entity.id, tenant_b) == expected
-            assert await store.neighbors(entity.id, tenant_b) == []
+            # Every read under B is asserted against the exact expected answer,
+            # not merely "does not contain A". Generated ids may collide across
+            # tenants, and the collision is the interesting case: the store must
+            # answer with B's value, never A's.
+            b_only = [b_entity]
+            for entity in (a_source, a_target):
+                expected = b_entity if entity.id == b_entity.id else None
+                assert await store.get_entity(entity.id, tenant_b) == expected
+                assert await store.neighbors(entity.id, tenant_b) == []
 
-        assert await store.find_entities(tenant_b) == b_only
+            assert await store.find_entities(tenant_b) == b_only
 
-        for key in (a_source.blocking_keys or frozenset()) | (
-            a_target.blocking_keys or frozenset()
-        ):
-            found = await store.find_by_blocking_key(key, tenant_b)
-            assert found == (b_only if key in (b_entity.blocking_keys or frozenset()) else [])
+            for key in (a_source.blocking_keys or frozenset()) | (
+                a_target.blocking_keys or frozenset()
+            ):
+                found = await store.find_by_blocking_key(key, tenant_b)
+                assert found == (b_only if key in (b_entity.blocking_keys or frozenset()) else [])
 
-        by_name = await store.find_entities(tenant_b, name=a_source.normalized_name)
-        assert by_name == (b_only if b_entity.normalized_name == a_source.normalized_name else [])
+            by_name = await store.find_entities(tenant_b, name=a_source.normalized_name)
+            same_name = b_entity.normalized_name == a_source.normalized_name
+            assert by_name == (b_only if same_name else [])
 
-        by_type = await store.find_entities(tenant_b, entity_type=a_source.entity_type)
-        assert by_type == (b_only if b_entity.entity_type == a_source.entity_type else [])
+            by_type = await store.find_entities(tenant_b, entity_type=a_source.entity_type)
+            assert by_type == (b_only if b_entity.entity_type == a_source.entity_type else [])
 
     @compliance_settings
     @given(tenants=gen.distinct_tenant_pairs, data=st.data())
@@ -257,24 +294,24 @@ class GraphStoreCompliance:
         self, tenants: tuple[UUID, UUID], data: st.DataObject
     ) -> None:
         tenant_a, tenant_b = tenants
-        store = await self.new_store()
-        a_source, a_target = await self._two_entities(store, tenant_a, data)
-        # The same ids under tenant B, unrelated by any edge.
-        b_source = data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_source.id))
-        b_target = data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_target.id))
-        await store.upsert_entities([b_source, b_target])
-        await store.upsert_relationship(
-            data.draw(
-                gen.relationships(
-                    tenant_id=tenant_a,
-                    source_entity_id=a_source.id,
-                    target_entity_id=a_target.id,
+        async with self._store() as store:
+            a_source, a_target = await self._two_entities(store, tenant_a, data)
+            # The same ids under tenant B, unrelated by any edge.
+            b_source = data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_source.id))
+            b_target = data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_target.id))
+            await store.upsert_entities([b_source, b_target])
+            await store.upsert_relationship(
+                data.draw(
+                    gen.relationships(
+                        tenant_id=tenant_a,
+                        source_entity_id=a_source.id,
+                        target_entity_id=a_target.id,
+                    )
                 )
             )
-        )
 
-        assert await store.neighbors(a_source.id, tenant_a) == [a_target]
-        assert await store.neighbors(b_source.id, tenant_b) == []
+            assert await store.neighbors(a_source.id, tenant_a) == [a_target]
+            assert await store.neighbors(b_source.id, tenant_b) == []
 
     # ------------------------------------------------------------------
     # Property 5 -- delete_by_tenant is exact
@@ -286,58 +323,57 @@ class GraphStoreCompliance:
         self, tenants: tuple[UUID, UUID], data: st.DataObject
     ) -> None:
         doomed, spared = tenants
-        store = await self.new_store()
-
-        doomed_source, doomed_target = await self._two_entities(store, doomed, data)
-        await store.upsert_relationship(
-            data.draw(
-                gen.relationships(
-                    tenant_id=doomed,
-                    source_entity_id=doomed_source.id,
-                    target_entity_id=doomed_target.id,
+        async with self._store() as store:
+            doomed_source, doomed_target = await self._two_entities(store, doomed, data)
+            await store.upsert_relationship(
+                data.draw(
+                    gen.relationships(
+                        tenant_id=doomed,
+                        source_entity_id=doomed_source.id,
+                        target_entity_id=doomed_target.id,
+                    )
                 )
             )
-        )
-        spared_source, spared_target = await self._two_entities(store, spared, data)
-        await store.upsert_relationship(
-            data.draw(
-                gen.relationships(
-                    tenant_id=spared,
-                    source_entity_id=spared_source.id,
-                    target_entity_id=spared_target.id,
+            spared_source, spared_target = await self._two_entities(store, spared, data)
+            await store.upsert_relationship(
+                data.draw(
+                    gen.relationships(
+                        tenant_id=spared,
+                        source_entity_id=spared_source.id,
+                        target_entity_id=spared_target.id,
+                    )
                 )
             )
-        )
 
-        before = await store.find_entities(doomed)
-        spared_before = await store.find_entities(spared)
+            before = await store.find_entities(doomed)
+            spared_before = await store.find_entities(spared)
 
-        removed = await store.delete_by_tenant(doomed)
+            removed = await store.delete_by_tenant(doomed)
 
-        assert removed == len(before)
-        assert await store.find_entities(doomed) == []
-        assert await store.get_entity(doomed_source.id, doomed) is None
-        assert await store.neighbors(doomed_source.id, doomed) == []
+            assert removed == len(before)
+            assert await store.find_entities(doomed) == []
+            assert await store.get_entity(doomed_source.id, doomed) is None
+            assert await store.neighbors(doomed_source.id, doomed) == []
 
-        # Re-adding the entities must not resurrect the deleted edges. Without
-        # this step a store that drops entities but keeps relationships passes
-        # the traversal path, because `neighbors` on a missing entity returns
-        # [] either way. `test_delete_by_tenant_leaves_no_orphan_relationships`
-        # asserts the same thing directly.
-        await store.upsert_entities([doomed_source, doomed_target])
-        assert await store.neighbors(doomed_source.id, doomed, depth=5) == []
-        assert sorted(await store.find_entities(spared), key=lambda e: str(e.id)) == sorted(
-            spared_before, key=lambda e: str(e.id)
-        )
-        assert await store.neighbors(spared_source.id, spared) == [spared_target]
+            # Re-adding the entities must not resurrect the deleted edges. Without
+            # this step a store that drops entities but keeps relationships passes
+            # the traversal path, because `neighbors` on a missing entity returns
+            # [] either way. `test_delete_by_tenant_leaves_no_orphan_relationships`
+            # asserts the same thing directly.
+            await store.upsert_entities([doomed_source, doomed_target])
+            assert await store.neighbors(doomed_source.id, doomed, depth=5) == []
+            assert sorted(await store.find_entities(spared), key=lambda e: str(e.id)) == sorted(
+                spared_before, key=lambda e: str(e.id)
+            )
+            assert await store.neighbors(spared_source.id, spared) == [spared_target]
 
     @compliance_settings
     @given(tenant=st.uuids())
     async def test_delete_by_tenant_on_an_unknown_tenant_removes_nothing(
         self, tenant: UUID
     ) -> None:
-        store = await self.new_store()
-        assert await store.delete_by_tenant(tenant) == 0
+        async with self._store() as store:
+            assert await store.delete_by_tenant(tenant) == 0
 
     # ------------------------------------------------------------------
     # Property 6 -- neighbour depth monotonicity
@@ -348,23 +384,23 @@ class GraphStoreCompliance:
     async def test_neighbours_at_depth_n_are_a_subset_of_depth_n_plus_one(
         self, data: st.DataObject
     ) -> None:
-        store = await self.new_store()
-        tenant = data.draw(st.uuids())
-        chain = await self._connected_graph(store, tenant, data)
-        origin = chain[0]
+        async with self._store() as store:
+            tenant = data.draw(st.uuids())
+            chain = await self._connected_graph(store, tenant, data)
+            origin = chain[0]
 
-        for depth in range(4):
-            shallow = {e.id for e in await store.neighbors(origin.id, tenant, depth=depth)}
-            deeper = {e.id for e in await store.neighbors(origin.id, tenant, depth=depth + 1)}
-            assert shallow <= deeper
+            for depth in range(4):
+                shallow = {e.id for e in await store.neighbors(origin.id, tenant, depth=depth)}
+                deeper = {e.id for e in await store.neighbors(origin.id, tenant, depth=depth + 1)}
+                assert shallow <= deeper
 
     @compliance_settings
     @given(data=st.data())
     async def test_neighbours_at_depth_zero_is_empty(self, data: st.DataObject) -> None:
-        store = await self.new_store()
-        tenant = data.draw(st.uuids())
-        chain = await self._connected_graph(store, tenant, data)
-        assert await store.neighbors(chain[0].id, tenant, depth=0) == []
+        async with self._store() as store:
+            tenant = data.draw(st.uuids())
+            chain = await self._connected_graph(store, tenant, data)
+            assert await store.neighbors(chain[0].id, tenant, depth=0) == []
 
     # ------------------------------------------------------------------
     # Property 7 -- mutation isolation
@@ -373,41 +409,41 @@ class GraphStoreCompliance:
     @compliance_settings
     @given(entity=gen.entities())
     async def test_mutating_a_read_result_does_not_change_the_store(self, entity: Entity) -> None:
-        store = await self.new_store()
-        await store.upsert_entity(entity)
-        pristine = entity.model_copy(deep=True)
+        async with self._store() as store:
+            await store.upsert_entity(entity)
+            pristine = entity.model_copy(deep=True)
 
-        first = await store.get_entity(entity.id, entity.tenant_id)
-        assert first is not None
-        _mutate(first)
+            first = await store.get_entity(entity.id, entity.tenant_id)
+            assert first is not None
+            _mutate(first)
 
-        assert await store.get_entity(entity.id, entity.tenant_id) == pristine
-        assert await store.find_entities(entity.tenant_id) == [pristine]
+            assert await store.get_entity(entity.id, entity.tenant_id) == pristine
+            assert await store.find_entities(entity.tenant_id) == [pristine]
 
     @compliance_settings
     @given(entity=gen.entities())
     async def test_mutating_the_argument_after_a_write_does_not_change_the_store(
         self, entity: Entity
     ) -> None:
-        store = await self.new_store()
-        pristine = entity.model_copy(deep=True)
-        await store.upsert_entity(entity)
+        async with self._store() as store:
+            pristine = entity.model_copy(deep=True)
+            await store.upsert_entity(entity)
 
-        _mutate(entity)
+            _mutate(entity)
 
-        assert await store.get_entity(pristine.id, pristine.tenant_id) == pristine
+            assert await store.get_entity(pristine.id, pristine.tenant_id) == pristine
 
     @compliance_settings
     @given(entity=gen.entities())
     async def test_mutating_a_find_result_does_not_change_the_store(self, entity: Entity) -> None:
-        store = await self.new_store()
-        await store.upsert_entity(entity)
-        pristine = entity.model_copy(deep=True)
+        async with self._store() as store:
+            await store.upsert_entity(entity)
+            pristine = entity.model_copy(deep=True)
 
-        for found in await store.find_entities(entity.tenant_id):
-            _mutate(found)
+            for found in await store.find_entities(entity.tenant_id):
+                _mutate(found)
 
-        assert await store.get_entity(entity.id, entity.tenant_id) == pristine
+            assert await store.get_entity(entity.id, entity.tenant_id) == pristine
 
     async def test_mutating_a_blocking_key_result_does_not_change_the_store(
         self, store: GraphStore
@@ -535,19 +571,19 @@ class GraphStoreCompliance:
     @compliance_settings
     @given(data=st.data())
     async def test_relationship_round_trips(self, data: st.DataObject) -> None:
-        store = await self.new_store()
-        tenant = data.draw(st.uuids())
-        source, target = await self._two_entities(store, tenant, data)
-        relationship = data.draw(
-            gen.relationships(
-                tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+        async with self._store() as store:
+            tenant = data.draw(st.uuids())
+            source, target = await self._two_entities(store, tenant, data)
+            relationship = data.draw(
+                gen.relationships(
+                    tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+                )
             )
-        )
 
-        await store.upsert_relationship(relationship)
+            await store.upsert_relationship(relationship)
 
-        assert await store.get_relationships(source.id, tenant) == [relationship]
-        assert await store.get_relationships(target.id, tenant) == [relationship]
+            assert await store.get_relationships(source.id, tenant) == [relationship]
+            assert await store.get_relationships(target.id, tenant) == [relationship]
 
     @compliance_settings
     @given(tenants=gen.distinct_tenant_pairs, data=st.data())
@@ -555,28 +591,28 @@ class GraphStoreCompliance:
         self, tenants: tuple[UUID, UUID], data: st.DataObject
     ) -> None:
         tenant_a, tenant_b = tenants
-        store = await self.new_store()
-        a_source, a_target = await self._two_entities(store, tenant_a, data)
-        await store.upsert_relationship(
-            data.draw(
-                gen.relationships(
-                    tenant_id=tenant_a,
-                    source_entity_id=a_source.id,
-                    target_entity_id=a_target.id,
+        async with self._store() as store:
+            a_source, a_target = await self._two_entities(store, tenant_a, data)
+            await store.upsert_relationship(
+                data.draw(
+                    gen.relationships(
+                        tenant_id=tenant_a,
+                        source_entity_id=a_source.id,
+                        target_entity_id=a_target.id,
+                    )
                 )
             )
-        )
-        # Same entity ids under tenant B, with no edge between them.
-        await store.upsert_entities(
-            [
-                data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_source.id)),
-                data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_target.id)),
-            ]
-        )
+            # Same entity ids under tenant B, with no edge between them.
+            await store.upsert_entities(
+                [
+                    data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_source.id)),
+                    data.draw(gen.entities(tenant_id=tenant_b, entity_id=a_target.id)),
+                ]
+            )
 
-        for entity_id in (a_source.id, a_target.id):
-            assert await store.get_relationships(entity_id, tenant_b) == []
-            assert len(await store.get_relationships(entity_id, tenant_a)) == 1
+            for entity_id in (a_source.id, a_target.id):
+                assert await store.get_relationships(entity_id, tenant_b) == []
+                assert len(await store.get_relationships(entity_id, tenant_a)) == 1
 
     @compliance_settings
     @given(data=st.data())
@@ -589,48 +625,48 @@ class GraphStoreCompliance:
         relationship was unobservable through the port -- a surviving mutant
         that no test could kill.
         """
-        store = await self.new_store()
-        tenant = data.draw(st.uuids())
-        source, target = await self._two_entities(store, tenant, data)
-        relationship = data.draw(
-            gen.relationships(
-                tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+        async with self._store() as store:
+            tenant = data.draw(st.uuids())
+            source, target = await self._two_entities(store, tenant, data)
+            relationship = data.draw(
+                gen.relationships(
+                    tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+                )
             )
-        )
-        await store.upsert_relationship(relationship)
-        pristine = relationship.model_copy(deep=True)
+            await store.upsert_relationship(relationship)
+            pristine = relationship.model_copy(deep=True)
 
-        for found in await store.get_relationships(source.id, tenant):
-            found.relationship_type += "-tampered"
-            found.properties["__tampered__"] = True
-            for value in found.properties.values():
-                if isinstance(value, dict):
-                    value["__nested_tamper__"] = True
-                elif isinstance(value, list):
-                    value.append("__nested_tamper__")
+            for found in await store.get_relationships(source.id, tenant):
+                found.relationship_type += "-tampered"
+                found.properties["__tampered__"] = True
+                for value in found.properties.values():
+                    if isinstance(value, dict):
+                        value["__nested_tamper__"] = True
+                    elif isinstance(value, list):
+                        value.append("__nested_tamper__")
 
-        assert await store.get_relationships(source.id, tenant) == [pristine]
+            assert await store.get_relationships(source.id, tenant) == [pristine]
 
     @compliance_settings
     @given(data=st.data())
     async def test_mutating_the_relationship_argument_after_a_write_is_ignored(
         self, data: st.DataObject
     ) -> None:
-        store = await self.new_store()
-        tenant = data.draw(st.uuids())
-        source, target = await self._two_entities(store, tenant, data)
-        relationship = data.draw(
-            gen.relationships(
-                tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+        async with self._store() as store:
+            tenant = data.draw(st.uuids())
+            source, target = await self._two_entities(store, tenant, data)
+            relationship = data.draw(
+                gen.relationships(
+                    tenant_id=tenant, source_entity_id=source.id, target_entity_id=target.id
+                )
             )
-        )
-        pristine = relationship.model_copy(deep=True)
-        await store.upsert_relationship(relationship)
+            pristine = relationship.model_copy(deep=True)
+            await store.upsert_relationship(relationship)
 
-        relationship.relationship_type += "-tampered"
-        relationship.properties["__tampered__"] = True
+            relationship.relationship_type += "-tampered"
+            relationship.properties["__tampered__"] = True
 
-        assert await store.get_relationships(source.id, tenant) == [pristine]
+            assert await store.get_relationships(source.id, tenant) == [pristine]
 
     async def test_get_relationships_filters_by_direction(self, store: GraphStore) -> None:
         """Direction must be decided by identity of the endpoint, not by
@@ -684,7 +720,9 @@ class GraphStoreCompliance:
         outward = "".join(["o", "u", "t"])
         inward = "".join(["i", "n"])
         both = "".join(["bo", "th"])
-        assert id(outward) != id("out")  # equal in value, distinct as an object
+        interned = "out"
+        assert outward == interned
+        assert outward is not interned  # equal in value, distinct as an object
 
         assert await store.get_relationships(hub.id, tenant, direction=outward) == [outgoing]  # type: ignore[arg-type]
         assert await store.get_relationships(hub.id, tenant, direction=inward) == [incoming]  # type: ignore[arg-type]
