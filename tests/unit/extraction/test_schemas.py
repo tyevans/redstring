@@ -90,16 +90,19 @@ class TestExtractedEntitySchema:
 
         assert entity.name == "MyFunction"
 
-    def test_invalid_entity_type(self):
-        """Test that invalid entity type raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            ExtractedEntitySchema(
-                name="Test",
-                entity_type="invalid_type",  # type: ignore
-                confidence=0.9,
-            )
+    def test_unknown_entity_type_normalizes_to_custom(self):
+        """Unknown entity types are normalized, not rejected.
 
-        assert "entity_type" in str(exc_info.value)
+        `entity_type` is a free string so domain-specific types survive;
+        `normalize_entity_type` maps anything unrecognised to "custom".
+        """
+        entity = ExtractedEntitySchema(
+            name="Test",
+            entity_type="invalid_type",
+            confidence=0.9,
+        )
+
+        assert entity.entity_type == "custom"
 
     def test_invalid_confidence_too_high(self):
         """Test that confidence > 1.0 raises ValidationError."""
@@ -263,17 +266,16 @@ class TestExtractedRelationshipSchema:
 
         assert "different entities" in str(exc_info.value)
 
-    def test_invalid_relationship_type(self):
-        """Test that invalid relationship type raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            ExtractedRelationshipSchema(
-                source_name="A",
-                target_name="B",
-                relationship_type="invalid_rel",  # type: ignore
-                confidence=0.9,
-            )
+    def test_unknown_relationship_type_normalizes_to_related_to(self):
+        """Unknown relationship types are normalized, not rejected."""
+        relationship = ExtractedRelationshipSchema(
+            source_name="A",
+            target_name="B",
+            relationship_type="invalid_rel",
+            confidence=0.9,
+        )
 
-        assert "relationship_type" in str(exc_info.value)
+        assert relationship.relationship_type == "related_to"
 
     def test_all_relationship_types(self):
         """Test that all relationship types from the literal are valid."""
@@ -360,8 +362,8 @@ class TestExtractionResult:
         assert result.entity_count == 2
         assert result.relationship_count == 1
 
-    def test_result_relationship_validation_source_missing(self):
-        """Test that relationship referencing missing source entity fails."""
+    def test_result_relationship_with_missing_source_is_filtered(self):
+        """Relationships referencing an unknown source entity are dropped."""
         entities = [
             ExtractedEntitySchema(name="B", entity_type="class", confidence=0.9),
         ]
@@ -374,14 +376,12 @@ class TestExtractionResult:
             ),
         ]
 
-        with pytest.raises(ValidationError) as exc_info:
-            ExtractionResult(entities=entities, relationships=relationships)
+        result = ExtractionResult(entities=entities, relationships=relationships)
 
-        assert "source" in str(exc_info.value).lower()
-        assert "'A'" in str(exc_info.value)
+        assert result.relationships == []
 
-    def test_result_relationship_validation_target_missing(self):
-        """Test that relationship referencing missing target entity fails."""
+    def test_result_relationship_with_missing_target_is_filtered(self):
+        """Relationships referencing an unknown target entity are dropped."""
         entities = [
             ExtractedEntitySchema(name="A", entity_type="class", confidence=0.9),
         ]
@@ -394,11 +394,9 @@ class TestExtractionResult:
             ),
         ]
 
-        with pytest.raises(ValidationError) as exc_info:
-            ExtractionResult(entities=entities, relationships=relationships)
+        result = ExtractionResult(entities=entities, relationships=relationships)
 
-        assert "target" in str(exc_info.value).lower()
-        assert "'B'" in str(exc_info.value)
+        assert result.relationships == []
 
     def test_result_relationship_validation_case_insensitive(self):
         """Test that relationship validation is case insensitive for entity names."""

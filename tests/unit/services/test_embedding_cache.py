@@ -4,7 +4,7 @@ Unit tests for EmbeddingCache service.
 Tests the Redis-based embedding cache with mocked Redis client.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import numpy as np
@@ -305,16 +305,17 @@ class TestEmbeddingCacheBatchSet:
     def cache_with_mock(self):
         """Create cache with mock Redis."""
         mock_redis = AsyncMock()
-        # Mock pipeline
+        # `Redis.pipeline()` is a synchronous factory returning an awaitable
+        # pipeline, so it must be a MagicMock, not an AsyncMock coroutine.
         mock_pipeline = AsyncMock()
-        mock_redis.pipeline.return_value = mock_pipeline
+        mock_redis.pipeline = MagicMock(return_value=mock_pipeline)
         cache = EmbeddingCache(mock_redis)
         return cache, mock_redis, mock_pipeline
 
     @pytest.mark.asyncio
     async def test_batch_set_empty_dict(self, cache_with_mock):
         """Test batch set with empty dict returns 0."""
-        cache, mock_redis, _ = cache_with_mock
+        cache, _mock_redis, _ = cache_with_mock
 
         result = await cache.set_batch(uuid4(), {})
 
@@ -323,7 +324,7 @@ class TestEmbeddingCacheBatchSet:
     @pytest.mark.asyncio
     async def test_batch_set_uses_pipeline(self, cache_with_mock):
         """Test batch set uses Redis pipeline."""
-        cache, mock_redis, mock_pipeline = cache_with_mock
+        cache, _mock_redis, mock_pipeline = cache_with_mock
 
         entity_ids = [uuid4(), uuid4()]
         embeddings = {eid: np.random.randn(1024).astype(np.float32) for eid in entity_ids}
@@ -337,7 +338,7 @@ class TestEmbeddingCacheBatchSet:
     @pytest.mark.asyncio
     async def test_batch_set_redis_error(self, cache_with_mock):
         """Test batch set handles Redis error."""
-        cache, mock_redis, mock_pipeline = cache_with_mock
+        cache, _mock_redis, mock_pipeline = cache_with_mock
         mock_pipeline.execute.side_effect = Exception("Redis error")
 
         embeddings = {uuid4(): np.zeros(1024)}
@@ -464,7 +465,9 @@ class TestEmbeddingCacheStats:
             for key in ["key1", "key2", "key3"]:
                 yield key
 
-        mock_redis.scan_iter.return_value = mock_scan()
+        # `Redis.scan_iter()` is a synchronous factory returning an async
+        # iterator, so it must be a MagicMock, not an AsyncMock coroutine.
+        mock_redis.scan_iter = MagicMock(return_value=mock_scan())
         cache = EmbeddingCache(mock_redis)
 
         tenant_id = uuid4()

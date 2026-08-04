@@ -37,10 +37,13 @@ logger = logging.getLogger(__name__)
 class ProviderNotRegisteredError(ExtractionError):
     """Raised when attempting to create a service for an unregistered provider type."""
 
-    def __init__(self, provider_type: ExtractionProviderType):
+    def __init__(self, provider_type: ExtractionProviderType | str):
+        # An unregistered type may never have been an enum member in the first
+        # place -- callers can hand us a raw string from config or the DB.
+        name = getattr(provider_type, "value", provider_type)
         super().__init__(
-            f"No creator registered for provider type: {provider_type.value}",
-            provider=provider_type.value,
+            f"No creator registered for provider type: {name}",
+            provider=name,
         )
         self.provider_type = provider_type
 
@@ -326,7 +329,7 @@ class ExtractionProviderRegistry:
         Returns:
             List of provider type strings
         """
-        return [t.value for t in self._creators.keys()]
+        return [t.value for t in self._creators]
 
     def is_registered(self, provider_type: ExtractionProviderType) -> bool:
         """Check if a provider type is registered.
@@ -381,7 +384,7 @@ class ExtractionProviderRegistry:
                     raise ProviderConfigError(
                         f"Failed to decrypt API key: {e}",
                         provider_type=provider.provider_type.value,
-                    )
+                    ) from e
 
         return config
 

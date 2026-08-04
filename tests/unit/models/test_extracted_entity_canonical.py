@@ -14,7 +14,12 @@ from kg_builder.models.extracted_entity import EntityType, ExtractedEntity, Extr
 
 @pytest.mark.unit
 def test_entity_default_is_canonical():
-    """New entities should be canonical by default."""
+    """New entities should be canonical by default.
+
+    SQLAlchemy applies a column ``default`` at INSERT, not at construction,
+    and this suite has no database, so the unflushed attribute is None. The
+    contract the model actually owns is the declared default itself.
+    """
     entity = ExtractedEntity(
         tenant_id=uuid4(),
         source_page_id=uuid4(),
@@ -22,8 +27,12 @@ def test_entity_default_is_canonical():
         name="Test Entity",
         extraction_method=ExtractionMethod.LLM_OLLAMA,
     )
-    assert entity.is_canonical is True
+    assert entity.is_canonical is None  # not yet flushed
     assert entity.is_alias_of is None
+
+    is_canonical_column = ExtractedEntity.__table__.c.is_canonical
+    assert is_canonical_column.default.arg is True
+    assert is_canonical_column.nullable is False
 
 
 @pytest.mark.unit

@@ -26,9 +26,19 @@ class TestScrapingJobTimelineExtraction:
         }
 
     def test_enable_timeline_extraction_defaults_to_false(self, base_job_kwargs):
-        """Test enable_timeline_extraction defaults to False."""
+        """Test enable_timeline_extraction defaults to False.
+
+        SQLAlchemy applies a column ``default`` at INSERT, not at
+        construction, and this suite has no database, so the unflushed
+        attribute is None. The contract the model owns is the declared
+        default itself.
+        """
         job = ScrapingJob(**base_job_kwargs)
-        assert job.enable_timeline_extraction is False
+        assert job.enable_timeline_extraction is None  # not yet flushed
+
+        column = ScrapingJob.__table__.c.enable_timeline_extraction
+        assert column.default.arg is False
+        assert column.nullable is False
 
     def test_enable_timeline_extraction_can_be_enabled(self, base_job_kwargs):
         """Test enable_timeline_extraction can be set to True."""

@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING
 import httpx
 import numpy as np
 
+from kg_builder.config import settings
+
 if TYPE_CHECKING:
     from kg_builder.config import Settings
 
@@ -337,7 +339,7 @@ class EmbeddingServiceFactory:
     _instance: OllamaEmbeddingService | None = None
 
     @classmethod
-    def get_service(cls, settings: Settings | None = None) -> OllamaEmbeddingService:
+    def get_service(cls, settings_override: Settings | None = None) -> OllamaEmbeddingService:
         """
         Get singleton embedding service instance.
 
@@ -345,28 +347,25 @@ class EmbeddingServiceFactory:
         Subsequent calls return the same instance.
 
         Args:
-            settings: Application settings (uses defaults if None)
+            settings_override: Application settings (uses module settings if None)
 
         Returns:
             Configured OllamaEmbeddingService instance
         """
         if cls._instance is None:
-            if settings is None:
-                from kg_builder.config import settings as app_settings
-
-                settings = app_settings
+            resolved = settings if settings_override is None else settings_override
 
             cls._instance = OllamaEmbeddingService(
-                base_url=settings.OLLAMA_BASE_URL,
-                model=settings.OLLAMA_EMBEDDING_MODEL,
-                timeout=settings.OLLAMA_EMBEDDING_TIMEOUT,
-                max_retries=settings.OLLAMA_MAX_RETRIES,
+                base_url=resolved.OLLAMA_BASE_URL,
+                model=resolved.OLLAMA_EMBEDDING_MODEL,
+                timeout=resolved.OLLAMA_EMBEDDING_TIMEOUT,
+                max_retries=resolved.OLLAMA_MAX_RETRIES,
             )
 
             logger.info(
                 f"Created embedding service: "
-                f"url={settings.OLLAMA_BASE_URL}, "
-                f"model={settings.OLLAMA_EMBEDDING_MODEL}"
+                f"url={resolved.OLLAMA_BASE_URL}, "
+                f"model={resolved.OLLAMA_EMBEDDING_MODEL}"
             )
 
         return cls._instance

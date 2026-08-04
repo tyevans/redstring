@@ -200,7 +200,7 @@ async def get_entities_without_embeddings(
     return list(result.scalars().all())
 
 
-async def compute_embedding_similarity(
+def compute_embedding_similarity(
     embedding1: list[float],
     embedding2: list[float],
 ) -> float:
@@ -208,7 +208,8 @@ async def compute_embedding_similarity(
     Compute cosine similarity between two embeddings.
 
     This is a pure Python implementation for cases where database
-    query is not needed.
+    query is not needed. It performs no I/O and is deliberately
+    synchronous.
 
     Args:
         embedding1: First embedding vector
@@ -221,7 +222,7 @@ async def compute_embedding_similarity(
         raise ValueError("Embeddings must have same dimension")
 
     # Compute dot product and magnitudes
-    dot_product = sum(a * b for a, b in zip(embedding1, embedding2))
+    dot_product = sum(a * b for a, b in zip(embedding1, embedding2, strict=True))
     magnitude1 = sum(a * a for a in embedding1) ** 0.5
     magnitude2 = sum(b * b for b in embedding2) ** 0.5
 

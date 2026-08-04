@@ -17,10 +17,10 @@ from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from kg_builder.db import Base
+
 # Type alias for extraction strategy values
 ExtractionStrategyType = Literal["legacy", "auto_detect", "manual"]
-
-from kg_builder.db import Base
 
 if TYPE_CHECKING:
     from kg_builder.models.extraction_provider import ExtractionProvider
@@ -106,7 +106,8 @@ class ScrapingJob(Base):
             name="ck_scraping_jobs_classification_sample_size",
         ),
         CheckConstraint(
-            "classification_confidence IS NULL OR (classification_confidence >= 0.0 AND classification_confidence <= 1.0)",
+            "classification_confidence IS NULL OR "
+            "(classification_confidence >= 0.0 AND classification_confidence <= 1.0)",
             name="ck_scraping_jobs_classification_confidence",
         ),
     )
@@ -209,6 +210,15 @@ class ScrapingJob(Base):
         default=True,
         insert_default=True,
         comment="Use LLM for semantic entity extraction",
+    )
+
+    enable_timeline_extraction: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        insert_default=False,
+        server_default="false",
+        comment="Extract temporal events and chronology alongside entities",
     )
 
     extraction_provider_id: Mapped[uuid.UUID | None] = mapped_column(

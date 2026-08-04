@@ -32,6 +32,9 @@ from uuid import UUID
 
 import numpy as np
 
+from kg_builder.cache import get_redis_client
+from kg_builder.config import settings
+
 if TYPE_CHECKING:
     from redis.asyncio import Redis
 
@@ -217,7 +220,7 @@ class EmbeddingCache:
 
             result = {}
             hits = 0
-            for entity_id, data in zip(entity_ids, values):
+            for entity_id, data in zip(entity_ids, values, strict=False):
                 if data is not None:
                     try:
                         result[entity_id] = self._decode_embedding(data)
@@ -405,9 +408,6 @@ async def get_embedding_cache() -> EmbeddingCache | None:
     Returns:
         EmbeddingCache instance or None if Redis unavailable
     """
-    from kg_builder.cache import get_redis_client
-    from kg_builder.config import settings
-
     redis_client = await get_redis_client()
     if redis_client is None:
         logger.warning("Redis unavailable, embedding cache disabled")

@@ -130,8 +130,8 @@ class Neo4jClient:
                 tenant_id=str(entity.tenant_id),
                 name=entity.name,
                 normalized_name=entity.normalized_name,
-                type=entity.entity_type.value,
-                type_label=entity.entity_type.value.capitalize(),
+                type=entity.entity_type,
+                type_label=entity.entity_type.capitalize(),
                 description=entity.description,
                 confidence=entity.confidence_score,
                 method=entity.extraction_method.value,
@@ -282,7 +282,7 @@ class Neo4jClient:
         self,
         tenant_id: UUID,
         query: str,
-        entity_types: list[str] = None,
+        entity_types: list[str] | None = None,
         limit: int = 20,
     ) -> list[dict]:
         """

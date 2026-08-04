@@ -84,6 +84,14 @@ select = [
     "SIM",  # flake8-simplify
     "RUF",  # ruff-specific
 ]
+ignore = [
+    # UP042 wants `class X(str, Enum)` rewritten as `enum.StrEnum`. That is a
+    # behaviour change, not a style fix: `str(X.A)` goes from "X.A" to "a",
+    # which silently alters every f-string and log line holding a member. The
+    # `(str, Enum)` idiom is used at 33 sites here, so this is a deliberate
+    # migration to make wholesale with tests, not a drive-by autofix.
+    "UP042",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011"]
@@ -98,10 +106,16 @@ python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# The accuracy suite measures extraction quality against a live LLM, so it is
+# excluded from the default run (and therefore from the commit gate). Run it
+# deliberately with `uv run pytest -m accuracy tests/accuracy/` -- a CLI `-m`
+# overrides this one.
+addopts = ["-m", "not accuracy"]
 markers = [
     "unit: unit tests",
     "integration: integration tests",
     "accuracy: extraction accuracy tests",
+    "slow: tests that take a long time to run",
 ]
 
 [tool.coverage.run]

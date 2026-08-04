@@ -504,22 +504,37 @@ ALL_TEST_CASES = [
 async def ollama_available():
     """Check if Ollama is available and return True/False.
 
-    This fixture checks connectivity to the Ollama server and whether
-    the configured model is available.
+    This fixture checks connectivity to the Ollama server, that the
+    configured model is listed, and that the model can actually be loaded
+    and served. A model can be present in /api/tags but still fail to load
+    on a resource-constrained host, which would otherwise surface as a
+    spurious accuracy failure rather than a skip.
     """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
-            if response.status_code == 200:
-                data = response.json()
-                models = data.get("models", [])
-                model_names = [m.get("name", "") for m in models]
-                model_available = any(
-                    settings.OLLAMA_MODEL in name or name in settings.OLLAMA_MODEL
-                    for name in model_names
-                )
-                return model_available
-            return False
+            if response.status_code != 200:
+                return False
+
+            models = response.json().get("models", [])
+            model_names = [m.get("name", "") for m in models]
+            if not any(
+                settings.OLLAMA_MODEL in name or name in settings.OLLAMA_MODEL
+                for name in model_names
+            ):
+                return False
+
+        # Listed is not the same as loadable -- make one minimal completion.
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            probe = await client.post(
+                f"{settings.OLLAMA_BASE_URL}/v1/chat/completions",
+                json={
+                    "model": settings.OLLAMA_MODEL,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1,
+                },
+            )
+            return probe.status_code == 200
     except Exception:
         return False
 

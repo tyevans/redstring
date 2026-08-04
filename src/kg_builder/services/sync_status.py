@@ -5,6 +5,7 @@ This module provides the SyncStatusService for tracking the synchronization
 status of entities and relationships between PostgreSQL and Neo4j.
 """
 
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -253,8 +254,6 @@ class SyncStatusService:
         # 2. Increment a retry counter
         # 3. Set a next_retry_at timestamp
         # 4. Emit a sync failure event
-        import logging
-
         logger = logging.getLogger(__name__)
         logger.warning(
             "Sync failed for entity %s: %s",

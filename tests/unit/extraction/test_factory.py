@@ -14,6 +14,7 @@ from kg_builder.extraction.factory import (
     ExtractionProviderFactory,
     ProviderConfigError,
 )
+from kg_builder.extraction.registry import ProviderNotRegisteredError
 from kg_builder.models.extraction_provider import ExtractionProvider, ExtractionProviderType
 
 # =============================================================================
@@ -293,7 +294,7 @@ class TestUnknownProvider:
     """Tests for handling unknown provider types."""
 
     def test_unknown_provider_type_raises(self, tenant_id):
-        """Test that unknown provider type raises ProviderConfigError."""
+        """Test that an unregistered provider type raises ProviderNotRegisteredError."""
         provider = MagicMock(spec=ExtractionProvider)
         provider.id = uuid.uuid4()
         provider.tenant_id = tenant_id
@@ -305,10 +306,11 @@ class TestUnknownProvider:
             mock_encryption.is_encrypted.return_value = False
             mock_enc.return_value = mock_encryption
 
-            with pytest.raises(ProviderConfigError) as exc_info:
+            with pytest.raises(ProviderNotRegisteredError) as exc_info:
                 ExtractionProviderFactory.create_service(provider, tenant_id)
 
-            assert "Unknown provider type" in str(exc_info.value)
+            assert "No creator registered for provider type" in str(exc_info.value)
+            assert "unknown_type" in str(exc_info.value)
 
 
 # =============================================================================

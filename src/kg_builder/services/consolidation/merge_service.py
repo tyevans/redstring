@@ -383,8 +383,8 @@ class MergeService:
             if entity.entity_type != canonical_entity.entity_type:
                 issues.append(
                     f"Entity {entity.id} has different type "
-                    f"({entity.entity_type.value}) than canonical "
-                    f"({canonical_entity.entity_type.value})"
+                    f"({entity.entity_type}) than canonical "
+                    f"({canonical_entity.entity_type})"
                 )
 
         return issues
@@ -468,7 +468,7 @@ class MergeService:
                     merge_event_id=event_id,
                     merge_reason=merge_reason,
                     # Store original properties for undo support
-                    original_entity_type=entity.entity_type.value if entity.entity_type else None,
+                    original_entity_type=entity.entity_type,
                     original_normalized_name=entity.normalized_name,
                     original_description=entity.description,
                     original_properties=entity.properties or {},
@@ -509,7 +509,7 @@ class MergeService:
                 event_id=event_id,
                 event_type=MergeEventType.ENTITIES_MERGED,
                 canonical_entity_id=canonical_entity.id,
-                affected_entity_ids=[canonical_entity.id] + merged_entity_ids,
+                affected_entity_ids=[canonical_entity.id, *merged_entity_ids],
                 merge_reason=merge_reason,
                 similarity_scores=similarity_scores,
                 details={
@@ -1182,7 +1182,7 @@ class MergeService:
             # Step 2: Create new entities from definitions
             new_entities = []
             for defn in split_definitions:
-                entity_type_str = defn.get("entity_type", original_entity.entity_type.value)
+                entity_type_str = defn.get("entity_type", original_entity.entity_type)
                 try:
                     entity_type = EntityType(entity_type_str)
                 except ValueError:
@@ -1244,7 +1244,7 @@ class MergeService:
             relationship_assignments_json = {str(k): v for k, v in relationship_assignments.items()}
             property_assignments_json: dict[str, str] = {}
             for i, defn in enumerate(split_definitions):
-                for prop_key in defn.get("properties", {}).keys():
+                for prop_key in defn.get("properties", {}):
                     property_assignments_json[prop_key] = str(new_entity_ids[i])
 
             split_history = MergeHistory(
