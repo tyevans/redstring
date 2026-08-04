@@ -255,3 +255,76 @@ class TestRehydrationFromSerialisedEvents:
 
         assert replayed.state.alias_of == {}
         replayed.merge(tenant_id=tenant_id, canonical_entity_id=c, merged_entity_ids=[b])
+
+
+#: Two merge event ids that bracket each other. Pinned, because the log's
+#: `_apply` matches a merge by id and a mutant rewriting `==` as `<=` marks
+#: *every* merge sorting at or below the undone one. With ids the library
+#: generated -- `uuid4`, in an unknowable order -- such a test passes or fails
+#: by luck, which is the second entry in CLAUDE.md's table.
+LOWER_MERGE = UUID("11111111-1111-4111-8111-111111111111")
+UPPER_MERGE = UUID("99999999-9999-4999-8999-999999999999")
+
+
+class TestUndoTouchesOnlyTheMergeItNames:
+    """Two merges, and the undo names the one that sorts *above* the other.
+
+    A comparison that used `<=` instead of `==` would mark both undone here,
+    and would mark neither if the undo named the lower one -- so the order is
+    chosen, not incidental. The effect of getting it wrong is that undoing one
+    merge silently resurrects the entities of an unrelated one.
+    """
+
+    @staticmethod
+    def _merge_event(tenant_id, event_id, version, canonical, absorbed):
+        return EntitiesMerged(
+            event_id=event_id,
+            aggregate_id=tenant_id,
+            aggregate_version=version,
+            tenant_id=tenant_id,
+            canonical_entity_id=canonical,
+            merged_entity_ids=[absorbed],
+        )
+
+    def test_the_other_merge_stays_in_effect(self, tenant_id):
+        first_canonical, first_absorbed = uuid4(), uuid4()
+        second_canonical, second_absorbed = uuid4(), uuid4()
+        log = ConsolidationLog(tenant_id)
+        log.load_from_history(
+            [
+                self._merge_event(tenant_id, LOWER_MERGE, 1, first_canonical, first_absorbed),
+                self._merge_event(tenant_id, UPPER_MERGE, 2, second_canonical, second_absorbed),
+            ]
+        )
+
+        log.undo_merge(tenant_id=tenant_id, merge_event_id=UPPER_MERGE)
+
+        undone = {record.merge_event_id for record in log.state.merges if record.undone}
+        assert undone == {UPPER_MERGE}
+        # The untouched merge's entity is still an alias, so re-merging it is
+        # still refused -- the observable half of the same fact.
+        assert log.state.alias_of == {first_absorbed: first_canonical}
+        with pytest.raises(DoubleMergeError):
+            log.merge(
+                tenant_id=tenant_id,
+                canonical_entity_id=uuid4(),
+                merged_entity_ids=[first_absorbed],
+            )
+
+    def test_undoing_the_lower_one_leaves_the_upper_alone(self, tenant_id):
+        """The other direction, so a `>=` mutant has nowhere to hide either."""
+        first_canonical, first_absorbed = uuid4(), uuid4()
+        second_canonical, second_absorbed = uuid4(), uuid4()
+        log = ConsolidationLog(tenant_id)
+        log.load_from_history(
+            [
+                self._merge_event(tenant_id, LOWER_MERGE, 1, first_canonical, first_absorbed),
+                self._merge_event(tenant_id, UPPER_MERGE, 2, second_canonical, second_absorbed),
+            ]
+        )
+
+        log.undo_merge(tenant_id=tenant_id, merge_event_id=LOWER_MERGE)
+
+        undone = {record.merge_event_id for record in log.state.merges if record.undone}
+        assert undone == {LOWER_MERGE}
+        assert log.state.alias_of == {second_absorbed: second_canonical}
