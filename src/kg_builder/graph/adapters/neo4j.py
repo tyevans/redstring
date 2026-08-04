@@ -295,7 +295,7 @@ class Neo4jGraphStore:
         deduplicated = list({(r.tenant_id, r.id): r for r in relationships}.values())
         await self._reject_dangling(deduplicated)
 
-        await self._run(
+        records = await self._run(
             "UNWIND $rows AS row "
             "MATCH (s:Entity {tenant_id: row.tenant_id, id: row.source_entity_id}) "
             "MATCH (t:Entity {tenant_id: row.tenant_id, id: row.target_entity_id}) "
@@ -308,9 +308,28 @@ class Neo4jGraphStore:
             "DELETE old "
             "WITH row, s, t "
             f"CREATE (s)-[r:{EDGE}]->(t) "
-            "SET r = row",
+            "SET r = row "
+            # The write reports what it wrote, because `MATCH` drops a row
+            # whose endpoint is absent *silently*. The check above and this
+            # write are separate implicit transactions -- `_run` opens a
+            # session per query -- so an endpoint deleted in between would
+            # otherwise leave the caller told a batch succeeded that was
+            # never written. The port's contract here is write-or-raise.
+            "RETURN r.id AS id",
             rows=[_relationship_row(r) for r in deduplicated],
         )
+        written = {record["id"] for record in records}
+        missing = [r for r in deduplicated if str(r.id) not in written]
+        if missing:
+            # Normal path: re-checking names *which* endpoint went away, and
+            # the error is the same one a dangling edge raises up front.
+            await self._reject_dangling(missing)
+            # Reached only if the endpoint reappeared between the failed write
+            # and this re-check. The rows are still unwritten, so raising is
+            # right even though no endpoint is absent to name any more.
+            raise MissingEntityError(
+                entity_id=missing[0].source_entity_id, tenant_id=missing[0].tenant_id
+            )
 
     async def _reject_dangling(self, relationships: Sequence[Relationship]) -> None:
         """Raise `MissingEntityError` for the first absent endpoint.

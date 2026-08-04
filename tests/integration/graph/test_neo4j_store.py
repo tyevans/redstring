@@ -41,6 +41,7 @@ from uuid import uuid4
 import pytest
 
 from kg_builder.domain.entity import Entity, ExtractionMethod
+from kg_builder.domain.exceptions import MissingEntityError
 from kg_builder.graph.adapters.neo4j import Neo4jGraphStore
 from tests.compliance.graph_store import GraphStoreCompliance
 
@@ -404,6 +405,46 @@ class TestNeo4jSpecifics:
             await store.upsert_relationships(edges)
 
         assert len(queries) == 2
+
+    async def test_the_write_raises_when_it_matches_fewer_rows_than_it_was_given(
+        self, store: Neo4jGraphStore, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Write-or-raise has to hold across the gap between the two queries.
+
+        `_reject_dangling` and the write are separate implicit transactions, so
+        an endpoint deleted between them makes the write's `MATCH` match
+        nothing -- and Cypher drops that row silently. A single-threaded test
+        cannot produce the interleaving, so it produces the *state* the
+        interleaving leaves: the check passes (stubbed out for its first call)
+        and the endpoints are genuinely absent when the write runs.
+
+        This is the half of the fix a mock cannot cover: it proves the real
+        Cypher actually returns a row per edge written, which is what makes a
+        short write detectable at all.
+        """
+        tenant = uuid4()
+        source, target = _entity(tenant=tenant), _entity(tenant=tenant)
+        # Deliberately not written: the endpoints do not exist.
+        real = store._reject_dangling
+        calls = 0
+
+        async def skip_the_first_check(relationships: Any) -> None:
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                await real(relationships)
+
+        monkeypatch.setattr(store, "_reject_dangling", skip_the_first_check)
+
+        with pytest.raises(MissingEntityError) as raised:
+            await store.upsert_relationships(
+                [_relationship(tenant, source=source.id, target=target.id)]
+            )
+
+        # The re-check still names which endpoint is missing, so the error a
+        # caller sees is the same one an up-front dangling edge produces.
+        assert raised.value.entity_id == source.id
+        assert await store.get_relationships(source.id, tenant) == []
 
     async def test_batch_reads_are_one_round_trip_each(
         self, store: Neo4jGraphStore, monkeypatch: pytest.MonkeyPatch

@@ -41,11 +41,13 @@ from __future__ import annotations
 import ast
 import inspect
 from pathlib import Path
-from uuid import uuid4
+from typing import Any, cast
+from uuid import UUID, uuid4
 
 import pytest
 
 from kg_builder.domain.entity import Entity, ExtractionMethod
+from kg_builder.domain.exceptions import MissingEntityError
 from kg_builder.domain.relationship import Relationship
 from kg_builder.graph.adapters import neo4j as adapter
 from kg_builder.ports.graph_store import GraphStore
@@ -305,6 +307,81 @@ class TestArgumentValidationNeedsNoDatabase:
         assert await store.get_relationships_for([], tenant) == []
         assert await store.upsert_entities([]) is None
         assert await store.upsert_relationships([]) is None
+
+
+class _ScriptedStore(adapter.Neo4jGraphStore):
+    """A store whose `_run` answers from a script instead of a database.
+
+    Used only to drive `upsert_relationships` through the state its two
+    round trips make possible: the endpoint check passes, and by the time the
+    write runs the endpoint is gone. Single-threaded tests cannot *produce*
+    that interleaving, but they can put the write path into the state it
+    leaves behind -- a write that matched fewer rows than it was given.
+    """
+
+    def __init__(self, present: set[tuple[str, str]], *, written: int) -> None:
+        super().__init__(object())  # type: ignore[arg-type]
+        self._present = present
+        self._written = written
+        self.queries: list[str] = []
+
+    async def _run(self, query: str, /, **parameters: object) -> list[Any]:
+        self.queries.append(query)
+        if "RETURN e.tenant_id AS tenant_id" in query:
+            return [
+                {"tenant_id": tenant_id, "id": entity_id} for tenant_id, entity_id in self._present
+            ]
+        rows = cast("list[dict[str, Any]]", parameters["rows"])
+        return [{"id": row["id"]} for row in rows[: self._written]]
+
+
+def _edge(tenant: UUID, source: UUID, target: UUID) -> Relationship:
+    return Relationship(
+        id=uuid4(),
+        tenant_id=tenant,
+        source_entity_id=source,
+        target_entity_id=target,
+        relationship_type="knows",
+        confidence=1.0,
+    )
+
+
+class TestTheWriteReportsWhatItFailedToWrite:
+    """`upsert_relationships` is write-or-raise, across two round trips.
+
+    The check and the write are separate implicit transactions, so an endpoint
+    deleted between them leaves the write's `MATCH` matching nothing -- and
+    Cypher drops a non-matching row *silently*. Without the write reporting how
+    many rows it matched, the caller is told a batch succeeded that was never
+    written.
+    """
+
+    async def test_a_short_write_raises_rather_than_reporting_success(self):
+        tenant, source, target = uuid4(), uuid4(), uuid4()
+        # The check sees both endpoints; the write matches neither.
+        store = _ScriptedStore({(str(tenant), str(source)), (str(tenant), str(target))}, written=0)
+
+        with pytest.raises(MissingEntityError):
+            await store.upsert_relationships([_edge(tenant, source, target)])
+
+    async def test_a_partly_short_write_raises(self):
+        """One row of a batch lost is still a lost write, not a success."""
+        tenant, a, b, c = uuid4(), uuid4(), uuid4(), uuid4()
+        store = _ScriptedStore(
+            {(str(tenant), str(x)) for x in (a, b, c)},
+            written=1,
+        )
+
+        with pytest.raises(MissingEntityError):
+            await store.upsert_relationships([_edge(tenant, a, b), _edge(tenant, b, c)])
+
+    async def test_a_complete_write_does_not_raise(self):
+        """Guard the guard: a check that always raises would pass the above."""
+        tenant, source, target = uuid4(), uuid4(), uuid4()
+        store = _ScriptedStore({(str(tenant), str(source)), (str(tenant), str(target))}, written=1)
+
+        assert await store.upsert_relationships([_edge(tenant, source, target)]) is None
+        assert len(store.queries) == 2
 
 
 class TestEncodingIsPureAndReversible:
