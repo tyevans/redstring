@@ -60,8 +60,15 @@ reviewers, and they keep each hook run fast.
 First-time setup in a fresh clone:
 
 ```
-uv sync --extra dev && uv run pre-commit install
+uv sync --all-extras && uv run pre-commit install
 ```
+
+**`--all-extras`, not `--extra dev`.** The `dev` extra holds only the tooling;
+`neo4j`, `llm` and `eventsourcing` are separate, and a venv without them fails
+*collection* on 17 test modules rather than skipping them. Slice 7 lost a
+cosmic-ray run to a near-miss of this: a worktree synced with `--extra dev`
+reported 0 survivors out of 426 mutants, every one "killed" by an import
+error.
 
 ## Coverage ratchet
 

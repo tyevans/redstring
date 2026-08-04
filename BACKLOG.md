@@ -88,6 +88,33 @@ Interim: `ScoredCandidate` already carries the per-signal features, so a
 caller wanting this today can call `CandidateFinder.candidates` itself and log
 what it sees before handing the survivors to `resolve`.
 
+### B45. Nothing fails loudly when a mutation run's test command is broken
+
+Slice 7's first cosmic-ray run reported **0 survivors out of 426** on the
+consolidation package. The number was meaningless: the worktree had been
+synced with `uv sync --extra dev`, `jellyfish` was absent, and every mutant
+"died" on a collection error. `cr-report` shows `WorkerOutcome.NORMAL,
+TestOutcome.KILLED` for all 426 -- exactly what a perfect suite looks like.
+
+**A vacuous mutation run is indistinguishable from an excellent one**, and it
+fails in the flattering direction, which is the direction nobody
+double-checks. CLAUDE.md already says never to gate on a raw survivor count;
+this is the other half -- a *zero* is the number most in need of suspicion.
+
+The check that would have caught it is one line: run the configured
+`test-command` unmutated first and require it to pass. cosmic-ray has no
+baseline step, so it has to be done by hand or wrapped:
+
+```
+uv run pytest -x -q -p no:randomly <the same paths>   # must be green
+uv run cosmic-ray init ... && uv run cosmic-ray exec ...
+```
+
+Worth a `scripts/mutation.py` that does the baseline, the init, the exec and
+the report, and refuses to start if the baseline is red. Not done here because
+the right shape depends on whether mutmut gets the same wrapper, and the
+one-line habit works today.
+
 ### B41. `RedisCache` has no test against a real Redis
 
 `llm/cache/redis.py` is the only `Cache` adapter with no run of

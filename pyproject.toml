@@ -18,6 +18,7 @@ dependencies = [
     "pyyaml>=6.0",
     "cryptography>=45.0",
     "redis[hiredis]>=5.3,<6",
+    "jellyfish>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -31,12 +32,11 @@ llm = [
     "langchain-core>=0.3,<2",
     "langchain-openai>=0.2,<2",
 ]
-nlp = ["jellyfish>=1.0.0"]
 eventsourcing = [
     "eventsource-py>=0.9.1,<0.11",
 ]
 all = [
-    "kg-builder[neo4j,llm,nlp,eventsourcing]",
+    "kg-builder[neo4j,llm,eventsourcing]",
 ]
 dev = [
     "bandit[toml]>=1.9.4",
