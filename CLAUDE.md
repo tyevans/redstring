@@ -189,7 +189,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape fifteen times,
+  testing the difference.** This project has hit the same shape sixteen times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -209,8 +209,24 @@ reading the code:
   | two `len()` calls on collections under 257 items | `is not` where `!=` was meant — the two calls return the *same* int object, and the check inverts above the cache |
   | an expectation written in terms of the constant under test (`start + INSTANT`) | *any* value of that constant, including one that makes the interval empty |
   | asserting only the *precision* of a parsed date, never where it lands | every wrong arithmetic — "Q3" moving to January, April or August all keep MONTH precision |
+  | intervals whose bounds never *coincide* | direction derived from a sort — the shorter of two extents sharing a lower bound sorts first, and its edge is silently dropped |
 
-  The last two are one lesson from different angles: **an assertion has to be
+  The interval row was the campaign's only Critical, and its lesson is
+  structural rather than about inputs: **an invariant that holds because of an
+  argument about sort order is not enforced, it is inferred.** Direction was
+  derived from `order_key`, so the module's stated invariant ("`DURING` never
+  appears") was true only for inputs where the sort happened to put the
+  container first. Canonicalising from the computed relation instead makes it
+  true by construction. When the fix landed, the same reasoning turned up a
+  second time in the same file — a map entry that no test could reach, whose
+  justification was also an argument about the sort.
+
+  The corollary is a habit worth having: **when you fix something that rested
+  on an incidental property, grep for the second instance before closing.**
+  It was there both times this project looked.
+
+  The two rows before it are one lesson from different angles: **an assertion
+  has to be
   independent of the thing it checks, and it has to check every claim the code
   makes.** Writing the expectation as `start + INSTANT` makes the test true by
   construction for any `INSTANT`, zero included. And a parsed date is two
@@ -219,7 +235,7 @@ reading the code:
   expect, and assert every claim the function makes rather than the one that
   was convenient.
 
-  **Four of the fifteen rows are identity-vs-equality**, and they are the
+  **Four of the sixteen rows are identity-vs-equality**, and they are the
   ones to expect rather than to be surprised by. Three fired because the test
   value sat inside a CPython cache — interned strings, cached small ints, and
   `len()` on a short collection returning that same cached int. Test numeric
