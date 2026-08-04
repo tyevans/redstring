@@ -34,6 +34,43 @@ is not meaningful.
 
 ## 1. Unlanded features
 
+### B55. The strategy router was deleted, and the domain schemas now have no caller
+
+Slice 9 deleted `extraction/strategy_router.py` (583 lines) and its 826-line
+test file. Recoverable from `66f589d`, the last commit that had them.
+
+**Why deleting rather than porting.** Its entire public surface took a
+`ScrapingJob`: `route(job, content)` reads `job.extraction_strategy`,
+`job.content_domain` and `job.id`, and `JobUpdateCallback` writes the
+classification result back onto the job row. Slice 1 deleted that model. The
+`TYPE_CHECKING` import the slice-9 brief names was not the problem -- the
+*parameter* was, and there is no replacement type to point it at. Inventing
+one (a `RoutingRequest` value object, say) would have been a contract with no
+caller to serve, which is the thing this campaign has been removing.
+
+Its tests do not argue for keeping it either: **every job in all 826 lines is
+a bare `MagicMock`**, so nothing ever proved the router worked against the
+model it was written for, and 24 mock/patch sites make it the shape B41
+records as worthless.
+
+**What is now caller-less but kept, and why.** `extraction/classifier.py`,
+`extraction/prompt_generator.py` and `extraction/domains/` were the router's
+three collaborators and are all that is left of adaptive extraction. They are
+kept because, unlike the router, none of them mentions a deleted concept:
+the classifier maps content to a domain id, the generator turns a
+`DomainSchema` into a system prompt and a JSON schema, and the registry loads
+YAML. All three are tested and layer-clean.
+
+**They have no path into `extraction/pipeline.py`, and that is the gap.**
+`ExtractionPipeline` takes a fixed `DEFAULT_SYSTEM_PROMPT`; nothing chooses a
+domain, and `ExtractionStrategy` -- the type the router produced -- is
+constructed by nothing. Wiring it is slice 10's public-API work. Whoever does
+it should note that the router's actual routing logic was three lines
+(`legacy` / `manual` / `auto_detect` on a string field) and the other 580 were
+lazy-construction accessors, a DI factory singleton, and a convenience
+function that built a router per call; the part worth recovering from the ref
+above is `_build_strategy_from_domain`, not the class around it.
+
 ### B47. Three timeline modules were deleted, not ported — slice 8
 
 Slice 8 deleted ~1700 lines rather than porting them. All three are recoverable

@@ -691,9 +691,13 @@ class ClassificationResult(BaseModel):
 class ExtractionStrategy(BaseModel):
     """Resolved extraction strategy with prompts and configuration.
 
-    Created by the ExtractionStrategyRouter after determining
-    the appropriate extraction approach for a job. Can represent
-    either adaptive (domain-specific) extraction or legacy extraction.
+    Can represent either adaptive (domain-specific) extraction or legacy
+    extraction.
+
+    Nothing constructs one today. `ExtractionStrategyRouter`, which used to,
+    was deleted in slice 9 -- its whole API took a `ScrapingJob` (see BACKLOG
+    B55). Wiring the domain schemas into `extraction/pipeline.py` is slice
+    10's, and this type is the shape that work should reach for.
 
     Attributes:
         domain_id: Domain ID (None for legacy extraction)
