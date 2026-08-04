@@ -137,32 +137,34 @@ Interim: `ScoredCandidate` already carries the per-signal features, so a
 caller wanting this today can call `CandidateFinder.candidates` itself and log
 what it sees before handing the survivors to `resolve`.
 
-### B45. Nothing fails loudly when a mutation run's test command is broken
+### B45. No wrapper enforces a green baseline before a mutation run
 
-Slice 7's first cosmic-ray run reported **0 survivors out of 426** on the
-consolidation package. The number was meaningless: the worktree had been
-synced with `uv sync --extra dev`, `jellyfish` was absent, and every mutant
-"died" on a collection error. `cr-report` shows `WorkerOutcome.NORMAL,
-TestOutcome.KILLED` for all 426 -- exactly what a perfect suite looks like.
+**The rule is written down; the enforcement is not.** CLAUDE.md's "A
+zero-survivor run is the result most in need of suspicion" carries the
+reasoning and the habit -- run the configured `test-command` unmutated in the
+same environment and require it green before reading any result. What is left
+here is only the automation.
 
-**A vacuous mutation run is indistinguishable from an excellent one**, and it
-fails in the flattering direction, which is the direction nobody
-double-checks. CLAUDE.md already says never to gate on a raw survivor count;
-this is the other half -- a *zero* is the number most in need of suspicion.
+The incident, kept because it is the argument for automating it: slice 7's
+first cosmic-ray run reported **0 survivors out of 426**, and a planner-only
+run before it reported 0 out of 45. Both were worthless -- the worktree had
+been synced with `uv sync --extra dev`, `jellyfish` was absent, and every
+mutant "died" on a collection error. `cr-report` showed `WorkerOutcome.NORMAL,
+TestOutcome.KILLED` for all 426, which is exactly what a perfect suite looks
+like. The real run, once the environment was fixed, had 136 survivors from 28
+source lines, four of them genuine defects.
 
-The check that would have caught it is one line: run the configured
-`test-command` unmutated first and require it to pass. cosmic-ray has no
-baseline step, so it has to be done by hand or wrapped:
+A habit that has already been forgotten once is a habit, not a control.
+Wanted: a `scripts/mutation.py` that does the baseline, the init, the exec and
+the report, and **refuses to start if the baseline is red**. Two things to
+decide first, which is why it is not done:
 
-```
-uv run pytest -x -q -p no:randomly <the same paths>   # must be green
-uv run cosmic-ray init ... && uv run cosmic-ray exec ...
-```
-
-Worth a `scripts/mutation.py` that does the baseline, the init, the exec and
-the report, and refuses to start if the baseline is red. Not done here because
-the right shape depends on whether mutmut gets the same wrapper, and the
-one-line habit works today.
+- Whether mutmut gets the same wrapper. Both tools are kept deliberately (see
+  the section above), and two half-wrappers would be worse than none.
+- Where the baseline runs. cosmic-ray's `local` distributor mutates the
+  working tree, so the run belongs in a worktree or clone -- and a worktree is
+  exactly where a missing extra goes unnoticed, so the baseline must run
+  *there*, not in the main tree where it would pass.
 
 ### B46. Two tests still describe SQL blocking, which nothing does any more
 
