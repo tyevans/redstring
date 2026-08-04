@@ -59,8 +59,31 @@ These bind every slice. Implementers and reviewers are held to all of them.
 ## What kg-builder is
 
 **Given content, produce a knowledge graph.** Entity and relationship
-extraction, entity consolidation, temporal enrichment, embeddings — written
-through a `GraphStore` port and a `VectorStore` port.
+extraction, entity consolidation, temporal enrichment, embeddings.
+
+**The event log is the write model. The graph and vector stores are
+projections.** Extraction, consolidation, and temporal enrichment emit
+domain events; projections fold those events into a `GraphStore` and a
+`VectorStore`. Both stores are derived and disposable — rebuildable by
+replay.
+
+This is the property that matters most: **LLM extraction is the slow,
+expensive, non-deterministic step.** Once its results are events, you can
+re-run consolidation with new thresholds, a new blocking strategy, or a new
+merge policy by replaying the log — without paying for extraction again.
+Backend swaps and graph rebuilds fall out of the same mechanism, and they
+independently prove the store ports.
+
+`eventsource-py` supplies the event store, bus, and projection machinery
+(checkpoints, DLQ, replay). It is already a dependency: `context.py`
+re-exports `eventsource.multitenancy`, `events/base.py` re-exports
+`TenantDomainEvent`, and four modules call `register_event`.
+
+**What we take from it, and what we don't.** Take the event store, the event
+bus, and the projection system. **Skip the aggregate pattern** — a document
+yielding ten thousand entities is not ten thousand transactional aggregates
+with optimistic locking, and forcing that shape onto bulk extraction would
+be a serious mistake.
 
 ## What kg-builder is not
 
@@ -69,11 +92,19 @@ Three scope cuts, decided deliberately:
 | Not this | Why | Consequence |
 |---|---|---|
 | **A document sourcer** | Fetching, crawling, and cleaning source content is a different problem set | `scraping/` deleted; HTML preprocessors deleted; document parsing and object storage deleted |
-| **An application** | Job tracking, review queues, and credential storage belong to the caller | `models/` deleted; SQLAlchemy leaves the core; provider config is passed in, not read from a DB |
+| **An application** | Job tracking, review queues, and credential storage belong to the caller | `models/` deleted; the bespoke relational schema goes; provider config is passed in, not read from a DB |
 | **An auth boundary** | It never was one | `User`/`Tenant`/`OAuthProvider` and the `OAUTH_*`/`APP_JWT_*` config deleted; `tenant_id` survives as a scoping key |
 
 The library does not fetch anything. Callers hand it content they already
 have.
+
+**One nuance on state.** The library owns the event log — that is the whole
+point of the write model. What it does not own is a bespoke relational
+schema for jobs, queues, and credentials. The event store is reached through
+`eventsource-py`'s port, so the caller still chooses the backend (in-memory,
+SQLite, PostgreSQL) and the library remains runnable with no infrastructure
+at all. SQLAlchemy therefore returns as a transitive dependency of the
+event-store adapter — not as this library's persistence layer.
 
 ## Input contract
 
@@ -117,6 +148,23 @@ VectorStore
 Supporting ports, each with a default that needs no infrastructure:
 `LlmProvider`, `EmbeddingProvider`, `Cache` (in-memory default; Redis
 optional), `Clock`.
+
+The event store, event bus, checkpoint, and DLQ ports come from
+`eventsource-py` — we do not redefine them. `GraphStore` and `VectorStore`
+are written by projection handlers subscribed to the log, never by
+extraction or consolidation directly.
+
+```
+SourceDocument
+      |
+   extraction / consolidation / temporal
+      |  emit
+      v
+  [ event log ]  <- the write model, the only authority
+      |  project
+      +--> GraphStore    (derived, disposable, rebuildable)
+      +--> VectorStore   (derived, disposable, rebuildable)
+```
 
 **The port must not leak Cypher.** `graph/queries.py` is Cypher templates
 today; they become Neo4j adapter internals, never port vocabulary.
@@ -234,9 +282,18 @@ backlog entry, rather than silently degrading to a default.
 ### Merge undo
 
 `undo_merge` and `split_entity` both exist today and both need to know what
-a merge did. This becomes graph structure — alias edges already record the
-canonical/alias relationship, and the property values displaced by a merge
-are recorded on those edges. No history table returns.
+a merge did.
+
+With the event log as the write model, this stops being a storage question.
+A merge is an `EntitiesMerged` event; undoing it is a compensating
+`MergeUndone` event, and the projection folds both. The pre-merge state is
+recoverable from the log — that is what a log is for. No history table, and
+no displaced-value payload smuggled onto an alias edge either.
+
+Note for slice 5b: slice 2's `Alias` type carries a `displaced` dict, added
+when undo was still a storage problem. Once undo is a compensating event
+that field is redundant with the log. Decide there whether the projection
+still wants it as a read optimisation, and delete it if not.
 
 ## Slices
 
@@ -251,8 +308,9 @@ Slices 0 and 0b are complete. Dispatch the rest one at a time.
 | 3 | **`GraphStore` port + in-memory adapter + compliance suite.** The compliance suite is the real artifact. | Compliance suite green against memory |
 | 4 | **Neo4j adapter.** Same compliance suite, no new tests of its own beyond Cypher specifics. | Compliance suite green against Neo4j |
 | 5 | **`VectorStore` port + in-memory + pgvector adapters.** | Compliance suite green against both |
-| 6 | **Extraction onto the domain model.** Absorb chunkers and mergers. Provider config passed in, not loaded. | Targeted + `lint-imports` |
-| 7 | **Consolidation onto the ports.** Key-based blocking as pure domain logic, fuzzy blocking via `VectorStore.search`; `MergeStrategy` port with the simple implementations only; undo carried on alias edges. See "Consolidation design". | Targeted + `lint-imports` |
+| 5b | **Event-sourcing foundation.** Rebuild `events/` on the domain model — the 67 existing classes are the raw material, but they are shaped for the old ORM and none is emitted today. Wire `eventsource-py`'s store and bus. Build the projection handlers that fold events into `GraphStore` and `VectorStore`, with checkpoints and DLQ. **Prove replay:** a test that projects a log into an empty in-memory store and gets a byte-identical graph is this slice's real deliverable. Skip the aggregate pattern. | Replay-equivalence test green; compliance suites still green |
+| 6 | **Extraction onto the domain model.** Absorb chunkers and mergers. Provider config passed in, not loaded. Extraction **emits events** rather than writing to a store. | Targeted + `lint-imports` |
+| 7 | **Consolidation onto the ports.** Key-based blocking as pure domain logic, fuzzy blocking via `VectorStore.search`; `MergeStrategy` port with the simple implementations only. Merges emit events; **undo becomes a compensating event, not displaced values on an edge** — see "Consolidation design". Prove it: merge, undo, and assert the projection matches the pre-merge graph. | Targeted + `lint-imports` |
 | 8 | **Temporal onto the ports.** | Targeted + `lint-imports` |
 | 9 | **Delete the relational layer.** `models/`, `db.py`, `sync_status`, SQL in `timeline_query`/`vector_ops`; trim `config.py` and `encryption.py`. | Full gate |
 | 10 | **`pipelines/` + public API.** The composed use cases and a deliberate `kg_builder/__init__.py`. | Full gate |
@@ -269,6 +327,20 @@ cheaper against a smaller tree.
 - **Coverage ratchet.** Slice 1 deletes ~7,800 lines; total coverage will
   move sharply and the baseline needs a deliberate edit with reasoning in the
   commit message.
+- **Event schema is forever.** A persisted log cannot be refactored the way
+  code can — a badly shaped event is permanent, or needs an upcaster. Slice
+  5b must not rush the event shapes. The 67 existing classes are raw
+  material, not a spec: they were written against the ORM, and none has ever
+  been emitted, so there is no compatibility to preserve and no excuse for
+  carrying their mistakes forward.
+- **Projection lag is real.** Once the stores are derived, a read after a
+  write is not guaranteed to see it. The compliance suites must state
+  whether each store is read-your-writes or eventually consistent, and the
+  pipelines must not assume the former.
+- **Rebuild must be proven, not assumed.** A projection that has never been
+  replayed from scratch does not work — it has only ever been fed live. The
+  replay-equivalence test in slice 5b is the guard, and it must run in CI,
+  not by hand.
 - **`tenant_id` scoping** moves into the store ports (namespace, label, or
   collection per tenant). Every port method takes it; the compliance suite
   must prove isolation.
