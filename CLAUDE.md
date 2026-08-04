@@ -158,6 +158,32 @@ So an exemption can hide a misconfiguration rather than debt, and then it
 absorbs that misconfiguration indefinitely — which is a better argument for
 removing exemptions promptly than any amount of accumulated strictness debt.
 
+## The public API is gated, not curated
+
+`kg_builder.__all__` is the whole promise; anything reached by a dotted path is
+internal. Three tests keep that honest, and each exists because the other two
+cannot see its failure:
+
+1. **Every exported name's signature mentions only exported types.** Ruff's
+   F822 catches unresolvable `__all__` entries and is blind to this.
+2. **Every `KgBuilderError` subclass is exported or listed** against the
+   capability whose export would bring it. A *signature* gate cannot see
+   exceptions — removing `MissingEntityError` from `__all__` passes check 1.
+3. **The end-to-end example imports nothing but `kg_builder`.** Without it the
+   example can reach into an adapter module and pass while the surface is
+   empty.
+
+Two things learned building check 1, both of which will recur:
+
+- **It must walk the MRO.** `GraphProjection` declares no `__init__`, so a
+  body-only check reported it clean while the constructor a caller actually
+  calls — `StoreProjection`'s — took five foreign types.
+- **Exporting one name pulls its closure.** `Entity` obliges `TemporalExtent`,
+  which obliges `DatePrecision`. Exporting `DomainSchema` alone would have
+  satisfied the letter of the finding and left it unconstructible. Expect the
+  next capability exported to bring its own closure; the gate makes that
+  visible at the moment it happens, which is the point of it.
+
 ## Architecture contract
 
 `lint-imports` enforces a layered contract declared in `pyproject.toml`, highest
