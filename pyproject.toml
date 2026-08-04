@@ -112,7 +112,10 @@ ignore = [
 "src/kg_builder/inference/**" = ["ANN", "TC", "RET"]
 "src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]
 "src/kg_builder/preprocessing/**" = ["ANN", "TC", "RET"]
-"src/kg_builder/graph/**" = ["ANN", "TC", "RET"]
+# Narrowed from `graph/**` in slice 3: graph/adapters/ is new architecture and
+# is held to the full rule set.
+"src/kg_builder/graph/client.py" = ["ANN", "TC", "RET"]
+"src/kg_builder/graph/queries.py" = ["ANN", "TC", "RET"]
 "src/kg_builder/schemas/**" = ["ANN", "TC"]
 "src/kg_builder/events/**" = ["ANN", "TC"]
 
@@ -147,7 +150,10 @@ python_version = "3.13"
 # rather than weakened, and each exclusion dies with its package.
 files = ["src/kg_builder"]
 exclude = [
-    "^src/kg_builder/(models|services|inference|extraction|preprocessing|graph|schemas|events)/",
+    "^src/kg_builder/(models|services|inference|extraction|preprocessing|schemas|events)/",
+    # graph/ is half legacy: the Neo4j client and Cypher templates predate the
+    # rewrite, while graph/adapters/ is new architecture and is type-checked.
+    "^src/kg_builder/graph/(client|queries)\\.py$",
 ]
 strict = true
 warn_unreachable = true
@@ -230,6 +236,9 @@ layers = [
     "kg_builder.inference",
     "kg_builder.models",
     "kg_builder.events : kg_builder.db : kg_builder.cache : kg_builder.encryption : kg_builder.config : kg_builder.context",
+    # Ports sit directly above `domain` and below every adapter: an adapter
+    # (kg_builder.graph.adapters) may import its port, never the reverse.
+    "kg_builder.ports",
     "kg_builder.domain",
 ]
 exhaustive = false

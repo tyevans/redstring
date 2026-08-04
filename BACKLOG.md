@@ -144,6 +144,19 @@ in slice 9.
 
 ### B10. No database anywhere in the test suite
 
+**Partially addressed in slice 3.** `InMemoryGraphStore`
+(`src/kg_builder/graph/adapters/memory.py`) is a real, contract-enforcing
+`GraphStore` backend, and `tests/compliance/graph_store.py` is the shared
+suite every adapter must pass — so graph storage is now genuinely exercised
+rather than only constructed. What remains uncovered:
+
+- **The vector store.** No `VectorStore` port, no in-memory adapter, no
+  compliance suite. That is slice 5, and it is the larger half of this item.
+- **The Neo4j adapter** (slice 4) will run the same compliance suite; until
+  it exists, nothing proves the port is implementable against a real graph
+  database. The in-memory adapter alone cannot show that.
+- Everything in the original list below still stands for the SQL paths.
+
 There is no sqlite, no `create_async_engine`, no `sessionmaker`, and no
 integration fixture. Consequences:
 
