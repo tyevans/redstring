@@ -237,6 +237,28 @@ member. The idiom appears at **33 sites**. This is a behaviour migration to
 make wholesale with tests, not a drive-by autofix. Rationale is recorded in
 `pyproject.toml`.
 
+### B28. Three property-merge strategies deferred
+
+`PropertyMergeStrategy` has five members. The re-architecture keeps the
+abstraction (`MergeStrategy.resolve(property, canonical, others)`) but
+implements only `PREFER_CANONICAL` (the default) and `UNION` (structural —
+merging inherently produces alias sets).
+
+Deferred, each raising `NotImplementedError` naming this entry rather than
+silently falling back:
+
+- `PREFER_MERGED` — trivial to implement, but no caller wants it yet.
+- `LATEST` — needs a trustworthy updated-at on every property source. The
+  current model has one timestamp per entity, not per property, so "latest"
+  is not actually answerable today.
+- `DEEP_MERGE` — nested-dict semantics for `properties`, `extracted_data`,
+  and `external_ids`. Easy to get subtly wrong, and wrong deep merges are
+  hard to undo because the pre-merge shape is not recoverable from the
+  result.
+
+Implement when a caller needs one, not before. The port shape accepts them
+without redesign.
+
 ### B19. `pydantic-ai` pinned to `==0.0.31`
 
 `extraction` and `inference.providers` use the pre-1.0

@@ -130,6 +130,67 @@ sheds. Dependencies dropped from the core: `scrapy`, `trafilatura`,
 `extraction/llm_extractor.py` imports `unstructured` — document parsing
 inside extraction. Same boundary violation; extraction takes text.
 
+## Consolidation design
+
+Consolidation is the part with the most real design work in it. It is not a
+portability problem to be worked around — it gets built properly.
+
+### Blocking
+
+Blocking generates candidate pairs worth scoring. Today's four strategies are
+Postgres implementations of two different ideas:
+
+| Strategy | Really is | Ports as |
+|---|---|---|
+| `PREFIX` | key function | pure function on the entity |
+| `ENTITY_TYPE` | key function | pure function on the entity |
+| `SOUNDEX` | key function | pure function — `compute_soundex` is already Python (jellyfish); only the *lookup* used a Postgres generated column |
+| `TRIGRAM` | similarity search | ANN via `VectorStore`, or a store-native capability |
+
+So the port is two capabilities, not four:
+
+```
+BlockingKeyStrategy          # pure: entity -> set[key]
+GraphStore.find_by_blocking_key(key, tenant)
+```
+
+Key-based blocking becomes pure domain logic that every adapter supports by
+indexing keys. Fuzzy blocking goes through `VectorStore.search`, which is
+where approximate matching already belongs. An adapter with a native fuzzy
+index may override, but nothing depends on it having one.
+
+### Merge strategies
+
+`PropertyMergeStrategy` currently has five members applied per-property:
+`PREFER_CANONICAL`, `PREFER_MERGED`, `UNION`, `LATEST`, `DEEP_MERGE`.
+
+The *abstraction* ports now; most of the *implementations* are deliberately
+deferred:
+
+- **Implement now:** `PREFER_CANONICAL` as the default, and `UNION` for
+  aliases — merging inherently produces alias sets, so that one is
+  structural rather than optional.
+- **Defer:** `PREFER_MERGED`, `LATEST`, `DEEP_MERGE`. `LATEST` needs a
+  reliable updated-at on every property source; `DEEP_MERGE` needs nested
+  dict semantics that are easy to get subtly wrong and hard to undo. Neither
+  earns its complexity before there is a caller asking for it.
+
+The port is shaped to accept the others later without redesign:
+
+```
+MergeStrategy:  resolve(property, canonical_value, other_values) -> value
+```
+
+Deferred strategies raise `NotImplementedError` with a message naming the
+backlog entry, rather than silently degrading to a default.
+
+### Merge undo
+
+`undo_merge` and `split_entity` both exist today and both need to know what
+a merge did. This becomes graph structure — alias edges already record the
+canonical/alias relationship, and the property values displaced by a merge
+are recorded on those edges. No history table returns.
+
 ## Slices
 
 Slices 0 and 0b are complete. Dispatch the rest one at a time.
@@ -144,7 +205,7 @@ Slices 0 and 0b are complete. Dispatch the rest one at a time.
 | 4 | **Neo4j adapter.** Same compliance suite, no new tests of its own beyond Cypher specifics. | Compliance suite green against Neo4j |
 | 5 | **`VectorStore` port + in-memory + pgvector adapters.** | Compliance suite green against both |
 | 6 | **Extraction onto the domain model.** Absorb chunkers and mergers. Provider config passed in, not loaded. | Targeted + `lint-imports` |
-| 7 | **Consolidation onto the ports.** Blocking is rebuilt on ANN + normalized-name keys (see Risks). | Targeted + `lint-imports` |
+| 7 | **Consolidation onto the ports.** Key-based blocking as pure domain logic, fuzzy blocking via `VectorStore.search`; `MergeStrategy` port with the simple implementations only; undo carried on alias edges. See "Consolidation design". | Targeted + `lint-imports` |
 | 8 | **Temporal onto the ports.** | Targeted + `lint-imports` |
 | 9 | **Delete the relational layer.** `models/`, `db.py`, `sync_status`, SQL in `timeline_query`/`vector_ops`; trim `config.py` and `encryption.py`. | Full gate |
 | 10 | **`pipelines/` + public API.** The composed use cases and a deliberate `kg_builder/__init__.py`. | Full gate |
@@ -155,15 +216,6 @@ cheaper against a smaller tree.
 
 ## Risks
 
-- **Blocking is the one thing that does not port for free.**
-  `consolidation/blocking.py` generates merge candidates with SQL soundex and
-  trigram indexes. Over a graph store that has to become ANN from the vector
-  store plus normalized-name keys. Prototype this before committing to slice
-  7 — it is the only place where "just use a port" might not survive contact.
-- **Merge undo needs a record.** `merge_service` supports undo, which
-  requires knowing what was merged. Either it becomes graph structure
-  (aliases already are) or it is returned to the caller. Decide in slice 7;
-  do not let it silently resurrect a history table.
 - **Port leakage.** If the in-memory adapter turns out to be much harder than
   Neo4j, the port is shaped like Cypher. That is the signal to redesign, and
   it is why in-memory comes first.
