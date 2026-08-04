@@ -38,14 +38,25 @@ _PORT_NAMESPACE = {
     "Sequence": Sequence,
 }
 
-#: Which test covers each read method's mutation isolation -- that mutating a
-#: returned object does not change what a later read returns.
+#: Conventional test names. A read method `x` is covered with **no entry in
+#: any registry below** if the compliance class defines `test_x_returns_copies`
+#: and `test_x_never_crosses_tenants`.
 #:
-#: The mapping is hand-written but the *keys are checked against the Protocol*,
-#: so a new read method fails below until it appears here. Naming across these
-#: tests is historic and inconsistent; a name convention would be tidier but
-#: would mean renaming working tests to satisfy a checker, which is the tail
-#: wagging the dog.
+#: This is the path a new read method should take. It leaves nothing
+#: hand-kept: write the two tests under those names and the gate is satisfied.
+ISOLATION_CONVENTION = "test_{method}_returns_copies"
+TENANT_CONVENTION = "test_{method}_never_crosses_tenants"
+
+#: Legacy names, from before the convention existed.
+#:
+#: These map a read method to a differently-named test that already covers it.
+#: The registry is hand-written, but it is **not** a hand-kept list of methods:
+#: its keys are checked against the introspected set both ways, so a method
+#: missing from it fails, and an entry naming a method the port no longer has
+#: fails too.
+#:
+#: Do not add to this. It exists so eight working, well-named tests did not
+#: have to be renamed to satisfy a checker; new methods use the convention.
 ISOLATION_COVERAGE = {
     "get_entity": "test_mutating_a_read_result_does_not_change_the_store",
     "get_entities": "test_mutating_a_batch_result_does_not_change_the_store",
@@ -105,25 +116,39 @@ def read_methods() -> set[str]:
     return found
 
 
+def _uncovered(convention: str, registry: dict[str, str], exempt: dict[str, str]) -> set[str]:
+    """Read methods with neither a conventionally-named test nor a registered one."""
+    return {
+        method
+        for method in read_methods()
+        if method not in exempt
+        and not hasattr(GraphStoreCompliance, convention.format(method=method))
+        and method not in registry
+    }
+
+
 class TestEveryReadMethodIsCovered:
     def test_the_port_has_read_methods_to_check(self):
         """Guard the guard: a detector that finds nothing passes vacuously."""
         assert len(read_methods()) >= 8
 
     def test_every_read_method_declares_isolation_coverage(self):
-        missing = read_methods() - set(ISOLATION_COVERAGE) - set(ISOLATION_EXEMPT)
+        missing = _uncovered(ISOLATION_CONVENTION, ISOLATION_COVERAGE, ISOLATION_EXEMPT)
         assert not missing, (
             f"read methods with no mutation-isolation test: {sorted(missing)}. "
             f"Add a test that mutates the result and asserts a later read is "
-            f"unaffected, then register it in ISOLATION_COVERAGE -- or, if the "
-            f"method genuinely cannot leak stored state, add it to "
-            f"ISOLATION_EXEMPT with the reason."
+            f"unaffected, named "
+            f"{[ISOLATION_CONVENTION.format(method=m) for m in sorted(missing)]} "
+            f"-- or, if the method genuinely cannot leak stored state, add it "
+            f"to ISOLATION_EXEMPT with the reason."
         )
 
     def test_every_read_method_declares_tenant_coverage(self):
-        missing = read_methods() - set(TENANT_COVERAGE)
+        missing = _uncovered(TENANT_CONVENTION, TENANT_COVERAGE, {})
         assert not missing, (
             f"read methods with no tenant-isolation test: {sorted(missing)}. "
+            f"Add "
+            f"{[TENANT_CONVENTION.format(method=m) for m in sorted(missing)]}. "
             f"A cross-tenant leak is a data-confidentiality bug; every read "
             f"path needs its own proof, and a new read is a new place to leak."
         )
