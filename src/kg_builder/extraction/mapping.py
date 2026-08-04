@@ -56,8 +56,11 @@ from kg_builder.domain.normalization import normalize_name
 # definitions -- is what `domain/preference.py` exists to prevent.
 from kg_builder.domain.preference import preference, relationship_preference
 from kg_builder.domain.relationship import Relationship
+from kg_builder.domain.temporal import TemporalExtent
+from kg_builder.domain.temporal_parsing import AmbiguousReferenceDateError, parse_temporal
 
 if TYPE_CHECKING:
+    from datetime import datetime
     from uuid import UUID
 
     from kg_builder.domain.ids import EntityId, SourceId, TenantId
@@ -91,6 +94,13 @@ class MappedExtraction(NamedTuple):
     unresolved_relationships: int = 0
     #: Edges whose endpoints resolved to one entity. See `Relationship`.
     self_loops: int = 0
+    #: Entities whose temporal expression was relative ("last year") with no
+    #: `reference_date` to read it against, so the date was dropped and the
+    #: entity kept. Counted rather than raised for the reason above, and
+    #: counted rather than ignored because a document with no publication date
+    #: loses every relative date in it -- which is invisible in the output,
+    #: since the output simply has fewer dated entities.
+    undatable_relative: int = 0
 
 
 def entity_id_for(
@@ -133,6 +143,7 @@ def map_extraction(
     tenant_id: TenantId,
     source_id: SourceId,
     model: str | None,
+    reference_date: datetime | None,
     method: ExtractionMethod = ExtractionMethod.LLM,
 ) -> MappedExtraction:
     """Map one model answer onto domain types.
@@ -147,6 +158,13 @@ def map_extraction(
             `DocumentExtracted` rejects a payload that disagrees with it.
         model: Provenance, from `LlmProvider.model`. Required for `LLM` and
             `HYBRID`, forbidden otherwise.
+        reference_date: The vantage point relative temporal expressions are
+            read against -- `SourceDocument.published_at`. Required rather
+            than defaulted, and explicitly `None`-able, because the parser
+            reads no clock: see `kg_builder.domain.temporal_parsing`. `None`
+            means "this document is undated", and expressions that need a
+            vantage point are then dropped and counted rather than resolved
+            against today.
         method: How these were derived. Defaults to `LLM` because that is what
             this module exists for; `PATTERN` and the rest are for callers
             mapping non-model extractions through the same code.
@@ -172,10 +190,17 @@ def map_extraction(
 
     by_id: dict[EntityId, Entity] = {}
     dropped = 0
+    undatable = 0
     for candidate in extraction.entities:
-        built = _build_entity(
-            candidate, tenant_id=tenant_id, source_id=source_id, model=model, method=method
+        built, was_undatable = _build_entity(
+            candidate,
+            tenant_id=tenant_id,
+            source_id=source_id,
+            model=model,
+            method=method,
+            reference_date=reference_date,
         )
+        undatable += was_undatable
         if built is None:
             dropped += 1
             continue
@@ -192,6 +217,7 @@ def map_extraction(
         dropped_entities=dropped,
         unresolved_relationships=unresolved,
         self_loops=self_loops,
+        undatable_relative=undatable,
     )
 
 
@@ -202,15 +228,20 @@ def _build_entity(
     source_id: SourceId,
     model: str | None,
     method: ExtractionMethod,
-) -> Entity | None:
+    reference_date: datetime | None,
+) -> tuple[Entity | None, bool]:
     """One `ExtractedEntity` as an `Entity`, or None if the domain refuses it.
+
+    Returns the entity and whether its temporal expression had to be dropped
+    for want of a reference date.
 
     The guard is on `name.strip()` rather than a `try`/`except ValidationError`
     so that a *different* validation failure -- one that is our bug, not the
     model's -- still raises instead of being counted as a dropped row.
     """
     if not candidate.name.strip():
-        return None
+        return None, False
+    temporal, undatable = _build_extent(candidate, reference_date=reference_date)
     built = Entity(
         id=entity_id_for(
             tenant_id=tenant_id,
@@ -228,6 +259,7 @@ def _build_entity(
         extraction_method=method,
         model=model,
         confidence=candidate.confidence,
+        temporal=temporal,
     )
     # Blocking keys are computed **here**, at extraction time, and stored on
     # the entity -- `GraphStore.find_by_blocking_key` only looks them up and
@@ -238,7 +270,40 @@ def _build_entity(
     # An entity extracted without them is not findable by consolidation at all,
     # which is a silent failure: blocking returns an empty candidate list, and
     # an empty candidate list is what "no duplicates" also looks like.
-    return built.model_copy(update={"blocking_keys": blocking_keys_for(built)})
+    return built.model_copy(update={"blocking_keys": blocking_keys_for(built)}), undatable
+
+
+def _build_extent(
+    candidate: ExtractedEntity, *, reference_date: datetime | None
+) -> tuple[TemporalExtent | None, bool]:
+    """The entity's `TemporalExtent`, and whether a date was lost building it.
+
+    Enrichment is **part of building the entity**, not a pass over a store
+    afterwards. `Entity` already carries `temporal` and entities already reach
+    the log inside `DocumentExtracted`, so a second pass would need either a
+    store write outside the event log or a second event -- and ADR 0001's
+    granularity decision is permanent and coarse. Re-extraction under a new
+    model version is how an entity's dates improve.
+
+    Nothing here raises on the model's behalf, for the reason the module
+    docstring gives. An unparseable phrase yields no extent and the entity
+    survives; a relative phrase with no vantage point does the same and is
+    counted, because losing every relative date in an undated document is
+    otherwise invisible -- the output simply has fewer dated entities.
+    """
+    parsed: TemporalExtent | None = None
+    undatable = False
+    if candidate.temporal_expression:
+        try:
+            parsed = parse_temporal(candidate.temporal_expression, reference_date=reference_date)
+        except AmbiguousReferenceDateError:
+            undatable = True
+
+    if candidate.sequence_position is None:
+        return parsed, undatable
+    if parsed is None:
+        return TemporalExtent(sequence_position=candidate.sequence_position), undatable
+    return parsed.model_copy(update={"sequence_position": candidate.sequence_position}), undatable
 
 
 def _map_relationships(

@@ -160,25 +160,31 @@ _UNCERTAINTY_PATTERNS: Final[tuple[tuple[UncertaintyMarker, tuple[re.Pattern[str
 )
 
 #: Stripped before parsing. Kept separate from the detection patterns above
-#: because they differ: detection matches "before", removal must take the
-#: trailing space with it or `dateutil` sees a leading blank.
+#: because they differ: detection matches "before", removal takes the trailing
+#: space with it too, or `dateutil` sees a leading blank.
+#:
+#: `\s*` rather than `\s+` so that "circa1850" strips as readily as
+#: "circa 1850", and so that text which is *only* a marker strips to nothing --
+#: which is what makes `parse_temporal`'s empty-after-stripping guard
+#: reachable. With `\s+` that guard was dead code, and "" is precisely the
+#: input `dateutil` reads as "today, in every field".
 _MARKERS_TO_STRIP: Final = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
-        r"\bcirca\s+",
+        r"\bcirca\s*",
         r"\bc\.\s*(?=\d)",
         r"\bca\.\s*(?=\d)",
-        r"\baround\s+",
-        r"\bapproximately\s+",
-        r"\babout\s+",
-        r"\broughly\s+",
-        r"\bbefore\s+",
-        r"\bprior\s+to\s+",
-        r"\bno\s+later\s+than\s+",
+        r"\baround\s*",
+        r"\bapproximately\s*",
+        r"\babout\s*",
+        r"\broughly\s*",
+        r"\bbefore\s*",
+        r"\bprior\s+to\s*",
+        r"\bno\s+later\s+than\s*",
         r"\buntil\s+",
-        r"\bafter\s+",
-        r"\bsince\s+",
-        r"\bno\s+earlier\s+than\s+",
+        r"\bafter\s*",
+        r"\bsince\s*",
+        r"\bno\s+earlier\s+than\s*",
     )
 )
 
@@ -223,7 +229,7 @@ def _parse_range(text: str) -> _Parsed | None:
         year = int(match.group(3))
         first = _month_number(match.group(1))
         last = _month_number(match.group(2))
-        if first is None or last is None or last < first:
+        if last < first:
             return None
         return _Parsed(
             datetime(year, first, 1, tzinfo=UTC),
@@ -244,12 +250,26 @@ def _parse_range(text: str) -> _Parsed | None:
     return None
 
 
-def _month_number(name: str) -> int | None:
-    lowered = name.lower()
-    for index, month in enumerate(_MONTH_NAMES, start=1):
-        if month.lower().startswith(lowered) and len(lowered) >= 3:
-            return index
-    return None
+#: Every spelling `_MONTH` accepts, mapped to its number. Built from
+#: `_MONTH_NAMES` rather than written out so the two cannot drift.
+_MONTH_NUMBERS: Final = {
+    spelling.lower(): index
+    for index, name in enumerate(_MONTH_NAMES, start=1)
+    for spelling in ({name, name[:3]} if name != "September" else {name, "Sep", "Sept"})
+}
+
+
+def _month_number(name: str) -> int:
+    """The month `name` denotes. Total, not partial.
+
+    `_MONTH` is the only way into this function and it matches nothing but
+    these spellings, so a `None` return would be a branch no input can reach --
+    and an unreachable guard is worse than none: it reads as a handled case and
+    is never exercised, so nothing notices when it stops being unreachable.
+    A `KeyError` here means `_MONTH` and `_MONTH_NAMES` have drifted apart,
+    which is a bug rather than bad input.
+    """
+    return _MONTH_NUMBERS[name.lower()]
 
 
 _YEAR_ONLY = re.compile(r"^(\d{4})$")
@@ -270,11 +290,11 @@ def _parse_partial(text: str) -> _Parsed | None:
 
     match = _MONTH_YEAR.match(text)
     if match:
-        month = _month_number(match.group(1))
-        if month is not None:
-            return _Parsed(
-                datetime(int(match.group(2)), month, 1, tzinfo=UTC), None, DatePrecision.MONTH
-            )
+        return _Parsed(
+            datetime(int(match.group(2)), _month_number(match.group(1)), 1, tzinfo=UTC),
+            None,
+            DatePrecision.MONTH,
+        )
 
     match = _QUARTER.match(text)
     if match:
@@ -368,8 +388,11 @@ def _parse_absolute(text: str, base: datetime) -> _Parsed | None:
         parsed = dateutil_parser.parse(text, fuzzy=False, default=base)
     except (ValueError, OverflowError):
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+    # Always aware: `base` is required aware and `dateutil` takes `tzinfo` from
+    # the default for any component the text omits, while text stating an
+    # offset supplies its own. A `tzinfo is None` branch here would be
+    # unreachable, and `TemporalExtent` rejects a naive datetime anyway, so a
+    # mistake in this reasoning fails loudly rather than storing a naive value.
     return _Parsed(parsed, None, _time_precision(text))
 
 
@@ -386,12 +409,18 @@ def _parse_natural(text: str, base: datetime) -> _Parsed | None:
                 "PREFER_DATES_FROM": "past",
             },
         )
-    except Exception:
+    except Exception:  # pragma: no cover
+        # `dateparser` raises a wide and undocumented set out of its language
+        # detection -- `re.error` and `IndexError` have both been seen, and it
+        # documents neither. Uncovered because no input is known that reaches
+        # it; kept because "no input is known" is not "no input exists", and
+        # the alternative is one odd phrase in one chunk failing a whole
+        # document's extraction.
         return None
     if parsed is None:
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+    # Aware by `RETURN_AS_TIMEZONE_AWARE`; see `_parse_absolute` on why there
+    # is no fallback branch.
     return _Parsed(parsed, None, _time_precision(text))
 
 

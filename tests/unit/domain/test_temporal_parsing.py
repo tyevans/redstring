@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from datetime import UTC, datetime
 
 import pytest
@@ -348,3 +349,122 @@ class TestWiden:
             widened = widen(moment, precision)
             assert widened > moment
             assert widened.tzinfo is moment.tzinfo
+
+
+class TestRangesThatAreNotRanges:
+    """A "range" whose end precedes its start is not a range. Declining it
+    matters because `TemporalExtent` refuses `end < start` outright, so the
+    alternative to declining is a `ValidationError` escaping the parser on
+    text a model can easily produce."""
+
+    @pytest.mark.parametrize(
+        "text", ["1918-1914", "March to January 2024", "Q3-Q1 2024", "0th century"]
+    )
+    def test_a_backwards_range_falls_through_rather_than_raising(self, text):
+        parsed = parse_temporal(text, reference_date=REF)
+        if parsed is not None and parsed.end_date is not None:
+            assert parsed.start_date <= parsed.end_date
+
+    def test_a_quarter_range(self):
+        parsed = parse_temporal("Q1-Q3 2024", reference_date=REF)
+        assert parsed is not None
+        assert parsed.start_date == utc(2024, 1, 1)
+        assert parsed.end_date == utc(2024, 7, 1)
+        assert parsed.precision is DatePrecision.MONTH
+
+    def test_an_unknown_month_name_is_not_a_range(self):
+        assert parse_temporal("Smarch to Jarnuary 2024", reference_date=REF) is None
+
+
+class TestCenturyPortions:
+    @pytest.mark.parametrize(
+        ("text", "first", "last"),
+        [
+            ("early 19th century", 1801, 1833),
+            ("mid 19th century", 1834, 1866),
+            ("late 19th century", 1867, 1900),
+        ],
+    )
+    def test_a_third_of_a_century(self, text, first, last):
+        parsed = parse_temporal(text, reference_date=REF)
+        assert parsed is not None
+        assert parsed.start_date == utc(first, 1, 1)
+        assert parsed.end_date == utc(last, 1, 1)
+        assert parsed.uncertainty is UncertaintyMarker.APPROXIMATE
+
+    def test_the_portions_partition_the_century_without_gaps_or_overlap(self):
+        spans = [
+            parse_temporal(f"{portion} 19th century", reference_date=REF)
+            for portion in ("early", "mid", "late")
+        ]
+        for earlier, later in itertools.pairwise(spans):
+            assert earlier.end_date.year + 1 == later.start_date.year
+
+
+class TestRenderDeclines:
+    """Every branch where `render_temporal` returns `None` is a shape the
+    parser cannot read back. Each is exercised so that widening what render
+    accepts cannot silently weaken the round-trip property."""
+
+    @pytest.mark.parametrize(
+        "extent",
+        [
+            TemporalExtent(precision=DatePrecision.YEAR),
+            TemporalExtent(start_date=utc(2023, 1, 1)),
+            TemporalExtent(
+                start_date=utc(2023, 1, 1), precision=DatePrecision.YEAR, sequence_position=1
+            ),
+            TemporalExtent(
+                start_date=utc(2023, 1, 1),
+                precision=DatePrecision.YEAR,
+                publication_date=utc(2024, 1, 1),
+            ),
+            TemporalExtent(
+                start_date=utc(2023, 1, 1),
+                precision=DatePrecision.YEAR,
+                uncertainty=UncertaintyMarker.INFERRED,
+            ),
+            TemporalExtent(start_date=utc(2023, 6, 1), precision=DatePrecision.YEAR),
+            TemporalExtent(
+                start_date=utc(2023, 1, 1),
+                end_date=utc(2023, 6, 1),
+                precision=DatePrecision.YEAR,
+            ),
+            TemporalExtent(
+                start_date=utc(2023, 1, 1),
+                end_date=utc(2023, 3, 1),
+                precision=DatePrecision.MONTH,
+            ),
+            TemporalExtent(start_date=utc(2023, 6, 15), precision=DatePrecision.MONTH),
+            TemporalExtent(start_date=utc(2023, 6, 15, 9), precision=DatePrecision.DAY),
+            TemporalExtent(start_date=utc(2023, 6, 15, 9), precision=DatePrecision.HOUR),
+            TemporalExtent(start_date=utc(2023, 6, 15, 9, 30), precision=DatePrecision.MINUTE),
+        ],
+    )
+    def test_render_declines(self, extent):
+        assert render_temporal(extent) is None
+
+
+class TestEdgesOfTheStrategyChain:
+    def test_text_that_is_only_an_uncertainty_marker_is_not_a_date(self):
+        """Stripping the marker can empty the string, and an empty string is
+        exactly what `dateutil` reads as "today, in every field"."""
+        assert parse_temporal("circa", reference_date=REF) is None
+        assert parse_temporal("approximately ", reference_date=REF) is None
+
+    @pytest.mark.parametrize("text", ["0th century", "early 0th century"])
+    def test_there_is_no_zeroth_century(self, text):
+        """Year 0 does not exist in the proleptic Gregorian calendar and
+        `datetime` refuses it, so the guard is what stops a `ValueError`
+        reaching the caller from three frames down."""
+        assert parse_temporal(text, reference_date=REF) is None
+
+    def test_an_offset_in_the_text_is_normalised_rather_than_dropped(self):
+        parsed = parse_temporal("2024-03-15T14:30:00+02:00", reference_date=REF)
+        assert parsed is not None
+        assert parsed.start_date == utc(2024, 3, 15, 12, 30)
+
+    def test_a_year_range_inside_a_sentence_is_not_a_range(self):
+        """The range patterns are anchored: unanchored, "born 1850, died 1910"
+        reads as a range, and so does any pair of years in a paragraph."""
+        assert parse_temporal("born 1850, died 1910", reference_date=REF) is None

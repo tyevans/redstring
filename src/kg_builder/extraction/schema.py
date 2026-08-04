@@ -62,6 +62,23 @@ class ExtractedEntity(BaseModel):
     properties: dict[str, Any] = Field(
         default_factory=dict, description="Any other attributes the text states about this entity"
     )
+    temporal_expression: str | None = Field(
+        default=None,
+        max_length=500,
+        description=(
+            "The date or period this entity is associated with, copied exactly as the text "
+            "writes it, e.g. 'March 15, 1920', 'circa 1850', 'the 1990s'. Leave this out "
+            "unless the text actually states a time."
+        ),
+    )
+    sequence_position: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Where this falls in a sequence of events the text narrates, counting from 0. "
+            "Only for events the text orders but does not date."
+        ),
+    )
 
 
 class ExtractedRelationship(BaseModel):

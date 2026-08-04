@@ -125,6 +125,9 @@ class PipelineResult(NamedTuple):
     dropped_entities: int = 0
     unresolved_relationships: int = 0
     self_loops: int = 0
+    #: Entities whose relative temporal expression had no `published_at` to be
+    #: read against. See `MappedExtraction`.
+    undatable_relative: int = 0
     #: Chunks whose model call failed and were skipped. Always 0 unless
     #: `skip_failed_chunks` is on, because otherwise the failure propagates.
     failed_chunks: int = 0
@@ -177,6 +180,14 @@ class ExtractionPipeline:
     async def extract(self, document: SourceDocument, tenant_id: TenantId) -> PipelineResult:
         """Extract `document` without recording anything.
 
+        `document.published_at` becomes the reference date every relative
+        temporal expression is read against. That is the only place a vantage
+        point enters the pipeline, and it comes from the caller's document
+        rather than from a clock -- so a re-extraction of the same document
+        dates its entities identically, however much later it runs. A document
+        with no `published_at` simply loses its relative dates, counted on
+        `undatable_relative`; see `kg_builder.domain.temporal_parsing`.
+
         Args:
             document: The content. `SourceDocument` already refuses blank
                 text, so there is no empty-document case to handle here.
@@ -184,7 +195,7 @@ class ExtractionPipeline:
 
         Returns:
             A `PipelineResult`. Entities are deduplicated across chunks;
-            `failed_chunks` and the three `MappedExtraction` counters say what
+            `failed_chunks` and the four `MappedExtraction` counters say what
             did not survive.
 
         Raises:
@@ -211,6 +222,7 @@ class ExtractionPipeline:
                     tenant_id=tenant_id,
                     source_id=document.id,
                     model=self._provider.model,
+                    reference_date=document.published_at,
                 )
             )
 
@@ -221,6 +233,7 @@ class ExtractionPipeline:
             dropped_entities=merged.dropped_entities,
             unresolved_relationships=merged.unresolved_relationships,
             self_loops=merged.self_loops,
+            undatable_relative=merged.undatable_relative,
             failed_chunks=failed,
             total_chunks=len(chunks),
         )

@@ -34,7 +34,9 @@ MODEL = "ollama/qwen3.6-27b-mtp"
 
 
 def mapped(extraction: Extraction, *, tenant=TENANT, source=SOURCE, model=MODEL):
-    return map_extraction(extraction, tenant_id=tenant, source_id=source, model=model)
+    return map_extraction(
+        extraction, tenant_id=tenant, source_id=source, model=model, reference_date=None
+    )
 
 
 def entity(name: str, entity_type: str = "Person", **kwargs) -> ExtractedEntity:
@@ -491,6 +493,7 @@ class TestProvenance:
             tenant_id=TENANT,
             source_id=SOURCE,
             model=None,
+            reference_date=None,
             method=ExtractionMethod.PATTERN,
         ).entities
 
@@ -511,6 +514,7 @@ class TestProvenance:
                 tenant_id=TENANT,
                 source_id=SOURCE,
                 model=None,
+                reference_date=None,
             )
 
 

@@ -42,9 +42,10 @@ if TYPE_CHECKING:
 
     from kg_builder.domain.entity import Entity
     from kg_builder.domain.relationship import Relationship
+    from kg_builder.domain.temporal import TemporalExtent
 
 
-def preference(entity: Entity) -> tuple[float, int, bool, str, str, int, str]:
+def preference(entity: Entity) -> tuple[float, bool, int, bool, str, str, str, int, str]:
     """A **total** order on two mappings of one entity. Higher wins.
 
     Total, and that is the whole point. An earlier version compared
@@ -61,7 +62,8 @@ def preference(entity: Entity) -> tuple[float, int, bool, str, str, int, str]:
     candidate implementations agree.
 
     Confidence first, which is the only part anyone would design
-    deliberately. The rest exist to make the order total:
+    deliberately. Then whether the mention carries a date, which is the second
+    deliberate part -- see below. The rest exist to make the order total:
 
     - description length, preferring the mention that said more, which is
       usually the chunk holding the whole sentence rather than its tail;
@@ -92,11 +94,37 @@ def preference(entity: Entity) -> tuple[float, int, bool, str, str, int, str]:
       which are inputs to `entity_id_for` -- so two mentions in one bucket
       cannot disagree about them. This group is the one to check when adding
       a field: a derived field is safe, an independently-supplied one is not.
-    - **Never populated.** `external_ids`, `source_text` and `temporal`.
+    - **Never populated.** `external_ids` and `source_text`.
 
-    What is left -- `confidence`, `name`, `description` and `properties` -- is
-    exactly what two mappings of one entity can disagree about, and all four
-    are here.
+    What is left -- `confidence`, `name`, `description`, `properties` and
+    `temporal` -- is exactly what two mappings of one entity can disagree
+    about, and all five are here.
+
+    `temporal` joined that list in slice 8, when extraction began parsing the
+    model's temporal expression into an extent. It is the second field to move
+    out of "never populated", after `blocking_keys`, and unlike `blocking_keys`
+    it is *not* derived from anything the id fixes: overlapping windows report
+    one entity twice and only the window holding the date phrase can date it,
+    so two mentions in one bucket disagree about it routinely. Preferring the
+    dated mention is the deliberate part; the rendering in the tail exists,
+    like the rest of it, only so that two distinct extents cannot tie.
+
+    It sits **above** description length, not below, and that placement is the
+    whole content of the flag. A date appears in one window; a description
+    appears in every window that mentions the entity at all, usually longer in
+    the one with more surrounding text. Below description length the flag is
+    unreachable whenever the two mentions describe the entity differently --
+    which is the common case -- and the fuller description wins while the date
+    is discarded. A lost description costs a sentence; a lost date cannot be
+    recovered from anything else in the payload.
+
+    The first version of this had the flag below description length and a test
+    that could not tell the difference: both mentions were undescribed, so the
+    comparison fell through to the tail, where the empty-string rendering of
+    "no extent" sorts below any real one and the dated mention won anyway.
+    Deleting the flag entirely left that test green. `test_a_dated_mention_
+    outranks_a_better_described_undated_one` is the input where the two
+    implementations disagree.
 
     (An earlier version of this paragraph listed `blocking_keys` as never
     populated. That stopped being true when extraction began computing keys,
@@ -114,12 +142,27 @@ def preference(entity: Entity) -> tuple[float, int, bool, str, str, int, str]:
     """
     return (
         entity.confidence,
+        entity.temporal is not None,
         len(entity.description or ""),
         entity.description is not None,
         entity.description or "",
         entity.name,
+        _temporally(entity.temporal),
         *_stably(entity.properties),
     )
+
+
+def _temporally(extent: TemporalExtent | None) -> str:
+    """A deterministic, orderable rendering of an extent. `""` for none.
+
+    Only the tail of the order reaches this: which of two *dated* mentions of
+    one entity wins is arbitrary, because both read the same document and
+    neither is more authoritative. What is not arbitrary is that the choice be
+    the same on every run, which is what a canonical rendering buys.
+    """
+    if extent is None:
+        return ""
+    return json.dumps(extent.model_dump(mode="json"), sort_keys=True, default=repr)
 
 
 def _stably(properties: Mapping[str, Any]) -> tuple[int, str]:

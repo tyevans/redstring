@@ -47,6 +47,7 @@ def chunk(*entities: ExtractedEntity, links: list[ExtractedRelationship] | None 
         tenant_id=TENANT,
         source_id=SOURCE,
         model=MODEL,
+        reference_date=None,
     )
 
 

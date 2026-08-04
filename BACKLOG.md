@@ -133,6 +133,30 @@ Note the failure mode this has in common with B45: a timing assertion that
 fails intermittently in CI reads as infrastructure trouble and gets retried
 rather than investigated.
 
+### B52. The model is no longer asked to normalise dates itself
+
+The deleted `TemporalEventProperties` (still present on the legacy
+`extraction/schemas.py`, which slice 9 owns) asked the model for six temporal
+fields: `temporal_expression`, `event_date`, `end_date`, `is_approximate`,
+`temporal_qualifier` and `sequence_position`. The new `ExtractedEntity` in
+`extraction/schema.py` asks for two: the expression as the text writes it, and
+`sequence_position`.
+
+The four that went were all the model doing work the parser does better and
+more consistently. `event_date`/`end_date` asked it to emit ISO 8601, which it
+does unevenly and which then has to be parsed anyway; `is_approximate` and
+`temporal_qualifier` are detectable from the expression by
+`detect_uncertainty`, and asking twice invites the two answers to disagree --
+`_determine_uncertainty` in the deleted enrichment service existed solely to
+adjudicate between them, with a hand-written precedence table.
+
+**What has not been checked** is whether a smaller model extracts temporal
+expressions *worse* when it is no longer prompted to think about
+normalisation -- the six-field schema may have been doing some of its work as a
+chain of thought. There is no accuracy suite to measure that with (B12), so it
+is an open question rather than a settled one. If temporal recall looks poor on
+a real corpus, this is the first thing to try reverting.
+
 ### B43. A merge plans against a graph read outside its concurrency window
 
 `consolidation/service.py::merge` reads `get_relationships_for` *before*
