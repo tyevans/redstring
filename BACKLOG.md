@@ -3,10 +3,13 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **2218 tests pass, 0 fail** in the
-default gate, plus **169 `integration` tests** — 106 against a real Neo4j
+Status of the tree as of the last update: **2351 tests pass, 0 fail** in the
+default gate, plus **177 `integration` tests** — 106 against a real Neo4j
 (slice 4) and 63 against real pgvector (slice 5) — from
-`docker-compose.test.yml`. Coverage baseline 68.47. Note that the two suites
+`docker-compose.test.yml`. Coverage baseline 70.12. Slice 5b added the event
+log, the two aggregates, and the projections, and moved the project onto
+eventsource-py 0.9.1+ (see B31); the replay-equivalence suite runs in the
+default gate, not under `integration`. Note that the two suites
 must be run in **separate pytest invocations**; see B10m. Full `pre-commit`
 gate green (now
 including `mypy`, see B30), nothing skipped at collection. The accuracy and
