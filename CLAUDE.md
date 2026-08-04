@@ -168,7 +168,7 @@ composition
 extraction : consolidation : temporal : graph : vector : llm   (siblings)
 projections
 aggregates
-events : encryption
+events
 ports
 domain
 ```

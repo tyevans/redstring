@@ -56,8 +56,10 @@ may change without notice, including in a patch release.
 - **No settings object and no environment reads.** Every component takes its
   configuration through its constructor. `tests/unit/test_library_reads_no_environment.py`
   is what keeps that true.
-- **`EncryptionService`.** It exists and has no caller; see BACKLOG B58 for
-  the decision that has not been made.
+- **Encryption.** There was an `EncryptionService`; it had no caller, no port
+  to sit behind, and an encrypted `normalized_name` cannot be indexed or
+  blocked on -- which breaks consolidation. Deleted in slice 10; BACKLOG B58
+  records what a real answer would need.
 
 ## Where the write model is
 

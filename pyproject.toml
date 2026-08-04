@@ -12,7 +12,6 @@ dependencies = [
     "python-dateutil>=2.9.0",
     "dateparser>=1.2.0",
     "pyyaml>=6.0",
-    "cryptography>=45.0",
     "redis[hiredis]>=5.3,<6",
     "jellyfish>=1.0.0",
     # Not an extra any more, as of slice 10. `kg_builder/__init__.py` exports
@@ -317,12 +316,11 @@ layers = [
     # caller at all. A library takes its configuration through constructor
     # arguments -- `tests/unit/test_library_reads_no_environment.py` is what
     # keeps that true now.
-    # `context` left this line in slice 10 with the module: it re-exported
-    # `eventsource.domain.tenant_context` under "backward-compatible aliases"
-    # for code that no longer exists, and had no importer anywhere. Callers
-    # that want a tenant scope import it from eventsource directly, as every
-    # test in `tests/unit/projections` already does.
-    "events : encryption",
+    # `cache`, `config`, `context` and `encryption` all left this line in
+    # slice 10 with their modules -- a settings object, a Redis singleton, a
+    # re-export shim, and a field-encryption service, none of them with a
+    # caller. `events` is what is left, and it is the write model.
+    "events",
     # Ports sit directly above `domain` and below every adapter: an adapter
     # (graph.adapters) may import its port, never the reverse.
     "ports",

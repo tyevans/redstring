@@ -36,32 +36,39 @@ is not meaningful.
 
 ## 1. Unlanded features
 
-### B58. `encryption.py` is 500 lines with no caller and no test
+### B58. If this library ever encrypts, it needs a port -- not the file that was deleted
 
-Nothing in `src/` or `tests/` imports `kg_builder.encryption`. Slice 10
-removed the one thing that referenced it -- `get_encryption_service()`, the
-singleton that filled its constructor from `kg_builder.config` -- and after
-that the module has no importer at all. It is **127 statements at 0%
-coverage**, which makes it the single largest drag on the ratchet: about four
-points of the total on its own.
+Slice 10 deleted `encryption.py` (467 lines, 127 statements, 0% coverage, no
+importer in `src/` or `tests/`) and dropped `cryptography` from the dependency
+table with it. Recoverable from `e063faa`. Three things decided it, and only
+the first is the obvious one:
 
-**Not deleted in slice 10 on purpose.** Unlike `prompts.py` and `context.py`,
-which went in the same slice, this one does not mention a deleted concept and
-is not a compatibility shim. `EncryptionService` takes its master key and its
-enabled flag as constructor arguments, derives a per-tenant key with HKDF and
-uses Fernet -- a coherent capability a caller could reasonably want, and the
-kind of code that is expensive to get right twice.
+1. **No caller, and no seam for one.** `GraphStore` and `VectorStore` are ports
+   over *domain objects*; encryption is a property of *storage*. To have a
+   place it would have to live inside each adapter -- Neo4j, pgvector and two
+   in-memory stores, where it is pointless -- or be a decorator over a port,
+   which nobody has argued for. `encrypt_dict_field`/`decrypt_dict_field` say
+   what it was actually built for: an ORM column, in the layer slice 9 deleted.
+2. **It is functionally incompatible with slice 7.** An encrypted
+   `normalized_name` cannot be indexed or blocked on, so `find_by_blocking_key`
+   returns nothing and consolidation stops working. That is not a preference
+   about layering; encrypting the fields that matter breaks a capability this
+   library already has.
+3. **It predates the architecture and was never fitted to it.** Its exception
+   hierarchy rooted in `EncryptionError(Exception)` rather than
+   `KgBuilderError`, which every module written or ported in slices 2-10 does.
 
-What it does not have is a *place*: no port declares encryption, no adapter
-calls it, and `GraphStore`/`VectorStore` both store plaintext. So the real
-question is whether this library encrypts anything at all, which is a product
-decision rather than a cleanup. Answer it either way -- expose it from the
-public API with tests, or delete it (recoverable from `e063faa`) -- but answer
-it rather than carrying 500 untested lines and the coverage hole they make.
+**What the work would be, if the answer turns out to be yes.** A port declaring
+what is encrypted and when, an adapter per store implementing it, and a
+compliance suite -- the same three pieces `GraphStore` has. The HKDF derivation
+and Fernet wrapping at the ref are the easy forty lines of that; the expensive
+parts are key rotation, the migration story for data already written, and
+deciding which fields can be encrypted without losing the searchability
+consolidation depends on. Note also that encryption at rest is normally the
+deployment's job: Neo4j and Postgres both do it.
 
-Note the same shape one layer over: `llm/cache/redis.py` is also at 0% in the
-default gate, but that is *not* this problem. It has a caller and a
-compliance suite; the suite is `integration`-marked because it needs a Redis.
+Keeping 467 untested lines and a core `cryptography` dependency in order to
+defer the question was the worst of the three branches.
 
 ### B57. Extraction is not constrained to a domain's vocabulary, only prompted with it
 
@@ -1189,8 +1196,10 @@ fixes are both wrong:
 The real fix is upstream and is B33's territory: `properties` and
 `external_ids` have no value schema at all. Give them one and this rule stops
 firing on its own. Until then, `noqa` with this note beats a lie in the
-signature, and it must not become a per-file ignore -- B30 forbids adding
-`domain/` to that list, deliberately.
+signature, and it must not become a per-file ignore. B30 used to say so; it
+was closed in slice 10 when both legacy exemption lists emptied and mypy's
+`exclude` key was deleted outright, so there is no list left to be added to --
+which makes adding one back a visible decision rather than an edit.
 
 ### B28. Three property-merge strategies deferred
 
@@ -1214,13 +1223,6 @@ silently falling back:
 Implement when a caller needs one, not before. The port shape accepts them
 without redesign.
 
-### B21. README is stale
-
-It describes the pre-stabilization state: "1764 passed, 42 failed", "~617
-lint findings", "117 of 118 modules import cleanly", and a "Known gaps"
-section now superseded by this file. Rewrite when the ring migration lands
-(slice 11).
-
 ### B22. No documentation infrastructure
 
 No `docs/` beyond `docs/plans/` and an empty `docs/adrs/`, no ADRs, no
@@ -1232,74 +1234,3 @@ with the breaking-path entries; general docs remain absent.
 Hardcodes `eventsource` as the root package and allowlists
 `docs/superpowers/`, which does not exist here. Parameterise for
 `kg_builder` before the first move slice.
-
-
-### B30. Legacy-package ruff/mypy exemption ratchet (slice 2b)
-
-`pyproject.toml`'s `[tool.ruff.lint.per-file-ignores]` and `[tool.mypy]
-exclude` both carry a matching list of legacy packages
-(`models`, `services`, `inference`, `extraction`, `preprocessing`, `graph`,
-`schemas`, `events`) plus mirrored test directories
-(`tests/unit/{extraction,models,schemas,services}/**`) for the ruff side.
-This list may only shrink — delete a package's entry in the same commit that
-deletes the package (slices 6-9). `domain/`, `ports/`, and every package
-created after slice 2b get full strictness from birth and must never be
-added here.
-
-**As of slice 9's fix round the list is `extraction` alone** -- the pre-rewrite
-`classifier`, `prompts`, `prompt_generator` and `domains/` (B55). Narrowing the
-exemption to those paths, so the slice-6 modules beside them are held to the
-full rule set, is worth doing when one of them is next touched.
-
-`events/**` is gone from both lists, and **what it was hiding is the reason to
-distrust a deferral that has not been measured.** Slice 9 deferred removing it
-on the stated grounds that doing so "will produce findings"; review pushed
-back with a measurement showing none. Both were wrong, in opposite directions,
-and each was wrong because of how it measured:
-
-- `ruff check --select ANN,TC src/kg_builder/events/` reports "All checks
-  passed!" **unconditionally**. `per-file-ignores` applies on top of `--select`,
-  and the ignore was exactly `["ANN", "TC"]`, so that command could not have
-  found anything whatever the code said. It is the CLAUDE.md shape -- an input
-  that makes every candidate implementation agree -- in a lint command rather
-  than a test.
-- Actually deleting the entry surfaced **10** TC001/TC002/TC003 findings. So
-  the deferral's premise was right by accident and its conclusion still wrong,
-  because the findings were not the strictness debt it imagined.
-
-**Nine of the ten were false positives of the kind that pass every cheap
-check.** Ruff's `runtime-evaluated-base-classes` exists precisely to stop
-TC00x firing on pydantic field annotations, but it matches the base class *as
-written in the file*, not through the MRO -- and every event here declares
-`TenantDomainEvent`, eventsource's base, not `pydantic.BaseModel`. Applying
-ruff's suggested fix to one of them (moving `from uuid import UUID` into a
-type-checking block in `events/merge.py`) leaves `import
-kg_builder.events.merge` **succeeding** and then fails 23 tests with
-`PydanticUserError: MergeUndone is not fully defined`, because
-`merge_event_id: UUID` is a field and pydantic resolves field annotations when
-it builds the schema. An import smoke test does not catch it; only using the
-model does.
-
-The fix was therefore neither "keep the exemption" nor "delete the exemption
-and take the findings", but to add `TenantDomainEvent` to
-`runtime-evaluated-base-classes`, which is the setting that was always meant
-to cover this. Nine findings vanish, the tenth is genuine
-(`events/__init__.py` annotating a module-level variable, safe to move and
-now moved), and the exemption is deleted having exempted nothing real.
-
-**The mypy half was genuinely unearned**, and narrowing the exclude to
-`^src/kg_builder/extraction/` is clean: the configured whole-program run goes
-from 62 to 66 checked files with `Success: no issues found`. Note the review's
-mypy command (`mypy --no-incremental src/kg_builder/events/*.py`) bypasses the
-exclude by naming files explicitly, so it happened to be right without being
-a test of the configured run -- which is what was verified before acting.
-
-Slice 9 also found that `services`, `graph/client.py` and `graph/queries.py`
-outlived their packages in both lists by one and two commits respectively. A
-ratchet entry naming a package that is not there is exactly the hole the
-ratchet exists to prevent, and nothing catches it -- ruff and mypy both accept
-a per-file pattern that matches no file. **A test asserting every path in both
-lists exists would**, and is the cheap fix; it is the same shape as
-`test_the_exemption_list_has_no_stale_entries` in
-`tests/unit/graph/test_neo4j_adapter_is_wired.py`, which did catch its
-equivalent, in the same slice, because someone had written it.
