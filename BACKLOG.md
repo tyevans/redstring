@@ -3,11 +3,12 @@
 Deferred work. Every deficiency found and not fixed on the spot lands here,
 with enough detail that picking it up does not require rediscovering it.
 
-Status of the tree as of the last update: **1852 tests pass, 0 fail**,
-full `pre-commit` gate green, nothing skipped at collection. The accuracy
-suite is deselected by default (see B12). (Slice 1 of the ring migration
-deleted document sourcing -- scraping, storage, document parsing, and HTML
-preprocessors -- which accounts for the drop from the previous count.)
+Status of the tree as of the last update: **1910 tests pass, 0 fail**,
+full `pre-commit` gate green (now including `mypy`, see B30), nothing skipped
+at collection. The accuracy suite is deselected by default (see B12). (Slice
+1 of the ring migration deleted document sourcing -- scraping, storage,
+document parsing, and HTML preprocessors -- which accounts for the drop from
+the previous count.)
 
 Ordering within a section is roughly by priority. Ordering between sections
 is not meaningful.
@@ -193,21 +194,32 @@ areas are the ones with no database (B10).
 
 ## 4. Code health
 
-### B15. 159 ruff findings outstanding
+### B15. 98 ruff findings outstanding (pre-existing rule sets)
 
 Repo-wide, excluding the files already cleaned. The README's claim of "~617"
-is stale — the ruff configuration changed since it was written.
+is stale — the ruff configuration changed since it was written. As of slice
+2b, `uv run ruff check src tests` run standalone (not scoped to a commit's
+touched files) still finds these under rule sets that were already selected
+before 2b. They pre-date the tightening and sit in files pre-commit has not
+re-linted yet: the `ruff-check` hook lints whole files, but only files that
+get staged in a commit. Anyone who touches one of the listed files will hit
+these on commit and must fix them there (slice 2b did exactly this for
+`cache.py`, `config.py`, `db.py`, `encryption.py`, and a handful of
+`models`/`schemas` files it happened to touch).
 
 | Rule | Count | Rule | Count |
 |---|---|---|---|
-| `E501` line-too-long | 69 | `RUF012` mutable-class-default | 16 |
-| `B904` raise-without-from | 13 | `RUF013` implicit-optional | 11 |
-| `RUF022` unsorted-`__all__` | 10 | `RUF059` unused-unpacked-variable | 6 |
-| `F841` unused-variable | 5 | `SIM102` collapsible-if | 4 |
-| `SIM118` in-dict-keys | 4 | others | 21 |
+| `E501` line-too-long | 40 | `RUF022` unsorted-`__all__` | 9 |
+| `B904` raise-without-from | 12 | `RUF059` unused-unpacked-variable | 6 |
+| `F841` unused-variable | 5 | `RUF012` mutable-class-default | 5 |
+| `B007`/`B905`/`RUF013`/`RUF043` | 3 each | others | 14 |
 
 `RUF012` and `RUF013` are the ones most likely to be hiding real defects.
-48 are autofixable with `--unsafe-fixes`; review, do not bulk-apply.
+
+The nine new rule sets added in slice 2b (`ANN`, `ASYNC`, `DTZ`, `ERA`, `PT`,
+`PTH`, `RET`, `TC`, `TID`) are **not** in this table — they are fully clean
+across `src/` and `tests/`, either fixed directly or covered by the
+per-file-ignore ratchet in `pyproject.toml` (see `B29`).
 
 ### B16. 14 Pydantic v1-style `class Config` blocks
 
@@ -291,3 +303,30 @@ with the breaking-path entries; general docs remain absent.
 Hardcodes `eventsource` as the root package and allowlists
 `docs/superpowers/`, which does not exist here. Parameterise for
 `kg_builder` before the first move slice.
+
+### B29. `ProviderHealth.checked_at` default_factory is still naive
+
+`inference/providers/base.py:198` —
+`checked_at: datetime = Field(default_factory=datetime.utcnow, ...)`. This is
+the same defect as the `ollama.py:333` call fixed in slice 2b
+(`datetime.utcnow()` is naive and deprecated since Python 3.12), but DTZ003
+does not catch it: ruff's rule flags `datetime.utcnow()` *calls*, not a bare
+function reference passed as `default_factory`. It is currently unreachable
+in practice — every caller of `ProviderHealth(...)` in this codebase passes
+`checked_at` explicitly — but it is a live trap for any future caller that
+omits it, and it is genuinely untested by lint. `inference/` is scheduled for
+deletion in slice 6/9 so this was left as-is rather than fixed in the same
+commit as the ollama.py bug (out of that fix's stated scope); fix it if the
+package survives longer than expected, or let it die with the package.
+
+### B30. Legacy-package ruff/mypy exemption ratchet (slice 2b)
+
+`pyproject.toml`'s `[tool.ruff.lint.per-file-ignores]` and `[tool.mypy]
+exclude` both carry a matching list of legacy packages
+(`models`, `services`, `inference`, `extraction`, `preprocessing`, `graph`,
+`schemas`, `events`) plus mirrored test directories
+(`tests/unit/{extraction,models,schemas,services}/**`) for the ruff side.
+This list may only shrink — delete a package's entry in the same commit that
+deletes the package (slices 6-9). `domain/`, `ports/`, and every package
+created after slice 2b get full strictness from birth and must never be
+added here.
