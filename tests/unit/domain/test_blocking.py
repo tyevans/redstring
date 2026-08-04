@@ -1,0 +1,222 @@
+"""Blocking keys are pure, total, and namespaced."""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+from pydantic import ValidationError
+
+from kg_builder.domain.blocking import (
+    DEFAULT_STRATEGIES,
+    PREFIX_LENGTH,
+    BlockingKeyStrategy,
+    blocking_keys_for,
+    entity_type_key,
+    prefix_key,
+    soundex_key,
+)
+from kg_builder.domain.entity import Entity, ExtractionMethod
+
+
+def _entity(name: str, entity_type: str = "person") -> Entity:
+    return Entity(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        name=name,
+        normalized_name=name.lower(),
+        entity_type=entity_type,
+        extraction_method=ExtractionMethod.MANUAL,
+        confidence=1.0,
+    )
+
+
+class TestKeysAreNamespaced:
+    def test_a_type_and_a_prefix_that_read_alike_are_different_keys(self):
+        """Without namespacing, "Person Of Interest" blocks with every person.
+
+        This is the case that motivates the prefixes, so it is pinned by
+        example rather than left to the property below: the type name and the
+        five-character prefix are the *same string* here, and only the
+        namespace separates them.
+        """
+        typed = _entity("Ada Lovelace", entity_type="perso")
+        named = _entity("Perso Ipsum", entity_type="concept")
+
+        assert entity_type_key(typed) == "t:perso"
+        assert prefix_key(named) == "p:perso"
+        assert entity_type_key(typed) != prefix_key(named)
+
+    def test_the_three_namespaces_are_distinct(self):
+        entity = _entity("Ada Lovelace")
+        keys = {prefix_key(entity), entity_type_key(entity), soundex_key(entity)}
+
+        assert len(keys) == 3
+        assert {key[:2] for key in keys} == {"p:", "t:", "s:"}
+
+
+class TestPrefix:
+    def test_it_takes_the_first_characters_of_the_normalized_name(self):
+        assert prefix_key(_entity("Ada Lovelace")) == "p:ada l"
+
+    def test_it_normalizes_rather_than_trusting_the_stored_name(self):
+        """Two extractors writing different `normalized_name`s for one name
+        must still block together, so the key function normalizes itself."""
+        loose = _entity("  ADA   Lovelace ")
+        loose.normalized_name = "whatever the extractor felt like"
+
+        assert prefix_key(loose) == prefix_key(_entity("Ada Lovelace"))
+
+    def test_a_name_shorter_than_the_window_is_its_own_prefix(self):
+        assert prefix_key(_entity("Ada")) == "p:ada"
+
+    def test_a_name_that_could_normalize_to_nothing_cannot_be_built(self):
+        """The reason `prefix_key` has no empty-name branch.
+
+        `Entity` refuses a name whose `strip()` is falsy, and `normalize_name`
+        strips with the same function -- so the only input that would reach a
+        guard cannot be constructed. Asserted here rather than left implicit,
+        because if `Entity` ever relaxes that rule this test is what says
+        `prefix_key` now needs the branch.
+        """
+        with pytest.raises(ValidationError):
+            _entity("   ")
+
+
+class TestSoundex:
+    def test_spelling_variants_share_a_code(self):
+        """ "Robert" and "Rupert", the canonical soundex pair. Note that
+        "Catherine"/"Katherine" do *not* -- soundex keeps the first letter
+        verbatim -- which is a limitation of the algorithm rather than of this
+        wrapper, and the reason the prefix and type keys exist alongside it."""
+        assert soundex_key(_entity("Robert")) == soundex_key(_entity("Rupert"))
+        assert soundex_key(_entity("Catherine")) != soundex_key(_entity("Katherine"))
+
+    def test_it_codes_the_whole_name_and_not_the_first_token(self):
+        """Coding only "Ada" would block "Ada Lovelace" with every Adams in
+        the tenant -- the block-too-large failure. Pinned with a pair that a
+        first-token implementation would collapse and a whole-name one does
+        not."""
+        assert soundex_key(_entity("Ada Lovelace")) != soundex_key(_entity("Ada Byron"))
+
+    def test_a_name_with_no_ascii_letters_has_no_code(self):
+        """`jellyfish.soundex` refuses nothing -- it codes `"2024"` as
+        `"2000"` and `"2007"` as `"2000"` too. A key that lumps every year
+        together is the oversized block this module exists to avoid."""
+        assert soundex_key(_entity("2024")) is None
+        assert soundex_key(_entity("\u4e2d\u6587")) is None
+
+    def test_digits_and_punctuation_do_not_reach_the_coder(self):
+        """The correction, stated as a difference. Coding the raw name gives
+        `"2200"` for "2024-Q3" -- a code led by a digit, sharing a block with
+        every other digit-led name. Reducing to letters first gives a code for
+        the only word in it."""
+        assert soundex_key(_entity("2024-Q3")) == soundex_key(_entity("Q"))
+
+    def test_a_name_with_some_letters_is_coded(self):
+        assert soundex_key(_entity("Q3 2024 Review")) is not None
+
+    def test_accents_are_dropped_rather_than_coded(self):
+        """`soundex("\u00e9ada")` is `"E300"`, led by the accent; the reduction
+        makes it `"A300"`, which is what a phonetic code for "ada" should be.
+        """
+        assert soundex_key(_entity("\u00e9ada")) == soundex_key(_entity("ada"))
+
+
+class TestTheKeySet:
+    def test_the_default_produces_one_key_per_strategy(self):
+        keys = blocking_keys_for(_entity("Ada Lovelace"))
+
+        assert keys == frozenset({"p:ada l", "t:person", soundex_key(_entity("Ada Lovelace"))})
+
+    def test_absent_keys_are_dropped_not_represented(self):
+        assert blocking_keys_for(_entity("2024")) == frozenset({"p:2024", "t:person"})
+
+    def test_a_caller_can_choose_fewer_strategies(self):
+        entity = _entity("Ada Lovelace")
+
+        assert blocking_keys_for(entity, [BlockingKeyStrategy.ENTITY_TYPE]) == frozenset(
+            {"t:person"}
+        )
+
+    def test_only_the_soundex_strategy_can_yield_nothing(self):
+        """Stated as a test because the module docstring makes the claim, and
+        an unstated caveat is one nobody knows to check for."""
+        numeric = _entity("2024")
+
+        assert blocking_keys_for(numeric, [BlockingKeyStrategy.SOUNDEX]) == frozenset()
+        assert blocking_keys_for(numeric, [BlockingKeyStrategy.PREFIX]) == frozenset({"p:2024"})
+
+
+class TestProperties:
+    """Every property here skips names `Entity` itself refuses.
+
+    Blocking is asked about entities that exist, so a name that cannot become
+    one is not a case these functions have to survive -- and filtering in the
+    strategy would silently narrow what is generated.
+    """
+
+    @given(name=st.text(min_size=1, max_size=40), entity_type=st.text(min_size=1, max_size=20))
+    def test_key_computation_never_raises(self, name, entity_type):
+        """Blocking keys are computed on every entity extraction, so a name
+        that crashes the key function stops a whole document."""
+        try:
+            entity = _entity(name, entity_type=entity_type)
+        except ValidationError:
+            return
+        blocking_keys_for(entity)
+
+    @given(name=st.text(min_size=1, max_size=40))
+    def test_keys_are_deterministic(self, name):
+        """Two entities with the same name and type block together, whatever
+        else differs. If this were false, a re-extraction would land an entity
+        in a different block from its own earlier copy."""
+        try:
+            first, second = _entity(name), _entity(name)
+        except ValidationError:
+            return
+
+        assert blocking_keys_for(first) == blocking_keys_for(second)
+
+    @given(name=st.text(min_size=1, max_size=40))
+    def test_every_key_is_namespaced(self, name):
+        try:
+            entity = _entity(name)
+        except ValidationError:
+            return
+
+        for key in blocking_keys_for(entity):
+            assert key[:2] in {"p:", "t:", "s:"}, key
+
+    @given(name=st.text(min_size=1, max_size=40))
+    def test_no_key_is_only_its_namespace(self, name):
+        """An empty payload behind a namespace is the degenerate key this
+        module refuses to emit: it would match every entity that also failed
+        to produce one."""
+        try:
+            entity = _entity(name)
+        except ValidationError:
+            return
+
+        for key in blocking_keys_for(entity):
+            assert len(key) > 2, key
+
+    @given(name=st.text(min_size=PREFIX_LENGTH + 1, max_size=40).filter(str.strip))
+    def test_the_prefix_never_exceeds_its_window(self, name):
+        assert len(prefix_key(_entity(name))) <= len("p:") + PREFIX_LENGTH
+
+    def test_the_default_strategies_are_all_of_them(self):
+        """A strategy added to the enum and forgotten in the default tuple
+        would be dead code that looks live."""
+        assert set(DEFAULT_STRATEGIES) == set(BlockingKeyStrategy)
+
+
+class TestUnknownStrategy:
+    def test_a_strategy_with_no_key_function_fails_loudly(self):
+        """Guards the `_KEY_FUNCTIONS` table against a new enum member being
+        added without one -- which would otherwise be a `KeyError` at
+        extraction time on some tenant's document."""
+        with pytest.raises(KeyError):
+            blocking_keys_for(_entity("Ada"), ["not-a-strategy"])  # type: ignore[list-item]

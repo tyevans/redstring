@@ -1018,6 +1018,27 @@ member. The idiom appears at **33 sites**. This is a behaviour migration to
 make wholesale with tests, not a drive-by autofix. Rationale is recorded in
 `pyproject.toml`.
 
+### B42. `ANN401` is silenced on `domain/merge_strategy.py::resolve`
+
+Three `# noqa: ANN401` on `resolve` and `_union`. Silencing is correct here
+rather than a shortcut, and the reasoning is worth keeping because the obvious
+fixes are both wrong:
+
+- **Narrow the type.** The values are entries of `Entity.properties` and
+  `Entity.external_ids`, declared `dict[str, Any]`, holding whatever an
+  extraction found. Any narrower annotation is a claim the function cannot
+  honour.
+- **Use a `TypeVar`.** It would say the output type matches the input, which
+  is true for `PREFER_CANONICAL` and false for `UNION` -- that one returns a
+  *list* of them. A signature that is wrong for half the enum is worse than
+  `Any`.
+
+The real fix is upstream and is B33's territory: `properties` and
+`external_ids` have no value schema at all. Give them one and this rule stops
+firing on its own. Until then, `noqa` with this note beats a lie in the
+signature, and it must not become a per-file ignore -- B30 forbids adding
+`domain/` to that list, deliberately.
+
 ### B28. Three property-merge strategies deferred
 
 `PropertyMergeStrategy` has five members. The re-architecture keeps the
