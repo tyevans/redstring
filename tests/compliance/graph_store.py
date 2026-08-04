@@ -633,6 +633,47 @@ class GraphStoreCompliance:
         assert await store.get_relationships(source.id, tenant) == [pristine]
 
     async def test_get_relationships_filters_by_direction(self, store: GraphStore) -> None:
+        """Direction must be decided by identity of the endpoint, not by
+        ordering of it.
+
+        The ids are pinned so that one neighbour sorts *below* the hub and one
+        sorts *above* it. An adapter comparing endpoints with `<=` or `>=`
+        instead of `==` then over-matches in a way that random ids would
+        expose only sometimes -- a test that passes by luck of the draw is
+        worse than one that fails.
+        """
+        tenant = uuid4()
+        ids = sorted((uuid4() for _ in range(4)), key=str)
+        low, hub, high, sink = (_example_entity(tenant=tenant, id=i) for i in ids)
+        await store.upsert_entities([low, hub, high, sink])
+        from_below = _example_relationship(tenant, source=low.id, target=hub.id)
+        from_above = _example_relationship(tenant, source=high.id, target=hub.id)
+        outgoing = _example_relationship(tenant, source=hub.id, target=sink.id)
+        await store.upsert_relationships([from_below, from_above, outgoing])
+
+        assert await store.get_relationships(hub.id, tenant, direction="out") == [outgoing]
+        assert {r.id for r in await store.get_relationships(hub.id, tenant, direction="in")} == {
+            from_below.id,
+            from_above.id,
+        }
+        assert {r.id for r in await store.get_relationships(hub.id, tenant, direction="both")} == {
+            from_below.id,
+            from_above.id,
+            outgoing.id,
+        }
+
+    async def test_get_relationships_compares_direction_by_value(self, store: GraphStore) -> None:
+        """`direction` is matched by value, not by object identity.
+
+        The example tests pass string literals, which CPython interns, so an
+        adapter using `is` passes them while failing for a caller that built
+        the string at runtime.
+
+        The hub has one edge in *each* direction, so falling through to
+        "both" -- which is what an unrecognised value degrades to -- gives a
+        different answer from every valid direction. Without that, "out" and
+        "both" coincide and the fall-through hides.
+        """
         tenant = uuid4()
         hub, upstream, downstream = (_example_entity(tenant=tenant) for _ in range(3))
         await store.upsert_entities([hub, upstream, downstream])
@@ -640,12 +681,14 @@ class GraphStoreCompliance:
         outgoing = _example_relationship(tenant, source=hub.id, target=downstream.id)
         await store.upsert_relationships([incoming, outgoing])
 
-        assert await store.get_relationships(hub.id, tenant, direction="out") == [outgoing]
-        assert await store.get_relationships(hub.id, tenant, direction="in") == [incoming]
-        assert {r.id for r in await store.get_relationships(hub.id, tenant, direction="both")} == {
-            incoming.id,
-            outgoing.id,
-        }
+        outward = "".join(["o", "u", "t"])
+        inward = "".join(["i", "n"])
+        both = "".join(["bo", "th"])
+        assert id(outward) != id("out")  # equal in value, distinct as an object
+
+        assert await store.get_relationships(hub.id, tenant, direction=outward) == [outgoing]  # type: ignore[arg-type]
+        assert await store.get_relationships(hub.id, tenant, direction=inward) == [incoming]  # type: ignore[arg-type]
+        assert len(await store.get_relationships(hub.id, tenant, direction=both)) == 2  # type: ignore[arg-type]
 
     async def test_get_relationships_defaults_to_both_directions(self, store: GraphStore) -> None:
         tenant = uuid4()
