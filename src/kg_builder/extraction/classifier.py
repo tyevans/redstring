@@ -257,9 +257,7 @@ class ContentClassifier:
         sanitized = SSN_PATTERN.sub("[REDACTED]", sanitized)
 
         # Remove credit card-like patterns
-        sanitized = CC_PATTERN.sub("[REDACTED]", sanitized)
-
-        return sanitized
+        return CC_PATTERN.sub("[REDACTED]", sanitized)
 
     def _build_prompt(self, content: str) -> str:
         """Build the classification prompt.

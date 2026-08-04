@@ -56,7 +56,7 @@ class SlidingWindowChunker:
         respect_sentence_boundaries: bool = True,
         respect_paragraph_boundaries: bool = True,
         min_chunk_size: int = 100,
-    ):
+    ) -> None:
         """Initialize sliding window chunker.
 
         Args:

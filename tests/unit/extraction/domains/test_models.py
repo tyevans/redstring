@@ -18,7 +18,6 @@ from kg_builder.extraction.domains.models import (
     DomainSchema,
     DomainSummary,
     EntityTypeSchema,
-    ExtractionStrategy,
     PropertySchema,
     RelationshipTypeSchema,
 )
@@ -815,84 +814,6 @@ class TestClassificationResult:
 
 
 # =============================================================================
-# ExtractionStrategy Tests
-# =============================================================================
-
-
-class TestExtractionStrategy:
-    """Tests for ExtractionStrategy model."""
-
-    def test_legacy_strategy(self):
-        """Test creating legacy extraction strategy."""
-        strategy = ExtractionStrategy.legacy()
-        assert strategy.is_adaptive is False
-        assert strategy.domain_id is None
-        assert strategy.system_prompt is None
-        assert strategy.json_schema is None
-        assert strategy.confidence_thresholds.entity_extraction == 0.6
-
-    def test_adaptive_strategy_from_domain(self):
-        """Test creating adaptive extraction strategy from domain."""
-        strategy = ExtractionStrategy.from_domain(
-            domain_id="literature_fiction",
-            system_prompt="Extract characters and themes from the following text...",
-        )
-        assert strategy.is_adaptive is True
-        assert strategy.domain_id == "literature_fiction"
-        assert "characters" in strategy.system_prompt
-        assert strategy.json_schema is None
-        assert strategy.confidence_thresholds.entity_extraction == 0.6
-
-    def test_adaptive_strategy_with_json_schema(self):
-        """Test creating adaptive strategy with JSON schema."""
-        json_schema = {
-            "type": "object",
-            "properties": {
-                "entities": {"type": "array"},
-                "relationships": {"type": "array"},
-            },
-        }
-        strategy = ExtractionStrategy.from_domain(
-            domain_id="literature_fiction",
-            system_prompt="Extract entities...",
-            json_schema=json_schema,
-        )
-        assert strategy.json_schema == json_schema
-
-    def test_adaptive_strategy_with_custom_thresholds(self):
-        """Test creating adaptive strategy with custom thresholds."""
-        custom_thresholds = ConfidenceThresholds(
-            entity_extraction=0.8,
-            relationship_extraction=0.7,
-        )
-        strategy = ExtractionStrategy.from_domain(
-            domain_id="scientific_papers",
-            system_prompt="Extract entities...",
-            confidence_thresholds=custom_thresholds,
-        )
-        assert strategy.confidence_thresholds.entity_extraction == 0.8
-        assert strategy.confidence_thresholds.relationship_extraction == 0.7
-
-    def test_strategy_manual_construction(self):
-        """Test manual strategy construction."""
-        strategy = ExtractionStrategy(
-            domain_id="custom_domain",
-            is_adaptive=True,
-            system_prompt="Custom prompt",
-            json_schema={"type": "object"},
-            confidence_thresholds=ConfidenceThresholds(
-                entity_extraction=0.9,
-                relationship_extraction=0.85,
-            ),
-        )
-        assert strategy.domain_id == "custom_domain"
-        assert strategy.is_adaptive is True
-        assert strategy.system_prompt == "Custom prompt"
-        assert strategy.json_schema == {"type": "object"}
-        assert strategy.confidence_thresholds.entity_extraction == 0.9
-
-
-# =============================================================================
 # Integration Tests
 # =============================================================================
 
@@ -979,7 +900,6 @@ class TestModelIntegration:
             DomainSchema,
             DomainSummary,
             EntityTypeSchema,
-            ExtractionStrategy,
             PropertySchema,
             RelationshipTypeSchema,
         )
@@ -992,4 +912,3 @@ class TestModelIntegration:
         assert DomainSchema is not None
         assert DomainSummary is not None
         assert ClassificationResult is not None
-        assert ExtractionStrategy is not None

@@ -10,6 +10,7 @@ that slice 7 redesigned on domain types -- see `kg_builder.consolidation`.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -26,7 +27,7 @@ class Chunk:
     start_char: int
     end_char: int
     overlap_with_previous: int = 0
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def length(self) -> int:

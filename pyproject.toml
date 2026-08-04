@@ -51,6 +51,7 @@ dev = [
     "ruff>=0.14",
     "types-dateparser>=1.4.1.20260617",
     "types-python-dateutil>=2.9.0.20260716",
+    "types-pyyaml>=6.0.12.20260724",
 ]
 
 [build-system]
@@ -107,21 +108,19 @@ ignore = [
     "DTZ001",
 ]
 
-# Legacy packages pending deletion. Each entry is removed in the commit that
-# deletes its package -- this list may only shrink. Slice 9 removed
-# `models`, `services`, `schemas`, `graph/client.py` and `graph/queries.py`
-# along with their test-side entries.
+# The legacy-package exemption list is empty, and that is the point: every
+# entry was removed in the commit that deleted or repaired its package.
+# Slice 9 took `models`, `services`, `schemas`, `graph/client.py` and
+# `graph/queries.py`; `events/**` went next (its ANN half exempted nothing at
+# all and its TC half was covering for the `runtime-evaluated-base-classes`
+# misconfiguration below). Slice 10 took the last one,
+# `src/kg_builder/extraction/**` = ["ANN", "TC", "RET", "ERA"], together with
+# its test-side twin.
 #
-# One survivor: `extraction/**` still holds the pre-rewrite `classifier`,
-# `prompts`, `prompt_generator` and `domains/` (BACKLOG B55). Narrowing this to
-# those paths is worth doing when one of them is next touched.
-#
-# `events/**` was here and is gone. Its ANN half exempted nothing at all, and
-# its TC half was covering for a misconfiguration rather than for legacy code
-# -- see `runtime-evaluated-base-classes` below.
-"src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]
-
-"tests/unit/extraction/**" = ["PT", "PTH", "RET", "ERA"]
+# Measured with the entry deleted rather than through it, as CLAUDE.md
+# requires: it was hiding ten findings across eight files, two of which were
+# in `prompt_generator.generate_json_schema` and left with that function.
+# BACKLOG B15, closed.
 
 [tool.ruff.lint.isort]
 known-first-party = ["kg_builder"]
@@ -161,13 +160,11 @@ python_version = "3.13"
 # Strict only where the new architecture lives. Legacy packages are excluded
 # rather than weakened, and each exclusion dies with its package.
 files = ["src/kg_builder"]
-exclude = [
-    # `models`, `services` and `schemas` left this list in slice 9, with the
-    # packages. `graph/(client|queries).py` did too -- all of `graph/` is now
-    # new architecture and type-checked. See the ruff list above for why
-    # `events` should follow and has not yet.
-    "^src/kg_builder/extraction/",
-]
+# No `exclude`. There was one, and slice 10 emptied it by fixing the last
+# fourteen findings in `extraction/` rather than by deleting the package.
+# CLAUDE.md's rule applies: an exclusion over an empty set excludes nothing
+# and any guard written over it passes vacuously, so it is deleted rather than
+# kept empty. Re-adding one is a visible decision.
 strict = true
 warn_unreachable = true
 warn_return_any = true
@@ -309,7 +306,12 @@ layers = [
     # caller at all. A library takes its configuration through constructor
     # arguments -- `tests/unit/test_library_reads_no_environment.py` is what
     # keeps that true now.
-    "events : encryption : context",
+    # `context` left this line in slice 10 with the module: it re-exported
+    # `eventsource.domain.tenant_context` under "backward-compatible aliases"
+    # for code that no longer exists, and had no importer anywhere. Callers
+    # that want a tenant scope import it from eventsource directly, as every
+    # test in `tests/unit/projections` already does.
+    "events : encryption",
     # Ports sit directly above `domain` and below every adapter: an adapter
     # (graph.adapters) may import its port, never the reverse.
     "ports",

@@ -36,42 +36,64 @@ is not meaningful.
 
 ## 1. Unlanded features
 
-### B55. The strategy router was deleted, and the domain schemas now have no caller
+### B58. `encryption.py` is 500 lines with no caller and no test
 
-Slice 9 deleted `extraction/strategy_router.py` (583 lines) and its 826-line
-test file. Recoverable from `66f589d`, the last commit that had them.
+Nothing in `src/` or `tests/` imports `kg_builder.encryption`. Slice 10
+removed the one thing that referenced it -- `get_encryption_service()`, the
+singleton that filled its constructor from `kg_builder.config` -- and after
+that the module has no importer at all. It is **127 statements at 0%
+coverage**, which makes it the single largest drag on the ratchet: about four
+points of the total on its own.
 
-**Why deleting rather than porting.** Its entire public surface took a
-`ScrapingJob`: `route(job, content)` reads `job.extraction_strategy`,
-`job.content_domain` and `job.id`, and `JobUpdateCallback` writes the
-classification result back onto the job row. Slice 1 deleted that model. The
-`TYPE_CHECKING` import the slice-9 brief names was not the problem -- the
-*parameter* was, and there is no replacement type to point it at. Inventing
-one (a `RoutingRequest` value object, say) would have been a contract with no
-caller to serve, which is the thing this campaign has been removing.
+**Not deleted in slice 10 on purpose.** Unlike `prompts.py` and `context.py`,
+which went in the same slice, this one does not mention a deleted concept and
+is not a compatibility shim. `EncryptionService` takes its master key and its
+enabled flag as constructor arguments, derives a per-tenant key with HKDF and
+uses Fernet -- a coherent capability a caller could reasonably want, and the
+kind of code that is expensive to get right twice.
 
-Its tests do not argue for keeping it either: **every job in all 826 lines is
-a bare `MagicMock`**, so nothing ever proved the router worked against the
-model it was written for, and 24 mock/patch sites make it the shape B41
-records as worthless.
+What it does not have is a *place*: no port declares encryption, no adapter
+calls it, and `GraphStore`/`VectorStore` both store plaintext. So the real
+question is whether this library encrypts anything at all, which is a product
+decision rather than a cleanup. Answer it either way -- expose it from the
+public API with tests, or delete it (recoverable from `e063faa`) -- but answer
+it rather than carrying 500 untested lines and the coverage hole they make.
 
-**What is now caller-less but kept, and why.** `extraction/classifier.py`,
-`extraction/prompt_generator.py` and `extraction/domains/` were the router's
-three collaborators and are all that is left of adaptive extraction. They are
-kept because, unlike the router, none of them mentions a deleted concept:
-the classifier maps content to a domain id, the generator turns a
-`DomainSchema` into a system prompt and a JSON schema, and the registry loads
-YAML. All three are tested and layer-clean.
+Note the same shape one layer over: `llm/cache/redis.py` is also at 0% in the
+default gate, but that is *not* this problem. It has a caller and a
+compliance suite; the suite is `integration`-marked because it needs a Redis.
 
-**They have no path into `extraction/pipeline.py`, and that is the gap.**
-`ExtractionPipeline` takes a fixed `DEFAULT_SYSTEM_PROMPT`; nothing chooses a
-domain, and `ExtractionStrategy` -- the type the router produced -- is
-constructed by nothing. Wiring it is slice 10's public-API work. Whoever does
-it should note that the router's actual routing logic was three lines
-(`legacy` / `manual` / `auto_detect` on a string field) and the other 580 were
-lazy-construction accessors, a DI factory singleton, and a convenience
-function that built a router per call; the part worth recovering from the ref
-above is `_build_strategy_from_domain`, not the class around it.
+### B57. Extraction is not constrained to a domain's vocabulary, only prompted with it
+
+Slice 10 wired domain-aware prompting (B55, closed): `domain_system_prompt`
+renders a `DomainSchema` into the `system_prompt` `ExtractionPipeline` already
+took, and `build_graph(..., domain=AUTO)` lets `ContentClassifier` choose it.
+What that gives the model is a *description* of the domain's entity and
+relationship types. It does not constrain the output to them: the JSON Schema
+the server decodes against comes from `extraction.schema.Extraction`, whose
+`entity_type` is a bare `str`.
+
+**The function that looked like it did this is gone, and could not have.**
+`prompt_generator.generate_json_schema` built a JSON Schema `dict` with the
+domain's type ids as an `enum` -- but `LlmProvider.extract` takes a pydantic
+*class*, so there was no parameter to pass a dict to, and the dict it built
+named its fields `type`/`source`/`target` where `Extraction` uses
+`entity_type`/`source_name`/`target_name`. A model that obeyed it would have
+produced output `map_extraction` cannot read. Recoverable from `e063faa`.
+
+**What it would actually take.** Either a per-domain pydantic model built at
+runtime (`pydantic.create_model` with `entity_type: Literal[...]`), threaded
+through `ExtractionPipeline` as a schema argument rather than a prompt one --
+which makes `map_extraction` generic over the schema it maps, since it reads
+`Extraction`'s field names today. Or a validation pass after extraction that
+drops or re-labels out-of-vocabulary types, which needs a decision about
+whether an unexpected type is a finding or a defect.
+
+Not obviously worth it: a domain schema's entity list is a *hint* about what
+matters, and a hard enum turns everything the domain author did not think of
+into "custom" or into nothing. Measure first -- the accuracy suite
+(`tests/accuracy/`) is the place -- rather than assuming constrained decoding
+extracts better.
 
 ### B47. Three timeline modules were deleted, not ported — slice 8
 
@@ -978,46 +1000,6 @@ should not be read as a quality trend, and a movement of either sign during a
 deletion slice needs the argument in the commit message rather than a reflex
 to add tests or lower the bar.
 
-### B15. Pre-existing ruff findings in the surviving legacy modules
-
-Repo-wide, excluding files already cleaned. These pre-date the slice-2b
-tightening and sit in files pre-commit has not re-linted yet: the `ruff-check`
-hook lints whole files, but only files that get staged in a commit. Anyone who
-touches one of the listed files hits these on commit and must fix them there.
-
-**Slice 9 removed most of them by deleting the files.** What is left is 15
-findings in four modules, all of them in the surviving pre-rewrite half of
-`extraction/` (B55):
-
-| File | Findings |
-|---|---|
-| `extraction/prompts.py` | 9 x E501 -- silenced per-literal, see below |
-| `extraction/prompt_generator.py` | 2 x RUF005 |
-| `extraction/domains/__init__.py` | 1 x RUF022 (unsorted `__all__`) |
-| `tests/unit/extraction/test_prompt_generator.py` | E501, RUF015, E741 |
-
-**`prompts.py`'s nine are silenced per-literal, not per-file.** Every long
-line there is inside a triple-quoted prompt literal -- the entity-type
-property lists and the task description that reach the model verbatim -- so
-wrapping them inserts newlines into the string and changes what the model is
-asked. Same argument `extraction/schema.py` makes for its field descriptions
-being prompt rather than documentation.
-
-The scope is worth recording because the obvious placement does not work: a
-`# noqa` on the offending physical line would land *inside* the string and
-become part of the prompt, which is the exact harm being avoided. **Ruff
-accepts the `# noqa: E501` on the line carrying the closing `"""`**, outside
-the literal, where it covers every violation within that string -- so two
-comments cover all nine, and the file-wide ignore that would also have
-covered future long lines of ordinary code is gone.
-
-Verified that this changed nothing the model sees: all five module-level
-string constants, and the output of `get_system_prompt`, `get_entity_types`
-and `get_relationship_types`, are byte-identical to the pre-change module.
-
-The other six are ordinary and should be fixed by whoever next touches those
-files. `RUF012`/`RUF013`, called out in the old version of this entry as the
-most likely to hide real defects, no longer appear anywhere.
 ### B36. Free-form event payload dicts can hold a NUL that `jsonb` refuses
 
 `domain/entity.py` (`properties`, `external_ids`) and

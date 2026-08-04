@@ -274,7 +274,8 @@ class TestFailure:
         """So an operator seeing a wall of fallbacks can tell why."""
         result = await classifier_answering(EMPTY).classify(long_content)
 
-        assert result.reasoning and "fail" in result.reasoning.lower()
+        assert result.reasoning
+        assert "fail" in result.reasoning.lower()
 
 
 class TestConfidenceThreshold:

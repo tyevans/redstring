@@ -41,6 +41,7 @@ from kg_builder.extraction.pipeline import (
     PartialExtractionError,
     PipelineResult,
 )
+from kg_builder.extraction.prompt_generator import domain_system_prompt
 from kg_builder.extraction.protocols import Chunker
 from kg_builder.extraction.schema import (
     DEFAULT_CONFIDENCE,
@@ -73,6 +74,9 @@ __all__ = [
     "PartialExtractionError",
     "PipelineResult",
     "SlidingWindowChunker",
+    # Domain-aware prompting: `domains/` supplies the schema, this turns it
+    # into the `system_prompt` the pipeline already took. BACKLOG B55.
+    "domain_system_prompt",
     "entity_id_for",
     # Non-LLM extraction
     "extract_entities_from_open_graph",

@@ -25,19 +25,12 @@ Usage:
     schema = get_domain_schema("literature_fiction")
     domains = list_available_domains()
 
-    # For FastAPI dependency injection
-    from kg_builder.extraction.domains.registry import get_registry_dependency
-
-    @router.get("/domains")
-    async def list_domains(registry: DomainSchemaRegistry = Depends(get_registry_dependency)):
-        return registry.list_domains()
 """
 
 from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING
 
@@ -50,6 +43,7 @@ from kg_builder.extraction.domains.models import DomainSchema, DomainSummary
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -399,28 +393,6 @@ def get_domain_registry() -> DomainSchemaRegistry:
     registry = DomainSchemaRegistry.get_instance()
     registry.ensure_loaded()
     return registry
-
-
-def get_registry_dependency() -> DomainSchemaRegistry:
-    """FastAPI dependency for injecting the domain schema registry.
-
-    Usage:
-        from fastapi import Depends
-        from kg_builder.extraction.domains.registry import (
-            DomainSchemaRegistry,
-            get_registry_dependency,
-        )
-
-        @router.get("/domains")
-        async def list_domains(
-            registry: DomainSchemaRegistry = Depends(get_registry_dependency)
-        ):
-            return registry.list_domains()
-
-    Returns:
-        The singleton DomainSchemaRegistry instance with schemas loaded.
-    """
-    return get_domain_registry()
 
 
 def reset_registry_cache() -> None:

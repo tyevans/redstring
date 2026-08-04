@@ -52,11 +52,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kg_builder.extraction.mapping import (
-    MappedExtraction,
-    preference,
-    relationship_preference,
-)
+from kg_builder.domain.preference import preference, relationship_preference
+from kg_builder.extraction.mapping import MappedExtraction
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

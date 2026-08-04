@@ -37,6 +37,7 @@ is now the only record of what the enum's members were.
 """
 
 import logging
+from typing import Any
 
 from kg_builder.domain.entity import ExtractionMethod
 
@@ -115,7 +116,7 @@ SCHEMA_TYPE_MAP = {
 }
 
 
-def extract_entities_from_schema_org(schema_data: list) -> list[dict]:
+def extract_entities_from_schema_org(schema_data: list[Any]) -> list[dict[str, Any]]:
     """
     Extract entities from Schema.org JSON-LD data.
 
@@ -148,7 +149,7 @@ def extract_entities_from_schema_org(schema_data: list) -> list[dict]:
     return entities
 
 
-def _extract_entity_from_schema_item(item: dict) -> dict | None:
+def _extract_entity_from_schema_item(item: dict[str, Any]) -> dict[str, Any] | None:
     """
     Extract an entity from a single Schema.org item.
 
@@ -208,7 +209,7 @@ def _extract_entity_from_schema_item(item: dict) -> dict | None:
     }
 
 
-def _get_name_from_item(item: dict) -> str | None:
+def _get_name_from_item(item: dict[str, Any]) -> str | None:
     """Get the name from a Schema.org item."""
     # Try various name fields
     for field in ["name", "headline", "title", "alternateName", "legalName"]:
@@ -229,7 +230,7 @@ def _get_name_from_item(item: dict) -> str | None:
     return None
 
 
-def _extract_properties(item: dict) -> dict:
+def _extract_properties(item: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant properties from Schema.org item."""
     properties = {}
 
@@ -282,7 +283,7 @@ def _extract_properties(item: dict) -> dict:
     return properties
 
 
-def _extract_nested_entities(item: dict) -> list[dict]:
+def _extract_nested_entities(item: dict[str, Any]) -> list[dict[str, Any]]:
     """Extract entities from nested Schema.org objects."""
     entities = []
 
@@ -323,7 +324,7 @@ def _extract_nested_entities(item: dict) -> list[dict]:
     return entities
 
 
-def extract_entities_from_open_graph(og_data: dict) -> list[dict]:
+def extract_entities_from_open_graph(og_data: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Extract entities from Open Graph metadata.
 
@@ -333,7 +334,7 @@ def extract_entities_from_open_graph(og_data: dict) -> list[dict]:
     Returns:
         List of entity dictionaries
     """
-    entities = []
+    entities: list[dict[str, Any]] = []
 
     if not og_data:
         return entities
@@ -389,13 +390,12 @@ def _map_og_type(og_type: str) -> str:
 
     if og_type in ("website", "article", "blog"):
         return "document"
-    elif og_type == "profile":
+    if og_type == "profile":
         return "person"
-    elif og_type in ("product", "book", "music.album", "video.movie"):
+    if og_type in ("product", "book", "music.album", "video.movie"):
         return "product"
-    elif og_type in ("place", "business.business"):
+    if og_type in ("place", "business.business"):
         return "location"
-    elif og_type in ("music.song", "music.playlist", "video.episode"):
+    if og_type in ("music.song", "music.playlist", "video.episode"):
         return "document"
-    else:
-        return "concept"
+    return "concept"

@@ -20,7 +20,7 @@ what callers catch across the port boundary.
 class ChunkingError(Exception):
     """Base class for failures in splitting a document or merging its results."""
 
-    def __init__(self, message: str, cause: Exception | None = None):
+    def __init__(self, message: str, cause: Exception | None = None) -> None:
         super().__init__(message)
         self.message = message
         self.cause = cause
