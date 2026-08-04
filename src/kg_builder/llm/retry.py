@@ -1,27 +1,33 @@
-"""
-Retry logic for Ollama extraction operations.
+"""Exponential backoff with jitter, for calls to a language-model provider.
 
-Provides exponential backoff with jitter for resilient extraction requests.
-The retry mechanism helps handle transient failures from the Ollama API
-such as connection issues, timeouts, or temporary server errors.
+Transport concern, which is why it sits in `llm/` beside the adapters rather
+than in `extraction/`: what is being retried is a network call, and extraction
+should not know that one happened.
 
-Example:
-    from kg_builder.extraction.retry import with_retry, ExtractionRetryPolicy
+**Which exceptions are retryable is the caller's decision, always.** This
+module names none of them. Retrying is only safe for a failure the provider
+may answer differently next time -- a dropped connection, a timeout, a 503 --
+and never for one it will answer identically, such as a malformed request or a
+refused key. Passing too wide a tuple turns a permanent failure into the same
+failure `max_retries` times slower.
 
-    # Use the default policy
-    @with_retry(retryable_exceptions=(httpx.ConnectError, httpx.TimeoutException))
-    async def extract_with_ollama(content: str) -> ExtractionResult:
+Example, against whatever exception type your provider's client raises:
+
+    from kg_builder.llm.retry import ExtractionRetryPolicy, with_retry
+
+    @with_retry(retryable_exceptions=(ConnectionError, TimeoutError))
+    async def call_the_model(prompt: str) -> str:
         ...
-
-    # Use custom policy
-    custom_policy = ExtractionRetryPolicy(max_retries=5, initial_delay=2.0)
 
     @with_retry(
-        retryable_exceptions=(httpx.ConnectError,),
-        policy=custom_policy,
+        retryable_exceptions=(ConnectionError,),
+        policy=ExtractionRetryPolicy(max_retries=5, initial_delay=2.0),
     )
-    async def extract_with_custom_retry(content: str) -> ExtractionResult:
+    async def call_it_more_patiently(prompt: str) -> str:
         ...
+
+`RetryExhausted` is raised when the attempts run out, with the last real
+exception as its `__cause__`.
 """
 
 import asyncio
@@ -204,15 +210,12 @@ def with_retry(
             exception is available as __cause__.
 
     Example:
-        import httpx
-        from kg_builder.extraction.retry import with_retry, ExtractionRetryPolicy
+        from kg_builder.llm.retry import ExtractionRetryPolicy, with_retry
 
-        # Retry on connection errors with default policy
-        @with_retry(retryable_exceptions=(httpx.ConnectError, httpx.TimeoutException))
-        async def fetch_data(url: str) -> dict:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url)
-                return response.json()
+        # Retry on connection errors with the default policy
+        @with_retry(retryable_exceptions=(ConnectionError, TimeoutError))
+        async def call_the_model(prompt: str) -> str:
+            ...
 
         # Custom policy
         @with_retry(

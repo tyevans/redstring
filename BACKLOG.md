@@ -1310,6 +1310,78 @@ suites run, not whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
+### B60. `0.1.0` cannot be published: there is no licence
+
+**Found in slice 11 while assessing releasability. This is the release
+blocker, and it is not a formality** — a package on PyPI with no licence grants
+no rights, so nobody can legally use it and the friendliest possible reading is
+"all rights reserved".
+
+There is **no `LICENSE` file** in the repository and **no `license` or
+`license-files` key** in `[project]`. Nothing else about the build is wrong:
+`uv build --wheel` succeeds, and
+`tests/integration/test_wheel_ships_the_domain_schemas.py` passes against the
+built artifact (verified in slice 11).
+
+Also absent, and all conventional for a first publish:
+
+- `[project.urls]` — no repository or issues link, so an installed package
+  gives a user nowhere to go.
+- `authors` / `maintainers`.
+- `classifiers`, including `Programming Language :: Python :: 3.13` and a
+  development-status trove classifier. `requires-python = ">=3.13"` already
+  gates installation correctly, so these are discoverability rather than
+  correctness.
+- A CHANGELOG (B22).
+
+The licence is a decision for whoever owns the copyright and cannot be made
+from inside the repository. Everything else is fifteen minutes once it is.
+
+### B61. Four of the nine core dependencies do not belong there, and two are unused
+
+**Measured in slice 11 by building the wheel, installing it into a throwaway
+venv, uninstalling each candidate, and importing** — not by grep alone, because
+grep cannot see a runtime import.
+
+| Dependency | First-party importers in `src/` | Verdict |
+|---|---|---|
+| `numpy>=1.26.0` | **none** | Dead. Nothing in `src/` or `tests/` mentions it |
+| `httpx>=0.25.0` | **none** | Dead. Every occurrence is inside a docstring example |
+| `asyncpg>=0.31.0` | `vector/adapters/pgvector.py`, function-local | Belongs behind a `pgvector` extra |
+| `redis[hiredis]>=5.3,<6` | `llm/cache/redis.py`, function-local | Belongs behind a `redis` extra |
+
+With `numpy` and `httpx` uninstalled, `import kg_builder` succeeds, all 62
+exported names resolve, and `domain_system_prompt("news_journalism")` renders.
+With `asyncpg`, `redis` and `hiredis` also uninstalled, `import kg_builder`
+still succeeds **and so do
+`from kg_builder.vector.adapters.pgvector import PgVectorStore` and
+`from kg_builder.llm.cache.redis import RedisCache`** — both adapters keep
+their third-party imports inside functions, which is what makes the extras
+split free.
+
+So the README's claim that the base install is "in-memory adapters, the fake
+provider" is true of the *code* and false of the *install*: it currently drags
+a Postgres driver, a Redis client with a C extension, and two libraries with no
+user at all.
+
+**Why this is worth doing before `0.1.0` rather than after.** Narrowing a
+dependency set post-release breaks environments that were relying on the
+transitive install; doing it now costs nothing because nothing depends on it
+yet. The `redis` move also interacts with **B38**: `redis` being a *direct*
+dependency is precisely what blocks `eventsource-py[all]`, so moving it behind
+an extra may dissolve that conflict rather than requiring the pin to be
+widened. Check that when doing this.
+
+Use `uv remove` and `uv add --optional`, never a hand edit — and re-sync with
+`--all-extras` afterwards, because `uv remove` re-resolves and will silently
+narrow the venv (B45).
+
+The two dead entries are the cheap half and can go on their own. Note that
+`httpx`'s only trace was a module docstring describing "Ollama extraction"
+and importing `kg_builder.extraction.retry`, a path that moved to
+`kg_builder.llm.retry` in slice 6; that docstring was rewritten in slice 11,
+which is how the dependency was noticed at all.
+
 ### B38. There is no `eventsourcing` extra any more, and the `redis` pin is why `[all]` cannot come back
 
 **Rewritten in slice 11; the previous version described an extra that no longer
