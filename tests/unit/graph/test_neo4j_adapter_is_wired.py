@@ -233,14 +233,16 @@ class TestNoUnparameterisedInterpolation:
                 if isinstance(part, ast.FormattedValue):
                     interpolated.add(ast.unparse(part.value))
 
-        # EDGE, ALIAS_NODE, ALIAS_EDGE and the direction patterns are module
-        # constants, not caller input; `depth` is the only value that reaches
-        # here from an argument, and `neighbors` proves it is an int before
-        # formatting it.
+        # The label and edge-type constants and the direction patterns are
+        # module constants, not caller input; `depth` is the only value that
+        # reaches here from an argument, and `neighbors` proves it is an int
+        # before formatting it.
         assert interpolated <= {
             "EDGE",
             "ALIAS_NODE",
             "ALIAS_EDGE",
+            "KEY_NODE",
+            "KEY_EDGE",
             "depth",
             "_TENANT_SEEK",
             "_PATTERNS[direction]",
@@ -564,6 +566,36 @@ class TestEncodingIsPureAndReversible:
             assert value is None or isinstance(value, str | int | float | bool), (
                 f"{key} is a {type(value).__name__}, which Neo4j cannot store"
             )
+
+    @pytest.mark.parametrize(
+        ("blocking_keys", "creates_edges"),
+        [
+            (None, False),
+            (frozenset(), False),
+            (frozenset({"A430"}), True),
+            (frozenset({"A430", "person:ad"}), True),
+        ],
+    )
+    def test_only_rows_with_keys_reach_the_edge_write(self, blocking_keys, creates_edges):
+        """`None` and `frozenset()` differ to the decoder and not here.
+
+        The property keeps "no keys known" and "known to have none" apart,
+        because an edge set cannot express that difference -- but neither
+        creates an edge, so the filter must collapse them. Parametrised over
+        both because an implementation testing `is not None` passes for one
+        and fails for the other.
+        """
+        rows = [adapter._entity_row(_entity(blocking_keys=blocking_keys))]
+        assert bool(adapter.rows_carrying_keys(rows)) is creates_edges
+
+    def test_a_mixed_batch_keeps_only_the_keyed_rows(self):
+        keyed = _entity(blocking_keys=frozenset({"A430"}))
+        rows = [
+            adapter._entity_row(_entity(blocking_keys=None)),
+            adapter._entity_row(keyed),
+            adapter._entity_row(_entity(blocking_keys=frozenset())),
+        ]
+        assert [row["id"] for row in adapter.rows_carrying_keys(rows)] == [str(keyed.id)]
 
     def test_the_row_holds_only_values_neo4j_can_store(self):
         """The whole reason the JSON columns exist.

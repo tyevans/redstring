@@ -373,16 +373,43 @@ class TestNeo4jSpecifics:
     # later refactor would introduce silently.
     # ------------------------------------------------------------------
 
-    async def test_upsert_entities_is_one_round_trip(
+    async def test_upsert_entities_is_a_bounded_number_of_round_trips(
         self, store: Neo4jGraphStore, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Three: the entities, the stale key edges, the new key edges.
+
+        It was one until B10b made blocking keys nodes. What matters is not the
+        number but that it **does not grow with the batch**, which is what the
+        two sizes here check -- an implementation that looped per entity would
+        satisfy any fixed count chosen for a single size.
+
+        The stale-edge delete is unconditional and so is always one of the
+        three; the create is skipped when nothing in the batch carries keys,
+        which the case below pins.
+        """
         tenant = uuid4()
-        entities = [_entity(tenant=tenant) for _ in range(25)]
+        small = [_entity(tenant=tenant, blocking_keys=frozenset({"A430"})) for _ in range(5)]
+        large = [_entity(tenant=tenant, blocking_keys=frozenset({"A430"})) for _ in range(50)]
+
+        with _counting(store, monkeypatch) as few:
+            await store.upsert_entities(small)
+        with _counting(store, monkeypatch) as many:
+            await store.upsert_entities(large)
+
+        assert len(few) == len(many) == 3
+
+    async def test_upserting_entities_with_no_keys_skips_the_key_write(
+        self, store: Neo4jGraphStore, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The delete still runs. It is what clears an entity's *previous*
+        keys, and skipping it for a keyless batch is exactly the stale-key bug
+        B10b warns about."""
+        tenant = uuid4()
 
         with _counting(store, monkeypatch) as queries:
-            await store.upsert_entities(entities)
+            await store.upsert_entities([_entity(tenant=tenant) for _ in range(5)])
 
-        assert len(queries) == 1
+        assert len(queries) == 2
 
     async def test_upsert_relationships_is_a_bounded_number_of_round_trips(
         self, store: Neo4jGraphStore, monkeypatch: pytest.MonkeyPatch

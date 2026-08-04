@@ -22,8 +22,10 @@ relationship-uniqueness index single-shaped.
 dict, or an integer past 64 bits, all of which `Entity.properties` legitimately
 contains. `properties`, `external_ids` and `temporal` are therefore stored as
 JSON text, which round-trips nesting, types and empty containers exactly. The
-fields the port *queries* on -- `normalized_name`, `entity_type`,
-`blocking_keys` -- stay native and indexed.
+fields the port *queries* on -- `normalized_name` and `entity_type` -- stay
+native and indexed. `blocking_keys` is native too, but it is not what serves
+the lookup: a list property cannot be seeked, so the keys are *also* nodes.
+See `KEY_NODE`.
 
 ## Isolation comes free
 
@@ -70,6 +72,27 @@ EDGE = "RELATES_TO"
 ALIAS_NODE = "AliasRef"
 ALIAS_EDGE = "ALIAS_OF"
 
+#: Blocking keys are nodes, not a list property. This was BACKLOG B10b.
+#:
+#: A Neo4j range index over a list property indexes **the list as a single
+#: value**, so it answers "which entities have exactly this array" and cannot
+#: answer membership. Measured on 5000 entities across 100 tenants, the plan
+#: for `$key IN e.blocking_keys` was `NodeByLabelScan` + `Filter` with and
+#: without such an index -- identical -- which is why slice 4 correctly created
+#: none. Consolidation fetches a block *per entity*, so a lookup that scans the
+#: tenant is O(n) per entity and O(n^2) across one.
+#:
+#: The rejected alternative, so it is not revisited: a full-text index does
+#: work on arrays but **tokenises**, and blocking keys are opaque identifiers
+#: (`"A430"`, `"person:ad"`) that must match exactly.
+#:
+#: The property survives alongside the nodes. It is what `_entity_from`
+#: decodes, and it is the only place "no keys known" (`None`) and "known to
+#: have none" (empty) stay distinguishable -- an edge set cannot express that
+#: difference.
+KEY_NODE = "BlockingKey"
+KEY_EDGE = "BLOCKED_BY"
+
 _DIRECTIONS = ("out", "in", "both")
 
 #: Cypher patterns for each `direction`, relative to the anchored entity `e`.
@@ -95,14 +118,9 @@ _SCHEMA = (
     "CREATE INDEX entity_tenant_normalized_name IF NOT EXISTS "
     "FOR (e:Entity) ON (e.tenant_id, e.normalized_name)",
     "CREATE INDEX entity_tenant_type IF NOT EXISTS FOR (e:Entity) ON (e.tenant_id, e.entity_type)",
-    # There is deliberately no index for `blocking_keys`. A Neo4j range index
-    # over a list property indexes the list as one value, so it cannot serve
-    # `$key IN e.blocking_keys` -- measured: the plan is `NodeByLabelScan` with
-    # or without such an index, so creating one costs write throughput and
-    # buys nothing. `_TENANT_SEEK` below narrows that scan to the tenant, which
-    # is the best plain Cypher can do. See the report's finding on
-    # `find_by_blocking_key` for the two real alternatives (a full-text index,
-    # or blocking keys as their own nodes) if it ever becomes hot.
+    # There is deliberately no index for the `blocking_keys` *property*; see
+    # KEY_NODE above for why one cannot serve a membership test. Lookups go
+    # through `:BlockingKey` nodes, whose constraint is below.
     #
     # Relationship *uniqueness* constraints are an enterprise feature, so
     # by-id lookup is served by an index and enforced by the upsert query,
@@ -114,6 +132,11 @@ _SCHEMA = (
     # so that resolution's answer depended on which copy it walked into.
     f"CREATE CONSTRAINT alias_ref_tenant_entity_unique IF NOT EXISTS "
     f"FOR (a:{ALIAS_NODE}) REQUIRE (a.tenant_id, a.entity_id) IS UNIQUE",
+    # Unique, so the `MERGE` in `_write_blocking_keys` cannot race two
+    # concurrent upserts into two nodes for one key -- which would make
+    # `find_by_blocking_key` return whichever half the planner reached.
+    f"CREATE CONSTRAINT blocking_key_tenant_key_unique IF NOT EXISTS "
+    f"FOR (k:{KEY_NODE}) REQUIRE (k.tenant_id, k.key) IS UNIQUE",
 )
 
 #: A predicate that is always true, added to make the planner use the
@@ -203,6 +226,47 @@ class Neo4jGraphStore:
             "SET e = row",
             rows=rows,
         )
+        await self._write_blocking_keys(rows)
+
+    async def _write_blocking_keys(self, rows: list[dict[str, Any]]) -> None:
+        """Rebuild each entity's `:BLOCKED_BY` edges from its `blocking_keys`.
+
+        **The second write path B10b names, and the reason this was not a
+        one-line change.** A re-upsert must delete the entity's *previous* key
+        edges or a stale key keeps matching, and `find_by_blocking_key` starts
+        returning entities that no longer carry the key --
+        `test_find_by_blocking_key_reflects_the_latest_write` is the test that
+        holds this honest.
+
+        Two statements rather than one. Delete-then-create in a single query
+        needs `WITH DISTINCT` to undo the row multiplication `OPTIONAL MATCH`
+        causes over existing edges, and then reads as if the distinctness were
+        about the keys rather than about the plan. Two statements each say one
+        thing.
+
+        Every row is processed, including those whose `blocking_keys` is null.
+        An entity going from "has keys" to "has none" must lose its edges just
+        as much as one going from one key to another, and it is the case a
+        create-only implementation gets wrong.
+        """
+        await self._run(
+            "UNWIND $rows AS row "
+            "MATCH (e:Entity {tenant_id: row.tenant_id, id: row.id})"
+            f"-[old:{KEY_EDGE}]->() "
+            "DELETE old",
+            rows=rows,
+        )
+        keyed = rows_carrying_keys(rows)
+        if not keyed:
+            return
+        await self._run(
+            "UNWIND $rows AS row "
+            "MATCH (e:Entity {tenant_id: row.tenant_id, id: row.id}) "
+            "UNWIND row.blocking_keys AS key "
+            f"MERGE (k:{KEY_NODE} {{tenant_id: row.tenant_id, key: key}}) "
+            f"MERGE (e)-[:{KEY_EDGE}]->(k)",
+            rows=keyed,
+        )
 
     async def get_entity(self, entity_id: EntityId, tenant_id: TenantId) -> Entity | None:
         records = await self._run(
@@ -269,9 +333,14 @@ class Neo4jGraphStore:
         return [_entity_from(record["e"]) for record in await self._run(query, **parameters)]
 
     async def find_by_blocking_key(self, key: str, tenant_id: TenantId) -> list[Entity]:
+        # Anchored on the key node, which the uniqueness constraint indexes, so
+        # this is a seek to one node and an expansion over its edges -- not a
+        # scan of the tenant. That is the whole of B10b: consolidation asks
+        # this once per entity, so a tenant scan here is O(n^2) across a
+        # tenant.
         records = await self._run(
-            "MATCH (e:Entity {tenant_id: $tenant_id}) "
-            f"WHERE {_TENANT_SEEK} AND $key IN e.blocking_keys "
+            f"MATCH (k:{KEY_NODE} {{tenant_id: $tenant_id, key: $key}})"
+            f"<-[:{KEY_EDGE}]-(e:Entity) "
             "RETURN e ORDER BY e.id",
             tenant_id=str(tenant_id),
             key=key,
@@ -288,10 +357,10 @@ class Neo4jGraphStore:
             return grouped
 
         records = await self._run(
-            "UNWIND $keys AS key "
-            "MATCH (e:Entity {tenant_id: $tenant_id}) "
-            f"WHERE {_TENANT_SEEK} AND key IN e.blocking_keys "
-            "RETURN key, e ORDER BY key, e.id",
+            "UNWIND $keys AS wanted "
+            f"MATCH (k:{KEY_NODE} {{tenant_id: $tenant_id, key: wanted}})"
+            f"<-[:{KEY_EDGE}]-(e:Entity) "
+            "RETURN wanted AS key, e ORDER BY key, e.id",
             tenant_id=str(tenant_id),
             keys=list(grouped),
         )
@@ -586,6 +655,15 @@ class Neo4jGraphStore:
             f"MATCH (a:{ALIAS_NODE} {{tenant_id: $tenant_id}}) DETACH DELETE a",
             tenant_id=str(tenant_id),
         )
+        # The `DETACH` above took this tenant's `:BLOCKED_BY` edges with its
+        # entities, but the key nodes themselves are not entities and survive.
+        # An orphan `:BlockingKey` matches nothing, so leaving it would be
+        # correct and would still leak one node per distinct key per wiped
+        # tenant, forever.
+        await self._run(
+            f"MATCH (k:{KEY_NODE} {{tenant_id: $tenant_id}}) DETACH DELETE k",
+            tenant_id=str(tenant_id),
+        )
         return int(records[0]["removed"])
 
 
@@ -645,6 +723,20 @@ def _entity_from(node: Node) -> Entity:
             None if node.get("blocking_keys") is None else frozenset(node["blocking_keys"])
         ),
     )
+
+
+def rows_carrying_keys(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The rows `_write_blocking_keys` has anything to create edges for.
+
+    Public and pure so the default gate can test it: everything around it is
+    Cypher and only runs when a server is up, and "which rows need the second
+    statement" is the one decision in that method rather than plumbing.
+
+    Truthiness, deliberately -- it must drop both `None` ("no keys known") and
+    `[]` ("known to have none"). The two differ to `_entity_from`, which is why
+    the property keeps them apart, but not here: neither creates an edge.
+    """
+    return [row for row in rows if row["blocking_keys"]]
 
 
 def _alias_row(alias: Alias) -> dict[str, Any]:

@@ -649,53 +649,6 @@ case with `min_score` set before touching it, and make the assertion count
 occurrences of the operator so a rewrite that claims to evaluate it once has
 to prove it.
 
-### B10b. Model blocking keys as nodes — decided, scheduled for slice 7
-
-**The design is decided; do not re-litigate it. Implement in slice 7.**
-Blocking keys become nodes:
-
-```cypher
-(e:Entity)-[:BLOCKED_BY]->(:BlockingKey {tenant_id, key})
-```
-
-**Why the property form cannot work, with the evidence, so slice 7 need not
-re-measure it.** `find_by_blocking_key` asks `$key IN e.blocking_keys`. A
-Neo4j range index over a list property indexes **the list as a single value**,
-so it answers "which entities have exactly this array" and cannot answer
-membership. Measured with `EXPLAIN` on **5000 entities across 100 tenants**:
-
-| query | plan |
-|---|---|
-| `WHERE $key IN e.blocking_keys`, with a `(tenant_id, blocking_keys)` index | `NodeByLabelScan` + `Filter` |
-| the same, without the index | `NodeByLabelScan` + `Filter` — *identical* |
-| with `_TENANT_SEEK` added | `NodeUniqueIndexSeek` + `Filter` |
-
-The index made no difference to the plan, so `src/kg_builder/graph/adapters/
-neo4j.py` deliberately does **not** create one: it would cost write
-throughput on every upsert and buy nothing. `_TENANT_SEEK` narrows the scan
-from the whole database to one tenant, which is the best plain Cypher can do
-and is why this is survivable in the meantime.
-
-**Why it matters more than "a scan is a bit slow".** Consolidation does not
-look up one key — it blocks a whole tenant and then, for each candidate,
-fetches that candidate's block. A per-entity lookup that scans the tenant is
-**O(n) per entity and therefore O(n²) across a tenant**. That is the real
-cost, and it is why the acceptable-today reading expires exactly when
-consolidation lands.
-
-The rejected alternative, recorded so it is not revisited: a full-text index
-on `blocking_keys` works on arrays but **tokenises**, which changes matching
-semantics — blocking keys are opaque identifiers (`"A430"`, `"person:ad"`)
-and must match exactly.
-
-**The one implementation trap.** A re-upsert must delete the entity's
-*previous* key edges before writing the new ones, or a stale key keeps
-matching.
-`tests/compliance/graph_store.py::test_find_by_blocking_key_reflects_the_latest_write`
-is the test that enforces it, and it is the reason this is a second write
-path rather than a one-line change. That is what made it wrong to land
-speculatively in slice 4.
-
 ### B10c. `neighbors` at a large `depth` is unbounded work
 
 `src/kg_builder/graph/adapters/neo4j.py` — traversal is one
