@@ -119,24 +119,45 @@ seen fail is not yet evidence.**
 to lowest:
 
 ```
-services
-extraction : graph : vector : llm : schemas    (independent siblings)
+extraction : consolidation : temporal : graph : vector : llm   (siblings)
 projections
 aggregates
-models
-events : db : cache : encryption : config : context
+events : cache : encryption : config : context
 ports
 domain
 ```
+
+`containers = ["kg_builder"]` with **`exhaustive = true`**: a new top-level
+package is a contract failure until it is placed deliberately. That is the
+point — decide where it sits, or argue the contract should change.
+
+**There is no `services` layer, and adding one back needs an argument.** It was
+the top layer until slice 9 deleted it: the write model is `aggregates` +
+`events`, the read model is `projections`, and persistence is the two ports.
+`models`, `db` and `schemas` went with it — there is no ORM and no session for
+a layer to be built around.
 
 Lower layers must not import higher ones, and the sibling layers must not import
 each other. Adding a cross-layer import means either the code is in the wrong
 layer or the contract needs an explicit, argued change.
 
-The sibling band is where the real work happens. `llm` sits *beside*
-`extraction` rather than beneath it precisely because siblings may not import
-each other: extraction can therefore reach `ports.llm_provider` and never the
-LangChain adapter. Put `llm` any lower and the port stops meaning anything.
+The sibling band is where the real work happens, and each membership is
+load-bearing:
+
+- `llm` sits *beside* `extraction`, not beneath it, so extraction can reach
+  only `ports.llm_provider` and never the LangChain adapter.
+- `consolidation` is a sibling rather than above extraction. It needs nothing
+  from extraction — the tie-break both use moved down to `domain.preference`
+  when consolidation became its third caller — and placing it above would let
+  it reach `mapping.py`, which is how a second entity-id scheme gets born.
+- `temporal` likewise. Above `extraction` it could reach `mapping.py`, and the
+  temptation there is specific: inferred edges would acquire a path into
+  `DocumentExtracted`, which is exactly the persistence decision
+  `temporal/inference.py` argues against.
+
+`pyproject.toml` carries the full reasoning inline. Keep this block in step
+with it — a stale layer diagram in binding instructions sends the next author
+to a package that does not exist.
 
 **`lint-imports` only sees first-party imports**, so it cannot catch a
 `langchain*` import appearing where it should not. That is what
