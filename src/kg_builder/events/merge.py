@@ -17,6 +17,7 @@ once at the boundary so every downstream consumer gets it for free.
 
 from __future__ import annotations
 
+from collections import Counter
 from uuid import UUID
 
 from eventsource import register_event
@@ -52,8 +53,20 @@ class EntitiesMerged(TenantDomainEvent):
     def _the_merge_is_coherent(self) -> EntitiesMerged:
         if self.canonical_entity_id in self.merged_entity_ids:
             raise ValueError(f"an entity cannot be merged into itself: {self.canonical_entity_id}")
-        if len(set(self.merged_entity_ids)) != len(self.merged_entity_ids):
-            raise ValueError(f"merged_entity_ids contains duplicates: {self.merged_entity_ids}")
+        # Named rather than counted. `len(set(x)) != len(x)` reads fine and is
+        # what was here first, but a cosmic-ray mutant rewriting `!=` as
+        # `is not` survived it: CPython interns small ints, so the two
+        # spellings agree for every list short enough to appear in a test.
+        # That is the same interning trap this project has hit before, and
+        # collecting the offending ids sidesteps it -- as well as saying
+        # *which* id repeated, which a length comparison never could.
+        duplicates = sorted(
+            str(entity_id)
+            for entity_id, count in Counter(self.merged_entity_ids).items()
+            if count > 1
+        )
+        if duplicates:
+            raise ValueError(f"merged_entity_ids contains duplicates: {duplicates}")
         foreign = {
             r.before.tenant_id for r in self.redirections if r.before.tenant_id != self.tenant_id
         }
