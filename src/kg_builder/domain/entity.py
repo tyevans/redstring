@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from kg_builder.domain.ids import EntityId, SourceId, TenantId
 from kg_builder.domain.temporal import TemporalExtent
@@ -28,6 +28,10 @@ class ExtractionMethod(str, Enum):
     MANUAL = "manual"
 
 
+#: The methods that can have invoked a model, and so may carry `Entity.model`.
+_MODEL_BEARING_METHODS = frozenset({ExtractionMethod.LLM, ExtractionMethod.HYBRID})
+
+
 class Entity(BaseModel):
     """A thing extracted from a source: a person, place, concept, etc.
 
@@ -48,7 +52,18 @@ class Entity(BaseModel):
     external_ids: dict[str, str] = {}
     properties: dict[str, Any] = {}
     extraction_method: ExtractionMethod
-    model: str | None = None
+    model: str | None = Field(
+        default=None,
+        description=(
+            "Which model produced this entity, for provenance. Convention: "
+            "provider-qualified and versioned, e.g. 'ollama/qwen3.6-27b-mtp' "
+            "or 'anthropic/claude-opus-4-20250514' -- never a bare family name "
+            "like 'claude'. These values land in a durable event log, where an "
+            "unversioned name makes 're-extract everything the old model "
+            "touched' unanswerable. None when no model was involved, or when "
+            "the extractor did not record one."
+        ),
+    )
     confidence: float
     temporal: TemporalExtent | None = None
     # Consolidation blocks candidates by a pure key function (prefix, entity
@@ -69,6 +84,23 @@ class Entity(BaseModel):
         if not 0.0 <= value <= 1.0:
             raise ValueError("confidence must be between 0.0 and 1.0")
         return value
+
+    @model_validator(mode="after")
+    def _reject_model_without_a_model_call(self) -> Entity:
+        """`model` records which model ran, so a method that runs none cannot
+        carry one.
+
+        `HYBRID` is permitted alongside `LLM`: a hybrid extraction is
+        pattern-matching *plus* a model, and it is precisely the case where
+        knowing which model contributed matters. The rule constrains only the
+        methods that cannot involve one at all.
+        """
+        if self.model is not None and self.extraction_method not in _MODEL_BEARING_METHODS:
+            raise ValueError(
+                f"model must be None for extraction_method "
+                f"{self.extraction_method.value!r}, which invokes no model"
+            )
+        return self
 
     @property
     def is_temporal(self) -> bool:

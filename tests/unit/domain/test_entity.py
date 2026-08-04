@@ -55,6 +55,40 @@ def test_model_carries_llm_provenance():
     assert _entity(model="qwen3.6-27b-mtp").model == "qwen3.6-27b-mtp"
 
 
+@pytest.mark.parametrize(
+    "method",
+    [ExtractionMethod.LLM, ExtractionMethod.HYBRID],
+)
+def test_model_is_allowed_for_methods_that_may_invoke_a_model(method):
+    assert _entity(extraction_method=method, model="qwen3.6-27b-mtp").model is not None
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        ExtractionMethod.PATTERN,
+        ExtractionMethod.SCHEMA_ORG,
+        ExtractionMethod.OPEN_GRAPH,
+        ExtractionMethod.MANUAL,
+    ],
+)
+def test_model_is_rejected_for_methods_that_cannot_invoke_one(method):
+    with pytest.raises(ValidationError, match="model"):
+        _entity(extraction_method=method, model="qwen3.6-27b-mtp")
+
+
+@pytest.mark.parametrize("method", list(ExtractionMethod))
+def test_model_may_always_be_omitted(method):
+    """An LLM extraction that did not record its model is still valid."""
+    assert _entity(extraction_method=method).model is None
+
+
+def test_model_field_documents_the_naming_convention():
+    description = Entity.model_fields["model"].description
+    assert description is not None
+    assert "provider" in description.lower()
+
+
 def test_blocking_keys_defaults_to_none():
     assert _entity().blocking_keys is None
 

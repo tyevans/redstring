@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from hypothesis import strategies as st
 
+from kg_builder.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
 from kg_builder.domain.entity import Entity, ExtractionMethod
 from kg_builder.domain.relationship import Relationship
 from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
@@ -28,6 +29,14 @@ names = st.text(min_size=1, max_size=40).filter(lambda s: bool(s.strip()))
 entity_types = st.sampled_from(["person", "organization", "place", "concept", "plot_point"])
 relationship_types = st.sampled_from(["knows", "works_at", "located_in", "mentions", "part_of"])
 blocking_key_values = st.text(min_size=1, max_size=12)
+# Provider-qualified and versioned, per the convention on `Entity.model`.
+model_names = st.sampled_from(
+    [
+        "ollama/qwen3.6-27b-mtp",
+        "anthropic/claude-opus-4-20250514",
+        "openai/gpt-5-2025-08-07",
+    ]
+)
 confidences = st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False)
 
 
@@ -95,9 +104,10 @@ def entities(
         external_ids=draw(st.dictionaries(st.text(max_size=6), st.text(max_size=12), max_size=3)),
         properties=draw(property_dicts),
         extraction_method=method,
-        model=draw(st.none() | st.text(min_size=1, max_size=20))
-        if method is ExtractionMethod.LLM
-        else None,
+        # `Entity` rejects `model` for methods that invoke none; the strategy
+        # mirrors the validator rather than restating it, so widening the rule
+        # in one place cannot silently stop being generated in the other.
+        model=draw(st.none() | model_names) if method in MODEL_BEARING_METHODS else None,
         confidence=draw(confidences),
         temporal=draw(st.none() | temporal_extents()),
         blocking_keys=draw(st.none() | st.frozensets(blocking_key_values, max_size=4)),
