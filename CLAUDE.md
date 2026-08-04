@@ -192,6 +192,33 @@ reading the code:
   that value as an example alongside the property. `hypothesis` has
   `@example` for exactly this.
 
+- **A test whose two sides share the implementation under test cannot
+  distinguish it from a weaker one. Round-trip and equivalence properties need
+  an independent oracle.** Slice 5b's replay-equivalence suite had all three
+  properties the design asked for — wipe and replay, deliver everything twice,
+  replay over a live projection — and all three passed against a handler that
+  never applied an undo, a handler that never deleted a dropped edge, and a
+  handler that never wrote relationships at all. Six handler mutants, three
+  survived.
+
+  The reason is structural, not an oversight: both sides of an equivalence run
+  the same fold, so a fold that does *too little* leaves both sides agreeing on
+  the same wrong state. Self-consistency is preserved exactly by the bugs that
+  drop work. The fix was to record, independently of the projection, what the
+  graph should hold, and assert against that — all six mutants then died.
+  Whenever a test's expected value is produced by the code under test, it is
+  checking determinism, not correctness.
+
+- **`hypothesis` runs every example against one function-scoped fixture.** The
+  fixture is created once for the whole `@given`, so example 7 sees whatever
+  examples 1-6 left behind. This bit slice 5b as an intermittent
+  `MissingEntityError` in about one run in three, and
+  `suppress_health_check=[HealthCheck.function_scoped_fixture]` — added with a
+  confident comment explaining why it was safe — is what hid it. That
+  health check is hypothesis telling you about this exact bug; suppressing it
+  needs proof the state cannot leak, not an argument that it probably will
+  not. Build the rig inside the test instead.
+
   Before trusting a test, ask what *other* implementation would also pass it.
   If a plausible wrong one would, the input is the problem: pin the values so
   the candidates disagree (one neighbour sorting below the hub and one above,
