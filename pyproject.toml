@@ -30,7 +30,9 @@ anthropic = ["anthropic>=0.42.0"]
 # kg_builder.inference use the pre-1.0 pydantic-ai model API.
 llm = ["pydantic-ai==0.0.31"]
 nlp = ["jellyfish>=1.0.0"]
-eventsourcing = ["eventsource-py[all]>=0.5.0"]
+eventsourcing = [
+    "eventsource-py>=0.9.1",
+]
 all = [
     "kg-builder[neo4j,openai,anthropic,llm,nlp,eventsourcing]",
 ]

@@ -777,6 +777,32 @@ Replace with `ConfigDict`. Removed in Pydantic v3.
 
 These were decided against *for now*, with reasons. Revisit consciously.
 
+### B31. The `eventsourcing` extra no longer pulls `eventsource-py[all]`
+
+`pyproject.toml` declares `eventsourcing = ["eventsource-py>=0.9.1"]`. It used
+to be `eventsource-py[all]>=0.5.0`, and the `[all]` was dropped in slice 5b,
+not by preference but because it cannot currently resolve:
+
+```
+eventsource-py[all]>=0.9.1  requires  redis>=8.0,<9.0
+kg-builder                  requires  redis[hiredis]>=5.3,<6
+```
+
+`redis` is a direct dependency here for `cache.py` and `services/
+embedding_cache.py`, so this is a real conflict rather than a lockfile
+accident. Dropping `[all]` costs nothing today -- slice 5b is in-memory only,
+by decision, and the base package carries the store, bus, projections and
+aggregates. It costs something the moment a Kafka, RabbitMQ, Redis or
+PostgreSQL adapter is wanted (slices beyond 10), because each lives behind an
+extra.
+
+To fix, in order of preference: widen kg-builder's `redis` pin to `<9` and
+verify `cache.py` and `embedding_cache.py` against redis-py 8 (the 5->8 API is
+largely source-compatible, but neither module is covered against a real
+server, so this needs the integration suite that B10 asks for); or take the
+narrow extras actually wanted (`eventsource-py[postgresql]`) rather than
+`[all]`.
+
 ### B17. Column defaults do not hold at construction time
 
 `ExtractedEntity.is_canonical` and `ScrapingJob.enable_timeline_extraction`

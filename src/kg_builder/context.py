@@ -1,23 +1,23 @@
 """
 Application context variables for async-safe state management.
 
-Re-exports from eventsource.multitenancy for tenant context propagation.
+Re-exports from eventsource.domain.tenant_context for tenant propagation.
 This module provides backward-compatible aliases for existing code.
 """
 
 from uuid import UUID
 
-from eventsource.multitenancy import (
+from eventsource.domain.tenant_context import (
     clear_tenant_context,
     get_current_tenant,
     get_required_tenant,
     tenant_scope,
     tenant_scope_sync,
 )
-from eventsource.multitenancy import (
+from eventsource.domain.tenant_context import (
     set_current_tenant as _set_current_tenant,
 )
-from eventsource.multitenancy import (
+from eventsource.domain.tenant_context import (
     tenant_context as current_tenant_id,
 )
 
