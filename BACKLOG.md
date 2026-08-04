@@ -34,6 +34,46 @@ is not meaningful.
 
 ## 1. Unlanded features
 
+### B47. Three timeline modules were deleted, not ported — slice 8
+
+Slice 8 deleted ~1700 lines rather than porting them. All three are recoverable
+from `d49f56b`, which is the last commit that had them:
+
+| Module | Ref |
+|---|---|
+| `project_timeline_query.py` (677 lines) | `d49f56b:src/kg_builder/services/project_timeline_query.py` |
+| `timeline_export.py` (630 lines) | `d49f56b:src/kg_builder/services/timeline_export.py` |
+| `timeline_cache.py` (428 lines) | `d49f56b:src/kg_builder/services/timeline_cache.py` |
+| `test_timeline_export.py` (566 lines) | `d49f56b:tests/unit/services/test_timeline_export.py` |
+| `test_timeline_cache.py` (512 lines) | `d49f56b:tests/unit/services/test_timeline_cache.py` |
+
+**What each did that nothing else now does, so it is not rediscovered:**
+
+- `project_timeline_query.py` aggregated timelines "across all scraping jobs
+  within a project" and ranked entities by cross-job mention count. Both of its
+  organising concepts — the scraping job and the project — were deleted in
+  slice 1. It also had a `merge_overlapping_events` pass that collapsed
+  near-identical events from different jobs into one; that is *consolidation*
+  under another name, and doing it at query time means it is invisible and
+  unauditable, which is the failure `EntitiesMerged` exists to prevent. Nothing
+  was lost that slice 7's `ConsolidationLog` does not do better.
+- `timeline_export.py` owned CSV, JSON and iCalendar renderers, plus column
+  ordering, RFC 4180 quoting and an iCalendar `VEVENT` writer with escaping for
+  `,;\` and CRLF folding at 75 octets. **This is the only genuine loss.** A
+  caller who wants an `.ics` file must now write that escaping themselves, and
+  it is fiddly and easy to get subtly wrong. It is still not the library's job:
+  the library's job is to answer "what happened when", and it now does so with
+  domain objects a caller can render however they like. If an export helper is
+  ever wanted back, take the iCalendar escaping from the ref above rather than
+  rewriting it.
+- `timeline_cache.py` was a Redis-backed memoiser for query results, with key
+  construction from the filter set and explicit invalidation on write. It
+  predates the `Cache` port entirely and talked to `get_redis_client` directly.
+  Caching a query result is the caller's policy — it depends on the caller's
+  read/write ratio and staleness tolerance, neither of which this library can
+  know. Note that its 512-line test file was ~90% `unittest.mock` against a
+  fake Redis, which is the shape B41 already records as worthless.
+
 ### B43. A merge plans against a graph read outside its concurrency window
 
 `consolidation/service.py::merge` reads `get_relationships_for` *before*
