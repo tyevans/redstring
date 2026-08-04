@@ -68,7 +68,7 @@ if TYPE_CHECKING:
     from eventsource.ports.snapshots import SnapshotStore
     from eventsource.ports.store import AggregateStore
 
-    from kg_builder.consolidation.candidates import CandidateFinder
+    from kg_builder.consolidation.candidates import CandidateFinder, ScoredCandidate
     from kg_builder.consolidation.policy import Adjudicator
     from kg_builder.domain.entity import Entity
     from kg_builder.domain.ids import EntityId, TenantId
@@ -191,26 +191,32 @@ class ConsolidationService:
         banded = [
             (candidate, decide(candidate.score, high=high, low=low)) for candidate in candidates
         ]
-        confirmed = [c for c, decision in banded if decision is MergeDecision.MERGE]
         undecided = [c for c, decision in banded if decision is MergeDecision.ADJUDICATE]
+        # A candidate and the reason it is being merged, carried together
+        # rather than in two lists kept aligned by hand -- the reason is what
+        # lands on `merge_reason`, and a merge attributed to the wrong reason
+        # is an audit trail that lies while looking complete.
+        confirmed: list[tuple[ScoredCandidate, str]] = [
+            (c, f"score >= {high}") for c, decision in banded if decision is MergeDecision.MERGE
+        ]
 
-        reasons = [f"score >= {high}" for _ in confirmed]
         if undecided and adjudicator is not None:
             verdicts = await adjudicator.adjudicate(subject, undecided)
-            for candidate, verdict in zip(undecided, verdicts, strict=True):
+            confirmed += [
+                (candidate, verdict.reason)
                 # `verdict is None` is "the model did not answer", which is not
                 # a yes. See `policy.Adjudicator.adjudicate`.
-                if verdict is not None and verdict.same:
-                    confirmed.append(candidate)
-                    reasons.append(verdict.reason)
+                for candidate, verdict in zip(undecided, verdicts, strict=True)
+                if verdict is not None and verdict.same
+            ]
 
         if not confirmed:
             return None
         return await self.merge(
             tenant_id=subject.tenant_id,
             canonical_entity_id=subject.id,
-            merged_entity_ids=[candidate.entity.id for candidate in confirmed],
-            merge_reason="; ".join(reasons),
+            merged_entity_ids=[candidate.entity.id for candidate, _ in confirmed],
+            merge_reason="; ".join(reason for _, reason in confirmed),
         )
 
     async def undo(self, *, tenant_id: TenantId, merge_event_id: UUID) -> MergeUndone:

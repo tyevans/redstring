@@ -55,9 +55,9 @@ class FakeProvider:
         return self._answers.pop(0)
 
 
-def _candidate(tenant_id, name, score=0.8):
+def _candidate(tenant_id, name, score=0.8, **overrides):
     return ScoredCandidate(
-        entity=entity(tenant_id, name=name),
+        entity=entity(tenant_id, name=name, **overrides),
         features=SimilarityFeatures(name=score),
         score=score,
     )
@@ -209,6 +209,38 @@ class TestAdjudication:
         assert "Pair 3 " in prompt
         assert "Pair 0 " not in prompt
         assert "Pair 4 " not in prompt
+
+    async def test_both_descriptions_reach_the_prompt(self):
+        """Not just the subject's. A description is often the only thing that
+        separates two people with one name, so a renderer that emitted the
+        subject's and dropped the candidate's would ask the model to
+        adjudicate on the names alone -- which is exactly what the score
+        already did, and why the pair is in the band."""
+        tenant = uuid4()
+        subject = entity(tenant, name="Ada Lovelace", description="the mathematician")
+        candidates = [_candidate(tenant, "A. Lovelace", description="a racehorse")]
+        provider = FakeProvider(answers=[AdjudicationBatch(verdicts=[_verdict()])])
+
+        await Adjudicator(provider).adjudicate(subject, candidates)
+
+        [prompt] = provider.prompts
+        assert "the mathematician" in prompt
+        assert "a racehorse" in prompt
+
+    async def test_a_missing_description_is_simply_absent(self):
+        """No placeholder line. An empty slot in a numbered prompt is a line
+        the model has to interpret, and "no description" is not a fact worth
+        a line."""
+        tenant = uuid4()
+        provider = FakeProvider(answers=[AdjudicationBatch(verdicts=[_verdict()])])
+
+        await Adjudicator(provider).adjudicate(
+            entity(tenant, name="Ada Lovelace"), [_candidate(tenant, "A. Lovelace")]
+        )
+
+        [prompt] = provider.prompts
+        assert "None" not in prompt
+        assert prompt.count("\n") == 2, prompt
 
     async def test_the_prompt_never_carries_an_entity_id(self):
         """Ids are the graph's business. Putting one in a prompt invites a
