@@ -35,6 +35,20 @@ example-based tests, so adapters supply exactly one thing.
 
 An adapter that needs real infrastructure (Neo4j) implements `new_store` by
 wiping and handing back its test database.
+
+## If you add a read method to the port, add its isolation test here
+
+Every method that hands back objects a caller can mutate needs a test that
+mutates the result and asserts a later read is unaffected -- in the same edit
+that adds the method.
+
+This is not a style preference. Four read methods were added during slice 3
+with complete behavioural tests and no isolation test, and in all four cases
+a mutation-testing run, not review, found that returning the live internal
+object passed everything. Behavioural tests cannot catch it: handing back the
+stored object is correct on every read and wrong only afterwards.
+
+Search this file for `_mutate` to find the existing ones and copy the shape.
 """
 
 from __future__ import annotations

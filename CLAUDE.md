@@ -139,6 +139,22 @@ reading the code:
 
 ## Testing notes
 
+- **A new read method needs its mutation-isolation test in the same edit.**
+  If a store method hands back objects the caller can mutate, there must be a
+  test that mutates the result and asserts a later read is unaffected. This
+  was learned expensively: across slice 3, four read methods
+  (`find_by_blocking_key`, `neighbors`, `find_by_blocking_keys`,
+  `get_relationships_for`) each shipped with full behavioural tests and no
+  isolation test, and each time a cosmic-ray mutant — not review, not the
+  property tests — found that a shallow copy passed everything. Four
+  occurrences is one missing habit, not four mistakes. Behavioural tests do
+  not imply this one: returning the live internal object is *correct* on
+  every read and wrong only afterwards.
+- **Bound any loop whose exit depends on adapter-supplied data.** A cursor
+  that fails to advance turns a `while True` pagination test into a hang. A
+  test that hangs is worse than one that fails: in CI it reads as
+  infrastructure trouble and gets retried rather than investigated. Bound the
+  loop and fail with a message naming the cause.
 - `pytest-randomly` randomises test order. Order-dependent tests are bugs; fix
   the test, do not pin the seed.
 - `hypothesis` is available for property-based tests — prefer it wherever a
