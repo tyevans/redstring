@@ -34,18 +34,38 @@ rather than a second write of the same entities.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Protocol
+
 from eventsource import register_event
 from eventsource.domain.tenant_events import TenantDomainEvent
 from pydantic import Field, model_validator
 
 from kg_builder.domain.entity import Entity
-from kg_builder.domain.ids import SourceId
+from kg_builder.domain.ids import SourceId, TenantId
 from kg_builder.domain.relationship import Relationship
 from kg_builder.domain.vector import VectorRecord
 from kg_builder.events.streams import DOCUMENT_CATEGORY
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
-def _reject_foreign_tenants(event: TenantDomainEvent, payloads: object, field: str) -> None:
+
+class _HasTenant(Protocol):
+    """What `_reject_foreign_tenants` needs of a payload: a tenant to compare.
+
+    A `Protocol` rather than a union of the three concrete payload types,
+    because the check is genuinely structural -- it reads one field -- and a
+    union would have to be extended by anyone adding a payload type, which is
+    the kind of edit that gets missed.
+    """
+
+    @property
+    def tenant_id(self) -> TenantId: ...
+
+
+def _reject_foreign_tenants(
+    event: TenantDomainEvent, payloads: Sequence[_HasTenant], field: str
+) -> None:
     """Raise unless every payload in `payloads` carries the event's tenant.
 
     The projection writes each payload under **its own** `tenant_id`, not the
@@ -53,8 +73,13 @@ def _reject_foreign_tenants(event: TenantDomainEvent, payloads: object, field: s
     that passed validation while carrying a foreign-tenant entity would not
     fail anywhere: it would quietly write into a tenant that never emitted it.
     This is the one place the two can still be compared.
+
+    Typed rather than asserted. An `assert isinstance(payloads, list)` here
+    would vanish under `python -O`, and the comprehension below would then
+    raise `AttributeError` instead of the `ValueError` a caller catches --
+    turning a validation failure into a crash in exactly the configuration
+    where it is hardest to diagnose.
     """
-    assert isinstance(payloads, list)
     foreign = {p.tenant_id for p in payloads if p.tenant_id != event.tenant_id}
     if foreign:
         raise ValueError(

@@ -135,6 +135,20 @@ class _TenantMirror:
     The mirror is maintained here, by the builder, from the scenario -- not by
     reading the store and not by folding the events. That is what makes it an
     oracle rather than a second copy of the thing under test.
+
+    **It is independent of the fold, not of `_redirections_for`.** The same
+    function computes what a merge displaces *and* feeds the mirror, so a bug
+    in that derivation would agree with itself and neither would notice. That
+    is acceptable here because the derivation is test scaffolding: nothing in
+    `src/` computes redirections yet.
+
+    **Slice 7 must not reuse this as the oracle for its consolidation
+    service.** That service is what `_redirections_for` is a stand-in for, and
+    checking it against a mirror maintained by the same logic would be
+    checking it against itself -- the exact shape that let three handler
+    mutants survive the replay-equivalence tests before this oracle existed.
+    Slice 7 needs an oracle derived from something it does not own: the
+    pre-merge graph read back through the port, or hand-written expectations.
     """
 
     entity_ids: list = field(default_factory=list)

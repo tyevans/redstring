@@ -77,13 +77,22 @@ class TestMerge:
             log.merge(tenant_id=tenant_id, canonical_entity_id=c, merged_entity_ids=[b])
         assert excinfo.value.entity_id == b
 
-    def test_the_check_sees_every_entity_in_the_batch_not_just_the_first(self, log, tenant_id):
-        """A merge absorbs a *list*, and a check that stopped at the first
-        element would pass anything hidden behind a legal one."""
+    @pytest.mark.parametrize("position", [0, 1], ids=["offender-first", "offender-last"])
+    def test_the_check_sees_every_entity_in_the_batch(self, log, tenant_id, position):
+        """A merge absorbs a *list*, and a check that looked at only one
+        element of it would pass.
+
+        Both positions, because one is not enough in either direction: with
+        the offender always last, an implementation checking only
+        `merged_entity_ids[-1]` passes the whole file; with it always first,
+        one checking only `[0]` does. The first version of this test had it
+        last every time.
+        """
         a, b, c, d = uuid4(), uuid4(), uuid4(), uuid4()
         log.merge(tenant_id=tenant_id, canonical_entity_id=a, merged_entity_ids=[b])
+        batch = [b, d] if position == 0 else [d, b]
         with pytest.raises(DoubleMergeError) as excinfo:
-            log.merge(tenant_id=tenant_id, canonical_entity_id=c, merged_entity_ids=[d, b])
+            log.merge(tenant_id=tenant_id, canonical_entity_id=c, merged_entity_ids=batch)
         assert excinfo.value.entity_id == b
 
     def test_a_canonical_entity_may_absorb_more_entities_later(self, log, tenant_id):
