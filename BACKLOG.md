@@ -74,6 +74,46 @@ from `d49f56b`, which is the last commit that had them:
   know. Note that its 512-line test file was ~90% `unittest.mock` against a
   fake Redis, which is the shape B41 already records as worthless.
 
+### B49. The temporal parser dropped confidence, parse method and named eras
+
+`parse_temporal` returns a `TemporalExtent` alone. The deleted
+`TemporalParserService.parse` returned a `TemporalParseResult` carrying three
+things that have no home on `TemporalExtent`, all dropped deliberately:
+
+- **`confidence`** (0.0-1.0, from which of four strategies matched, penalised by
+  uncertainty and coarseness) and **`parse_method`**. Both were copied into a
+  `TemporalEnrichmentResult` field and never read again outside a log line and
+  that dataclass's own tests -- nothing made a decision with either. The
+  semantic part of the same information survives on `TemporalExtent.precision`
+  and `.uncertainty`, which `domain/interval.py` actually consults. If "how sure
+  are we about this date" is ever wanted: the old number was a table of
+  hand-tuned constants rather than a calibrated probability, so resurrecting it
+  adds a figure that looks meaningful and is not. The table is at
+  `d49f56b:src/kg_builder/services/temporal_parser.py::_calculate_confidence`.
+- **Named eras.** The old parser dated "medieval period" to 500-1500 CE,
+  "renaissance" to 1400-1600 and "ancient" to 1-500. Those are claims about
+  historiography, not about the text, and the patterns were unanchored, so any
+  passing use of the word "renaissance" became a dated event spanning two
+  centuries. Century patterns are kept because "19th century" does name a span
+  the text is asserting.
+
+### B50. `dateparser` costs ~250ms on a first call and is on the extraction path
+
+`_parse_natural` is the last strategy `parse_temporal` tries, so it is reached
+only by text the regex strategies and `dateutil` all declined -- but that
+includes every entity whose temporal expression is unparseable, which in a real
+document is most of them. Measured at ~270ms for the first call in a process
+(language-detection tables) and materially less after, but not free.
+
+It has not been optimised because there is no measurement of how often
+extraction reaches it in practice, and the obvious fix (restrict
+`dateparser`'s `languages` to `["en"]`, or gate it behind a cheap "does this
+look like a date at all" pattern) trades recall for latency without knowing the
+exchange rate. Measure on a real corpus first. The hypothesis suite in
+`tests/unit/domain/test_temporal_parsing.py` sets `deadline=None` on the two
+text-generating properties for this reason; if that is ever tightened, this is
+what will trip it.
+
 ### B43. A merge plans against a graph read outside its concurrency window
 
 `consolidation/service.py::merge` reads `get_relationships_for` *before*
