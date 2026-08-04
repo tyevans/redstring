@@ -270,3 +270,24 @@ class TestReplayFromNothing:
         resumed = await project(rig.event_store, rig.projections, from_position=first.last_position)
         assert resumed.applied == 0
         assert resumed.last_position is None
+
+
+class TestTheReplayIsBounded:
+    """The loop's exit depends on adapter-supplied data, so it has a bound --
+    and a bound nothing exercises is a bound nobody knows works.
+
+    A cursor that failed to advance would otherwise hang, and a hang in CI
+    reads as infrastructure trouble and gets retried rather than investigated.
+    """
+
+    async def test_a_feed_that_will_not_end_fails_instead_of_hanging(self):
+        rig, _ = await _built(SINGLE)
+        with pytest.raises(RuntimeError, match="cursor is probably not advancing"):
+            await project(rig.event_store, rig.projections, max_events=1)
+
+    async def test_a_log_exactly_at_the_bound_is_not_rejected(self):
+        """Off-by-one: the bound is the number of events allowed, not the
+        number after which reading stops."""
+        rig, _ = await _built(SINGLE)
+        report = await project(rig.event_store, rig.projections, max_events=2)
+        assert report.applied == 2
