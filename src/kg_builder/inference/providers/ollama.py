@@ -22,7 +22,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import UTC, datetime
 
 import httpx
 from pydantic_ai import Agent
@@ -330,7 +330,7 @@ class OllamaProvider(InferenceProvider):
             ProviderHealth with status and latency
         """
         client = await self._get_client()
-        checked_at = datetime.utcnow()
+        checked_at = datetime.now(UTC)
 
         try:
             start_time = time.time()
