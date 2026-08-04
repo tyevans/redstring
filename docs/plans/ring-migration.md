@@ -26,11 +26,20 @@ These bind every slice. Implementers and reviewers are held to all of them.
    - normalization and parsing (idempotence: `f(f(x)) == f(x)`)
    - similarity and scoring (bounds, symmetry, identity)
    Prefer a stated property over five hand-picked examples.
-3. **Mutation testing on new domain and port logic.** After a slice lands,
-   run `uv run mutmut run` scoped to the new modules. Surviving mutants are
-   findings: either the tests are too weak or the code is unreachable.
-   Report the survivor count and what each survivor revealed. Do not chase
-   100% — chase "every survivor is understood".
+3. **Mutation testing on new domain and port logic — with cosmic-ray, not
+   mutmut, wherever the logic is decorated.** mutmut 3.x refuses to mutate
+   decorated functions. In a pydantic codebase nearly every invariant lives
+   in a `@field_validator`, `@model_validator`, or `@property`, so mutmut
+   reports a clean sweep while having tested none of them. Slice 2 proved
+   this: 5 mutants generated, 5 killed, and all 5 came from the one
+   undecorated function in the package.
+   Use `cosmic-ray.toml` (already in the repo, kept for exactly this reason
+   per `CLAUDE.md`) for decorated code; mutmut is fine for plain functions.
+   Surviving mutants are findings: either the tests are too weak or the code
+   is unreachable. Report the survivor count and what each survivor revealed.
+   Do not chase 100% — chase "every survivor is understood". If a mutation
+   tool cannot be scoped in reasonable time, say so plainly in the report;
+   a silent skip turns the gate into theatre.
 4. **No mocking what you own.** The in-memory adapters exist precisely so
    tests can use real implementations. Mock only genuinely external I/O
    (an HTTP call to an LLM). A test that asserts on a mock's call args and
