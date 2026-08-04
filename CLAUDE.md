@@ -10,6 +10,30 @@ use `uv add`, `uv add --optional <extra>`, `uv remove`.
 
 Run anything project-scoped through `uv run`.
 
+## Deferred work goes in BACKLOG.md — always
+
+**Anything you notice and do not fix must land in `BACKLOG.md` in the same
+commit that passes it by.** No exceptions, and no substitutes: not a TODO
+comment, not a note in the PR body, not a line in a commit message, not a
+sentence in chat that scrolls away.
+
+This applies to every kind of deferral:
+
+- a bug you found while doing something else
+- a test you skipped, quarantined, deselected, or weakened
+- a lint rule you ignored, and why ignoring it was correct
+- a workaround, stub, or placeholder you left behind
+- a decision you deliberately postponed, with the reasoning that made
+  postponing it right
+- scope you were asked for but could not finish
+
+Write the entry so someone picking it up cold does not have to rediscover
+what you already know: name the file and line, say what is actually wrong,
+and say what you learned that made you defer rather than fix. An entry that
+only says "clean up X" has thrown away the expensive part.
+
+When you fix a backlog item, delete its entry in the same commit.
+
 ## Quality gates run on commit — do not run them yourself
 
 Every quality check is wired into `pre-commit` and runs automatically on
