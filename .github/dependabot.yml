@@ -26,10 +26,28 @@ updates:
       prefix: 'Bump'
 
   # Python dependencies. `uv.lock` is not committed, so this only sees the
-  # declared ranges in `pyproject.toml` -- it will open a PR when a floor is
-  # genuinely out of date, not on every upstream release.
+  # declared ranges in `pyproject.toml`.
+  #
+  # `versioning-strategy: widen` is the important line, and it is here because
+  # the default was actively wrong for a library. Dependabot's default raises
+  # the *floor* -- `httpx>=0.25.0` becomes `httpx>=0.28.1` -- which for an
+  # application is harmless and for a library is a narrowing: every consumer
+  # pinned below the new floor can no longer install redstring, in exchange
+  # for nothing, since the code needed no new version. The first batch of
+  # five PRs included one raising the floor on a dependency that had no
+  # importer at all, and one moving the neo4j driver to `>=6.2.0,<7`, which
+  # would have dropped every user still on driver 5.
+  #
+  # `widen` proposes extending a range to admit the new release instead, which
+  # is the change a library actually wants: more consumers can install it, not
+  # fewer.
+  #
+  # The tooling extras are pinned exactly, and `widen` leaves an `==` pin
+  # alone -- so those still arrive as ordinary version bumps, which is right:
+  # for tools the pin *is* the point.
   - package-ecosystem: uv
     directory: /
+    versioning-strategy: widen
     schedule:
       interval: monthly
     commit-message:

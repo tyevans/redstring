@@ -61,7 +61,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-neo4j = ["neo4j>=5.27,<6"]
+# Both driver majors, verified rather than assumed: the full integration
+# suite (118 tests, the shared compliance body plus this adapter's own) was
+# run against a real Neo4j on 5.28.4 and on 6.2.0, and passes on both.
+#
+# The range is deliberately *wider* than Dependabot proposed. It opened a PR
+# moving this to `>=6.2.0,<7`, which raises the floor -- for a library that
+# means dropping every consumer still on driver 5 to gain nothing, since the
+# adapter needs no 6.x feature. Supporting both is strictly better for a
+# caller who has other reasons to pin.
+#
+# One behaviour genuinely differs, and it is a test concern rather than an
+# adapter one: use-after-close warns on 5.x and raises `DriverError` on 6.x.
+# `test_connect_owns_and_closes_its_driver` accepts either.
+neo4j = ["neo4j>=5.27,<7"]
 # The LLM transport. `langchain-openai` speaks to any OpenAI-compatible
 # server -- llama.cpp, llama-swap, vLLM, Ollama's shim, OpenAI itself -- so
 # one extra covers every deployment this library has. Ranges rather than pins:

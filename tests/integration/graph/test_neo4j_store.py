@@ -35,6 +35,7 @@ see `Neo4jGraphStore.close`, which only closes a driver the store created.
 from __future__ import annotations
 
 import os
+import warnings
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -279,13 +280,37 @@ class TestNeo4jSpecifics:
         assert await store.find_entities(uuid4()) == []
         await store.close()
 
-        # The 5.x driver warns rather than raising on use after close, so the
-        # warning is the observable proof that `close()` closed it. Asserting
-        # `pytest.raises` here fails with `DID NOT RAISE`; when a future driver
-        # promotes this to an error, `pytest.warns` will fail loudly and this
-        # test becomes the place to notice.
-        with pytest.warns(DeprecationWarning, match="closed"):
-            await store.find_entities(uuid4())
+        # The claim is "close() closed it", and the driver's way of saying so
+        # changed between majors: 5.x emits a DeprecationWarning and answers
+        # anyway, 6.x raises `DriverError: Driver closed`.
+        #
+        # This is the notice the previous version of this test asked for, in
+        # as many words -- "when a future driver promotes this to an error,
+        # `pytest.warns` will fail loudly and this test becomes the place to
+        # notice." It did, on 6.2.0, and it was the *only* failure in the
+        # module. That is what made widening the supported range to `<7` a
+        # measurement rather than a hope.
+        #
+        # Accepting either keeps one test honest across both majors. What it
+        # still cannot do is pass if `close()` does nothing: that path
+        # returns `[]` quietly, with no warning and no error, and falls
+        # through to the assertion below.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try:
+                await store.find_entities(uuid4())
+            except Exception as error:
+                signalled = "closed" in str(error).lower()
+            else:
+                signalled = any(
+                    issubclass(w.category, DeprecationWarning) and "closed" in str(w.message)
+                    for w in caught
+                )
+
+        assert signalled, (
+            "using the store after close() neither raised nor warned, so close() "
+            "did not close the driver it owns"
+        )
 
     # ------------------------------------------------------------------
     # Encoding fidelity
