@@ -293,8 +293,7 @@ one entity type and one relationship type is valid, and the two-and-one shown
 here is already more than the model demands. The "at least 5 of each" rule you
 will see in the six bundled files is a *repository convention* enforced by
 `tests/unit/extraction/domains/test_yaml_schemas.py`, not by `DomainSchema` —
-see [Conventions the repository schemas follow beyond model
-validation](#conventions-the-repository-schemas-follow-beyond-model-validation).
+enforced by that test rather than by the model.
 Your own schemas are not subject to it.
 
 ### An example with the optional fields filled in
@@ -416,7 +415,7 @@ checked and are not:
   only validation. Neither `{entity_descriptions}` nor
   `{relationship_descriptions}` is required to appear, and no check rejects a
   placeholder that the prompt builder does not substitute. See
-  [Prompt template contract](#prompt-template-contract).
+  [`extraction_prompt_template`](#extraction_prompt_template--required-non-empty).
 - **The declared types are not a closed set.** `is_valid_entity_type` accepts
   `custom` for any schema and `is_valid_relationship_type` accepts
   `related_to`, and neither is consulted at all during extraction — nothing
@@ -444,8 +443,8 @@ Note that these lookups normalize *case and surrounding whitespace only* — the
 do not apply the space- and hyphen-to-underscore rewriting that the `id`
 validators do at load time. `get_entity_type("story arc")` finds nothing even
 though `id: story arc` in the file would have been stored as `story_arc`. See
-[Identifier normalization rules](#identifier-normalization-rules) and
-[Runtime helpers a schema author should know](#runtime-helpers-a-schema-author-should-know).
+[the normalization, exactly](#the-normalization-exactly) and
+[the one lookup helper](#the-one-lookup-helper).
 
 ### `domain_id` — required, pattern `^[a-z][a-z0-9_]*$`, max 50
 
@@ -498,8 +497,7 @@ a pattern instead, and a pattern rejects rather than repairs.
 
 The practical consequence: `domain_id: Literature Fiction` is a load error,
 where `id: Literature Fiction` on an entity type is not. Write the id in the
-form you want it stored. See [Identifier normalization
-rules](#identifier-normalization-rules) for the rewriting the other fields do.
+form you want it stored. See [the normalization, exactly](#the-normalization-exactly) for the rewriting the other fields do.
 
 Whitespace *around* the value is the exception, and it is handled by the model
 config rather than by a validator: `domain_id: "  recipes  "` strips to
@@ -584,7 +582,7 @@ Two places in the package read it, and neither is extraction:
 
 - **`DomainSummary.from_schema`** copies it onto the summary verbatim, so it is
   what appears in `registry.list_domains()` output. See
-  [Derived views](#derived-views).
+  [reading the loaded object](#reading-the-loaded-object).
 - **`DomainSchemaRegistry.list_domains`** sorts that list by it —
   `sorted(self._schemas.values(), key=lambda s: s.display_name)`. This is a
   plain string sort, so it is case-sensitive and orders by code point: a name
@@ -594,7 +592,7 @@ Two places in the package read it, and neither is extraction:
 
 It does **not** reach the prompt. The extraction template is built from entity
 and relationship descriptions (see
-[Prompt template contract](#prompt-template-contract)); no code path
+[`extraction_prompt_template`](#extraction_prompt_template--required-non-empty)); no code path
 substitutes `display_name` into it, so rewording it cannot change what the LLM
 is asked for. Nor does it participate in lookup, classification or error
 messages — `SchemaNotFoundError` lists `domain_id`s.
@@ -683,13 +681,13 @@ next. One line, under about 120 characters, matches every bundled schema.
 
 - **`DomainSummary.description`**, copied unchanged by
   `DomainSummary.from_schema`, and therefore in every
-  `registry.list_domains()` result. See [Derived
-  views](#derived-views).
+  `registry.list_domains()` result. See
+  [reading the loaded object](#reading-the-loaded-object).
 - Nowhere in extraction. The extraction prompt is assembled by
   `prompt_generator` from `extraction_prompt_template` with
   `{entity_descriptions}` and `{relationship_descriptions}` substituted — both
   built from the *entity type* and *relationship type* descriptions, not this
-  one. See [Prompt template contract](#prompt-template-contract). Rewording the
+  one. See [`extraction_prompt_template`](#extraction_prompt_template--required-non-empty). Rewording the
   domain description cannot change what is extracted once a domain has been
   chosen; it can only change whether it is chosen.
 
@@ -792,8 +790,7 @@ assert len(entity_ids) == len(set(entity_ids)), ...
 Watch for a duplicate produced by normalization rather than by copy-paste:
 `id: Story Arc` and `id: story-arc` both normalize to `story_arc`, so two
 lines that look unrelated in the YAML collide in the loaded schema. See
-[Identifier normalization
-rules](#identifier-normalization-rules).
+[the normalization, exactly](#the-normalization-exactly).
 
 #### It is the target of the one cross-field rule
 
@@ -899,8 +896,7 @@ relationship_types
 
 Per-element rules — `id` normalization, the 1-500 character `description`, the
 two endpoint lists and `bidirectional` — live on `RelationshipTypeSchema` and
-are documented under [Relationship type fields
-(`RelationshipTypeSchema`)](#relationship-type-fields-relationshiptypeschema).
+live on `RelationshipTypeSchema`.
 
 #### One is enough for the model; five is the bundled convention
 
@@ -948,8 +944,7 @@ the type twice. Uniqueness *is* asserted for the bundled schemas
 (`test_no_duplicate_relationship_type_ids`), against the loaded model rather
 than the raw YAML — so it catches collisions produced by normalization as well
 as by copy-paste. `id: Depends On` and `id: depends-on` both normalize to
-`depends_on`. See [Identifier normalization
-rules](#identifier-normalization-rules).
+`depends_on`. See [the normalization, exactly](#the-normalization-exactly).
 
 #### The endpoint lists are the one thing validated across fields
 
@@ -999,9 +994,7 @@ the same way: an extractor is free to return `loves` between two `location`s.
 `validate_relationship(relationship_type, source_entity_type, target_entity_type)`
 exists so a caller can perform that check deliberately, and returns
 `(is_valid, error_message)` rather than raising. See
-[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) and
-[Runtime helpers a schema author should
-know](#runtime-helpers-a-schema-author-should-know).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 #### Conventions worth following
 
@@ -1089,7 +1082,7 @@ template engine, and each is a thing you can rely on:
   of your entity types and still extracts.
 
 What each placeholder expands to is documented under
-[Prompt template contract](#prompt-template-contract); briefly, one markdown
+[`extraction_prompt_template`](#extraction_prompt_template--required-non-empty); briefly, one markdown
 bullet per declared type in declaration order, with the first three examples
 and all properties for entities, and endpoint/bidirectional annotations for
 relationships.
@@ -1170,8 +1163,7 @@ confidence_thresholds:
 | Unknown keys | rejected (`extra="forbid"`) |
 | Mutability | `frozen=True` — unlike `DomainSchema` itself |
 
-Per-key detail is under [Confidence threshold
-fields (`ConfidenceThresholds`)](#confidence-threshold-fields-confidencethresholds).
+Per-key detail is under [`confidence_thresholds`](#confidence_thresholds--optional-defaults-applied).
 
 #### Partial mappings are fine
 
@@ -1468,8 +1460,7 @@ which is legal and is what the minimal example in this page produces.
 `get_entity_type_ids()` and for the literal `custom`, whatever the schema
 declares. Nothing in the extraction pipeline calls it, so an entity type the
 model invents is neither rejected nor recorded as invalid — the helper is there
-for a caller who wants to ask. See [Special identifiers with built-in
-meaning](#special-identifiers-with-built-in-meaning) and
+for a caller who wants to ask. See [which entity-type ids are special](#which-entity-type-ids-are-special) and
 [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 The other direction is enforced: the ids declared here are the closed set that
@@ -1603,8 +1594,7 @@ three edges:
 Two ids that look different in YAML can therefore collide: `Story Arc`,
 `story-arc` and `__story_arc__` are one entity type after loading. Nothing
 rejects the duplicate — the list keeps both entries, `get_entity_type` returns
-the first, and the prompt describes the type twice. See [Identifier
-normalization rules](#identifier-normalization-rules) for the rule stated once
+the first, and the prompt describes the type twice. See [the normalization, exactly](#the-normalization-exactly) for the rule stated once
 across all four fields it governs.
 
 #### It is a prompt token, not a constraint

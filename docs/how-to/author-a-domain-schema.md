@@ -27,7 +27,7 @@ and cannot do for you: **the schema shapes the prompt, it does not enforce the
 wire format.** Declaring an entity type tells the model what you are looking
 for; nothing rejects an extraction that invents a type you never declared. See
 [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) for why,
-and [What this guide deliberately does not cover](#what-this-guide-deliberately-does-not-cover)
+and [the constraints are checkable but nothing checks them for you](#the-constraints-are-checkable-but-nothing-checks-them-for-you)
 for what that means in practice.
 
 For the field-by-field specification of every key, see the reference:
@@ -490,7 +490,7 @@ three consequences follow:
   prose — but it means the prompt's type list no longer tracks the
   declarations above it. If a rendered prompt still shows a literal
   `{entity_descriptions}`, you misspelled it; see
-  [Placeholders left unfilled](#placeholders-left-unfilled--a-template-with-neither-placeholder-renders-as-itself).
+  [the substitution is two literal string replacements](#the-substitution-is-two-literal-string-replacements).
 
 #### What to write around them
 
@@ -814,7 +814,7 @@ Five details of this check:
   written `__site__` is stored as `site` while a reference written `__site__`
   stays `__site__` and fails here, quoting a value you did not type. Writing
   both in normalized form makes the difference unreachable — see
-  [Ids and property names](#ids-and-property-names-are-normalized-to-lowercase-underscore-and-must-be-valid-python-identifiers).
+  [Ids and property names](#ids-and-property-names-are-normalized-and-must-be-valid-identifiers).
 - **An empty-string entry is skipped, not rejected.** `valid_source_types:
   ['']` loads, and constrains nothing at all: the check ignores falsy entries,
   and a list of one empty string still reads as "any" to `is_valid_source`,
@@ -1144,7 +1144,7 @@ Ids are matched case-insensitively with surrounding whitespace stripped, so
 `"News_Journalism"` and `" news_journalism "` both resolve. An unknown one
 raises `UnknownDomainError`, which is a `RedstringError` and lists the ids that
 do exist — see
-[Troubleshooting](#unknowndomainerror--you-passed-an-id-not-a-schema-or-misspelled-a-bundled-id).
+[two rejections belong to this function](#two-rejections-belong-to-this-function).
 
 Because the argument is just an object, a schema built in code works as well as
 one loaded from YAML — useful in tests, where constructing a two-type
@@ -1189,7 +1189,7 @@ order:
 - The **description is verbatim**.
 - The `(examples: ...)` clause appears only if the type has examples, and
   carries at most the **first three** — `MAX_EXAMPLES_PER_TYPE` is `3`. A
-  schema may declare up to ten ([Step 2](#at-least-one-entity-type-and-one-relationship-type-at-most-10-examples-per-type)); entries
+  schema may declare up to ten ([Step 2](#at-least-one-entity-type-and-one-relationship-type-at-most-10-examples)); entries
   four onwards are stored, are never rendered, and are documentation for the
   next person editing the file. Order the list accordingly. The slice is
   positional and unfiltered, so an empty string in one of the first three
@@ -1222,7 +1222,7 @@ when a schema grows past a dozen types.
 
 The whole rendered result, for the `field_reports` schema built up through this
 guide, is the block shown under
-[Write `extraction_prompt_template`](#write-extraction_prompt_template-with-the-entity_descriptions-and-relationship_descriptions-placeholders).
+[Write `extraction_prompt_template`](#write-extraction_prompt_template).
 
 What the prompt does *not* contain is as worth knowing: not `domain_id`,
 `display_name`, `description` or `version`, and not `confidence_thresholds`.

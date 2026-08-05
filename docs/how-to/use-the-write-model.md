@@ -195,7 +195,7 @@ The default is a starting point, not a measured optimum — small enough that a
 rehydration reads a bounded tail, large enough that most saves write no
 snapshot. Nothing in the library depends on the number being 100; tune it once
 you know a tenant's merge volume. See
-[Merges are slow: tune `snapshot_every`](#merges-are-slow-tune-snapshot_every).
+[Merges are slow: tune `snapshot_every`](#consolidation_repositoryevent_store-snapshot_store-snapshot_everyconsolidation_snapshot_every--the-snapshot-store-is-required).
 
 Snapshots are an optimisation and nothing more. A log loaded through a
 snapshot and the same log replayed from event 0 with an empty snapshot store
@@ -415,7 +415,7 @@ that block rather than that a scope is genuinely unavailable. The two shapes
 that produce it are a save moved after the `async with` ended, and a save
 handed to a background task that does not inherit the context; for the second,
 see
-[`TenantContextNotSetError` on save from a background task that lost the scope](#tenantcontextnotseterror-on-save-from-a-background-task-that-lost-the-scope).
+[`TenantContextNotSetError` on save from a background task that lost the scope](#await-reposavedocument-outside-a-scope-raises-tenantcontextnotseterror).
 
 Catch it from `eventsource` when you do need to handle it — at a job boundary,
 say, where the alternative is an unlabelled traceback:
@@ -1167,7 +1167,8 @@ before you consider re-checking them yourself. A service can evaluate all
 three; what it cannot do is evaluate them against a consistent view of the
 tenant's history *while holding the write lock that makes the check
 meaningful*. The aggregate plus `ExpectedVersion` is what supplies that — see
-[Handle concurrent writers](#handle-concurrent-writers) — and it is why a
+[handle the `None` return](#handle-the-none-return-this-model-version-is-already-recorded-so-save-nothing-and-treat-the-retry-as-done)
+— and it is why a
 tenant's merges contend for one stream.
 
 For `MergeRecord`, `alias_of` and what a replayed log holds, see

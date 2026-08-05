@@ -1547,48 +1547,6 @@ delete statement) adds a third statement to every batch upsert, whose write
 cost ADR 0003 measured carefully. Measure the leak before paying for it, and
 correct the ADR either way.
 
-### B63. `mkdocs --strict` does not fail on a broken in-page anchor, and 48 are broken
-
-`mkdocs.yml` sets `strict: true`, which promotes WARNING to an error. **Anchors
-are reported at INFO**, so a link to `page.md#heading-that-was-renamed` builds
-green today. Missing *pages* fail; missing *anchors* do not.
-
-That is a hole in the one gate this repository points at for prose. `mkdocs.yml`
-line 51 and `recurring-defects.md` §6 both credit `--strict` with making a
-half-finished renumber impossible to land — and the half that went unnoticed the
-first time was 71 in-page anchors, which is precisely the half still unguarded.
-A gate that catches the coarse failure and shrugs at the fine one is the more
-dangerous kind, because catching the coarse one is what earns the trust it then
-fails to deserve.
-
-Add to `mkdocs.yml`, which is the whole fix on the config side:
-
-```yaml
-validation:
-  anchors: warn
-  links:
-    absolute_links: warn
-    unrecognized_links: warn
-```
-
-**Deferred because turning it on surfaces 48 warnings and therefore reddens CI
-until every one is repaired**, and they are unrelated to whatever change is in
-flight. Measured, not estimated — run the snippet above and `uv run mkdocs build
---strict` reports `Aborted with 48 warnings in strict mode!`. The clusters are
-`reference/quality-gates.md` (6), `reference/domain-value-types.md` (5),
-`reference/events.md` (2), with the rest spread thinner.
-
-Two things learned that the next person should not have to rediscover:
-
-- The anchors are mostly *self*-links within a page whose headings were later
-  edited — the slug in the link is a verbatim snapshot of an old heading, so
-  each one is repairable by reading the current headings rather than by
-  guessing. `#kg_compliance_max_examples-default-50-read-in-...-process-wide-only`
-  is a heading that has since been shortened, not a page that moved.
-- Do the config change and the repairs in **one** commit. Landing the repairs
-  first leaves nothing preventing the next one, and landing the config first is
-  a red build. This is the §6 lesson about renumbering, in a different costume.
-
 ### B64. The release guard permits `main` and nothing else, which forecloses a hotfix branch
 
 `release.yml`'s "The tagged commit must be on main" step requires the tagged
@@ -1617,3 +1575,40 @@ to that file rather than rewriting the harness. The four statuses it pins
 rejected, an API failure treated as a failure) all still hold under any
 widening — a second permitted *base* changes which commits are on it, not what
 the compare statuses mean.
+
+### B65. Two reference pages document a fraction of what they link to
+
+Fixing B63 surfaced this and it is the larger finding. The broken anchors were
+not renamed headings — **most pointed at sections that exist nowhere in the
+docs.** Both pages were written against an outline, and the outline is still
+visible in the links while the content was never filled in.
+
+`reference/domain-value-types.md` has 22 headings and covers `Entity`,
+`Relationship`, `SourceDocument` and `Alias`. It linked to, and does not
+contain, sections on: temporal value types, temporal intervals,
+`SimilarityFeatures`, `VectorMatch.score`, `normalize_name`,
+`blocking_keys_for`, `RelationshipRedirection`, `AliasCycleError`,
+`AmbiguousReferenceDateError`, and a "what is public" summary. Its own module
+map table lists `temporal.py`, `temporal_parsing.py`, `interval.py` and
+`merge_strategy.py` as things the page covers.
+
+`reference/domain-schema-yaml.md` documents top-level, entity-type and
+property fields, and stops. There is no relationship-type field section, and
+`RelationshipTypeSchema`'s per-element rules — `id` normalization, the
+description bounds, the two endpoint lists, `bidirectional` — are named in
+prose as "documented under" a section that does not exist.
+
+**The dangling links are now repaired, so this is invisible again**, which is
+why it needs an entry rather than a comment. Where a real section covered the
+subject the link was repointed; where nothing did, the sentence was rewritten
+to state the fact rather than promise a section. No content was invented.
+
+One repair is worth knowing about because it was a *wrong* claim rather than a
+missing one: the dead anchor for `VectorMatch.score` encoded the mapping as
+`(1 - cosine) / 2`. `domain/vector.py` says `(1 + cosine) / 2`, and the two
+differ on every input. The prose now states the formula from the source. A
+link nobody can follow is also a claim nobody re-checks.
+
+Picking this up means writing the missing sections against the code, not
+against the old outline — the outline is three slices stale and was wrong at
+least once.

@@ -451,7 +451,7 @@ reasons that is the right shape:
 
 The configuration is `strict = true` plus `warn_unreachable`,
 `warn_return_any`, `disallow_untyped_defs` and the pydantic plugin; details in
-[mypy configuration](#mypy-configuration-files-strict-warn_unreachable-warn_return_any-pydantic-plugin-asyncpg-override-no-exclude).
+[mypy configuration](#mypy-configuration).
 The `types_or: [python, pyi]` filter still decides *whether* the hook runs —
 a commit touching no Python skips it — it just does not decide what gets
 checked.
@@ -493,7 +493,7 @@ round.
 
 What it enforces — `root_packages`, `containers`, `exhaustive = true` and the
 layer order — is in
-[import-linter contract](#import-linter-contract-root_packages-containers-exhaustive-layer-order).
+[import-linter contract](#import-linter-contract).
 It sees first-party imports only, so it cannot catch a `langchain` import
 appearing outside the adapter package; `tests/unit/llm/test_port_does_not_leak.py`
 is what covers that, and it runs in the hook below.
@@ -514,7 +514,7 @@ Because it is the last hook, `fail_fast` means it only ever executes on a
 commit where the five checks above it are already clean. Its own contract —
 the baseline file, `TOLERANCE`, the exact pytest arguments, the exit codes,
 and how to accept a deliberate drop — is
-[documented below](#the-coverage-ratchet-contract-scriptscoverage_ratchetpy).
+[documented below](#python-scriptscoverage_ratchetpy).
 
 ### None of these should be run as a separate pre-commit step
 
@@ -694,7 +694,7 @@ inline:
   event timestamps are compared and ordered across the package, and a naive
   datetime does not fail, it compares wrongly. `TID`'s banned-api entries
   extend this to the two spellings `DTZ` cannot see; both are covered in
-  [per-file-ignores and banned-api](#ruff-per-file-ignores-and-banned-api-tests-annb011dtz001-datetimeutcnow-ban).
+  [per-file-ignores and banned-api](#ruff-per-file-ignores-and-banned-api).
 - **`ANN`** — mypy `--strict` rejects an untyped `def` in `src/`, but ruff
   reports it first and much faster. The two overlap deliberately, and `ANN` is
   the reason `tests/**` needs a per-file ignore rather than a global one.
@@ -950,7 +950,7 @@ The package, and only the package. `tests/` is not type-checked at all, which
 is what makes ruff's `ANN` per-file ignore for `tests/**` coherent rather than
 a hole: an annotation on a test function would be read by nothing, so
 requiring one produces findings with no consumer. See
-[per-file-ignores](#ruff-per-file-ignores-and-banned-api-tests-annb011dtz001-datetimeutcnow-ban).
+[per-file-ignores](#ruff-per-file-ignores-and-banned-api).
 
 Because the hook passes no filenames, `files` is the *only* thing that decides
 scope. A one-line edit type-checks the whole package — which is the correct
@@ -1142,7 +1142,7 @@ them fire on the entire idiom of a test suite:
 - **B101 (`assert_used`)** — `assert` is compiled away under `python -O`, so it
   is a real finding in a library and the whole vocabulary of a suite. This is
   the same reasoning behind ruff's `B011` per-file ignore for `tests/**`; see
-  [per-file-ignores](#ruff-per-file-ignores-and-banned-api-tests-annb011dtz001-datetimeutcnow-ban).
+  [per-file-ignores](#ruff-per-file-ignores-and-banned-api).
 - **B404 / B603 / B607 (`subprocess`)** — the suite shells out deliberately, to
   drive the tools it is testing.
 
@@ -1613,14 +1613,14 @@ Two consequences worth carrying:
 
 - **Coverage is measured over the default run**, so the ratchet's number
   describes the code the deselected suites do not exclusively own. See
-  [The coverage ratchet contract](#the-coverage-ratchet-contract-scriptscoverage_ratchetpy).
+  [The coverage ratchet contract](#python-scriptscoverage_ratchetpy).
 - **Mutation testing inherits the same blind spot.** `cosmic-ray.toml`'s
   `test-command` is `uv run pytest -x -q --no-header -p no:randomly tests/unit`
   and mutmut's `runner` is the same command without a path, so an adapter whose
   only tests are integration-marked has no killing tests at all — every mutant
   in it survives, or, if the environment is incomplete, every mutant appears to
   die. See
-  [Verifying a mutation run before trusting it](#verifying-a-mutation-run-before-trusting-it).
+  [proving the harness works before trusting a run](../how-to/run-integration-and-mutation-suites.md#step-1-prove-the-harness-works--run-the-configured-test-command-unmutated).
 
 The procedures for actually running the excluded suites — bringing the backends
 up, pointing the LLM tests at an endpoint — are in
@@ -1846,7 +1846,7 @@ OpenAI-compatible server, and the probe skips cleanly when nothing answers.
 `KG_COMPLIANCE_MAX_EXAMPLES` is the knob to reach for when a run is too slow
 while iterating — `KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest -m integration`
 is the form every module docstring uses. It is covered in full in
-[the next section](#kg_compliance_max_examples-default-50-read-in-testscompliancegraph_storepy-and-vector_storepy-process-wide-only).
+[the next section](#kg_compliance_max_examples).
 
 ### `-n auto` is safe for the vector suite and not for the whole one
 
@@ -1901,7 +1901,7 @@ one line of the adapter ever ran. `tests/conftest.py` prints a terminal
 summary naming the deselected count and the command that runs it, which stops
 the omission being silent; only a combined coverage run would close it
 (`BACKLOG.md` B10a). See
-[Verifying a mutation run before trusting it](#verifying-a-mutation-run-before-trusting-it).
+[proving the harness works before trusting a run](../how-to/run-integration-and-mutation-suites.md#step-1-prove-the-harness-works--run-the-configured-test-command-unmutated).
 
 ## `KG_COMPLIANCE_MAX_EXAMPLES`
 
@@ -2025,7 +2025,7 @@ Two things follow:
 - **A lowered value makes a mutation result non-deterministic**, and the
   natural misreading of a survivor that used to die is "something changed in
   the source." Nothing had. See
-  [Verifying a mutation run before trusting it](#verifying-a-mutation-run-before-trusting-it).
+  [proving the harness works before trusting a run](../how-to/run-integration-and-mutation-suites.md#step-1-prove-the-harness-works--run-the-configured-test-command-unmutated).
 - **Where a guard names a specific value, pin it as an example.**
   `test_k_zero_returns_nothing_rather_than_raising` in
   `tests/compliance/vector_store.py` exists for precisely this, and its

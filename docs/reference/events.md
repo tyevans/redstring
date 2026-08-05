@@ -385,7 +385,7 @@ version — so the aggregate has to exist first. See
 Both constants are exported from `redstring.events.__all__`. Neither is in
 `redstring.__all__`, so neither is part of the gated public surface; a
 consumer that needs to name a stream from outside should call
-[`document_stream`](#document_streamtenant_id-source_id), which is exported.
+[`document_stream`](#document_stream-tenant_id-source_id), which is exported.
 
 ### `document_stream(*, tenant_id, source_id)`
 
@@ -484,7 +484,7 @@ def consolidation_stream(*, tenant_id: TenantId) -> StreamId
 Returns `StreamId(aggregate_id=tenant_id, category=CONSOLIDATION_CATEGORY)` —
 that is, category `"Consolidation"`. Defined in
 `redstring/events/streams.py`, alongside
-[`document_stream`](#document_streamtenant_id-source_id).
+[`document_stream`](#document_stream-tenant_id-source_id).
 
 | Parameter | Type | |
 |---|---|---|
@@ -571,7 +571,7 @@ reaching into an internal module.
 
 Everything one extraction run found in one document. Defined in
 `redstring/events/document.py`; category `Document`, so it lands on
-[`document_stream(tenant_id=…, source_id=…)`](#document_streamtenant_id-source_id)
+[`document_stream(tenant_id=…, source_id=…)`](#document_stream-tenant_id-source_id)
 alongside `EntitiesEmbedded`.
 
 | Field | Type | Default |
@@ -592,7 +592,7 @@ required, and it is deliberately redundant with the stream: `aggregate_id` is
 a `uuid5` of the tenant and this value, and a hash cannot be read back, so a
 consumer of a *global* feed would otherwise have no way to say which document
 an event came from. Nothing normalises it — see
-[`document_stream`](#document_streamtenant_id-source_id) for the whitespace
+[`document_stream`](#document_stream-tenant_id-source_id) for the whitespace
 rule that applies when it is hashed — and this field carries whatever was
 hashed. It is also the value every entity's own `source_id` is checked
 against; see the [validator](#validator-_payloads_belong_to_this_document_and_tenant).
@@ -742,7 +742,7 @@ invisible without them.
 
 The comparison is `e.source_id != self.source_id` on plain strings — exact,
 case-sensitive, and un-normalised, consistent with
-[`document_stream`](#document_streamtenant_id-source_id) hashing the id
+[`document_stream`](#document_stream-tenant_id-source_id) hashing the id
 exactly as given. `"doc-1"` and `" doc-1"` are two documents here as well.
 
 One consequence to note: `Entity.source_id` is typed `SourceId | None` with a
@@ -801,7 +801,7 @@ both mutants fail deterministically.
 Embeddings computed for entities of one document. Defined in
 `redstring/events/document.py` beside `DocumentExtracted`; category
 `Document`, so it lands on the same
-[`document_stream(tenant_id=…, source_id=…)`](#document_streamtenant_id-source_id)
+[`document_stream(tenant_id=…, source_id=…)`](#document_stream-tenant_id-source_id)
 as that document's extraction, ordered against it.
 
 | Field | Type | Default |
@@ -989,7 +989,7 @@ tenant and the payload's tenant are ever compared.
 
 One or more entities absorbed into a canonical entity. Defined in
 `redstring/events/merge.py`; category `Consolidation`, so it lands on
-[`consolidation_stream(tenant_id=…)`](#consolidation_streamtenant_id) — the
+[`consolidation_stream(tenant_id=…)`](#consolidation_stream-tenant_id) — the
 one stream per tenant — alongside `MergeUndone`.
 
 | Field | Type | Default |
@@ -1272,7 +1272,7 @@ reject good payloads in production only.
 
 A merge reversed. Defined in `redstring/events/merge.py` beside
 `EntitiesMerged`; category `Consolidation`, so it lands on
-[`consolidation_stream(tenant_id=…)`](#consolidation_streamtenant_id) — the
+[`consolidation_stream(tenant_id=…)`](#consolidation_stream-tenant_id) — the
 one stream per tenant — after the `EntitiesMerged` it compensates.
 
 | Field | Type | Default |
@@ -1561,7 +1561,7 @@ nothing more. Two consequences on the wire:
   ordinary string.** There is no envelope in the JSON to distinguish them from
   any other `UUID` or `str` field.
 - **A `SourceId` is free-form text**, which is why
-  [`document_stream`](#document_streamtenant_id-source_id) has to reject a
+  [`document_stream`](#document_stream-tenant_id-source_id) has to reject a
   blank one and why the `source_id` comparison in
   [`DocumentExtracted`'s validator](#validator-_payloads_belong_to_this_document_and_tenant)
   is exact and un-normalised.

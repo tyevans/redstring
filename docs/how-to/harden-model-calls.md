@@ -1174,7 +1174,7 @@ Set it too low and one bad minute â€” a single GC pause, one connection reset â€
 takes a healthy model offline for `recovery_timeout`. Two things soften that
 in practice: `record_success()` from `CLOSED` clears the accumulated count, so
 a threshold is only reached by failures with no success between them; and the
-count decays anyway ([next subsection](#why-the-failure-count-decays)). A
+count decays anyway ([next subsection](#why-the-failure-count-decays-with-recovery_timeout-and-increments-do-not-refresh-the-ttl)). A
 threshold of 1 is legal and appears throughout the unit tests, but in
 production it means the first hiccup opens the circuit.
 
