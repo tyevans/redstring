@@ -101,6 +101,10 @@ _NOT_A_TYPE_REFERENCE = frozenset(
         "Exception",
         "Callable",
         "ClassVar",
+        # `collections.abc`, like its four siblings below. Added when
+        # `TemporalQuery` was exported -- it was the first exported signature
+        # to say `Collection`, so the omission had never been reachable.
+        "Collection",
         "Final",
         "Iterable",
         "Iterator",

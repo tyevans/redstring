@@ -135,6 +135,7 @@ from redstring.domain.exceptions import (
     UnknownMergeError,
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
+from redstring.domain.interval import Bounds, TemporalRelation
 from redstring.domain.relationship import Relationship
 from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
 from redstring.domain.source import SourceDocument
@@ -167,6 +168,8 @@ from redstring.ports.graph_store import GraphStore
 from redstring.ports.llm_provider import LlmProvider
 from redstring.ports.vector_store import VectorStore
 from redstring.projections import GraphProjection, ReplayReport, VectorProjection, project
+from redstring.temporal.inference import InferredRelation, infer_relations
+from redstring.temporal.query import CursorStalledError, TemporalQuery
 from redstring.vector.adapters.memory import InMemoryVectorStore
 
 __version__ = "0.1.0"
@@ -180,6 +183,7 @@ __all__ = [
     "Alias",
     "AliasCycleError",
     "AutoDomain",
+    "Bounds",
     "CandidateFinder",
     "Chunk",
     "ChunkSizeError",
@@ -191,6 +195,7 @@ __all__ = [
     "ConsolidationInvariantError",
     "ConsolidationReport",
     "Consolidator",
+    "CursorStalledError",
     "DatePrecision",
     "DimensionMismatchError",
     "Document",
@@ -212,6 +217,7 @@ __all__ = [
     "GraphStore",
     "InMemoryGraphStore",
     "InMemoryVectorStore",
+    "InferredRelation",
     "LlmProvider",
     "LlmProviderError",
     "MalformedCompletionError",
@@ -234,6 +240,8 @@ __all__ = [
     "SourceDocument",
     "SourceId",
     "TemporalExtent",
+    "TemporalQuery",
+    "TemporalRelation",
     "TenantId",
     "UncertaintyMarker",
     "UnknownDomainError",
@@ -246,6 +254,7 @@ __all__ = [
     "build_graph",
     "document_stream",
     "domain_system_prompt",
+    "infer_relations",
     "load_schema_from_file",
     "load_schema_from_string",
     "project",
