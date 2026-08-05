@@ -45,3 +45,4 @@ failure rather than a silent one.
 | [0013 · Resilience behind the cache port](0013-resilience-behind-the-cache-port.md) | Retry, rate limiting and circuit breaking live in `llm/` over `Cache`, not in the pipeline. |
 | [0014 · Exemption lists are empty and must stay falsifiable](0014-exemption-lists-are-empty-and-must-stay-falsifiable.md) | Every exemption list needs a test that its entries still match something — and an emptied *exclusion* is deleted rather than kept. |
 | [0015 · Consolidation gets a composed entry point](0015-consolidation-gets-a-composed-entry-point.md) | `Consolidator` composes decide-and-emit with project-and-write; an empty-vs-empty neighbour comparison stops meaning zero. |
+| [0016 · `GraphStore` is five capabilities](0016-graph-store-is-five-capabilities.md) | An eighteen-method port becomes five composed protocols, because a fat interface pushed a test double into subclassing a real adapter. |

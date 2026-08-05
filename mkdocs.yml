@@ -133,4 +133,5 @@ nav:
       - "0013 · Resilience behind the cache port": adr/0013-resilience-behind-the-cache-port.md
       - "0014 · Exemption lists are empty and must stay falsifiable": adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md
       - "0015 · Consolidation gets a composed entry point": adr/0015-consolidation-gets-a-composed-entry-point.md
+      - "0016 · GraphStore is five capabilities": adr/0016-graph-store-is-five-capabilities.md
   - Contributing: contributing.md

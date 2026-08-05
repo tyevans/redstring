@@ -20,7 +20,9 @@ and that the ordering contract survives the trip.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
@@ -39,6 +41,9 @@ from redstring import (
     infer_relations,
 )
 from tests.compliance.strategies import aware_datetimes, distinct_tenant_pairs, entities
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def dated(tenant_id, name, year, *, end_year=None, precision=DatePrecision.YEAR):
@@ -210,10 +215,7 @@ class TestProperties:
             for entity, _ in drawn
         ]
 
-        store = _ReversingGraphStore()
-        await store.upsert_entities(owned)
-
-        found = await TemporalQuery(store).timeline(tenant_id)
+        found = await TemporalQuery(_ReversingEntityReader(owned)).timeline(tenant_id)
 
         assert [e.id for e in found] == sorted(e.id for e in owned)
 
@@ -265,19 +267,69 @@ class TestProperties:
         assert {e.tenant_id for e in found} == {mine}
 
 
-class _ReversingGraphStore(InMemoryGraphStore):
-    """An adapter that returns entities in the opposite order to the default.
+class _ReversingEntityReader:
+    """An `EntityReader` that hands entities back in the opposite order.
 
-    Every `GraphStore` in this repository hands back entities ascending by id,
+    Every `GraphStore` in this repository returns entities ascending by id,
     which makes any property about *ordering* untestable through them: the
     answer is already sorted before `timeline` sees it, so deleting the sort's
-    tie-break changes nothing observable.
+    tie-break changes nothing observable. The port promises no such order, so
+    this exercises a permission no shipped adapter uses.
 
-    The port promises no such order. This adapter exercises that permission --
-    it is a legal `GraphStore` behaving in a way no shipped one does, which is
-    the only way to tell "timeline sorts" apart from "the store happened to".
+    **It implements the port rather than subclassing an adapter, and that is
+    the point.** The first version of this double subclassed
+    `InMemoryGraphStore` and overrode one method -- not because inheritance
+    was right, but because `GraphStore` had eighteen methods and implementing
+    it for a test that needs one was absurd. Subclassing a real adapter to
+    fake it means the double inherits every behaviour of the thing it is
+    standing in for, which is exactly what a double should not do.
+
+    `EntityReader` is five methods, four of which this raises on: a caller
+    that starts using one will be told, rather than silently getting the
+    in-memory adapter's answer.
     """
 
-    async def find_entities(self, *args, **kwargs):
-        found = await super().find_entities(*args, **kwargs)
-        return list(reversed(found))
+    def __init__(self, entities: Sequence[Entity]) -> None:
+        self._entities = list(entities)
+
+    async def find_entities(
+        self,
+        tenant_id,
+        *,
+        name=None,
+        entity_type=None,
+        limit=None,
+        after=None,
+    ) -> list[Entity]:
+        """Descending by id, which is the reverse of what every adapter does.
+
+        Paging still has to work or `TemporalQuery._scan` never terminates,
+        so `after` is honoured -- in *this* order, meaning "id less than",
+        not the ascending sense a real adapter uses. Getting that backwards
+        makes the loop return the same page forever, which the port's own
+        `CursorStalledError` is there to catch.
+        """
+        found = sorted(
+            (e for e in self._entities if e.tenant_id == tenant_id),
+            key=lambda e: str(e.id),
+            reverse=True,
+        )
+        if name is not None:
+            found = [e for e in found if e.normalized_name == name]
+        if entity_type is not None:
+            found = [e for e in found if e.entity_type == entity_type]
+        if after is not None:
+            found = [e for e in found if str(e.id) < str(after)]
+        return found if limit is None else found[:limit]
+
+    async def get_entity(self, *args, **kwargs):
+        raise NotImplementedError("the timeline never reads one entity by id")
+
+    async def get_entities(self, *args, **kwargs):
+        raise NotImplementedError("the timeline never reads entities by id")
+
+    async def find_by_blocking_key(self, *args, **kwargs):
+        raise NotImplementedError("blocking is consolidation's, not the timeline's")
+
+    async def find_by_blocking_keys(self, *args, **kwargs):
+        raise NotImplementedError("blocking is consolidation's, not the timeline's")

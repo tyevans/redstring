@@ -164,7 +164,14 @@ from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.protocols import Chunker
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
-from redstring.ports.graph_store import GraphStore
+from redstring.ports.graph_store import (
+    AliasStore,
+    EntityReader,
+    EntityWriter,
+    GraphStore,
+    RelationshipStore,
+    TenantPurge,
+)
 from redstring.ports.llm_provider import LlmProvider
 from redstring.ports.vector_store import VectorStore
 from redstring.projections import GraphProjection, ReplayReport, VectorProjection, project
@@ -182,6 +189,7 @@ __all__ = [
     "Adjudicator",
     "Alias",
     "AliasCycleError",
+    "AliasStore",
     "AutoDomain",
     "Bounds",
     "CandidateFinder",
@@ -207,7 +215,9 @@ __all__ = [
     "EntitiesMerged",
     "Entity",
     "EntityId",
+    "EntityReader",
     "EntityTypeSchema",
+    "EntityWriter",
     "ExtractionMethod",
     "ExtractionPipeline",
     "FakeLlmProvider",
@@ -232,6 +242,7 @@ __all__ = [
     "Relationship",
     "RelationshipId",
     "RelationshipRedirection",
+    "RelationshipStore",
     "RelationshipTypeSchema",
     "ReplayReport",
     "Response",
@@ -243,6 +254,7 @@ __all__ = [
     "TemporalQuery",
     "TemporalRelation",
     "TenantId",
+    "TenantPurge",
     "UncertaintyMarker",
     "UnknownDomainError",
     "UnknownMergeError",

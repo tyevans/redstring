@@ -62,7 +62,7 @@ if TYPE_CHECKING:
     from redstring.domain.entity import Entity
     from redstring.domain.ids import TenantId
     from redstring.domain.interval import Bounds
-    from redstring.ports.graph_store import GraphStore
+    from redstring.ports.graph_store import EntityReader
 
 #: Entities per `find_entities` call. Large enough that a modest tenant is one
 #: or two round trips, small enough that a page is not a memory event.
@@ -95,12 +95,15 @@ class CursorStalledError(RuntimeError):
 class TemporalQuery:
     """Timeline reads over any `GraphStore`."""
 
-    def __init__(self, store: GraphStore, *, page_size: int = DEFAULT_PAGE_SIZE) -> None:
+    def __init__(self, store: EntityReader, *, page_size: int = DEFAULT_PAGE_SIZE) -> None:
         """Assemble a query.
 
         Args:
-            store: Where entities are read from. Any adapter; nothing here is
-                Cypher-shaped or knows which one it has.
+            store: Where entities are read from. Typed as `EntityReader`
+                rather than `GraphStore` because `find_entities` is the only
+                method this class calls -- one of the port's eighteen. A
+                caller substituting a stub, or an adapter that only reads,
+                needs to satisfy five methods rather than all of them.
             page_size: Entities per round trip. A tuning knob, not a limit on
                 the answer -- every method pages until the tenant is exhausted.
 
