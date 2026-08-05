@@ -63,7 +63,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-neo4j = ["neo4j>=5.27,<6"]
+neo4j = ["neo4j>=6.2.0,<7"]
 # The LLM transport. `langchain-openai` speaks to any OpenAI-compatible
 # server -- llama.cpp, llama-swap, vLLM, Ollama's shim, OpenAI itself -- so
 # one extra covers every deployment this library has. Ranges rather than pins:
