@@ -45,7 +45,7 @@ from redstring.projections import project
 from .conftest import fresh_rig
 from .log_builder import DocumentSpec, Scenario, build_log, scenarios
 
-REPLAY_SETTINGS = settings(max_examples=50, deadline=None)
+REPLAY_SETTINGS = settings(max_examples=50)
 
 #: An empty log. Position zero with nothing at it -- the case a replay loop
 #: that never enters its body would pass, and a `read_all` mishandling

@@ -102,7 +102,6 @@ if TYPE_CHECKING:
 DEFAULT_MAX_EXAMPLES = int(os.environ.get("KG_COMPLIANCE_MAX_EXAMPLES", "50"))
 
 compliance_settings = settings(
-    deadline=None,
     max_examples=DEFAULT_MAX_EXAMPLES,
     suppress_health_check=[HealthCheck.too_slow],
 )

@@ -256,7 +256,7 @@ date_texts = st.one_of(
 
 class TestProperties:
     @given(text=date_texts)
-    @settings(max_examples=300, deadline=None)
+    @settings(max_examples=300)
     def test_a_parsed_extent_is_ordered_and_aware(self, text):
         parsed = parse_temporal(text, reference_date=REF)
         assume(parsed is not None)
@@ -267,7 +267,7 @@ class TestProperties:
             assert parsed.start_date <= parsed.end_date
 
     @given(text=st.one_of(date_texts, st.text(max_size=60)))
-    @settings(max_examples=300, deadline=None)
+    @settings(max_examples=300)
     def test_parsing_is_a_function_of_text_and_reference_date_alone(self, text):
         """Nothing process-local, nothing wall-clock. Two calls, one answer."""
         try:

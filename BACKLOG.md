@@ -1365,56 +1365,6 @@ the argument was defending. Note that the `docs` extra has the same exposure —
 `mkdocs-material>=9.5` floating means the site can change appearance between
 two builds of an unchanged tree.
 
-### B64. The interval property suite fails the commit gate on a loaded machine
-
-**Observed once, during the packaging commit.**
-`tests/unit/domain/test_interval.py::TestProperties::test_before_and_after_are_the_only_disjoint_relations`
-failed the gate with:
-
-```
-hypothesis.errors.FlakyFailure: ... produces unreliable results:
-Failed on the first call but did not on a subsequent one
-Unreliable test timings! On an initial run, this test took 276.11ms, which
-exceeded the deadline of 200.00ms, but on a subsequent run it took 1.28 ms
-```
-
-Two orders of magnitude between the two calls, on the same input, is the
-signature of first-call cost — import, JIT of the strategy, page faults —
-landing on a machine that happened to be busy. Nothing about the interval
-code is slow: 1.28 ms is the real number. It reproduced while a wheel build
-and a throwaway venv install were running in the same session, and did not
-reproduce on a quiet tree.
-
-Why it is filed rather than shrugged at: **hypothesis reports this as a test
-failure naming the function**, so the first reading is "the interval
-properties broke", and the second reading is "flaky, retry" — the response
-`.claude/rules/testing.md` warns against, because both are wrong. The gate
-is `pre-commit`, so a developer meets it as a blocked commit with no obvious
-cause, and the loaded machine that triggers it is *the developer's own*,
-running whatever else they had going.
-
-Three candidate fixes, and choosing between them needs one decision rather
-than a patch:
-
-- `deadline=None` on this test's `@settings`. Cheapest. It gives up a real
-  signal — this is the one suite in the repo where an accidentally
-  quadratic `relate` would show as a timing regression rather than a wrong
-  answer.
-- `deadline=None` on the whole class, or a hypothesis profile for the gate
-  with deadlines off and a `ci` profile with them on. Keeps the signal where
-  it can be measured and removes it where it cannot.
-- Leave it and accept a rare blocked commit.
-
-The second is probably right, and it is the same shape as
-`KG_COMPLIANCE_MAX_EXAMPLES`: a per-run lever, not a per-test constant. Note
-that an explicit `settings(deadline=...)` on the test **outranks every
-profile**, so fixing this by editing the decorator forecloses the profile
-answer — the same trap documented for `max_examples` in
-`.claude/rules/testing.md`.
-
-Until it is decided: a `FlakyFailure` naming a *deadline* is this entry. A
-`FlakyFailure` naming anything else is a real bug and must not be retried.
-
 ### B60. Packaging metadata beyond the licence — closed except for B61
 
 **Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
