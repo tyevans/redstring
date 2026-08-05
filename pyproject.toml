@@ -81,12 +81,17 @@ pgvector = ["asyncpg>=0.31.0"]
 # The Redis `Cache`. Same shape as `pgvector` above: one function-local
 # import, in `RedisCache.from_url`.
 #
-# The `<6` cap is not a judgement about redis 6-8, it is the absence of
-# evidence: `RedisCache` is the one adapter in this repository that its port's
-# compliance suite has never been run against (BACKLOG B41), so nothing here
-# can say whether a newer client still returns `str` rather than `bytes`.
-# Widening it is B38, and B41 is what would make widening checkable.
-redis = ["redis[hiredis]>=5.3,<6"]
+# `<9` rather than `<6`, and the four majors were run rather than reasoned
+# about. `CacheCompliance` against a real Redis passes on clients **5.3.1,
+# 6.4.0, 7.4.1 and 8.1.0** -- 26 tests each, including the `str`-not-`bytes`
+# assertion that is the one this adapter could plausibly fail across a major.
+# The old cap was absence of evidence, not a known incompatibility, and B41
+# is what turned it into a measurement.
+#
+# Widening it also dissolves BACKLOG B38: `eventsource-py[all]` wants
+# `redis>=8.0,<9.0`, which `<6` excluded outright. The two now resolve
+# together, checked with a throwaway project rather than assumed.
+redis = ["redis[hiredis]>=5.3,<9"]
 # The LLM transport. `langchain-openai` speaks to any OpenAI-compatible
 # server -- llama.cpp, llama-swap, vLLM, Ollama's shim, OpenAI itself -- so
 # one extra covers every deployment this library has. Ranges rather than pins:

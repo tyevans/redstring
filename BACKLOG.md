@@ -1370,60 +1370,38 @@ cheaper before a release than after: `dependencies` is published metadata for
 wider set. Every backend is behind an extra now. A CHANGELOG is B22, also
 closed.
 
-### B38. There is no `eventsourcing` extra any more, and the `redis` pin is why `[all]` cannot come back
+### B38. The `redis` pin and `eventsource-py[all]` — closed
 
-**Rewritten in slice 11; the previous version described an extra that no longer
-exists.** It said `pyproject.toml` declares
-`eventsourcing = ["eventsource-py>=0.9.1,<0.11"]`. Slice 10 moved
-`eventsource-py` to a **core dependency** — `redstring.__init__` exports
-`Document`, `DocumentExtracted` and both projections, so `import redstring`
-needs it, and an API that fails to import without an extra is not one. The
-extras today are `neo4j`, `llm`, `all` and `dev`.
+**Closed by measurement, in the order B41 set up.** The `redis` extra is
+`>=5.3,<9`, and the cap moved because four client majors were run against
+`CacheCompliance` on a real Redis rather than argued about:
 
-**The conflict is now conditional rather than unconditional, which is most of
-the way to gone.** `redis` moved behind a `redis` extra when B61 closed, so a
-base install of redstring declares no `redis` range at all and
-`eventsource-py[all]` resolves beside it. The clash only reappears for
-someone installing `redstring[redis]` *and* `eventsource-py[all]`:
+| Client | Result |
+|---|---|
+| 5.3.1 | 26 passed |
+| 6.4.0 | 26 passed |
+| 7.4.1 | 26 passed |
+| 8.1.0 | 26 passed |
 
-```
-eventsource-py[all]>=0.9.1   requires  redis>=8.0,<9.0
-redstring[redis]             requires  redis[hiredis]>=5.3,<6
-```
+Including `test_a_value_comes_back_as_str_not_bytes`, which is the assertion
+this adapter could most plausibly have failed across a major and the reason
+the suite exists.
 
-What is left is the `<6` cap, and the honest reason for it is **absence of
-evidence, not a known incompatibility**: `RedisCache` is the one adapter in
-this repository its port's compliance suite has never been run against
-(B41), so nothing here can say whether a redis 6/7/8 client still returns
-`str` rather than `bytes` — which is precisely the divergence
-`tests/compliance/cache.py` was written to catch.
+The conflict this entry was originally about is gone with it.
+`eventsource-py[all]>=0.9.1` requires `redis>=8.0,<9.0`, which `<6` excluded
+outright; the two now resolve together, verified by locking a throwaway
+project that depends on both rather than by reading the ranges.
 
-So the order is: **B41 first, then widen.** Running `CacheCompliance` against
-a real Redis is what makes the cap a measurement instead of a guess, and it
-is the same work either way. It was for `services/embedding_cache.py` and `cache.py`
-too, both since deleted -- so the conflict now rests on **`llm/cache/redis.py`
-alone**, which imports `redis.asyncio` inside a function and takes an
-already-built client. Widening the pin is therefore cheaper to verify than
-this entry originally assumed: one adapter, one compliance suite
-(`tests/compliance/cache.py`).
+Two things that did **not** change, and should not be assumed to have:
 
-Dropping `[all]` costs nothing today — the event store, bus, projections and
-aggregates are all in the base package, and this library is in-memory-only by
-decision. It costs something the moment a Kafka, RabbitMQ, Redis or PostgreSQL
-event-store adapter is wanted, because each lives behind an extra.
-
-The `<0.11` cap is separate and deliberate: this is a pre-1.0 library whose
-entire API changed between 0.5 and 0.9, and the slice 5b bump is the evidence.
-Without a cap the version under test drifts from the version pinned -- 0.10.0
-was already resolving under a bare `>=0.9.1` -- and 0.11 would arrive with no
-one deciding to take it. Raise the cap deliberately, with the suite green
-under the new version, rather than discovering it in a failed CI run.
-
-To fix, in order of preference: widen redstring's `redis` pin to `<9` and
-verify `llm/cache/redis.py` against redis-py 8 (the 5→8 API is largely
-source-compatible, but that module is not covered against a real server, so
-this needs the integration suite B41 asks for); or take the narrow extras
-actually wanted (`eventsource-py[postgresql]`) rather than `[all]`.
+- **The `eventsource-py<0.11` cap stays.** It is about that library being
+  pre-1.0 with an API that changed wholesale between 0.5 and 0.9, and has
+  nothing to do with redis.
+- **There is still no `eventsourcing` extra**, because there is nothing to
+  put in one: the event store, bus, projections and aggregates are all in
+  eventsource's base package. That only changes if a Kafka, RabbitMQ or
+  PostgreSQL event-store backend is wanted here, each of which lives behind
+  an extra of its own.
 
 ### B22. There is no CHANGELOG, and no published documentation — closed
 
