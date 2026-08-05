@@ -62,7 +62,7 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.integration
 
 DSN = os.environ.get(
-    "KG_TEST_POSTGRES_DSN", "postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test"
+    "KG_TEST_POSTGRES_DSN", "postgresql://postgres:redstring@localhost:5434/redstring_test"
 )
 
 #: One table per xdist worker; see the module docstring. `gw0` and friends are

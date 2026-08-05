@@ -181,10 +181,10 @@ first-boot initialisation accepts TCP connections seconds before it will answer
 a query — so an immediate `connect()` races, and the failure surfaces as a
 connection error that reads like a bad DSN rather than a timing problem. The
 service declares a healthcheck for this (`pg_isready -U postgres -d
-kgbuilder_test`, every 5s, up to 30 retries), and `--wait` is what makes Docker
+redstring_test`, every 5s, up to 30 retries), and `--wait` is what makes Docker
 block on it instead of you.
 
-The `-d kgbuilder_test` inside that healthcheck is load-bearing, and worth
+The `-d redstring_test` inside that healthcheck is load-bearing, and worth
 copying if you ever write your own: a bare `pg_isready` succeeds against the
 bootstrap server *before* `POSTGRES_DB` has been created, so it reports healthy
 while the database you are about to connect to does not exist yet.
@@ -201,16 +201,16 @@ privilege question from the prerequisites outright: `ensure_schema()` can
 create the extension itself on first call, and you need run nothing by hand.
 
 Password and database name are fixed in the compose file
-(`POSTGRES_PASSWORD: kgbuilder`, `POSTGRES_DB: kgbuilder_test`), so the DSN is
+(`POSTGRES_PASSWORD: redstring`, `POSTGRES_DB: redstring_test`), so the DSN is
 fully determined:
 
 ```
-postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test
+postgresql://postgres:redstring@localhost:5434/redstring_test
 ```
 
 ```python
 store = await PgVectorStore.connect(
-    "postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test",
+    "postgresql://postgres:redstring@localhost:5434/redstring_test",
     dimension=768,
 )
 await store.ensure_schema()
@@ -297,7 +297,7 @@ pool** — which is the same thing as deciding what `close()` does.
 from redstring.vector.adapters.pgvector import PgVectorStore
 
 store = await PgVectorStore.connect(
-    "postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test",
+    "postgresql://postgres:redstring@localhost:5434/redstring_test",
     dimension=768,
     table="kg_vectors",
 )

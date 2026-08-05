@@ -251,7 +251,7 @@ Three things about that pair of lines.
 **Start the backends explicitly.** Nothing starts them on demand, and `up -d` returns
 when the container is *running*, not when the server can serve — which is why both
 services carry a healthcheck (`cypher-shell 'RETURN 1'`, `pg_isready -U postgres -d
-kgbuilder_test`). Name only the service you need: `up -d neo4j` for the graph tests,
+redstring_test`). Name only the service you need: `up -d neo4j` for the graph tests,
 `up -d postgres` for pgvector.
 
 **`-m integration` is mandatory.** `pyproject.toml` sets
@@ -302,8 +302,8 @@ defaults — so with nothing set, the suite and `docker-compose.test.yml` alread
 |---|---|---|
 | `KG_TEST_NEO4J_URI` | `bolt://localhost:7688` | `tests/integration/graph/test_neo4j_store.py` |
 | `KG_TEST_NEO4J_USER` | `neo4j` | same |
-| `KG_TEST_NEO4J_PASSWORD` | `kgbuilder` | same |
-| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test` | `tests/integration/vector/test_pgvector_store.py` |
+| `KG_TEST_NEO4J_PASSWORD` | `redstring` | same |
+| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:redstring@localhost:5434/redstring_test` | `tests/integration/vector/test_pgvector_store.py` |
 
 Postgres is **one variable, not three**: everything — user, password, host, port and
 database — travels in the DSN, and the database name matters, since the pgvector tests
@@ -319,7 +319,7 @@ the suite works.
 
 7475 is Neo4j's HTTP browser, published for poking at the container by hand; no variable
 reads it, because the tests connect over Bolt only. The Neo4j credentials above are
-`NEO4J_AUTH: neo4j/kgbuilder` from the compose file — change one and you must change the
+`NEO4J_AUTH: neo4j/redstring` from the compose file — change one and you must change the
 other.
 
 Point these at a scratch backend and nothing else. The Neo4j suite resets with a real

@@ -57,7 +57,7 @@ pytestmark = pytest.mark.integration
 NEO4J_URI = os.environ.get("KG_TEST_NEO4J_URI", "bolt://localhost:7688")
 NEO4J_AUTH = (
     os.environ.get("KG_TEST_NEO4J_USER", "neo4j"),
-    os.environ.get("KG_TEST_NEO4J_PASSWORD", "kgbuilder"),
+    os.environ.get("KG_TEST_NEO4J_PASSWORD", "redstring"),
 )
 
 

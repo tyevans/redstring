@@ -190,9 +190,9 @@ check that probes the server rather than the process, on a 5 s interval with 30
 retries — so allow up to about two and a half minutes on a cold image pull, and
 treat anything longer as a real failure rather than slowness:
 
-- Neo4j runs `cypher-shell -u neo4j -p kgbuilder 'RETURN 1'`. Authenticating is
+- Neo4j runs `cypher-shell -u neo4j -p redstring 'RETURN 1'`. Authenticating is
   not enough; a server still recovering its store files accepts a connection.
-- Postgres runs `pg_isready -U postgres -d kgbuilder_test`, with the database
+- Postgres runs `pg_isready -U postgres -d redstring_test`, with the database
   named on purpose. Bare `pg_isready` succeeds against the bootstrap server
   before `POSTGRES_DB` has been created, which is precisely the window you are
   trying to wait out.
@@ -206,7 +206,7 @@ docker compose -f docker-compose.test.yml up -d --wait neo4j postgres
 Strictly, you do not have to wait — the suites probe and skip rather than
 fail. That is the reason to wait anyway: a run started too early **skips
 silently and reads as a pass**. The credentials the containers come up with
-(`neo4j/kgbuilder`, `postgres/kgbuilder`, database `kgbuilder_test`) are the
+(`neo4j/redstring`, `postgres/redstring`, database `redstring_test`) are the
 defaults the tests already assume, so if the healthchecks are green there is
 nothing further to configure.
 
@@ -220,8 +220,8 @@ so Step 1 is the whole of the setup:
 |---|---|---|
 | `KG_TEST_NEO4J_URI` | `bolt://localhost:7688` | `tests/integration/graph/test_neo4j_store.py` |
 | `KG_TEST_NEO4J_USER` | `neo4j` | same |
-| `KG_TEST_NEO4J_PASSWORD` | `kgbuilder` | same |
-| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test` | `tests/integration/vector/test_pgvector_store.py` |
+| `KG_TEST_NEO4J_PASSWORD` | `redstring` | same |
+| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:redstring@localhost:5434/redstring_test` | `tests/integration/vector/test_pgvector_store.py` |
 
 The two Neo4j credential variables are separate rather than folded into the
 URI because the driver takes an `auth` tuple; the Postgres side is one DSN
@@ -242,7 +242,7 @@ uv run pytest -m integration tests/integration/graph
 ```
 
 ```
-KG_TEST_POSTGRES_DSN=postgresql://kg:...@pg.internal:5432/kgbuilder_test \
+KG_TEST_POSTGRES_DSN=postgresql://kg:...@pg.internal:5432/redstring_test \
 uv run pytest -m integration tests/integration/vector
 ```
 

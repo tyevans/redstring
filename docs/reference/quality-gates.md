@@ -1834,8 +1834,8 @@ the standard local run.
 | --- | --- | --- |
 | `KG_TEST_NEO4J_URI` | `bolt://localhost:7688` | `tests/integration/graph/test_neo4j_store.py` |
 | `KG_TEST_NEO4J_USER` | `neo4j` | same |
-| `KG_TEST_NEO4J_PASSWORD` | `kgbuilder` | same |
-| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test` | `tests/integration/vector/test_pgvector_store.py` |
+| `KG_TEST_NEO4J_PASSWORD` | `redstring` | same |
+| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:redstring@localhost:5434/redstring_test` | `tests/integration/vector/test_pgvector_store.py` |
 | `KG_LLM_BASE_URL` | `http://192.168.1.14:8080/v1` | `tests/integration/llm/test_live_endpoint.py` |
 | `KG_LLM_MODEL` | `qwen3.6-27b-mtp` | same |
 | `KG_COMPLIANCE_MAX_EXAMPLES` | `50` | `tests/compliance/graph_store.py`, `vector_store.py` |

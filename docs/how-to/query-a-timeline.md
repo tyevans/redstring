@@ -1243,7 +1243,7 @@ except ValueError as exc:
 `max_pairs` is keyword-only on both `relations_in_interval` and
 `infer_relations`, and the exception is a plain builtin `ValueError` — not a
 `RedstringError`, so
-[`except RedstringError` will not catch it](#neither-is-a-kgbuildererror).
+[`except RedstringError` will not catch it](#neither-is-a-redstringerror).
 
 ### It refuses before comparing anything
 
@@ -1501,7 +1501,7 @@ Two practical consequences:
   object.
 - **It is a plain builtin `ValueError`**, the same class `max_pairs` raises,
   and not a `RedstringError` — so
-  [`except RedstringError` catches neither](#neither-is-a-kgbuildererror). A
+  [`except RedstringError` catches neither](#neither-is-a-redstringerror). A
   bare `except ValueError` wrapped around both construction and a call cannot
   tell them apart; keep construction outside the block, or match on the
   message, which names `page_size`.

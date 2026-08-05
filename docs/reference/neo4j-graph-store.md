@@ -1311,7 +1311,7 @@ docker compose -f docker-compose.test.yml up -d neo4j
 
 - image `neo4j:5-community`
 - ports **7688** (bolt, mapped from 7687) and **7475** (http, from 7474)
-- auth `neo4j/kgbuilder`
+- auth `neo4j/redstring`
 - a healthcheck running `cypher-shell ... 'RETURN 1'` every 5s, 30 retries
 
 **The ports are deliberately non-default** so the container cannot collide with
@@ -1327,7 +1327,7 @@ not when the server can *serve*; an immediate connect races store recovery.
 |---|---|
 | `KG_TEST_NEO4J_URI` | `bolt://localhost:7688` |
 | `KG_TEST_NEO4J_USER` | `neo4j` |
-| `KG_TEST_NEO4J_PASSWORD` | `kgbuilder` |
+| `KG_TEST_NEO4J_PASSWORD` | `redstring` |
 
 The defaults match `docker-compose.test.yml`, so the suite needs no environment
 at all against the supplied container.
@@ -1358,7 +1358,7 @@ from redstring.graph.adapters.neo4j import Neo4jGraphStore
 
 store = Neo4jGraphStore.connect(
     "bolt://localhost:7688",
-    auth=("neo4j", "kgbuilder"),
+    auth=("neo4j", "redstring"),
 )
 try:
     await store.ensure_schema()
