@@ -1,6 +1,6 @@
 [project]
 name = "redstring"
-version = "0.1.0"
+version = "0.2.0"
 description = "Knowledge graph construction: entity extraction, consolidation, and pluggable graph and vector storage."
 readme = "README.md"
 license = "MIT"
