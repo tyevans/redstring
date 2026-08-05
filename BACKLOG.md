@@ -169,32 +169,6 @@ problem is currently worth:
 slice 6, when extraction actually emits." Slice 6 happened and did not take it
 up. It is open on its own merits now, not scheduled.
 
-### B36. Free-form event payload dicts can hold a NUL that `jsonb` refuses
-
-`domain/entity.py` (`properties`, `external_ids`) and
-`domain/relationship.py` (`properties`) are `dict[str, Any]` with no
-validation, and they reach the event log as payloads. Postgres `jsonb`
-**cannot store a NUL character in text** -- it rejects the write outright --
-so an entity carrying one is accepted by every in-memory adapter and refused
-by the first persistent event store it reaches.
-
-This is not hypothetical here: slice 5 hit exactly this on
-`VectorRecord.metadata`, found it with a round-trip property test, and fixed
-it in `domain/vector.py::_reject_nul` rather than in either adapter, so every
-adapter would reject it identically.
-
-Deferred rather than fixed in slice 5b for one reason: `_reject_nul` is
-private to `domain/vector.py`, and sharing it means either a cross-module
-private import or a new home for it, and slice 5b's permanent surface was
-worth keeping minimal. Deferring is safe in a way that deferring a *schema*
-decision is not -- adding the rejection later only refuses data that could
-never have been persisted anyway, so no stored event becomes invalid.
-
-To fix: move `_reject_nul` somewhere both can reach (a `domain/_json.py`, or
-onto `domain/normalization.py`), and apply it in field validators on the three
-fields above. The `VectorRecord` docstring explains why stripping or escaping
-the NUL was rejected in favour of raising.
-
 ### B10g. `upsert_relationships` is atomic in Neo4j, where the port permits partial writes
 
 `ports/graph_store.py::upsert_relationships` says a `MissingEntityError`
@@ -1369,8 +1343,11 @@ fixes are both wrong:
   `Any`.
 
 The real fix is upstream: `properties` and `external_ids` have no value schema
-at all (see B36 for the concrete harm that causes). Give them one and this rule
-stops firing on its own. Until then, `noqa` with this note beats a lie in the
+at all. They are no longer entirely unconstrained -- `domain/json_safety.py`
+refuses a NUL anywhere inside them, because a JSON column cannot hold one --
+but that is one rule about text, not a schema, and `Any` is still what the
+annotation says. Give them a value schema and this rule stops firing on its
+own. Until then, `noqa` with this note beats a lie in the
 signature, and **it must not become a per-file ignore**: both legacy exemption
 lists emptied in slice 10 and mypy's `exclude` key was deleted outright, so
 there is no list left to be added to — which makes adding one back a visible

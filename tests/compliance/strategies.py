@@ -19,18 +19,31 @@ from hypothesis import strategies as st
 
 from redstring.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
 from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.json_safety import reject_nul
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-from redstring.domain.vector import _reject_nul
 
 if TYPE_CHECKING:
     from uuid import UUID
 
+
+#: Text that a domain type will actually accept.
+#:
+#: `Entity` and `Relationship` refuse a NUL in every free-form field, because
+#: a JSON column cannot hold one (`domain/json_safety.py`), so a bare
+#: `st.text()` here draws values these strategies cannot construct -- rarely,
+#: and therefore as an intermittent failure in whatever property happened to
+#: draw it rather than as a finding about the guard. Excluded in the alphabet
+#: so the constraint is stated once, where the text is generated.
+def text(**kwargs: Any) -> st.SearchStrategy[str]:
+    return st.text(alphabet=st.characters(exclude_characters="\x00"), **kwargs)
+
+
 # Non-blank: `Entity.name` rejects whitespace-only values.
-names = st.text(min_size=1, max_size=40).filter(lambda s: bool(s.strip()))
+names = text(min_size=1, max_size=40).filter(lambda s: bool(s.strip()))
 entity_types = st.sampled_from(["person", "organization", "place", "concept", "plot_point"])
 relationship_types = st.sampled_from(["knows", "works_at", "located_in", "mentions", "part_of"])
-blocking_key_values = st.text(min_size=1, max_size=12)
+blocking_key_values = text(min_size=1, max_size=12)
 # Provider-qualified and versioned, per the convention on `Entity.model`.
 model_names = st.sampled_from(
     [
@@ -43,15 +56,13 @@ confidences = st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_inf
 
 
 def _property_values(children: st.SearchStrategy[Any]) -> st.SearchStrategy[Any]:
-    return st.lists(children, max_size=3) | st.dictionaries(
-        st.text(max_size=6), children, max_size=3
-    )
+    return st.lists(children, max_size=3) | st.dictionaries(text(max_size=6), children, max_size=3)
 
 
 property_dicts = st.dictionaries(
-    st.text(max_size=6),
+    text(max_size=6),
     st.recursive(
-        st.none() | st.booleans() | st.integers() | st.text(max_size=10),
+        st.none() | st.booleans() | st.integers() | text(max_size=10),
         _property_values,
         max_leaves=6,
     ),
@@ -78,7 +89,7 @@ def temporal_extents(draw: st.DrawFn) -> TemporalExtent:
         end_date=draw(st.none() | st.just(end)),
         precision=draw(st.none() | st.sampled_from(list(DatePrecision))),
         uncertainty=draw(st.none() | st.sampled_from(list(UncertaintyMarker))),
-        original_text=draw(st.none() | st.text(max_size=20)),
+        original_text=draw(st.none() | text(max_size=20)),
         sequence_position=draw(st.none() | st.integers(min_value=0, max_value=1000)),
         publication_date=draw(st.none() | aware_datetimes),
     )
@@ -100,10 +111,10 @@ def entities(
         normalized_name=draw(names),
         entity_type=draw(entity_types),
         original_entity_type=draw(st.none() | names),
-        description=draw(st.none() | st.text(max_size=40)),
-        source_id=draw(st.none() | st.text(min_size=1, max_size=12)),
-        source_text=draw(st.none() | st.text(max_size=40)),
-        external_ids=draw(st.dictionaries(st.text(max_size=6), st.text(max_size=12), max_size=3)),
+        description=draw(st.none() | text(max_size=40)),
+        source_id=draw(st.none() | text(min_size=1, max_size=12)),
+        source_text=draw(st.none() | text(max_size=40)),
+        external_ids=draw(st.dictionaries(text(max_size=6), text(max_size=12), max_size=3)),
         properties=draw(property_dicts),
         extraction_method=method,
         # `Entity` rejects `model` for methods that invoke none; the strategy
@@ -207,7 +218,7 @@ def _has_no_nul(mapping: dict[str, Any]) -> bool:
     its output never finds one.
     """
     try:
-        _reject_nul(mapping)
+        reject_nul(mapping)
     except ValueError:
         return False
     return True

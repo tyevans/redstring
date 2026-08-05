@@ -39,44 +39,24 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from redstring.domain.ids import EntityId, TenantId
-
-
-def _reject_nul(value: object) -> None:
-    """Raise if any string reachable from `value` contains U+0000.
-
-    Metadata is stored as JSON by every adapter worth having, and Postgres
-    `jsonb` **cannot hold a NUL in text** -- it rejects the write outright.
-    Python dictionaries can, so without this check the in-memory adapter
-    accepts metadata that pgvector refuses, which is precisely the silent
-    divergence a shared compliance suite exists to prevent. Found by the
-    round-trip property, and fixed here rather than in either adapter so that
-    every adapter rejects it identically and for the same reason.
-
-    Stripping or escaping the NUL instead was rejected: it would make the
-    round-trip contract a lie, and a caller with a NUL in its metadata has a
-    bug upstream that is better surfaced than smoothed over.
-    """
-    if isinstance(value, str):
-        if "\x00" in value:
-            raise ValueError("metadata must not contain a NUL character; JSON storage rejects it")
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            _reject_nul(key)
-            _reject_nul(item)
-    elif isinstance(value, (list, tuple)):
-        for item in value:
-            _reject_nul(item)
+from redstring.domain.json_safety import reject_nul
 
 
 class _HasPortableMetadata(BaseModel):
-    """Shared metadata validation; see `_reject_nul`."""
+    """Shared metadata validation; see `domain/json_safety.py`.
+
+    The rule used to live here as a private `_reject_nul`, which is where it
+    was found. `Entity` and `Relationship` needed the same one (BACKLOG B36),
+    so it moved to a module both can reach rather than being copied -- a
+    second copy is exactly the shape that lets two of them drift.
+    """
 
     metadata: dict[str, Any] = {}
 
     @field_validator("metadata")
     @classmethod
     def _metadata_is_storable_as_json(cls, value: dict[str, Any]) -> dict[str, Any]:
-        _reject_nul(value)
+        reject_nul(value, what="metadata")
         return value
 
 

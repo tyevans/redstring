@@ -274,7 +274,15 @@ NAMES = st.text(alphabet=st.characters(min_codepoint=97, max_codepoint=122), min
 #: on confidence is the case the order has to resolve on its later fields, and
 #: it is the realistic case, since an unscored mention is what a model
 #: usually returns.
-DESCRIPTIONS = st.one_of(st.none(), st.text(min_size=0, max_size=12))
+#: NUL excluded: `map_extraction` drops a candidate carrying one (it cannot be
+#: stored), so drawing one here produces *no* entity and the properties below
+#: -- which are about identity and preference, not about dropping -- fail on
+#: an empty unpack. The dropping itself is pinned by example in
+#: `test_mapping.py::test_a_nul_anywhere_is_dropped_rather_than_crashing_the_extraction`.
+DESCRIPTIONS = st.one_of(
+    st.none(),
+    st.text(alphabet=st.characters(exclude_characters="\x00"), min_size=0, max_size=12),
+)
 
 MENTIONS = st.lists(st.tuples(NAMES, DESCRIPTIONS), min_size=1, max_size=6)
 

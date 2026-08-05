@@ -241,12 +241,23 @@ typed field nobody wanted.
 `SourceDocument.metadata` is moot: no event carries a `SourceDocument`. Only
 `source_id` crosses into the log.
 
-One hazard is *not* covered and is filed rather than fixed: these dicts can
-hold a NUL character, which Postgres `jsonb` refuses outright --
-`domain/vector.py` already learned this for `VectorRecord.metadata`. Adding
-the same rejection later is a tightening that only refuses data which could
-never have been persisted anyway, so deferring it is safe in a way that
-deferring a schema decision is not. See BACKLOG B36.
+One hazard was filed rather than fixed here and has since been closed: these
+dicts can hold a NUL character, which Postgres `jsonb` refuses outright --
+`domain/vector.py` had already learned this for `VectorRecord.metadata`.
+Adding the rejection later was a tightening that only refuses data which could
+never have been persisted anyway, which is why deferring it was safe in a way
+that deferring a schema decision would not have been. The rule now lives in
+`domain/json_safety.py` and is applied by `Entity` and `Relationship`; the
+decision above is unaffected, since no payload that could be written before
+is refused now.
+
+**What the fix taught, and it is about the shape rather than the NUL.** The
+check reaches free-form *strings* as well as the dicts named here, and a
+coverage gate over the field list -- rather than the list itself -- is what
+found `Entity.source_id`, whose `SourceId` alias is a `str` sitting between
+two UUIDs and reads as typed. A rule enforced by a hand-kept list of fields
+needs a test that the list still covers everything, or it silently stops
+covering new fields.
 
 ## Decision 5: `Alias.displaced` deleted
 
