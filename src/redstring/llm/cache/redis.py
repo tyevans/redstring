@@ -26,6 +26,7 @@ the deployment that has Redis.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 if TYPE_CHECKING:
     import redis.asyncio
@@ -57,17 +58,52 @@ class RedisCache:
         try:
             import redis.asyncio as redis_asyncio
         except ImportError as error:  # pragma: no cover -- needs redis absent
-            raise ImportError("RedisCache.from_url needs the `redis` package") from error
+            raise ImportError(
+                "RedisCache.from_url needs redis: install `redstring[redis]`"
+            ) from error
 
-        # redis-py ships no inline annotations for `from_url`.
-        client: Any = redis_asyncio.from_url(  # type: ignore[no-untyped-call]
-            url, encoding="utf-8", decode_responses=True
-        )
+        # `decode_responses=True` so a client built here returns `str`. `get`
+        # decodes defensively regardless, because `__init__` accepts a client
+        # this method did not build.
+        #
+        # Called through an `Any` rather than directly, and **not** with a
+        # `# type: ignore[no-untyped-call]`, because whether `from_url` is
+        # annotated varies across the supported range: redis 5.3 ships it
+        # untyped, 8.x ships it typed. An ignore is therefore *required* by
+        # one half of the range and flagged as unused by the other, and
+        # `warn_unused_ignores` fails the build on the half that does not need
+        # it. There is no spelling of an ignore that is correct for both.
+        #
+        # This was found the expensive way: the local venv held 5.3.1 across a
+        # re-sync while CI resolved fresh to 8.1.0, so the ignore was correct
+        # locally and a build failure in CI.
+        build_client: Any = redis_asyncio.from_url
+        client: Any = build_client(url, encoding="utf-8", decode_responses=True)
         return cls(client, owns_client=True)
 
     async def get(self, key: str) -> str | None:
-        value: str | None = await self._redis.get(key)
-        return value
+        """The port says `str`, so decode rather than hope.
+
+        `from_url` sets `decode_responses=True` and a client configured that
+        way returns `str` already -- but `__init__` takes *any* client, and a
+        caller's own is built with whatever settings the caller chose. Left to
+        the client, `get` returned `b"open"` through that door and `"open"`
+        through the other, which is not two behaviours of one adapter, it is
+        two adapters. The compliance suite could not see it because it reaches
+        this class through `from_url`.
+
+        Decoding here makes the port's promise true for both entry points,
+        which is where it has to be true.
+
+        It is also what the annotation now says: newer redis-py types `get` as
+        `bytes | str | None` -- correctly, since the client cannot know how it
+        was configured -- and the old `value: str | None = ...` assignment was
+        a claim mypy accepted only because older releases returned `Any`.
+        """
+        value = await self._redis.get(key)
+        if value is None:
+            return None
+        return value if isinstance(value, str) else bytes(value).decode()
 
     async def set(self, key: str, value: str, *, ttl_seconds: float | None = None) -> None:
         if ttl_seconds is None:
@@ -94,7 +130,20 @@ class RedisCache:
             # The member must be unique or two hits at the same instant
             # collapse into one, which under-counts exactly when a burst is
             # what the caller is trying to detect.
-            pipe.zadd(window, {f"{at!r}:{id(self):x}": at})
+            #
+            # `uuid4()` rather than anything derived from `self`. This was
+            # `f"{at!r}:{id(self):x}"`, which is constant for the life of the
+            # cache object -- so it told two *instances* apart and never two
+            # hits, which is the only thing it was there to do. The comment
+            # above was already correct and the code under it was not;
+            # `CacheCompliance` had simply never been run against this
+            # adapter (BACKLOG B41), and `MemoryCache` cannot exhibit the bug
+            # because it appends to a list.
+            #
+            # `id()` would have been wrong across processes as well: it is a
+            # memory address, so two callers sharing one Redis can collide on
+            # it outright.
+            pipe.zadd(window, {f"{at!r}:{uuid4().hex}": at})
             pipe.pexpire(window, max(1, int(ttl_seconds * 1000)))
             await pipe.execute()
 

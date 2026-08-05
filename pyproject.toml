@@ -44,11 +44,9 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.12,<3",
-    "asyncpg>=0.31.0",
     "python-dateutil>=2.9.0",
     "dateparser>=1.2.0",
     "pyyaml>=6.0",
-    "redis[hiredis]>=5.3,<6",
     "jellyfish>=1.0.0",
     # Not an extra any more, as of slice 10. `redstring/__init__.py` exports
     # `build_graph`, `Document`, `DocumentExtracted` and the two projections,
@@ -75,6 +73,25 @@ dependencies = [
 # adapter one: use-after-close warns on 5.x and raises `DriverError` on 6.x.
 # `test_connect_owns_and_closes_its_driver` accepts either.
 neo4j = ["neo4j>=5.27,<7"]
+# The pgvector `VectorStore`. `asyncpg` is imported inside
+# `PgVectorStore.connect` and under `if TYPE_CHECKING:` everywhere else, so
+# the adapter module imports fine without it and only the one constructor
+# that builds its own pool needs it present.
+pgvector = ["asyncpg>=0.31.0"]
+# The Redis `Cache`. Same shape as `pgvector` above: one function-local
+# import, in `RedisCache.from_url`.
+#
+# `<9` rather than `<6`, and the four majors were run rather than reasoned
+# about. `CacheCompliance` against a real Redis passes on clients **5.3.1,
+# 6.4.0, 7.4.1 and 8.1.0** -- 26 tests each, including the `str`-not-`bytes`
+# assertion that is the one this adapter could plausibly fail across a major.
+# The old cap was absence of evidence, not a known incompatibility, and B41
+# is what turned it into a measurement.
+#
+# Widening it also dissolves BACKLOG B38: `eventsource-py[all]` wants
+# `redis>=8.0,<9.0`, which `<6` excluded outright. The two now resolve
+# together, checked with a throwaway project rather than assumed.
+redis = ["redis[hiredis]>=5.3,<9"]
 # The LLM transport. `langchain-openai` speaks to any OpenAI-compatible
 # server -- llama.cpp, llama-swap, vLLM, Ollama's shim, OpenAI itself -- so
 # one extra covers every deployment this library has. Ranges rather than pins:
@@ -85,7 +102,7 @@ llm = [
     "langchain-openai>=0.2,<2",
 ]
 all = [
-    "redstring[neo4j,llm]",
+    "redstring[neo4j,llm,pgvector,redis]",
 ]
 # ---------------------------------------------------------------------------
 # Tooling extras are PINNED EXACTLY. Runtime dependencies above are not.

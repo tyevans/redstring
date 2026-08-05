@@ -186,14 +186,28 @@ jobs:
       # caught seven ADRs renamed without their inbound links.
       - run: uv run mkdocs build --strict
 
-  # Backends from `docker-compose.test.yml`, on pushes to main only -- these
-  # are minutes rather than seconds. The LLM subset is excluded because it
-  # needs a live model, which no runner has.
+  # Backends from `docker-compose.test.yml`. The LLM subset is excluded
+  # because it needs a live model, which no runner has.
+  #
+  # **Runs on pull requests as well as on main**, which it did not at first.
+  # The original condition was `push && ref == main`, on the reasoning that
+  # containers cost minutes rather than seconds -- and that is true and was
+  # the wrong trade for this repository.
+  #
+  # These are the port compliance suites: the mechanism that says two adapters
+  # of one interface actually agree, which is the central claim this library
+  # makes. Running them only after merge means a divergence turns `main` red
+  # instead of turning a pull request red, and it means a PR that *adds* an
+  # adapter suite gets no signal from it at all. The Redis suite was added in
+  # exactly that state -- it found a real bug locally on its first run, and
+  # would have reported nothing on the pull request that introduced it.
+  #
+  # The cost is a few minutes of wall clock per PR. The thing being bought is
+  # the only check in the tree that can see an adapter drift from its port.
   integration:
-    name: integration (neo4j + pgvector)
+    name: integration (neo4j + pgvector + redis)
     runs-on: ubuntu-latest
     needs: [lint, type-check, import-linter, audit, test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     services:
       neo4j:
@@ -207,6 +221,16 @@ jobs:
           --health-interval 15s
           --health-timeout 10s
           --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
       postgres:
         image: pgvector/pgvector:pg16
@@ -254,4 +278,5 @@ jobs:
           KG_TEST_NEO4J_USER: neo4j
           KG_TEST_NEO4J_PASSWORD: redstring
           KG_TEST_POSTGRES_DSN: postgresql://postgres:redstring@localhost:5434/redstring_test
+          KG_TEST_REDIS_URL: redis://localhost:6381/0
         run: uv run pytest -m integration --cov-fail-under=0

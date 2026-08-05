@@ -57,11 +57,15 @@ First release.
 ### Notes
 
 - Requires Python 3.13+.
-- `redis` and `eventsource-py` are **core** dependencies rather than extras.
-  For `eventsource-py` that is deliberate and settled: `redstring.__init__`
-  exports types that need it, and a public API that fails to import without an
-  extra is not a public API. For `redis` it is an open question tracked in
-  `BACKLOG.md` (B61, B38).
+- **Every backend is an extra.** The base install is `pydantic`,
+  `eventsource-py` and four small pure-Python libraries — no database driver,
+  no Redis client, no compiled numerical package. `neo4j`, `pgvector`,
+  `redis` and `llm` each pull exactly what their adapter needs, and reaching
+  an adapter without its extra raises an `ImportError` naming the extra.
+- `eventsource-py` is the one **core** dependency that is not pure
+  configuration, and that is deliberate: `redstring.__init__` exports types
+  that need it, and a public API that fails to import without an extra is not
+  a public API.
 - The library **never fetches content**, and extraction **writes to no store**.
   Both are architectural commitments rather than gaps.
 - There is no accuracy suite. `tests/accuracy/` is empty, so no claim about

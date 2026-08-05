@@ -27,6 +27,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+  redis:
+    image: redis:7
+    # 6381, not 6379 and not 6380: the first is a local install's default and
+    # the second is already taken by another project's test container on this
+    # machine. Same reasoning as neo4j's 7688 and postgres's 5434 -- a test run
+    # must not be able to reach a Redis anybody is using for anything else,
+    # because `RedisCache` compliance flushes the database between tests.
+    ports: ["6381:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   postgres:
     image: pgvector/pgvector:pg16
     environment:

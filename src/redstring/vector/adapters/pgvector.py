@@ -137,7 +137,12 @@ class PgVectorStore:
         **pool_options: Any,  # noqa: ANN401
     ) -> Self:
         """Build a store owning a pool of its own, which `close()` closes."""
-        import asyncpg
+        try:
+            import asyncpg
+        except ImportError as error:  # pragma: no cover - needs asyncpg absent
+            raise ImportError(
+                "PgVectorStore.connect needs asyncpg: install `redstring[pgvector]`"
+            ) from error
 
         pool = await asyncpg.create_pool(dsn, **pool_options)
         store = cls(pool, dimension=dimension, table=table)

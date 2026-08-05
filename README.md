@@ -57,15 +57,18 @@ different failure modes.
 uv add redstring                 # in-memory adapters, the fake provider
 uv add "redstring[llm]"          # any OpenAI-compatible server, via langchain-openai
 uv add "redstring[neo4j]"        # the Neo4j GraphStore adapter
+uv add "redstring[pgvector]"     # the pgvector VectorStore adapter
+uv add "redstring[redis]"        # the Redis Cache adapter
+uv add "redstring[all]"          # all four
 ```
 
 Python 3.13+. Ships `py.typed`.
 
-The base install carries no compiled dependency it does not use — `numpy` and
-`httpx` were both declared and imported by nothing, and are gone.
-`eventsource-py` is core deliberately (the exported types need it, and a
-public API that fails to import without an extra is not a public API);
-`asyncpg` and `redis` are core for now and tracked in `BACKLOG.md` B61. See
+**Every backend is now an extra.** The base install is `pydantic`,
+`eventsource-py` and four small pure-Python libraries — no database driver, no
+Redis client, no compiled numerical package. `eventsource-py` is core
+deliberately: the exported types need it, and a public API that fails to
+import without an extra is not a public API. See
 [Installation](https://tyevans.github.io/redstring/installation/).
 
 ## Use

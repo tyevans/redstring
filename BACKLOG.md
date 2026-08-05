@@ -361,32 +361,46 @@ shape without settling B48 at the same time.
 *The lesson is worth more than the entry: this claim survived two slices
 because it was plausible and nobody ran it. It took ninety seconds to check.*
 
-### B41. `RedisCache` has no test against a real Redis
+### B41. `RedisCache` compliance — closed, and it found a bug
 
-`llm/cache/redis.py` is the only `Cache` adapter with no run of
-`tests/compliance/cache.py` behind it. `MemoryCache` passes the suite in the
-default gate; `RedisCache` passes nothing.
+**Closed.** `tests/integration/llm/test_redis_cache.py` runs
+`CacheCompliance` against a real Redis (`docker-compose.test.yml`, port 6381,
+in CI's integration job). 26 tests; every adapter of every port in this
+repository is now held to its port's contract.
 
-**Why this is riskier than it looks.** The compliance suite exists precisely
-because the two adapters' natural implementations disagree, and three of its
-cases were written against divergences this adapter *could* have:
-`get` returning `bytes` rather than `str` (a client left at its default does),
-`ZCOUNT` being inclusive at the boundary where a `>` comparison is not, and two
-hits at one instant collapsing into one sorted-set member. Each was reasoned
-about and coded for, and none is *verified*.
+The entry predicted what it would find and was right about one of them.
+`ZADD` member uniqueness: **two hits recorded at the same instant collapsed
+into one**, so `count_hits` under-reported exactly when a burst is what a
+caller is trying to detect.
 
-**What to do.** Add `tests/integration/llm/test_redis_cache.py` subclassing
-`CacheCompliance`, with a `cache` fixture pointing at a `redis` service in
-`docker-compose.test.yml` and a skip probe that round-trips a key — not a TCP
-connect, for the reason `tests/integration/vector/test_pgvector_store.py`
-spells out. Give each xdist worker its own key prefix; B10f is the same hazard
-one layer down.
+The interesting part is that the bug was *guarded against*, in a comment
+directly above it:
 
-**Why deferring is safe rather than merely convenient.** Nothing in the library
-constructs a `RedisCache`: both `RateLimiter` and `CircuitBreaker` default to
-`MemoryCache`, so a caller reaches it only by importing it and passing it
-explicitly. The single-process path — which is every current caller — is fully
-covered.
+```python
+# The member must be unique or two hits at the same instant
+# collapse into one, which under-counts exactly when a burst is
+# what the caller is trying to detect.
+pipe.zadd(window, {f"{at!r}:{id(self):x}": at})
+```
+
+The comment is correct and the code under it does not do what the comment
+says. `id(self)` is the *cache object's* address — constant for its whole
+life — so it distinguished two `RedisCache` instances and never two hits,
+which is the only thing it was there for. Across processes it is worse than
+useless: an address can collide outright between two callers sharing one
+Redis.
+
+`MemoryCache` cannot exhibit this at all, because it appends to a list. That
+is the "in-memory reference more forgiving than the real backend" failure the
+compliance directory exists to prevent — demonstrated, at last, by the one
+adapter that had been excused from the suite written about it.
+
+Fixed with `uuid4().hex`. Proved by restoring `id(self)` and watching the
+same test fail.
+
+**B38 is now unblocked.** The `redis<6` cap was justified by absence of
+evidence; there is now a suite that can supply some. Widening it means
+running these 26 tests against a redis 6/7/8 client and reading the result.
 
 ### B10a. The Cypher-executing half of the Neo4j adapter is not in the gate
 
@@ -1331,7 +1345,7 @@ suites run, not whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
-### B60. Packaging metadata beyond the licence — closed except for B61
+### B60. Packaging metadata beyond the licence — closed
 
 **Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
 Changelog), `keywords`, `maintainers`, and eleven trove `classifiers`
@@ -1350,110 +1364,44 @@ where annotations are read directly. `tests/integration/test_wheel_contents.py`
 now asserts the marker is present in an installed wheel, and was proved red
 by removing it.
 
-What remains is **B61's dependency narrowing**, which is the one packaging
-item genuinely cheaper before a release than after — `dependencies` is part
-of the published metadata for 0.1.0 and narrowing it later is a breaking
-change for anyone who installed under the wider set. A CHANGELOG is B22.
+B61's dependency narrowing is done too, and it was the item genuinely
+cheaper before a release than after: `dependencies` is published metadata for
+0.1.0, and narrowing it in 0.2 would break anyone who had installed under the
+wider set. Every backend is behind an extra now. A CHANGELOG is B22, also
+closed.
 
-### B61. Two of the remaining seven core dependencies belong behind extras
+### B38. The `redis` pin and `eventsource-py[all]` — closed
 
-**The dead half is done.** `numpy` and `httpx` are out of `dependencies`:
-`numpy` deleted outright (nothing anywhere imports it) and `httpx` moved to
-the `dev` extra, where its one real user lives —
-`tests/integration/llm/test_live_endpoint.py` probes a model server with it
-before the suite talks to it.
+**Closed by measurement, in the order B41 set up.** The `redis` extra is
+`>=5.3,<9`, and the cap moved because four client majors were run against
+`CacheCompliance` on a real Redis rather than argued about:
 
-Measured rather than grepped, to the standard this entry set for itself: a
-wheel built, installed into a venv where neither package is present, and then
-asked to build a graph, run a vector search and render a bundled schema. All
-three work. `numpy` was pulling 2.5.1 — a compiled dependency larger than
-redstring itself — for no importer at all.
+| Client | Result |
+|---|---|
+| 5.3.1 | 26 passed |
+| 6.4.0 | 26 passed |
+| 7.4.1 | 26 passed |
+| 8.1.0 | 26 passed |
 
-**What remains** are the two that are used, function-locally, by one adapter
-each:
+Including `test_a_value_comes_back_as_str_not_bytes`, which is the assertion
+this adapter could most plausibly have failed across a major and the reason
+the suite exists.
 
-| Dependency | First-party importers in `src/` | Verdict |
-|---|---|---|
-| `asyncpg>=0.31.0` | `vector/adapters/pgvector.py`, function-local | Belongs behind a `pgvector` extra |
-| `redis[hiredis]>=5.3,<6` | `llm/cache/redis.py`, function-local | Belongs behind a `redis` extra |
+The conflict this entry was originally about is gone with it.
+`eventsource-py[all]>=0.9.1` requires `redis>=8.0,<9.0`, which `<6` excluded
+outright; the two now resolve together, verified by locking a throwaway
+project that depends on both rather than by reading the ranges.
 
-With `numpy` and `httpx` uninstalled, `import redstring` succeeds, all 62
-exported names resolve, and `domain_system_prompt("news_journalism")` renders.
-With `asyncpg`, `redis` and `hiredis` also uninstalled, `import redstring`
-still succeeds **and so do
-`from redstring.vector.adapters.pgvector import PgVectorStore` and
-`from redstring.llm.cache.redis import RedisCache`** — both adapters keep
-their third-party imports inside functions, which is what makes the extras
-split free.
+Two things that did **not** change, and should not be assumed to have:
 
-So the README's claim that the base install is "in-memory adapters, the fake
-provider" is true of the *code* and false of the *install*: it currently drags
-a Postgres driver, a Redis client with a C extension, and two libraries with no
-user at all.
-
-**Why this is worth doing before `0.1.0` rather than after.** Narrowing a
-dependency set post-release breaks environments that were relying on the
-transitive install; doing it now costs nothing because nothing depends on it
-yet. The `redis` move also interacts with **B38**: `redis` being a *direct*
-dependency is precisely what blocks `eventsource-py[all]`, so moving it behind
-an extra may dissolve that conflict rather than requiring the pin to be
-widened. Check that when doing this.
-
-Use `uv remove` and `uv add --optional`, never a hand edit — and re-sync with
-`--all-extras` afterwards, because `uv remove` re-resolves and will silently
-narrow the venv (B45).
-
-The dead half went on its own, as this entry suggested. It surfaced a second
-time through Dependabot, which opened a PR raising `httpx`'s floor — a bump to
-a dependency with no importer, which is what prompted actually checking rather
-than deferring again. Note that `httpx`'s only trace in `src/` had been a
-module docstring describing "Ollama extraction" and importing
-`redstring.extraction.retry`, a path that moved to `redstring.llm.retry` in
-slice 6.
-
-### B38. There is no `eventsourcing` extra any more, and the `redis` pin is why `[all]` cannot come back
-
-**Rewritten in slice 11; the previous version described an extra that no longer
-exists.** It said `pyproject.toml` declares
-`eventsourcing = ["eventsource-py>=0.9.1,<0.11"]`. Slice 10 moved
-`eventsource-py` to a **core dependency** — `redstring.__init__` exports
-`Document`, `DocumentExtracted` and both projections, so `import redstring`
-needs it, and an API that fails to import without an extra is not one. The
-extras today are `neo4j`, `llm`, `all` and `dev`.
-
-What survives is the underlying conflict. The dependency used to be
-`eventsource-py[all]`, and the `[all]` was dropped because it cannot resolve:
-
-```
-eventsource-py[all]>=0.9.1  requires  redis>=8.0,<9.0
-redstring                  requires  redis[hiredis]>=5.3,<6
-```
-
-`redis` is a direct dependency here, so this is a real conflict rather than a
-lockfile accident. It was for `services/embedding_cache.py` and `cache.py`
-too, both since deleted -- so the conflict now rests on **`llm/cache/redis.py`
-alone**, which imports `redis.asyncio` inside a function and takes an
-already-built client. Widening the pin is therefore cheaper to verify than
-this entry originally assumed: one adapter, one compliance suite
-(`tests/compliance/cache.py`).
-
-Dropping `[all]` costs nothing today — the event store, bus, projections and
-aggregates are all in the base package, and this library is in-memory-only by
-decision. It costs something the moment a Kafka, RabbitMQ, Redis or PostgreSQL
-event-store adapter is wanted, because each lives behind an extra.
-
-The `<0.11` cap is separate and deliberate: this is a pre-1.0 library whose
-entire API changed between 0.5 and 0.9, and the slice 5b bump is the evidence.
-Without a cap the version under test drifts from the version pinned -- 0.10.0
-was already resolving under a bare `>=0.9.1` -- and 0.11 would arrive with no
-one deciding to take it. Raise the cap deliberately, with the suite green
-under the new version, rather than discovering it in a failed CI run.
-
-To fix, in order of preference: widen redstring's `redis` pin to `<9` and
-verify `llm/cache/redis.py` against redis-py 8 (the 5→8 API is largely
-source-compatible, but that module is not covered against a real server, so
-this needs the integration suite B41 asks for); or take the narrow extras
-actually wanted (`eventsource-py[postgresql]`) rather than `[all]`.
+- **The `eventsource-py<0.11` cap stays.** It is about that library being
+  pre-1.0 with an API that changed wholesale between 0.5 and 0.9, and has
+  nothing to do with redis.
+- **There is still no `eventsourcing` extra**, because there is nothing to
+  put in one: the event store, bus, projections and aggregates are all in
+  eventsource's base package. That only changes if a Kafka, RabbitMQ or
+  PostgreSQL event-store backend is wanted here, each of which lives behind
+  an extra of its own.
 
 ### B22. There is no CHANGELOG, and no published documentation — closed
 
