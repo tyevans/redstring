@@ -43,7 +43,8 @@ could not be caught without a dotted import.
   `EntitiesEmbedded` events carrying them. `EntityId`, `RelationshipId`,
   `TenantId` and `SourceId` are the id vocabulary -- the first three are
   `UUID`, the last is `str`.
-- **Ports.** `GraphStore`, `VectorStore`, `LlmProvider`, `Chunker`. Implement
+- **Ports.** `GraphStore`, `VectorStore`, `LlmProvider`, `EmbeddingProvider`,
+  `Chunker`. Implement
   one to plug in a backend of your own; the compliance suite in
   `tests/compliance` is what says whether you got it right.
 - **Adapters.** `InMemoryGraphStore` and `InMemoryVectorStore` are complete
@@ -53,7 +54,12 @@ could not be caught without a dotted import.
 - **Providers.** `FakeLlmProvider` answers from a script or by substring
   (`Response`, `EMPTY`) and validates like the real thing;
   `LangChainLlmProvider` (`redstring[llm]`) speaks to any OpenAI-compatible
-  server.
+  server. `FakeEmbeddingProvider` does the same job for `EmbeddingProvider`,
+  hashing text into deterministic unit vectors so the vector half of the
+  library is exercisable with no model;
+  `redstring.llm.adapters.langchain_embedding.LangChainEmbeddingProvider`
+  (`redstring[llm]`) is the live one. Both LangChain adapters are reached by
+  path rather than exported, so `import redstring` does not pull LangChain in.
 - **Domain-aware prompting.** `domain_system_prompt` takes a bundled domain id
   or a `DomainSchema` of your own -- `load_schema_from_file` and
   `load_schema_from_string` build one, out of `EntityTypeSchema`,
@@ -124,6 +130,7 @@ from redstring.domain.exceptions import (
     ConsolidationInvariantError,
     DimensionMismatchError,
     DoubleMergeError,
+    EmbeddingProviderError,
     EmptyCompletionError,
     LlmProviderError,
     MalformedCompletionError,
@@ -164,6 +171,8 @@ from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.protocols import Chunker
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
+from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
+from redstring.ports.embedding_provider import EmbeddingProvider
 from redstring.ports.graph_store import (
     AliasStore,
     EntityReader,
@@ -210,6 +219,8 @@ __all__ = [
     "DocumentExtracted",
     "DomainSchema",
     "DoubleMergeError",
+    "EmbeddingProvider",
+    "EmbeddingProviderError",
     "EmptyCompletionError",
     "EntitiesEmbedded",
     "EntitiesMerged",
@@ -220,6 +231,7 @@ __all__ = [
     "EntityWriter",
     "ExtractionMethod",
     "ExtractionPipeline",
+    "FakeEmbeddingProvider",
     "FakeLlmProvider",
     "FeatureWeights",
     "GraphBuildReport",

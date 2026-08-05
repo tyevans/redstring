@@ -1568,37 +1568,41 @@ Picking this up means writing the missing sections against the code, not
 against the old outline — the outline is three slices stale and was wrong at
 least once.
 
-### B66. `EmbeddingProvider` port is missing, so nothing can populate a `VectorStore`
+### B66. `EmbeddingProvider` — built, and what it deliberately does not do
 
-Reported by the first downstream project to build on redstring, as their "the
-real one". They are right, and the shape of the gap is worse than a missing
-convenience: **the port list is asymmetric.** `LlmProvider` lets extraction
-turn text into entities without knowing about a model; there is no equivalent
-letting anything turn text into a vector, so `VectorStore` can only be fed
-vectors the caller computed elsewhere. `VectorProjection` writes what it is
-given, and nothing in the library ever produces one.
+**Closed.** `ports/embedding_provider.py`, two adapters, a compliance suite,
+and `build_graph` wiring that populates a `VectorStore`. See
+`docs/adr/0017-the-embedding-provider-port.md` for the decisions.
 
-That makes the vector half of this library unreachable from its own pipeline.
-A caller who wants semantic search has to run an embedding model themselves,
-match redstring's chunking, and construct `VectorRecord`s by hand — at which
-point the port is doing very little for them.
+Two things the work turned up that the entry did not predict.
 
-This is an architectural decision and needs an ADR, not just a Protocol:
+**`VectorProjection` and `Document.record_embeddings` already existed and
+neither had a caller.** The event, the aggregate command and the projection
+were all written when `EntitiesEmbedded` was designed, and nothing ever emitted
+one — `recurring-defects.md` §3 sitting in the tree for six slices while the
+port it served looked complete. The wiring is therefore mostly *calling* code
+that was already there, which is why it is small.
 
-- `ports/embedding_provider.py` sits beside `ports/llm_provider.py`, and the
-  adapter goes under `llm/` for the same reason `LangChainLlmProvider` does —
-  so nothing above the sibling band can reach a client library.
-- **The dimension is the hard part.** `VectorStore` fixes a dimension at
-  construction (pgvector's column type), the provider determines it, and the
-  two must agree or every write fails at the database rather than at the seam.
-  Deciding whether the provider *declares* a dimension the store validates, or
-  the store asks the provider, is the decision the ADR is for. Note the
-  CLAUDE.md warning while doing it: a dimension check written with `is not`
-  passes at a test dimension of 8 and rejects every real 768-wide vector.
-- It needs a compliance suite, like every other port here, and a fake
-  implementation for the commit gate. A deterministic fake — hash the text into
-  a unit vector — is enough to make `build_graph` populate a vector store in a
-  test with no model.
+**A test asserted the wrong thing and failed, correctly.** `build_graph`
+constructs a fresh `Document` per call, so `record_embeddings`' repeat
+suppression is unreachable through it: re-running embeds again and reports the
+full count. The first draft of `GraphBuildReport.embedded`'s docstring claimed
+the opposite. Both are corrected, and the dead branch in `_embed_entities` is
+named as dead rather than left to be rediscovered.
+
+What is **not** built, and is the obvious next work:
+
+- **No chunk-level or document-level embedding.** Entity *names* are embedded,
+  whole. Retrieval over document text is a different feature over the same
+  port.
+- **Vectors go stale on merge.** A consolidated entity keeps the vector of its
+  pre-merge name until something re-embeds it. Related to B67 and not solved by
+  either.
+- **No integration test against a live embeddings endpoint.** The compliance
+  suite runs against `FakeEmbeddingProvider` and a stubbed LangChain client, so
+  what is unproven is exactly what a stub cannot show: that a real server
+  returns results positionally under batching. `tests/integration/llm/` is
+  where that goes, alongside the existing live-endpoint tests.
 
 ### B67. No way to find entities that were never consolidated
 
