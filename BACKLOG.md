@@ -1565,7 +1565,27 @@ source-compatible, but that module is not covered against a real server, so
 this needs the integration suite B41 asks for); or take the narrow extras
 actually wanted (`eventsource-py[postgresql]`) rather than `[all]`.
 
-### B22. There is no CHANGELOG, and no published documentation
+### B22. There is no CHANGELOG, and no published documentation — closed
+
+**Both exist.** `CHANGELOG.md` in Keep a Changelog format with a `0.1.0`
+section, and a mkdocs-material site at <https://tyevans.github.io/redstring>
+deployed from `main`.
+
+The entry below is kept for one paragraph of its reasoning, which turned out
+to be wrong in an instructive way. It argued against a doc site on the
+grounds that "right now every reader is also a contributor", and that a
+second audience was what would justify one. That was a fair reading of the
+audience and a wrong reading of what a site is *for*: `mkdocs build --strict`
+found 43 inbound ADR links pointing at files that had not existed for
+slices, 71 in-page anchors that resolved nowhere, and 35 links out of `docs/`
+that could not work in both a checkout and a site. Every one of those was
+already broken for the contributor-readers the entry had in mind.
+
+**The site's first value was as a gate, not as a publication.** Prose is the
+last thing in this repository with no failing test, and that — not a second
+audience — is the argument that should have carried it.
+
+### B22 (original entry). There is no CHANGELOG, and no published documentation
 
 **Rewritten in slice 11.** The previous version said "no `docs/` beyond
 `docs/plans/` and an empty `docs/adrs/`, no ADRs, no mkdocs, no CHANGELOG" and
