@@ -82,6 +82,14 @@ DOCUMENTED_FOREIGN_TYPES = {
         "eventsource.ports.positions -- what `document_stream` returns and "
         "`Document` is constructed from"
     ),
+    "AggregateStore": (
+        "eventsource.ports.store -- the log `Consolidator` records merges in, "
+        "and the one `undo` reads back"
+    ),
+    "SnapshotStore": (
+        "eventsource.ports.snapshots -- companion to `AggregateStore`; "
+        "`Consolidator` needs both or neither"
+    ),
 }
 
 #: Names that are not types to resolve: builtins, `typing` spellings, and the
@@ -93,6 +101,10 @@ _NOT_A_TYPE_REFERENCE = frozenset(
         "Exception",
         "Callable",
         "ClassVar",
+        # `collections.abc`, like its four siblings below. Added when
+        # `TemporalQuery` was exported -- it was the first exported signature
+        # to say `Collection`, so the omission had never been reachable.
+        "Collection",
         "Final",
         "Iterable",
         "Iterator",
@@ -304,10 +316,10 @@ def test_no_documented_foreign_type_is_stale() -> None:
 #: exported, its errors have to be, and the reason string is what tells the
 #: next person that.
 UNEXPORTED_BECAUSE_THEIR_RAISER_IS = {
-    "ConsolidationInvariantError": "redstring.consolidation is not exported yet",
-    "MergeIntoAliasError": "redstring.consolidation is not exported yet",
-    "DoubleMergeError": "redstring.consolidation is not exported yet",
-    "UnknownMergeError": "redstring.consolidation is not exported yet",
+    # The four consolidation errors left this dict when `Consolidator` was
+    # exported, which is the pairing working as designed: exporting a
+    # capability drags its errors onto the surface with it, and the reason
+    # string is what told the next person so.
     "CircuitOpen": "redstring.llm.circuit_breaker is middleware, not exported",
     "RateLimitExceeded": "redstring.llm.rate_limiter is middleware, not exported",
 }

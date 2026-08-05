@@ -54,7 +54,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
+from eventsource.adapters.memory import InMemoryEventStore, InMemorySnapshotStore
+
 from redstring.aggregates.document import Document
+from redstring.consolidation.candidates import CandidateFinder
+from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
+from redstring.consolidation.service import ConsolidationService
 from redstring.events.streams import document_stream
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
@@ -62,13 +67,23 @@ from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.projections.graph import GraphProjection
 
 if TYPE_CHECKING:
-    from redstring.domain.ids import TenantId
+    from collections.abc import Sequence
+    from uuid import UUID
+
+    from eventsource.ports.snapshots import SnapshotStore
+    from eventsource.ports.store import AggregateStore
+
+    from redstring.consolidation.policy import Adjudicator
+    from redstring.domain.entity import Entity
+    from redstring.domain.ids import EntityId, TenantId
     from redstring.domain.source import SourceDocument
     from redstring.events.document import DocumentExtracted
+    from redstring.events.merge import EntitiesMerged, MergeUndone
     from redstring.extraction.domains.models import DomainSchema
     from redstring.extraction.protocols import Chunker
     from redstring.ports.graph_store import GraphStore
     from redstring.ports.llm_provider import LlmProvider
+    from redstring.ports.vector_store import VectorStore
 
 
 class AutoDomain:
@@ -233,3 +248,252 @@ async def _resolve_prompt(
     if isinstance(domain, str):
         return domain, None, domain_system_prompt(domain)
     return domain.domain_id, None, domain_system_prompt(domain)
+
+
+# ---------------------------------------------------------------------------
+# Consolidation
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ConsolidationReport:
+    """What one merge or undo decided, and what it did to the graph."""
+
+    #: The event that was emitted and then folded into the store. Append it to
+    #: an event store if you have one; it is the same object the projection
+    #: consumed.
+    event: EntitiesMerged | MergeUndone
+    #: The entity that survived (`merge`) or that gave the others back
+    #: (`undo`).
+    canonical_entity_id: EntityId
+    #: Absorbed by this merge, or handed back by this undo. Ordered as the
+    #: event records them.
+    affected_entity_ids: tuple[EntityId, ...]
+    #: Edges the merge moved or dropped, or that the undo restored. Non-zero
+    #: is the usual case for entities with any structure around them, and a
+    #: zero here on a well-connected graph is worth a second look.
+    relationships_changed: int
+    #: Why. Carried through from `merge_reason`, or composed by `resolve` from
+    #: the score band and any adjudicator verdicts. `None` for an undo.
+    reason: str | None
+
+
+class Consolidator:
+    """Merge duplicate entities, and undo merges, keeping a `GraphStore` in step.
+
+    This is the composed entry point for the second of the three problems this
+    library exists to solve. Extraction reads each document alone, so "Ada
+    Lovelace", "Lovelace, A." and "Ada King" arrive as three entities; without
+    this step a graph accumulates one node per *mention*, which looks like a
+    knowledge graph and answers every question wrong, because each entity's
+    edges are split across its aliases.
+
+    It stands to `ConsolidationService` exactly as `build_graph` stands to
+    `ExtractionPipeline`: the service decides and emits, a projection writes,
+    and this holds both so a caller does not have to. Assembling it by hand
+    means six objects from three packages -- two of them eventsource
+    internals -- which is why consolidation went four slices without a public
+    surface.
+
+    ```python
+    consolidator = Consolidator(store)
+    report = await consolidator.resolve(subject)
+    if report is not None:
+        print(report.canonical_entity_id, report.affected_entity_ids)
+    ```
+
+    ## The log, and what `undo` needs from it
+
+    Every method emits an event and folds it into `store`. `undo` is different
+    from the others in a way worth knowing before you rely on it: it takes a
+    merge's `event_id` and **nothing describing what to restore**, because the
+    aggregate rehydrates its own history and writes the restoration into
+    `MergeUndone` itself. A caller supplying what to restore would be a caller
+    able to restore something that never happened.
+
+    That history lives in the event store. With no `event_store` argument this
+    class creates an in-memory one, which means:
+
+    - **merge, resolve and undo all work**, and the graph is correct;
+    - **the history dies with this object.** A new `Consolidator` cannot undo
+      a merge an earlier one made, and `undo` will raise `UnknownMergeError`
+      -- which is also what it raises for a merge that never happened. The two
+      are indistinguishable from the error alone.
+
+    Pass an `event_store` and `snapshot_store` to keep it. That is the same
+    trade `build_graph` makes and states, and it is stated here rather than
+    discovered, because "undo stopped working after a restart" is an expensive
+    thing to debug from the outside.
+
+    ## What it never does
+
+    It does not write to the store directly. Every change to the graph arrives
+    through `GraphProjection` applying an event, so a store rebuilt by replay
+    and a store maintained by this class end up the same -- which is the whole
+    reason consolidation emits rather than writes
+    (`docs/adr/0004-consolidation-emits-events.md`).
+    """
+
+    def __init__(
+        self,
+        store: GraphStore,
+        *,
+        event_store: AggregateStore | None = None,
+        snapshot_store: SnapshotStore | None = None,
+        vector_store: VectorStore | None = None,
+        use_graph_signal: bool = True,
+    ) -> None:
+        """Wire a consolidator over `store`.
+
+        Args:
+            store: The graph. Read to plan a merge, and written by the
+                projection that applies it.
+            event_store: Where merges are recorded. An `InMemoryEventStore`
+                when omitted -- see the class docstring on what that costs
+                `undo`.
+            snapshot_store: Companion to `event_store`. In-memory when
+                omitted. Passing one without the other is accepted; they are
+                independent.
+            vector_store: Gives `resolve`'s default candidate finder an
+                embedding signal. Its absence is not an error -- scoring
+                renormalises over the features it has, so a deployment
+                without embeddings still consolidates on names and structure.
+            use_graph_signal: Whether that finder scores shared neighbours.
+                This is the expensive feature (one `get_relationships_for`
+                per subject and per candidate); turning it off is a stated
+                trade rather than a silent degradation.
+        """
+        self._store = store
+        self._service = ConsolidationService(
+            event_store=event_store if event_store is not None else InMemoryEventStore(),
+            snapshot_store=(
+                snapshot_store if snapshot_store is not None else InMemorySnapshotStore()
+            ),
+            graph_store=store,
+        )
+        self._default_finder = CandidateFinder(
+            store, vector_store=vector_store, use_graph_signal=use_graph_signal
+        )
+        self._durable = event_store is not None
+
+    @property
+    def remembers_merges_across_restarts(self) -> bool:
+        """False when the log is the in-memory default, so `undo` is session-only.
+
+        Named for what a caller wants to know rather than for the mechanism.
+        `durable` would invite the reading "are my *merges* durable" -- they
+        are: the graph is written through the projection either way. What is
+        not kept is the ability to reverse them.
+        """
+        return self._durable
+
+    async def merge(
+        self,
+        *,
+        tenant_id: TenantId,
+        canonical_entity_id: EntityId,
+        merged_entity_ids: Sequence[EntityId],
+        merge_reason: str | None = None,
+    ) -> ConsolidationReport:
+        """Absorb `merged_entity_ids` into `canonical_entity_id`.
+
+        The explicit path, for when the decision is already made -- by a human,
+        by a rule of your own, by an import that knows two ids are one thing.
+        No blocking, no scoring, no model call.
+
+        Choosing which duplicate to pass as canonical is choosing which one
+        survives.
+
+        Raises:
+            MergeIntoAliasError: `canonical_entity_id` is itself already
+                merged into something. Refused before anything is written.
+            DoubleMergeError: one of `merged_entity_ids` is already merged.
+                Also refused before writing, so there is nothing
+                half-applied.
+        """
+        event = await self._service.merge(
+            tenant_id=tenant_id,
+            canonical_entity_id=canonical_entity_id,
+            merged_entity_ids=merged_entity_ids,
+            merge_reason=merge_reason,
+        )
+        return await self._project_merge(event)
+
+    async def resolve(
+        self,
+        subject: Entity,
+        *,
+        finder: CandidateFinder | None = None,
+        adjudicator: Adjudicator | None = None,
+        high: float = HIGH_SIMILARITY,
+        low: float = LOW_SIMILARITY,
+    ) -> ConsolidationReport | None:
+        """Find `subject`'s duplicates, decide, merge what survives the decision.
+
+        Block, score, band against `low` and `high`, put the middle band to
+        `adjudicator` if there is one, and emit a single merge covering
+        everything that came out a yes.
+
+        `None` is the ordinary outcome, not a failure: it means nothing was
+        found worth merging.
+
+        **Without an `adjudicator` the middle band is rejected, not merged.**
+        The band exists precisely because the score does not settle those
+        pairs, so treating "nobody asked" as a yes would merge exactly the
+        pairs a model was there to protect. Narrowing the band is therefore
+        not symmetric when no adjudicator is configured.
+
+        Args:
+            subject: The entity that survives. Its duplicates are absorbed
+                into it.
+            finder: Overrides the default built from this consolidator's
+                stores. Supply one to change the weights or the blocking.
+            adjudicator: Asked about the middle band, in batches. Omit it and
+                that band is rejected.
+            high: At or above this score, merge without asking.
+            low: Below this score, never merge and never ask.
+        """
+        event = await self._service.resolve(
+            subject,
+            finder=finder if finder is not None else self._default_finder,
+            adjudicator=adjudicator,
+            high=high,
+            low=low,
+        )
+        if event is None:
+            return None
+        return await self._project_merge(event)
+
+    async def undo(self, *, tenant_id: TenantId, merge_event_id: UUID) -> ConsolidationReport:
+        """Reverse the merge that `merge_event_id` recorded.
+
+        Takes the merge's event id and nothing else; what to restore is read
+        from the log, not from the caller. `report.event.event_id` on a merge
+        is the id to keep.
+
+        Raises:
+            UnknownMergeError: no merge in effect has that id. This covers
+                "never happened" and "already undone" as one case -- and, when
+                this consolidator holds the in-memory default log, also "made
+                by a different `Consolidator`". See
+                `remembers_merges_across_restarts`.
+        """
+        event = await self._service.undo(tenant_id=tenant_id, merge_event_id=merge_event_id)
+        await GraphProjection(self._store).handle(event)
+        return ConsolidationReport(
+            event=event,
+            canonical_entity_id=event.canonical_entity_id,
+            affected_entity_ids=tuple(event.unmerged_entity_ids),
+            relationships_changed=len(event.restored_relationships),
+            reason=None,
+        )
+
+    async def _project_merge(self, event: EntitiesMerged) -> ConsolidationReport:
+        await GraphProjection(self._store).handle(event)
+        return ConsolidationReport(
+            event=event,
+            canonical_entity_id=event.canonical_entity_id,
+            affected_entity_ids=tuple(event.merged_entity_ids),
+            relationships_changed=len(event.redirections),
+            reason=event.merge_reason,
+        )

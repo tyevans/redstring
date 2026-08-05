@@ -45,24 +45,16 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
-class GraphStore(Protocol):
-    """Storage for entities and the relationships between them."""
+class EntityReader(Protocol):
+    """Reads entities back out.
 
-    async def upsert_entity(self, entity: Entity) -> None:
-        """Insert or replace `entity`, keyed by `(entity.tenant_id, entity.id)`.
-
-        Idempotent, last-write-wins: upserting the same id twice leaves exactly
-        one entity holding the later value.
-        """
-        ...
-
-    async def upsert_entities(self, entities: Sequence[Entity]) -> None:
-        """Upsert many entities. Equivalent to `upsert_entity` per element.
-
-        Entities in the sequence may belong to different tenants; each is keyed
-        by its own `tenant_id`.
-        """
-        ...
+    The narrowest useful slice of the port, and the one most collaborators
+    want. `TemporalQuery` needs exactly one of these methods and nothing else
+    in `GraphStore`; typing it against the whole port made a test double an
+    eighteen-method exercise, which is why `tests/unit/test_temporal_surface.py`
+    once faked a store by *subclassing the in-memory adapter* rather than
+    implementing the interface.
+    """
 
     async def get_entity(self, entity_id: EntityId, tenant_id: TenantId) -> Entity | None:
         """Return the entity, or `None` if this tenant has no such id.
@@ -143,6 +135,43 @@ class GraphStore(Protocol):
         """
         ...
 
+
+@runtime_checkable
+class EntityWriter(Protocol):
+    """Puts entities in, idempotently.
+
+    Separate from reading because projections write and queries read, and
+    almost nothing does both. A caller holding only this cannot accidentally
+    grow a read path.
+    """
+
+    async def upsert_entity(self, entity: Entity) -> None:
+        """Insert or replace `entity`, keyed by `(entity.tenant_id, entity.id)`.
+
+        Idempotent, last-write-wins: upserting the same id twice leaves exactly
+        one entity holding the later value.
+        """
+        ...
+
+    async def upsert_entities(self, entities: Sequence[Entity]) -> None:
+        """Upsert many entities. Equivalent to `upsert_entity` per element.
+
+        Entities in the sequence may belong to different tenants; each is keyed
+        by its own `tenant_id`.
+        """
+        ...
+
+
+@runtime_checkable
+class AliasStore(Protocol):
+    """Records and resolves merges.
+
+    Why the store knows about aliases at all is argued in the module
+    docstring: a fold has to consult them *before* writing an edge, or a
+    `DocumentExtracted` applied after an `EntitiesMerged` silently reverts the
+    merge.
+    """
+
     async def upsert_alias(self, alias: Alias) -> None:
         """Record that `alias.alias_entity_id` was absorbed by its canonical.
 
@@ -204,6 +233,16 @@ class GraphStore(Protocol):
         edge in a document. As a loop it is two round trips per edge.
         """
         ...
+
+
+@runtime_checkable
+class RelationshipStore(Protocol):
+    """The edges, and the ways to walk them.
+
+    Reads and writes together here rather than split like entities, because
+    the callers that touch relationships at all touch both: a merge reads the
+    edges it is about to redirect and writes the redirections.
+    """
 
     async def upsert_relationship(self, relationship: Relationship) -> None:
         """Insert or replace `relationship`, keyed by `(tenant_id, id)`.
@@ -314,6 +353,17 @@ class GraphStore(Protocol):
         """
         ...
 
+
+@runtime_checkable
+class TenantPurge(Protocol):
+    """Removing everything one tenant owns.
+
+    Alone in its own protocol because it is the one operation with no
+    per-entity form and the one an ordinary caller should never reach for.
+    Requiring it explicitly makes "this collaborator can wipe a tenant" a
+    visible fact about a signature.
+    """
+
     async def delete_by_tenant(self, tenant_id: TenantId) -> int:
         """Delete everything belonging to `tenant_id`; return entities removed.
 
@@ -321,3 +371,26 @@ class GraphStore(Protocol):
         No other tenant is touched.
         """
         ...
+
+
+@runtime_checkable
+class GraphStore(EntityReader, EntityWriter, AliasStore, RelationshipStore, TenantPurge, Protocol):
+    """Storage for entities and the relationships between them.
+
+    The whole port, composed from the five capabilities above. Adapters
+    implement this; the compliance suite runs against this; and anything
+    that genuinely needs the lot -- `GraphProjection` does, using eight of
+    the eighteen -- should say so.
+
+    **Collaborators should not.** Depending on eighteen methods to call one
+    is the interface-segregation complaint in its plainest form, and it has
+    a measured cost here rather than a stylistic one: three of the four
+    first-party consumers use three methods or fewer, and every test double
+    for any of them had to satisfy all eighteen or cheat by subclassing a
+    real adapter. Narrow the annotation to the capability actually used.
+
+    Splitting it changes nothing for an adapter. `GraphStore` still names
+    every method through its bases, `runtime_checkable` still works, and
+    `tests/unit/graph/test_compliance_coverage.py` still finds all eighteen,
+    because `inspect.getmembers` walks the MRO.
+    """

@@ -33,10 +33,13 @@ First release.
   `MergeUndone`, with `GraphProjection` and `VectorProjection` folding them
   into the stores. Extraction and consolidation both emit and write to no
   store, so a store can be rebuilt by replay.
-- **Consolidation.** Blocking, scoring, banding and model adjudication behind
-  `ConsolidationService.resolve()`, an explicit `merge()`, and an `undo()`
-  that takes only the merge's event id. Not exported yet — reached by dotted
-  path, and expected to move.
+- **Consolidation.** `Consolidator` — blocking, scoring, banding and model
+  adjudication behind `resolve()`, an explicit `merge()`, and an `undo()` that
+  takes only the merge's event id and reads what to restore from the log.
+  Every change reaches the graph through a projection, never a direct write.
+  With no `event_store` argument the merge history is in-memory, so undo is
+  session-only; `remembers_merges_across_restarts` reports which arrangement
+  is in use. See ADR 0015.
 - **Temporal inference.** Interval relations computed on read from
   `TemporalExtent`, never persisted into the event log. Not exported yet.
 - **Resilience over the `Cache` port.** Retry with jitter, rate limiting and
