@@ -260,9 +260,11 @@ nothing will ever remove -- a worse failure than a loud one. Callers wipe with
 `delete_by_tenant(tenant_id)` per tenant, which is what the replay tests do.
 
 The real fix is a `rebuild(tenant_id)` entry point on the projection that
-wipes and replays one tenant, which needs a tenant-filtered feed read
-(`FeedReadOptions.tenant_id` already exists) and belongs with whatever slice
-first needs to rebuild a single tenant in anger.
+wipes and replays one tenant. **The read half of that now exists** —
+`project(..., tenant_id=...)` (B68) — so what is left is the wipe: a caller
+still has to call `delete_by_tenant` on both stores itself, which is what the
+replay tests do. Composing the two is what `rebuild` would be, and it belongs
+with whatever slice first needs it in anger.
 
 ---
 
@@ -1626,28 +1628,67 @@ maintains an unresolved set from `DocumentExtracted` and `EntitiesMerged`, or a
 store-level query over "entities with no alias and no merge event". Both are
 real designs; neither is a field.
 
-### B68. `project()` cannot scope to a stream or category
+### B68. `project()` scopes by tenant, not by stream or category
 
-Reported downstream, who are using `tenant_filter` as the workaround. A shared
-event store replays every foreign event through every projection, which is
-correctness-neutral and cost-linear in other people's traffic. The workaround
-is real but is a filter applied after delivery, not a narrower subscription.
+**Half fixed.** `project(..., tenant_id=...)` forwards
+`FeedReadOptions(tenant_id=...)`, which the eventsource adapters push into the
+query, so a shared store rebuilds one tenant with an indexed read instead of
+scanning every other tenant's events and discarding them in Python. That is
+the case downstream actually had, and tenant is what this library models end
+to end.
 
-Whether this is redstring's to fix depends on what `eventsource-py` exposes —
-check before designing, because a scoped subscription in the library that
-filters client-side is the same cost with more code.
+**Category scoping is still open and is a different question.**
+`GlobalEventFeed` has no `read_category`; `EventStore` does, and taking it
+would mean `project` accepting a narrower port than the one it documents, or
+accepting both and branching. Neither is obviously right, and nobody has asked
+for it — a caller wanting one stream can pass `from_position` and a tenant.
+Do not add it speculatively; the reason to wait is that the branch would be
+untestable against the in-memory feed without also deciding what happens when
+both `tenant_id` and `categories` are given.
 
-### B69. `ReplayReport.failed` counts poison events instead of raising
+The remaining cost is that `tenant_id` is a *read* filter only. A projection
+constructed with `tenant_filter` still applies its own filter after delivery,
+so a caller who sets both pays for one and gets no benefit from the other.
+That is harmless and slightly confusing; `docs/how-to/drive-projections-from-an-event-store.md`
+says which to reach for.
 
-Reported downstream. There is no supported strict mode, so a replay that drops
-every event still returns a report and exits successfully. That is a reasonable
-default for a rebuild over a long log and a bad one for a test or a first
-deployment, which is exactly when a silent partial rebuild is most costly and
-least visible.
+### B73. `ReplayReport.failures` is unbounded, and holds live tracebacks
 
-A `strict=True` that raises on the first failure is the obvious shape. The
-thing to get right is that the failure has to name the event — an exception
-saying "replay failed" with a count is the same problem in a louder voice.
+`projections/replay.py` appends a `ReplayFailure` per rejection with no cap,
+and each holds the exception object — so its `__traceback__` and every frame's
+locals stay reachable for the length of the call. `MAX_EVENTS_PER_REPLAY`
+bounds the *loop* at ten million; it does not bound this.
+
+Deliberate rather than overlooked, and the reasoning is why it was not simply
+capped. A cap silently truncating the list reproduces the exact defect this
+field was added to fix — an operator told "3 failed" who cannot reach the
+third. The honest shapes are a cap that *says* it truncated (a
+`failures_truncated: int` on the report), or streaming failures to a callback
+instead of accumulating them. Both are API decisions, and neither is worth
+making before someone has a replay that actually fails at that scale: a
+rebuild dropping a hundred thousand events has a problem the report is not
+going to solve.
+
+The practical bound today is that a failure only lands here after the
+projection base class has already retried it and written it to the DLQ, so a
+run failing at that volume is slow long before it is large.
+
+### B74. The ADR list in `.claude/rules/definition-of-done.md` stops at 0014
+
+That file's "ADRs a spec has to be run against" table ends at
+`0014-exemption-lists-are-empty-and-must-stay-falsifiable.md`, and
+`docs/adr/` now holds `0018`. `0015` (consolidation's composed entry point),
+`0016` (`GraphStore` as five capabilities), `0017` (the `EmbeddingProvider`
+port) and `0018` (replay failures and scoped reads) are absent, and the same
+file's item 5 tells the next author to number "against the highest already on
+`main`" while its own prose says 0014 is that.
+
+Not fixed here because the table is *prose about which decisions are settled*
+and each new row is a sentence someone has to write with the ADR in front of
+them — doing four at once, for ADRs written by other slices, is how a summary
+row ends up subtly wrong about what an ADR decided. This is
+`recurring-defects.md` §5 in the file that carries §5, which is the argument
+for fixing it soon rather than the argument for fixing it hastily.
 
 ### B70. `eventsource-py` floor was too low, and the library was published with it
 

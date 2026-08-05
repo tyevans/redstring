@@ -291,6 +291,8 @@ async def project(
     projections: Sequence[EventSubscriber],
     *,
     from_position: Position | None = None,
+    tenant_id: UUID | None = None,
+    strict: bool = False,
     max_events: int = MAX_EVENTS_PER_REPLAY,
 ) -> ReplayReport: ...
 ```
@@ -436,7 +438,7 @@ core dependency, so all of these are importable wherever `redstring` is.
 
 The one thing that is ours and shares the neighbourhood is `ReplayReport` —
 a redstring dataclass, exported from the root, described under
-[Reading the `ReplayReport`](#reading-the-replayreport-applied-failed-last_position)
+[Reading the `ReplayReport`](#reading-the-replayreport-applied-failed-failures-last_position)
 below.
 
 ## Step 1: extract without writing — call `build_graph` and keep `report.event`
@@ -986,11 +988,20 @@ from redstring import project
 report = await project(event_store, projections)
 ```
 
+If your own vocabulary has a *project* noun — most knowledge-graph consumers
+do — import `replay` instead. It is the same function object, not a wrapper:
+
+```python
+from redstring import replay
+
+report = await replay(event_store, projections)
+```
+
 That is the whole step. `event_store` is being passed as a `GlobalEventFeed` —
-`project` calls `read_all(from_position)` on it and nothing else — and
+`project` calls `read_all(from_position, options)` on it and nothing else — and
 `projections` is the list you built in step 3.
 
-The signature has two more parameters, both keyword-only and both with
+The signature has four more parameters, all keyword-only and all with
 defaults that are right for a first run:
 
 ```python
@@ -998,14 +1009,67 @@ report = await project(
     event_store,
     projections,
     from_position=None,  # from the very beginning of the log
+    tenant_id=None,  # every tenant in the store
+    strict=False,  # record failures and carry on
     max_events=MAX_EVENTS_PER_REPLAY,
 )
 ```
 
 `from_position` is covered in
 [Resuming](#resuming-from_position-is-exclusive-and-none-means-rebuild-from-the-beginning);
+`tenant_id` in [Scoping the read](#scoping-the-read-tenant_id-narrows-the-query-tenant_filter-narrows-the-delivery);
+`strict` in [Failing loudly](#failing-loudly-stricttrue-and-replayfailure);
 `max_events` in
 [Bounding the loop](#bounding-the-loop-max_events_per_replay-and-the-cursor-that-fails-to-advance).
+
+### Scoping the read: `tenant_id` narrows the query, `tenant_filter` narrows the delivery
+
+In a store shared with other event types — sessions, jobs, whatever else the
+application writes — a rebuild reads all of it. `tenant_id` is the cheap fix:
+
+```python
+report = await project(event_store, projections, tenant_id=this_tenant)
+```
+
+It becomes `FeedReadOptions(tenant_id=...)` on the `read_all` call, and the
+SQLite and PostgreSQL adapters push that into the `WHERE` clause. So the
+rebuild costs what this tenant wrote rather than what the store holds.
+
+`tenant_filter` on a projection (step 3) does something that *looks* the same
+and is not: it drops foreign events **after** delivery, so the read still
+costs the whole log. It is the right tool when one projection in a list should
+see less than the others; it is the wrong tool for scoping a rebuild.
+
+Setting both is harmless and pointless — the filter has nothing left to drop.
+
+Two things `tenant_id` does not do. It does not scope by stream or category:
+`GlobalEventFeed` has no `read_category`, and see `BACKLOG.md` B68 for why
+that is deliberately still open. And `last_position` is then the last position
+the *filtered* read reached, which is the one to checkpoint for a subsequent
+scoped run and **not** interchangeable with a whole-feed cursor.
+
+### Failing loudly: `strict=True` and `ReplayFailure`
+
+The default is a rebuild's default: a poison event is recorded and the pass
+continues, because stopping denies the projection every event after it. In a
+test, or on a first deployment, that is exactly backwards — a silent partial
+rebuild is most costly when it is least visible.
+
+```python
+from redstring import ReplayFailedError
+
+try:
+    report = await project(event_store, projections, strict=True)
+except ReplayFailedError as exc:
+    print(exc.failure.position, exc.failure.event_type, exc.failure.error)
+```
+
+`strict=True` stops at the first rejection and raises. The exception carries
+the `ReplayFailure`, and the original exception is its `__cause__`.
+
+You do not need strict mode to get that detail — the lenient run collects the
+same objects in `report.failures`. Strict is a convenience for "stop now";
+`failures` is the part a caller cannot reconstruct for itself.
 
 ### What one call does, in order
 
@@ -1018,7 +1082,8 @@ order:
    sequence, in list order,
 4. counts the event as applied, or as failed if any projection raised.
 
-Then it returns `ReplayReport(applied=..., failed=..., last_position=...)`.
+Then it returns `ReplayReport(applied=..., last_position=..., failures=...)`,
+whose `failed` is derived from `failures` rather than counted alongside it.
 
 Two things follow from step 3 being a plain sequential loop. Projections are
 folded one after another, not concurrently — `GraphProjection` finishes before
@@ -1093,7 +1158,7 @@ did not land; only `dlq.get_failed_events()` tells you what.
   `ProjectionCoordinator`, a different component for a different job — this is
   a foreground operation someone is waiting on.
 
-## Reading the `ReplayReport`: `applied`, `failed`, `last_position`
+## Reading the `ReplayReport`: `applied`, `failed`, `failures`, `last_position`
 
 `project` returns one small value, and it is the only thing the call tells
 you:
@@ -1102,14 +1167,29 @@ you:
 @dataclass(frozen=True, slots=True)
 class ReplayReport:
     applied: int
-    failed: int
     last_position: Position | None
+    failures: tuple[ReplayFailure, ...] = ()
+
+    @property
+    def failed(self) -> int:
+        """Events at least one projection rejected."""
 ```
 
 It is exported from the package root (`from redstring import ReplayReport`),
 frozen, and compares by value — two runs that read the same amount of the same
 feed produce equal reports, which is convenient in tests and meaningless as a
 health check.
+
+`failed` is a **property over `failures`**, not a stored count. Two projections
+rejecting one event is one failed event and two failures, and deriving the
+first from the second is what stops the two answers disagreeing. There is no
+`failed` argument to the constructor.
+
+Each `ReplayFailure` carries `position`, `event_type`, `projection` (the
+rejecting projection's class name) and `error` — **the exception object**, so
+`MissingEntityError.entity_id` is reachable without parsing a message. That is
+the part a caller cannot reconstruct: a count can always be derived from
+detail, never the other way round.
 
 ### `applied + failed` is the number of events read
 
@@ -1195,7 +1275,7 @@ harmlessly, for the reasons in
 `None` means the loop never read an envelope. It is only ever assigned from an
 envelope, so:
 
-- an empty log gives `ReplayReport(applied=0, failed=0, last_position=None)` —
+- an empty log gives `ReplayReport(applied=0, last_position=None, failures=())` —
   pinned by `test_an_empty_log_projects_to_empty_stores`, which exists to
   catch a `project` whose loop never ran and whose report was fabricated;
 - **a resume that finds nothing new also gives `None`**, not the position you
@@ -1298,7 +1378,7 @@ caught a fold that wrote nothing.
 
 `test_an_empty_log_projects_to_empty_stores` covers the other end: no events,
 no prior run, no state left by an earlier phase, and
-`ReplayReport(applied=0, failed=0, last_position=None)`. It exists because a
+`ReplayReport(applied=0, last_position=None, failures=())`. It exists because a
 loop that never runs and a report that was fabricated look identical from the
 outside.
 

@@ -7,12 +7,21 @@ claim is only worth as much as the test that proves it, which is
 """
 
 from redstring.projections.graph import GraphProjection
-from redstring.projections.replay import ReplayReport, project
+from redstring.projections.replay import (
+    ReplayFailedError,
+    ReplayFailure,
+    ReplayReport,
+    project,
+    replay,
+)
 from redstring.projections.vector import VectorProjection
 
 __all__ = [
     "GraphProjection",
+    "ReplayFailedError",
+    "ReplayFailure",
     "ReplayReport",
     "VectorProjection",
     "project",
+    "replay",
 ]

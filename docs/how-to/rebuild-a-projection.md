@@ -339,8 +339,11 @@ instead of once, see
 @dataclass(frozen=True, slots=True)
 class ReplayReport:
     applied: int
-    failed: int
     last_position: Position | None
+    failures: tuple[ReplayFailure, ...] = ()
+
+    @property
+    def failed(self) -> int: ...
 ```
 
 - **`applied`** — events delivered that no projection rejected. An event every
@@ -353,7 +356,15 @@ class ReplayReport:
   the log did not make it into the read models". It is a count rather than a
   bool so that "some events failed" cannot be mistaken for "none did" by a
   truthiness check — `if report.failed:` and `if not report.failed:` both read
-  correctly, and there is no `ok` attribute to be tempted by.
+  correctly, and there is no `ok` attribute to be tempted by. It is a
+  **property derived from `failures`**, not a field: the two cannot drift, and
+  `ReplayReport(...)` takes no `failed` argument.
+- **`failures`** — one `ReplayFailure` per *rejection*, so an event both folds
+  rejected appears twice while `failed` counts it once. Each carries
+  `position`, `event_type`, `projection` (the class name) and `error` (the
+  exception object, not its message). This is the field to read when `failed`
+  is non-zero and you want to know *which* event; see Step 5 for the DLQ,
+  which holds the same information durably.
 - **`last_position`** — the position of the last event *read*, or `None` if the
   feed yielded nothing. Failure does not affect it: a rejected event still
   advances the position, because the position records where reading got to, not
@@ -414,8 +425,17 @@ Step 5.
 
 ## Step 5: Inspect the DLQ for events that did not land
 
-`report.failed` is a count; the DLQ is where the events themselves are. Read it
-straight after the run:
+`report.failures` names the events in memory; the DLQ is where they are
+durably, with the serialized payload. Read whichever suits — in a script,
+start with the report:
+
+```python
+for failure in report.failures:
+    print(failure.projection, failure.event_type, failure.position, failure.error)
+```
+
+For the payload, and for failures from *earlier* runs, read the DLQ straight
+after the run:
 
 ```python
 if report.failed:
@@ -459,7 +479,8 @@ One consequence worth knowing before you count anything: an event that failed
 in *both* folds is two entries with one `event_id`, while `ReplayReport.failed`
 counted it once (Step 4). `sum(c.failure_count for c in counts)` and
 `report.failed` are allowed to disagree, and the difference is events both
-projections rejected.
+projections rejected. `len(report.failures)` is the one that matches the DLQ,
+because it is per rejection for the same reason the DLQ is.
 
 ### Read the error, then decide whether the fold or the input is wrong
 
