@@ -206,7 +206,7 @@ as a constructor argument is invisible to the first and fatal to the second,
 and a projection imported for a type annotation is the reverse. The
 architecture's central claim — *extraction emits events, projections write* —
 has two independent ways to erode, so it needs two independent checks, and
-this is the same reasoning that puts `tests/unit/llm/test_port_does_not_leak.py`
+this is the same reasoning that puts `tests/unit/test_dependencies_stay_confined.py`
 beside the contract for the `llm` sibling: `lint-imports` only sees
 first-party imports, so a `langchain` import outside the adapter package needs
 a check of its own. Any boundary this codebase deliberately maintains gets a

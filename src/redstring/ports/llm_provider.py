@@ -15,7 +15,7 @@ one. Shaped like this, it touches `redstring.llm.adapters` and nothing else.
 
 **No `langchain*` type may appear in `domain/`, `ports/`, or any signature
 outside `redstring/llm/adapters/`.** That is the whole point of the port,
-and it is checked by `tests/unit/llm/test_port_does_not_leak.py`.
+and it is checked by `tests/unit/test_dependencies_stay_confined.py`.
 
 ## `model` is provenance, not configuration
 

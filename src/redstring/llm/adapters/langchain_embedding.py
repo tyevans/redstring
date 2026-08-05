@@ -14,7 +14,7 @@ Same division as `LangChainLlmProvider`, for the same reasons:
   here is provider-qualified and versioned (`"ollama/nomic-embed-text"`) and no
   embeddings client knows which provider is in front of it;
 - this module and `langchain.py` are the only places in `src/` permitted to
-  import `langchain*`, enforced by `tests/unit/llm/test_port_does_not_leak.py`
+  import `langchain*`, enforced by `tests/unit/test_dependencies_stay_confined.py`
   rather than by the import contract, which sees first-party imports only.
 
 ## `dimension` is declared, not probed

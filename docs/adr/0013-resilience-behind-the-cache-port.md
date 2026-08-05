@@ -216,7 +216,7 @@ One limit, and it is the reason a test exists next to the contract:
 contract is declared over `redstring` with `include_external_packages =
 false`. The sibling line stops extraction reaching the adapter *through*
 `redstring.llm`; nothing in it stops extraction importing LangChain directly.
-`tests/unit/llm/test_port_does_not_leak.py` is the other half — it parses
+`tests/unit/test_dependencies_stay_confined.py` is the other half — it parses
 every module under `src/` and fails on any `langchain*` import outside
 `llm/adapters/`, by source text rather than by importing, so a lazy
 function-level import cannot slip through. Read the two together: the contract
@@ -286,7 +286,7 @@ than removed it.
 The check on all of this is a negative one, and negative properties rot
 quietly. Two gates hold it: the sibling line in the layers contract, which
 makes `from redstring.llm...` in `extraction/` a build failure rather than a
-review comment, and `tests/unit/llm/test_port_does_not_leak.py`, which catches
+review comment, and `tests/unit/test_dependencies_stay_confined.py`, which catches
 the third-party half the contract cannot see. Between them, the sentence "the
 pipeline reaches the port and never an adapter" is enforced rather than
 merely true today.
