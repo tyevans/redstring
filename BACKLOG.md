@@ -221,34 +221,6 @@ all-or-nothing (and make the in-memory adapter validate up front, which is a
 few lines). The second is the better contract for replay, and it is cheap
 because the adapter that would find it hard already does it.
 
-### B10l. A vector with non-zero components can still have a zero norm
-
-`domain/vector.py::is_zero_vector` asks whether every component is zero.
-`cosine_score` needs the **norm** to be non-zero, and those are not the same
-question: `[1e-200, 1e-200]` has non-zero components and a squared norm that
-underflows to `0.0`, so the port's guard accepts it on `upsert` and `search`
-then raises `ValueError` from a code path documented as unreachable.
-`tests/unit/domain/test_vector.py::test_a_vector_whose_norm_underflows_is_treated_as_zero`
-pins the current behaviour.
-
-The band is far narrower in float32, where pgvector stores: components below
-about `1e-19` square to zero there, and `<=>` against such a row yields NaN,
-which sorts unpredictably and would then fail `VectorMatch`'s `0..1` bound.
-**So the two adapters fail differently on the same input** -- the in-memory one
-raises at search time, pgvector produces a NaN score -- which is the kind of
-divergence the shared suite exists to prevent, and the suite does not catch it
-because `tests/compliance/strategies.py::vector_components` excludes
-subnormals to avoid intermittent failures in unrelated properties.
-
-**Deferred rather than fixed because the fix requires a decision, not a
-check.** Guarding on the norm instead of the components is two lines; deciding
-*what threshold* is another matter, because "an embedding of magnitude 1e-160"
-is not a thing any real model produces and picking a number without a caller
-to serve invents a contract. The honest resolution is probably to reject on
-the float32 norm being zero (which is what any adapter would hit) and say so
-in the port. Nothing depends on this today: real embeddings are unit-norm or
-close to it.
-
 ### B35. `GraphProjection.reset()` raises instead of truncating
 
 `projections/graph.py` and `projections/vector.py` --

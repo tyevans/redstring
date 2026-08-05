@@ -552,11 +552,13 @@ exactly, so "the stored vector equals the written one" is a claim *every*
 adapter can meet; the magnitude bound keeps the sum of squares far from
 float32 overflow, so a norm is never `inf` and cosine is never NaN for a
 reason unrelated to the property under test; and subnormals are excluded
-because they square to zero — a vector of them passes the port's non-zero
-guard, which asks about components, and still has a norm of zero, at which
-point cosine is undefined for a vector that was accepted. That gap is real,
-filed as **BACKLOG B10l**, and excluded here so it does not arrive as an
-intermittent failure in an unrelated property. If you generate your own
+because they square to zero, so a vector of them has no direction and the
+port **rejects** it (`domain.vector.has_zero_norm`). Drawing one would make
+an unrelated property fail on a legitimate `ValueError` from the guard rather
+than on the thing it was written to check. The guard's own band is pinned by
+examples instead — `test_a_vector_whose_norm_underflows_is_rejected_too` in
+the compliance suite, and `TestHasZeroNorm` in
+`tests/unit/domain/test_vector.py`. If you generate your own
 vectors in adapter-specific tests, use `strategies.vectors(dimension)` rather
 than reinventing those three bounds.
 

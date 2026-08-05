@@ -167,12 +167,15 @@ vector_components = st.floats(
     allow_nan=False,
     allow_infinity=False,
     width=32,
-    # Subnormals square to zero, so a vector of them is non-zero by the port's
-    # guard -- which asks whether the components are zero -- and still has a
-    # norm of zero, at which point cosine is undefined for a vector that was
-    # accepted. That gap is real and is filed as BACKLOG B10l; excluding
-    # subnormals here keeps it from arriving as an intermittent failure in an
-    # unrelated property.
+    # Subnormals square to zero, so a vector of them has a zero norm and no
+    # direction. The port now *rejects* those (`domain.vector.has_zero_norm`,
+    # which closed the divergence), which is why this exclusion is still here
+    # and no longer papering over a gap: a drawn subnormal would make an
+    # unrelated property fail on a legitimate `ValueError` from the guard.
+    # The guard's own band is pinned by examples rather than by sampling --
+    # `test_a_vector_whose_norm_underflows_is_rejected_too` in
+    # `vector_store.py` and `TestHasZeroNorm` in
+    # `tests/unit/domain/test_vector.py`.
     allow_subnormal=False,
 )
 
@@ -185,8 +188,9 @@ def vectors(dimension: int) -> st.SearchStrategy[list[float]]:
     property, in every property that draws a vector.
 
     The bound is on the **norm**, not on "some component is non-zero" -- see
-    the comment on `vector_components` and BACKLOG B10l for why those are not
-    the same question.
+    the comment on `vector_components` for why those are not the same
+    question, and `domain.vector.has_zero_norm` for the guard that asks the
+    norm's version of it.
     """
     return st.lists(vector_components, min_size=dimension, max_size=dimension).filter(
         lambda values: sum(value * value for value in values) > 1e-12

@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from redstring.domain.exceptions import DimensionMismatchError
-from redstring.domain.vector import VectorMatch, VectorRecord, cosine_score, is_zero_vector
+from redstring.domain.vector import VectorMatch, VectorRecord, cosine_score, has_zero_norm
 from redstring.ports.vector_store import entity_type_of
 
 if TYPE_CHECKING:
@@ -152,5 +152,5 @@ class InMemoryVectorStore:
         """Reject anything the port says is not a vector for this store."""
         if len(vector) != self._dimension:
             raise DimensionMismatchError(expected=self._dimension, actual=len(vector))
-        if is_zero_vector(vector):
+        if has_zero_norm(vector):
             raise ValueError("a zero vector has no direction; cosine is undefined for it")

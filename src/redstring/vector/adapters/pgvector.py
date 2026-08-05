@@ -67,7 +67,7 @@ import re
 from typing import TYPE_CHECKING, Any, Self
 
 from redstring.domain.exceptions import DimensionMismatchError
-from redstring.domain.vector import VectorMatch, VectorRecord, is_zero_vector
+from redstring.domain.vector import VectorMatch, VectorRecord, has_zero_norm
 from redstring.ports.vector_store import entity_type_of
 
 if TYPE_CHECKING:
@@ -410,7 +410,7 @@ class PgVectorStore:
         """
         if len(vector) != self._dimension:
             raise DimensionMismatchError(expected=self._dimension, actual=len(vector))
-        if is_zero_vector(vector):
+        if has_zero_norm(vector):
             raise ValueError("a zero vector has no direction; cosine is undefined for it")
 
 

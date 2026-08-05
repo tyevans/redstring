@@ -30,6 +30,7 @@ same pair of vectors, which is what makes `min_score` portable.
 from __future__ import annotations
 
 import math
+import struct
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -128,6 +129,61 @@ def _norm(vector: Sequence[float]) -> float:
     return float(math.sqrt(sum(value * value for value in vector)))
 
 
-def is_zero_vector(vector: Sequence[float]) -> bool:
-    """Whether every component is zero, so cosine against it is undefined."""
-    return not any(vector)
+def has_zero_norm(vector: Sequence[float]) -> bool:
+    """Whether the vector's norm is zero **as float32**, so cosine is undefined.
+
+    The question is about the norm, not about the components, and the two are
+    not the same question. `[1e-30, 1e-30]` has two perfectly good float64
+    components, and each squares to `1e-60` -- a normal float64 and a zero
+    float32. A guard asking `not any(vector)` accepts that vector, and the two
+    adapters then disagree about what it means: the in-memory one raises from
+    `cosine_score` at search time, from a path its docstring calls
+    unreachable, while a SQL backend's cosine-distance operator yields NaN,
+    which sorts unpredictably and would fail `VectorMatch`'s `0..1` bound.
+    That divergence is what the shared compliance suite exists to prevent.
+
+    **float32 is the threshold because it is the one every adapter already
+    imposes**, not because a magnitude was picked. `ports/vector_store.py`
+    says a stored vector is float32 -- pgvector's `vector` is float4, and so
+    is most of the managed competition -- so a vector whose norm vanishes
+    there is one no backend can score, whatever float64 makes of it. Choosing
+    any other cutoff would have meant inventing a contract for "an embedding
+    of magnitude 1e-19", which no model produces and no caller has asked for.
+    Real embeddings are unit-norm or close to it and are nowhere near this.
+
+    Testing each squared component rather than the accumulated sum is
+    deliberate and not an approximation: a sum of non-negative terms is at
+    least its largest term, so the norm is zero exactly when every squared
+    component is.
+    """
+    return all(_squares_to_zero_in_float32(value) for value in vector)
+
+
+def _squares_to_zero_in_float32(value: float) -> bool:
+    """Whether `value * value` underflows to zero once rounded to float32.
+
+    The `>= 1.0` short-circuit is not an optimisation. Squaring a large
+    component overflows float32 -- `1e30` is an ordinary float32 whose square
+    is not -- and `struct.pack("f", ...)` raises `OverflowError` rather than
+    returning an infinity, so squaring unconditionally would reject a
+    perfectly good vector with the wrong exception type. Below 1.0 in
+    magnitude the square is below 1.0 too, so neither rounding can overflow.
+    """
+    component = _to_float32(value)
+    if abs(component) >= 1.0:
+        return False
+    return _to_float32(component * component) == 0.0
+
+
+def _to_float32(value: float) -> float:
+    """`value` rounded to the nearest float32, as every adapter stores it.
+
+    A magnitude beyond float32's range is *not* an error here: the caller is
+    asking whether the norm vanishes, and a value too large to represent is
+    the furthest thing from vanishing. Answering `inf` keeps that question
+    total, and the range check belongs to whatever writes the vector.
+    """
+    try:
+        return float(struct.unpack("f", struct.pack("f", value))[0])
+    except OverflowError:
+        return math.inf if value > 0 else -math.inf
