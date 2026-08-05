@@ -75,6 +75,47 @@ jobs:
         with:
           persist-credentials: false
 
+      # The tag trigger has no branch filter, and cannot have one: a tag is not
+      # on a branch, and `on.push.tags` matches wherever the commit lives. So a
+      # tag pushed from a feature branch publishes exactly as readily as one on
+      # `main` -- it was nearly done here, on a branch whose pull request had
+      # not merged yet.
+      #
+      # **The artifact would have been fine and the record would have been
+      # wrong**, which is the harder failure to notice. The version validates,
+      # the wheel builds, the upload succeeds -- and then the branch merges
+      # under a new SHA, leaving a published release whose PEP 740 attestation
+      # binds it to a commit that `git log main` does not contain. Provenance
+      # pointing at an unreachable commit is worse than none: it looks like
+      # evidence and cannot be followed.
+      #
+      # Nothing downstream can catch it. PyPI never permits reusing a filename,
+      # so by the time the mismatch is visible the version number is spent.
+      #
+      # Asked through the API rather than with `git merge-base`, because
+      # `persist-credentials: false` leaves the checkout without credentials to
+      # fetch `main` with, and re-enabling them to answer one question is a
+      # poor trade in a workflow that mints an OIDC identity. `compare` reports
+      # the tagged commit as `behind` or `identical` exactly when `main`
+      # contains it.
+      - name: The tagged commit must be on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          STATUS=$(gh api "repos/${REPO}/compare/main...${SHA}" --jq .status)
+          case "$STATUS" in
+            behind|identical)
+              echo "Tagged commit ${SHA} is on main (${STATUS})."
+              ;;
+            *)
+              echo "::error::Tagged commit ${SHA} is not on main (compare status: ${STATUS}). Merge first, then tag the merged commit on main."
+              exit 1
+              ;;
+          esac
+
       - name: Classify the tag
         id: version
         run: |
