@@ -39,7 +39,24 @@ At <https://pypi.org/manage/account/publishing/>:
 | Environment name | `pypi` |
 
 Repeat at <https://test.pypi.org/manage/account/publishing/> with environment
-`testpypi`.
+`testpypi` — but under the project name **`redstring-test`**, not `redstring`.
+
+`redstring` on TestPyPI is an unrelated project by another account
+(`RedString 0.0.1`). The two indexes are separate namespaces and TestPyPI is a
+sandbox anyone may claim a name on, so this is an ordinary thing to run into
+rather than a sign something is wrong.
+
+It has to be handled rather than worked around, because TestPyPI authorises an
+upload against the project name **in the distribution's metadata**: a
+`redstring` artifact is rejected there whatever publisher is registered, and
+the 403 reads as a publisher misconfiguration. `release.yml` therefore renames
+the distribution to `redstring-test` before building for TestPyPI, and only for
+TestPyPI — the artifact that reaches PyPI is built from an unmodified tree.
+
+The *import* name never changes. Hatchling packages `src/redstring`, so
+`pip install redstring-test` still gives you `import redstring`, and the
+`verify` job installs under one name and imports under the other precisely to
+keep proving that.
 
 **There is no API token anywhere in this process, and there should never be
 one.** The workflow mints a short-lived OIDC identity that PyPI exchanges for
@@ -127,8 +144,14 @@ uv venv /tmp/t && uv pip install --python /tmp/t/bin/python \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
   --index-strategy unsafe-best-match \
-  redstring==0.1.0a1
+  redstring-test==0.1.0a1
+
+/tmp/t/bin/python -c 'import redstring; print(redstring.__version__)'
 ```
+
+**`redstring-test`, and then `import redstring`.** That is not a typo in either
+line — see the note under the pending publishers above. The distribution is
+renamed for TestPyPI only; the import package is `redstring` on both indexes.
 
 Both extra flags are load-bearing. **The extra index** is needed because
 TestPyPI does not mirror the real one, so without it the install fails
@@ -140,7 +163,7 @@ resolve your dependencies against an ancient `pydantic` and test a
 combination no user will ever have.
 
 "Unsafe" refers to dependency confusion across two indexes, which is not a
-risk here: every name involved is public, and `redstring` is pinned to an
+risk here: every name involved is public, and `redstring-test` is pinned to an
 exact version that exists on exactly one of them.
 
 The release workflow runs this same install automatically in its `verify`

@@ -1334,12 +1334,12 @@ merging in `consolidation/`, timelines in `temporal/`.
 |---|---|---|
 | `GraphStore` | `graph/adapters/memory.py`, default gate | Neo4j, `-m integration` (slices 4, 7) |
 | `VectorStore` | `vector/adapters/memory.py`, default gate | pgvector, `-m integration` (slice 5) |
-| `Cache` | `MemoryCache`, default gate | **nothing** -- see B41 |
+| `Cache` | `MemoryCache`, default gate | Redis, `-m integration` (slice 11) |
 | `LlmProvider` | `FakeLlmProvider`, default gate | live model, `-m integration` (slice 6) |
 
-So one real gap survives from this item and it has its own entry (B41,
-`RedisCache`). The structural ones that remain are about *how* the integration
-suites run, not whether they exist: B10a, B10f, B10m.
+Every port now has both tiers; the `Cache` row was the last gap and B41 closed
+it in slice 11. What remains is structural — about *how* the integration suites
+run rather than whether they exist: B10a, B10f, B10m.
 
 ---
 
@@ -1547,27 +1547,44 @@ delete statement) adds a third statement to every batch upsert, whose write
 cost ADR 0003 measured carefully. Measure the leak before paying for it, and
 correct the ADR either way.
 
-## `RedisCache` is not held to `tests/compliance/cache.py`
+### B63. `mkdocs --strict` does not fail on a broken in-page anchor, and 48 are broken
 
-`tests/compliance/cache.py` is written as the port-level contract for every
-`Cache` adapter and its module docstring claims it is "asserted identically
-for both adapters". Only one subclass exists:
-`tests/unit/llm/test_memory_cache.py:23` (`TestMemoryCache(CacheCompliance)`).
-There is no `tests/unit/llm/test_redis_cache.py`, so nothing checks
-`RedisCache` against the suite.
+`mkdocs.yml` sets `strict: true`, which promotes WARNING to an error. **Anchors
+are reported at INFO**, so a link to `page.md#heading-that-was-renamed` builds
+green today. Missing *pages* fail; missing *anchors* do not.
 
-This matters most for the cases the suite exists for, which are exactly the
-ones where Redis and memory could diverge: `decode_responses=True` (the
-`str`-not-`bytes` test), `ZADD` member uniqueness for two hits at the same
-instant, the `f"{key}:hits"` namespacing that keeps a window and a value from
-a `WRONGTYPE`, and the sub-second TTL that `EX` would truncate to zero. Every
-one of those is asserted today only against `MemoryCache`, which cannot fail
-them.
+That is a hole in the one gate this repository points at for prose. `mkdocs.yml`
+line 51 and `recurring-defects.md` §6 both credit `--strict` with making a
+half-finished renumber impossible to land — and the half that went unnoticed the
+first time was 71 in-page anchors, which is precisely the half still unguarded.
+A gate that catches the coarse failure and shrugs at the fine one is the more
+dangerous kind, because catching the coarse one is what earns the trust it then
+fails to deserve.
 
-Deferred rather than fixed because it needs a Redis server in the unit tier —
-either an integration-marked subclass against the container, or `fakeredis`,
-which reintroduces the "in-memory reference more forgiving than production"
-problem the suite's docstring names. Decide that first; the subclass itself is
-about five lines once the fixture exists.
-`docs/adr/0008-the-two-non-store-ports.md`'s "For adapter authors"
-section now states the gap, so fixing this means deleting that paragraph too.
+Add to `mkdocs.yml`, which is the whole fix on the config side:
+
+```yaml
+validation:
+  anchors: warn
+  links:
+    absolute_links: warn
+    unrecognized_links: warn
+```
+
+**Deferred because turning it on surfaces 48 warnings and therefore reddens CI
+until every one is repaired**, and they are unrelated to whatever change is in
+flight. Measured, not estimated — run the snippet above and `uv run mkdocs build
+--strict` reports `Aborted with 48 warnings in strict mode!`. The clusters are
+`reference/quality-gates.md` (6), `reference/domain-value-types.md` (5),
+`reference/events.md` (2), with the rest spread thinner.
+
+Two things learned that the next person should not have to rediscover:
+
+- The anchors are mostly *self*-links within a page whose headings were later
+  edited — the slug in the link is a verbatim snapshot of an old heading, so
+  each one is repairable by reading the current headings rather than by
+  guessing. `#kg_compliance_max_examples-default-50-read-in-...-process-wide-only`
+  is a heading that has since been shortened, not a page that moved.
+- Do the config change and the repairs in **one** commit. Landing the repairs
+  first leaves nothing preventing the next one, and landing the config first is
+  a red build. This is the §6 lesson about renumbering, in a different costume.

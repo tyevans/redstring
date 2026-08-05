@@ -603,12 +603,22 @@ adapter pass on behaviour production does not have. So the awkward cases —
 two hits at the same instant — belong here rather than in one adapter's own
 file.
 
-The suite is written for both adapters and currently subclassed by one:
-`tests/unit/llm/test_memory_cache.py` has `TestMemoryCache(CacheCompliance)`,
-and there is no corresponding `RedisCache` subclass, because that one needs a
-server. That is worth knowing before treating a green run as evidence about
-Redis — the promises above are stated in port terms, but only the in-memory
-adapter is currently held to them by the unit suite.
+The suite is subclassed by both adapters: `tests/unit/llm/test_memory_cache.py`
+runs it in the unit tier, and `tests/integration/llm/test_redis_cache.py` runs
+the same body against a real server under `-m integration`.
+
+For most of its life it was subclassed by *one*, and what happened when the
+second arrived is the argument for the tier existing at all. `RedisCache` had
+shipped, been reviewed, and been used; its first compliance run failed
+immediately on a defect no reader had caught. `record_hit` built its sorted-set
+member from `id(self)`, which is constant for the life of the cache object — so
+it distinguished two *instances* rather than two hits, and collapsed a burst
+into one entry, which is exactly when a rate limiter is being asked a question
+that matters. `MemoryCache` cannot exhibit it: it appends to a list.
+
+The comment above that line already described the requirement correctly. The
+code under it did not, and nothing executed the promise against the adapter
+that had to keep it.
 
 There is **no equivalent tier for `LlmProvider`**, and that is a gap rather
 than a decision. Its two adapters are tested separately — `FakeLlmProvider`
