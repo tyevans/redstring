@@ -1583,3 +1583,103 @@ link nobody can follow is also a claim nobody re-checks.
 Picking this up means writing the missing sections against the code, not
 against the old outline — the outline is three slices stale and was wrong at
 least once.
+
+### B66. `EmbeddingProvider` port is missing, so nothing can populate a `VectorStore`
+
+Reported by the first downstream project to build on redstring, as their "the
+real one". They are right, and the shape of the gap is worse than a missing
+convenience: **the port list is asymmetric.** `LlmProvider` lets extraction
+turn text into entities without knowing about a model; there is no equivalent
+letting anything turn text into a vector, so `VectorStore` can only be fed
+vectors the caller computed elsewhere. `VectorProjection` writes what it is
+given, and nothing in the library ever produces one.
+
+That makes the vector half of this library unreachable from its own pipeline.
+A caller who wants semantic search has to run an embedding model themselves,
+match redstring's chunking, and construct `VectorRecord`s by hand — at which
+point the port is doing very little for them.
+
+This is an architectural decision and needs an ADR, not just a Protocol:
+
+- `ports/embedding_provider.py` sits beside `ports/llm_provider.py`, and the
+  adapter goes under `llm/` for the same reason `LangChainLlmProvider` does —
+  so nothing above the sibling band can reach a client library.
+- **The dimension is the hard part.** `VectorStore` fixes a dimension at
+  construction (pgvector's column type), the provider determines it, and the
+  two must agree or every write fails at the database rather than at the seam.
+  Deciding whether the provider *declares* a dimension the store validates, or
+  the store asks the provider, is the decision the ADR is for. Note the
+  CLAUDE.md warning while doing it: a dimension check written with `is not`
+  passes at a test dimension of 8 and rejects every real 768-wide vector.
+- It needs a compliance suite, like every other port here, and a fake
+  implementation for the commit gate. A deterministic fake — hash the text into
+  a unit vector — is enough to make `build_graph` populate a vector store in a
+  test with no model.
+
+### B67. No way to find entities that were never consolidated
+
+Reported downstream. `Entity` carries no consolidation state, so "resolve
+whatever has not been resolved yet" is a scan of every entity in the tenant.
+Consolidation is a problem this library claims to own, and the incremental case
+— documents arriving continuously, consolidation running periodically — is the
+normal one rather than an exotic one.
+
+Do not solve it by adding a mutable `consolidated: bool` to `Entity`. The write
+model is event-sourced and `Entity` is a value handed to a projection; a flag on
+it would be state the log does not own, and the first replay would have to
+reconstruct it anyway. The candidates worth weighing are a projection that
+maintains an unresolved set from `DocumentExtracted` and `EntitiesMerged`, or a
+store-level query over "entities with no alias and no merge event". Both are
+real designs; neither is a field.
+
+### B68. `project()` cannot scope to a stream or category
+
+Reported downstream, who are using `tenant_filter` as the workaround. A shared
+event store replays every foreign event through every projection, which is
+correctness-neutral and cost-linear in other people's traffic. The workaround
+is real but is a filter applied after delivery, not a narrower subscription.
+
+Whether this is redstring's to fix depends on what `eventsource-py` exposes —
+check before designing, because a scoped subscription in the library that
+filters client-side is the same cost with more code.
+
+### B69. `ReplayReport.failed` counts poison events instead of raising
+
+Reported downstream. There is no supported strict mode, so a replay that drops
+every event still returns a report and exits successfully. That is a reasonable
+default for a rebuild over a long log and a bad one for a test or a first
+deployment, which is exactly when a silent partial rebuild is most costly and
+least visible.
+
+A `strict=True` that raises on the first failure is the obvious shape. The
+thing to get right is that the failure has to name the event — an exception
+saying "replay failed" with a count is the same problem in a louder voice.
+
+### B70. `eventsource-py` floor was too low, and the library was published with it
+
+**Fixed, and recorded here because the shipped `0.1.0` carries the wrong
+floor.** Reported downstream as trivial; it is trivial to fix and was not
+trivial in effect.
+
+`pyproject.toml` declared `eventsource-py>=0.9.1,<0.11` while
+`projections/base.py` forwards `retry_policy`, `tracer` and `tenant_filter` to
+`DeclarativeProjection.__init__`. Measured across both versions rather than
+assumed — and the downstream report is right in substance and slightly off in
+detail, which matters for anyone pinning:
+
+```
+0.9.1:  (checkpoint_repo, dlq_repo, enable_tracing, *, tenant_filter)
+0.10.0: (checkpoint_repo, dlq_repo, enable_tracing, *, retry_policy, tracer, tenant_filter)
+```
+
+`tenant_filter` existed in 0.9.1. Only `retry_policy` and `tracer` are new, so
+the failure is `TypeError: unexpected keyword argument 'retry_policy'` at
+**projection construction**, not at import — `import redstring` succeeds and the
+first `GraphProjection(...)` does not.
+
+The floor is now `>=0.10.0`. What remains open is the general case: nothing
+proves a declared floor actually works, because CI resolves fresh and gets the
+newest release. A test that installs the declared floor into a temporary venv
+and constructs a projection would close it, and is the same shape as
+`test_wheel_contents.py` — slow, `integration`-marked, and the only kind of
+check that measures the claim rather than a proxy for it.
