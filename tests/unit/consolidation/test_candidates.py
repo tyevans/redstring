@@ -7,15 +7,16 @@ about which query was made.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 
-from redstring.consolidation.candidates import CandidateFinder
+from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.domain.alias import Alias
 from redstring.domain.blocking import blocking_keys_for
-from redstring.domain.similarity import FeatureWeights
+from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.vector.adapters.memory import InMemoryVectorStore
 
@@ -174,7 +175,53 @@ class TestScoring:
     async def test_the_per_signal_scores_are_reported(self):
         """A threshold decision that cannot be explained is one nobody can
         tune -- and "the name matched but nothing else did" reaches the same
-        number as "everything matched a little"."""
+        number as "everything matched a little".
+
+        The subject is given a neighbour so the graph feature has something to
+        report. It used to be built from two *isolated* entities and assert
+        `graph is not None`, which passed only because the finder scored an
+        empty-vs-empty comparison as `0.0` -- see
+        `test_two_entities_with_no_neighbours_get_no_graph_signal` below, and
+        `CandidateFinder._graph_feature` for why that was wrong. This test is
+        about features being reported individually, so the fix is a fixture
+        where the feature exists rather than a weaker assertion.
+        """
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace")
+        other = keyed(tenant, "Ada Lovelace")
+        neighbour = keyed(tenant, "Charles Babbage", entity_type="person")
+        store = await _store_with(subject, other, neighbour)
+        await store.upsert_relationships([edge(tenant, source=subject.id, target=neighbour.id)])
+
+        # The neighbour shares the `t:person` blocking key, so it is a
+        # candidate too. Pick the pair this test is about rather than
+        # asserting the block has one member.
+        scored = await CandidateFinder(store).candidates(subject)
+        found = next(c for c in scored if c.entity.id == other.id)
+
+        assert found.features.name == 1.0
+        assert found.features.graph == 0.0
+        assert found.features.embedding is None
+
+    async def test_two_entities_with_no_neighbours_get_no_graph_signal(self):
+        """An empty-vs-empty neighbour comparison is *absent*, not zero.
+
+        `graph_similarity` scores two empty sets `0.0` on purpose -- "nothing
+        is known about either" must not read as "these agree perfectly". The
+        finder used to pass that straight through, which made the same
+        mistake in the other direction: it read as "these positively
+        disagree".
+
+        The cost was not theoretical. Two entities named "Ada Lovelace" with
+        no edges scored **0.7143** rather than 1.0, and `LOW_SIMILARITY` is
+        0.75 -- so the most obvious duplicate there is was rejected outright,
+        not even adjudicated, by a feature with nothing to say. Two entities
+        freshly extracted from one document have no neighbours, so this is the
+        first thing a new caller consolidates.
+
+        Nothing caught it because every other test in this package builds its
+        finder with `use_graph_signal=False`.
+        """
         tenant = uuid4()
         subject = keyed(tenant, "Ada Lovelace")
         other = keyed(tenant, "Ada Lovelace")
@@ -182,9 +229,36 @@ class TestScoring:
 
         [found] = await CandidateFinder(store).candidates(subject)
 
-        assert found.features.name == 1.0
-        assert found.features.graph is not None
-        assert found.features.embedding is None
+        assert found.features.graph is None
+        assert found.score == 1.0
+
+    async def test_a_disjoint_neighbourhood_still_scores_zero(self):
+        """The distinction the fix rests on: absence is not disagreement, but
+        disagreement is still disagreement.
+
+        Both entities have structure and share none of it. That is a real
+        finding about two entities, and it must keep pulling the score down --
+        otherwise "absent when empty" would have quietly deleted the graph
+        signal altogether.
+        """
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace")
+        other = keyed(tenant, "Ada Lovelace")
+        left = keyed(tenant, "Charles Babbage", entity_type="person")
+        right = keyed(tenant, "Mary Somerville", entity_type="person")
+        store = await _store_with(subject, other, left, right)
+        await store.upsert_relationships(
+            [
+                edge(tenant, source=subject.id, target=left.id),
+                edge(tenant, source=other.id, target=right.id),
+            ]
+        )
+
+        scored = await CandidateFinder(store).candidates(subject)
+        found = next(c for c in scored if c.entity.id == other.id)
+
+        assert found.features.graph == 0.0
+        assert found.score < 1.0
 
     async def test_the_graph_signal_can_be_turned_off(self):
         """And when it is, the feature is absent rather than zero -- a zero
@@ -355,3 +429,82 @@ class TestTheFinderNeverWrites:
         )
         assert after == before
         assert await store.find_aliases(subject.id, tenant) == []
+
+
+class TestWhatMutationTestingFound:
+    """Two survivors from a cosmic-ray run over this module, both real.
+
+    The run produced 62 survivors out of 140, and 55 of those were the
+    annotation case CLAUDE.md describes -- `X | None` rewritten as `X + None`
+    and ten other operators, unkillable because PEP 563 makes annotations
+    strings that are never evaluated. Of the remaining seven, five were
+    routine equivalents the same section names (`*,` becoming `/,`, and a
+    `minimum_score` default moving from `0.0` to `-1.0`, which admits exactly
+    the same candidates on a `0..1` scale).
+
+    These two were not equivalent. Nothing failed when `frozen=True` became
+    `frozen=False`, and nothing failed when `EMBEDDING_SEARCH_K` became 51.
+    """
+
+    def test_a_scored_candidate_cannot_be_mutated(self):
+        """`frozen=True` on `ScoredCandidate` was unasserted.
+
+        It matters more than it did: the type is now exported, so its
+        immutability is a promise to callers rather than an internal
+        convenience. A caller who sorts a candidate list and rewrites a score
+        in place would otherwise be silently allowed to, and the next reader
+        of that list would see a ranking that no longer matches its order.
+        """
+        tenant = uuid4()
+        candidate = ScoredCandidate(
+            entity(tenant, name="Ada Lovelace"),
+            SimilarityFeatures(name=1.0, embedding=None, graph=None),
+            1.0,
+        )
+
+        with pytest.raises(FrozenInstanceError):
+            candidate.score = 0.0  # type: ignore[misc]
+
+    async def test_the_embedding_search_asks_for_the_configured_k(self):
+        """`EMBEDDING_SEARCH_K` reached no assertion at all.
+
+        Changing it from 50 to 51 broke nothing, because every test in this
+        package has a handful of entities and any `k` above that returns the
+        same set. That is the "test at a realistic magnitude" trap in its
+        cheaper form: rather than seed 51 vectors to make the boundary bite,
+        assert the value is *passed*, which is the part this module is
+        responsible for.
+
+        The store is a real `InMemoryVectorStore` with its `search` wrapped,
+        not a mock -- a `MagicMock` here would answer any attribute and prove
+        nothing about the call actually working.
+
+        **The literal `50` is deliberate, and the first version of this test
+        got it wrong.** It asserted `asked == [EMBEDDING_SEARCH_K]`, importing
+        the very constant under test -- so changing the constant to 51 moved
+        both sides together and the test passed, which is exactly the mutant
+        it was written to kill. That is row 14 of CLAUDE.md's table ("an
+        expectation written in terms of the constant under test"), reproduced
+        by someone who had just read the table. Write the number you expect.
+        """
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace")
+        other = keyed(tenant, "Ada Lovelace")
+        store = await _store_with(subject, other)
+
+        vectors = InMemoryVectorStore(dimension=3)
+        await vectors.upsert(subject.id, [1.0, 0.0, 0.0], tenant)
+        await vectors.upsert(other.id, [1.0, 0.0, 0.0], tenant)
+
+        asked: list[int] = []
+        real_search = vectors.search
+
+        async def recording_search(vector, tenant_id, **kwargs):
+            asked.append(kwargs["k"])
+            return await real_search(vector, tenant_id, **kwargs)
+
+        vectors.search = recording_search  # type: ignore[method-assign]
+
+        await CandidateFinder(store, vector_store=vectors).candidates(subject)
+
+        assert asked == [50]

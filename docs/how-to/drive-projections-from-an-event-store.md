@@ -1611,6 +1611,51 @@ repeatedly gets a fresh count each time, so it is never the thing that stops a
 long-running follower; see
 [Resuming](#resuming-from_position-is-exclusive-and-none-means-rebuild-from-the-beginning).
 
+## Consolidating into the same log
+
+Everything above appends `DocumentExtracted`. The other two events in the
+schema — `EntitiesMerged` and `MergeUndone` — come from consolidation, and on
+this path they belong in the same log for the same reason: a store you can
+rebuild has to be rebuildable from *all* of the facts, not most of them.
+
+`Consolidator` takes the same two eventsource ports the rest of this guide
+uses. Hand it yours and its merges are recorded where your replays can find
+them:
+
+```python
+from redstring import Consolidator
+
+consolidator = Consolidator(
+    graph_store,
+    event_store=event_store,
+    snapshot_store=snapshot_store,
+)
+
+report = await consolidator.resolve(subject)
+```
+
+**Omitting those two arguments is the thing to avoid here.** `Consolidator`
+falls back to an in-memory log, which is the right default for the
+`build_graph` shape — no event store, nothing to rebuild from — and exactly
+wrong once you have one. Two symptoms follow, and neither announces itself:
+
+- **A rebuild loses every merge.** The graph is correct while the process
+  lives, because the consolidator projects each event as it emits it. Wipe
+  and replay from the log, and the merges are simply absent: the entities
+  come back unmerged, and nothing failed.
+- **`undo` stops working across restarts.** It reads what to restore from the
+  log, so a new `Consolidator` cannot reverse an earlier one's merge and
+  raises `UnknownMergeError` — the same error it raises for a merge that
+  never happened.
+
+`consolidator.remembers_merges_across_restarts` reports which arrangement is
+in use, and is worth asserting once at startup on this path rather than
+discovering the answer after a rebuild.
+
+The events themselves need no special handling. `GraphProjection` already
+handles all three, in the order the log delivers them, and the redelivery
+argument below covers merges as well as extractions.
+
 ## Rebuilding a store from scratch: wipe, replay from zero, verify
 
 Three steps, in this order, and the third is not optional:

@@ -154,13 +154,28 @@ recorded against the capability whose export would bring it. That is a test
 [ADR 0006](docs/adr/0006-the-public-surface-is-gated.md) records why it is
 gated rather than curated.
 
-**Consolidation, temporal inference and the resilience stack are not
-exported.** All are real and tested; none has a composed entry point yet, so
-exporting them would publish an API whose shape is still being decided by
-callers it does not have. Reach them by dotted path
-(`redstring.consolidation.service`, `redstring.llm.retry`) and expect
-movement — a rename there is not a breaking change, because nothing promised
-it.
+**Consolidation is exported.** `Consolidator` is the composed entry point for
+the second of the three problems above — merge, resolve, undo, with the graph
+kept in step by a projection rather than by direct writes:
+
+```python
+from redstring import Consolidator
+
+consolidator = Consolidator(store)
+report = await consolidator.resolve(subject)  # None means nothing worth merging
+```
+
+[ADR 0015](docs/adr/0015-consolidation-gets-a-composed-entry-point.md) records
+why it took four slices, and what `undo` needs from the event log — with no
+`event_store` argument the merge history is in-memory and dies with the
+object, so undo is session-only.
+
+**Temporal inference and the resilience stack are not exported.** Both are
+real and tested; neither has a composed entry point yet, so exporting them
+would publish an API whose shape is still being decided by callers it does not
+have. Reach them by dotted path (`redstring.temporal`, `redstring.llm.retry`)
+and expect movement — a rename there is not a breaking change, because nothing
+promised it.
 
 [Consolidate duplicate entities](https://tyevans.github.io/redstring/how-to/consolidate-duplicate-entities/)
 is the end-to-end recipe, from a populated graph through blocking, scoring and
@@ -174,7 +189,7 @@ constants that decide how aggressive it is.
 | [Getting started](https://tyevans.github.io/redstring/getting-started/) | One document to a queryable graph, no server needed |
 | [How-to guides](https://tyevans.github.io/redstring/how-to/) | Authoring a domain schema, consolidating duplicates, driving and rebuilding projections, querying a timeline, writing a store adapter |
 | [Reference](https://tyevans.github.io/redstring/reference/) | The events, aggregates, domain value types, schema YAML, Neo4j store, quality gates |
-| [Decisions](https://tyevans.github.io/redstring/adr/) | Fourteen ADRs, each with the alternative that was rejected |
+| [Decisions](https://tyevans.github.io/redstring/adr/) | The choices that are expensive to revisit, each with the alternative that was rejected |
 | [Contributing](https://tyevans.github.io/redstring/contributing/) | Setup, the commit gate, and how tests are organised |
 
 ## Development

@@ -77,7 +77,7 @@ if TYPE_CHECKING:
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
     from redstring.events.merge import EntitiesMerged, MergeUndone
-    from redstring.ports.graph_store import GraphStore
+    from redstring.ports.graph_store import RelationshipStore
 
 
 class ConsolidationService:
@@ -88,7 +88,7 @@ class ConsolidationService:
         *,
         event_store: AggregateStore,
         snapshot_store: SnapshotStore,
-        graph_store: GraphStore,
+        graph_store: RelationshipStore,
     ) -> None:
         self._graph = graph_store
         self._log = consolidation_repository(event_store, snapshot_store)
