@@ -145,6 +145,26 @@ class MalformedCompletionError(LlmProviderError):
         super().__init__(f"returned content that is not a valid {schema}: {cause}", model=model)
 
 
+class EmbeddingProviderError(RedstringError):
+    """An `EmbeddingProvider` could not produce usable vectors.
+
+    Carries `model` for the same reason `LlmProviderError` does: an embedding
+    failure is nearly always about *which* endpoint was reached, and a message
+    without the model name sends the reader to the wrong deployment.
+
+    The count mismatch it covers is worth stating plainly, because it is the
+    failure that is silent otherwise. `embed` promises one vector per input in
+    input order; an adapter that batches internally, retries a partial failure,
+    or deduplicates identical texts can return fewer. A caller zipping the
+    result back onto entities would then attach the wrong vector to the wrong
+    entity and store it happily -- a corrupted graph rather than an error.
+    """
+
+    def __init__(self, message: str, *, model: str) -> None:
+        self.model = model
+        super().__init__(f"[{model}] {message}")
+
+
 class ConsolidationInvariantError(RedstringError):
     """A merge or undo would violate a rule the consolidation log enforces.
 

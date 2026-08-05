@@ -50,8 +50,9 @@ implementations that must be interchangeable —
 | `ports/vector_store.py` | `vector/adapters/memory.py`, `vector/adapters/pgvector.py` |
 | `ports/cache.py` | `llm/cache/memory.py`, `llm/cache/redis.py` |
 | `ports/llm_provider.py` | `llm/adapters/fake.py`, `llm/adapters/langchain.py` |
+| `ports/embedding_provider.py` | `llm/adapters/fake_embedding.py` |
 
-Three of the four have a shared suite; `llm_provider` does not, so it is the
+Four of the five have a shared suite; `llm_provider` does not, so it is the
 one where this shape is currently free to happen. See
 `docs/adr/0002-two-store-ports.md` for why the store ports are two rather than
 one, and `docs/how-to/implement-a-store-adapter.md` for the procedure a third

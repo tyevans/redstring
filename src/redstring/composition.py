@@ -60,11 +60,14 @@ from redstring.aggregates.document import Document
 from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.consolidation.service import ConsolidationService
+from redstring.domain.exceptions import EmbeddingProviderError
+from redstring.domain.vector import VectorRecord
 from redstring.events.streams import document_stream
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.projections.graph import GraphProjection
+from redstring.projections.vector import VectorProjection
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -81,6 +84,7 @@ if TYPE_CHECKING:
     from redstring.events.merge import EntitiesMerged, MergeUndone
     from redstring.extraction.domains.models import DomainSchema
     from redstring.extraction.protocols import Chunker
+    from redstring.ports.embedding_provider import EmbeddingProvider
     from redstring.ports.graph_store import GraphStore
     from redstring.ports.llm_provider import LlmProvider
     from redstring.ports.vector_store import VectorStore
@@ -146,6 +150,17 @@ class GraphBuildReport:
     #: could not be resolved to ids. A normal outcome, not an error, but a
     #: large number means the prompt is not landing.
     unresolved_relationships: int
+    #: Entities written to a `VectorStore`, and zero when no embedding
+    #: provider was given.
+    #:
+    #: **Not a repeat-suppression signal.** `Document.record_embeddings`
+    #: refuses a second `EntitiesEmbedded` for the same model, but
+    #: `build_graph` builds a fresh aggregate on every call -- the same shape
+    #: that makes `event is None` unreachable here -- so re-running it
+    #: re-embeds and reports the full count again. The store absorbs that:
+    #: `upsert_many` is idempotent, so the second run rewrites identical
+    #: vectors. It costs an embedding call, not correctness.
+    embedded: int = 0
 
 
 async def build_graph(
@@ -158,6 +173,8 @@ async def build_graph(
     chunker: Chunker | None = None,
     skip_failed_chunks: bool = False,
     allow_partial: bool = False,
+    embedding_provider: EmbeddingProvider | None = None,
+    vector_store: VectorStore | None = None,
 ) -> GraphBuildReport:
     """Extract `document` and write the result into `store`.
 
@@ -177,6 +194,11 @@ async def build_graph(
             choice -- `0.0` is a give-up.
         chunker: How to split the document. A `SlidingWindowChunker` with its
             own defaults when None.
+        embedding_provider: Embeds each entity's name so the extraction lands
+            in a `VectorStore` as well as the graph. Must be given together
+            with `vector_store`.
+        vector_store: Where the vectors land. Must be given together with
+            `embedding_provider`.
         skip_failed_chunks: Continue past a chunk whose model call failed.
         allow_partial: Record a result that has failed chunks in it. Off by
             default, because recording a partial extraction marks this model
@@ -190,12 +212,20 @@ async def build_graph(
         same one twice.
 
     Raises:
+        ValueError: One of `embedding_provider` and `vector_store` was given
+            without the other, or their dimensions disagree. Both are checked
+            **before** anything is extracted: "I configured embeddings and got
+            no vectors" is the failure this argument pair exists to prevent,
+            and discovering it after a document has been through a model is
+            discovering it too late.
         UnknownDomainError: `domain` named an id no schema has.
         PartialExtractionError: Chunks failed and `allow_partial` is False.
             Nothing is written -- the refusal happens before the projection
             runs, so it cannot itself cause the gap it prevents.
         LlmProviderError: A model call failed and `skip_failed_chunks` is off.
     """
+    _check_embedding_wiring(embedding_provider, vector_store)
+
     domain_id, confidence, system_prompt = await _resolve_prompt(domain, document, provider)
 
     pipeline = ExtractionPipeline(
@@ -215,8 +245,18 @@ async def build_graph(
         aggregate, document, tenant_id, allow_partial=allow_partial, result=result
     )
 
+    embedded = 0
     if event is not None:
         await GraphProjection(store).handle(event)
+        if embedding_provider is not None and vector_store is not None:
+            embedded = await _embed_entities(
+                aggregate,
+                document,
+                tenant_id,
+                entities=result.entities,
+                provider=embedding_provider,
+                vector_store=vector_store,
+            )
 
     return GraphBuildReport(
         event=event,
@@ -227,7 +267,112 @@ async def build_graph(
         failed_chunks=result.failed_chunks,
         total_chunks=result.total_chunks,
         unresolved_relationships=result.unresolved_relationships,
+        embedded=embedded,
     )
+
+
+def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorStore | None) -> None:
+    """Refuse a half-configured or mismatched embedding pair, before any work.
+
+    Two failures, both of which are otherwise discovered late and read as
+    something else.
+
+    **Half-configured** is a silent no-op: a caller who passes an embedding
+    provider and forgets the store gets a perfectly successful run with an
+    empty vector store, and every symptom of that appears later in whatever
+    was going to search it.
+
+    **Mismatched dimensions** would otherwise surface from pgvector, after the
+    embedding API call has been paid for, as an error about a column type.
+    `VectorStore` does raise `DimensionMismatchError` per write -- that check
+    stays and is the backstop -- but it fires once per vector at the end of a
+    pipeline rather than once at the seam, which is where the configuration
+    mistake actually is.
+
+    The comparison is `!=` and not `is not`. CLAUDE.md records that exact
+    defect: CPython caches small integers, so an identity check passes at a
+    test dimension of 8 and rejects every legitimate vector at 768.
+    """
+    if (provider is None) != (store is None):
+        given, missing = (
+            ("embedding_provider", "vector_store")
+            if provider is not None
+            else ("vector_store", "embedding_provider")
+        )
+        raise ValueError(
+            f"{given} was given without {missing}; embedding needs both, and "
+            f"one alone writes no vectors while reporting success"
+        )
+
+    if provider is not None and store is not None and provider.dimension != store.dimension:
+        raise ValueError(
+            f"embedding_provider {provider.model!r} produces "
+            f"{provider.dimension}-dimensional vectors but the vector store "
+            f"holds {store.dimension}. Two models' vectors are not comparable "
+            f"even at equal dimension, so point this run at a store built for "
+            f"this model rather than widening either."
+        )
+
+
+async def _embed_entities(
+    aggregate: Document,
+    document: SourceDocument,
+    tenant_id: TenantId,
+    *,
+    entities: Sequence[Entity],
+    provider: EmbeddingProvider,
+    vector_store: VectorStore,
+) -> int:
+    """Embed `entities` and fold the result into `vector_store`.
+
+    Goes through the aggregate and the projection rather than calling
+    `upsert_many` directly, which is ADR 0004's rule and not ceremony here:
+    `EntitiesEmbedded` is what lets a vector store be rebuilt by replay, and a
+    direct write would make the vector half the one part of this library that
+    cannot be.
+
+    **`Document.record_embeddings` already existed and nothing called it.**
+    So did `VectorProjection`. Both were written when the event was designed
+    and neither had a caller -- the inert-code shape from
+    `recurring-defects.md` §3, sitting in the tree for six slices.
+
+    Returns:
+        How many vectors were written.
+
+    The `event is None` branch handles `record_embeddings` refusing a repeat
+    for a model already recorded on the aggregate. **It is unreachable from
+    `build_graph`**, which constructs a fresh `Document` per call, and is kept
+    because this helper takes the aggregate as an argument: a caller that loads
+    one from an event store reaches it immediately. Left rather than asserted
+    away, and named here so it is a known dead branch rather than a mystery --
+    `recurring-defects.md` ยง3 is about the ones nobody wrote down.
+    """
+    if not entities:
+        return 0
+
+    vectors = await provider.embed([entity.name for entity in entities])
+    if len(vectors) != len(entities):
+        raise EmbeddingProviderError(
+            f"asked for {len(entities)} embeddings and got {len(vectors)}; "
+            f"results are positional, so a short list cannot be matched to "
+            f"the entities it came from",
+            model=provider.model,
+        )
+
+    event = aggregate.record_embeddings(
+        tenant_id=tenant_id,
+        source_id=document.id,
+        embedding_model=provider.model,
+        embeddings=[
+            VectorRecord(entity_id=entity.id, tenant_id=tenant_id, vector=vector)
+            for entity, vector in zip(entities, vectors, strict=True)
+        ],
+    )
+    if event is None:  # pragma: no cover -- unreachable from `build_graph`
+        return 0
+
+    await VectorProjection(vector_store).handle(event)
+    return len(vectors)
 
 
 async def _resolve_prompt(

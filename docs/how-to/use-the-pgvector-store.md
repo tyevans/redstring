@@ -443,6 +443,28 @@ store, and nothing else:
 | `bge-m3` | 1024 |
 | OpenAI `text-embedding-3-small` | 1536 |
 
+**You do not have to keep the two in step by hand.** Pass an
+`EmbeddingProvider` and this store to `build_graph` together and the pair is
+checked before anything is embedded:
+
+```python
+await build_graph(
+    document,
+    provider=llm,
+    store=graph,
+    tenant_id=tenant_id,
+    embedding_provider=embedder,  # declares its own `dimension`
+    vector_store=vectors,  # declares its own `dimension`
+)
+```
+
+A disagreement raises a `ValueError` naming both numbers at the call, rather
+than surfacing later as a pgvector complaint about a column type after the
+embedding API call has been paid for. Supplying one without the other also
+raises, because the alternative is a successful-looking run that writes no
+vectors. See
+[ADR 0017](../adr/0017-the-embedding-provider-port.md).
+
 Take the number from your model's documentation, or measure it once —
 `len(await embedder.embed("probe"))` — and pass that. A non-positive value is
 rejected at construction with `ValueError` (`dimension must be positive, not

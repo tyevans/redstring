@@ -1,6 +1,20 @@
 # ADR 0008: The two non-store ports, `Cache` and `LlmProvider`
 
-**Status:** accepted
+**Status:** accepted; amended by
+[ADR 0017](0017-the-embedding-provider-port.md).
+
+> **Amendment (ADR 0017).** There are now **three** non-store ports:
+> `EmbeddingProvider` joined `Cache` and `LlmProvider`. The title and the
+> "four ports, two ADRs" framing below are a record of the state when this was
+> decided, not a description of the tree.
+>
+> The reasoning here is unchanged and was what the new port was designed
+> against — a provider port stays narrow, absorbs its backend's awkwardness,
+> and never lets a client library reach the layers above it. What ADR 0017
+> adds is a question this page did not have to answer, because neither `Cache`
+> nor `LlmProvider` has a counterpart it must agree with: an embedding
+> provider and a `VectorStore` share a dimension, and *something* has to
+> reject a mismatch. That decision is there, not here.
 
 **Why this is an ADR:** ports are expensive to change (adapters + compliance
 suites move with them), and [ADR 0002](0002-two-store-ports.md) covers only

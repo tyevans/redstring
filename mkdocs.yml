@@ -150,4 +150,5 @@ nav:
       - "0014 · Exemption lists are empty and must stay falsifiable": adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md
       - "0015 · Consolidation gets a composed entry point": adr/0015-consolidation-gets-a-composed-entry-point.md
       - "0016 · GraphStore is five capabilities": adr/0016-graph-store-is-five-capabilities.md
+      - "0017 · The embedding provider port": adr/0017-the-embedding-provider-port.md
   - Contributing: contributing.md
