@@ -1547,35 +1547,6 @@ delete statement) adds a third statement to every batch upsert, whose write
 cost ADR 0003 measured carefully. Measure the leak before paying for it, and
 correct the ADR either way.
 
-### B64. The release guard permits `main` and nothing else, which forecloses a hotfix branch
-
-`release.yml`'s "The tagged commit must be on main" step requires the tagged
-commit to be reachable from `main`. That is right for every release this
-project can currently make, and it will be wrong the first time it needs a
-patch to an older line — `0.1.x` fixed on a `release/0.1` branch after `main`
-has moved to `0.2`, tagged `v0.1.1`, is a legitimate release the guard rejects.
-
-Not fixed now because the fix has a wrong-looking easy version and the right
-version needs a decision. The easy one is to accept any branch matching
-`release/*`, which reintroduces most of the hole: a branch is cheap to create,
-and "publishes from any branch called release-something" is close to
-"publishes from anywhere". The alternative is to require the tag be reachable
-from *some protected* branch — the API answers that
-(`repos/{repo}/branches?protected=true`) — which keeps the property that
-publishing follows from a reviewed state rather than from a naming convention.
-
-Deferred rather than guessed because the choice depends on a branching policy
-this project does not have yet: there has never been a maintenance branch, and
-inventing the guard before the workflow means the guard decides the workflow.
-
-When it is picked up: `tests/unit/test_release_requires_tag_on_main.py` stubs
-`gh` and executes the real `run:` body, so widening the rule means adding cases
-to that file rather than rewriting the harness. The four statuses it pins
-(`behind`/`identical` allowed, `ahead`/`diverged` and anything unrecognised
-rejected, an API failure treated as a failure) all still hold under any
-widening — a second permitted *base* changes which commits are on it, not what
-the compare statuses mean.
-
 ### B65. Two reference pages document a fraction of what they link to
 
 Fixing B63 surfaced this and it is the larger finding. The broken anchors were
