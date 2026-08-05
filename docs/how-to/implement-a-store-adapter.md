@@ -757,26 +757,42 @@ library's public failure contract by accident. Expect one of these per
 transport, and expect to find it against a live server rather than by reading
 the SDK.
 
-#### `tests/unit/llm/test_port_does_not_leak.py`: no `langchain*` outside `llm/adapters/`
+#### `tests/unit/test_dependencies_stay_confined.py`: every client stays in its directory
 
-The port exists so that a LangChain breaking change touches one file, and that
-guarantee is one `from langchain_core...` away from being false. Nothing else
-in the gate would notice: a leaked import is not a test failure, not a lint
-finding, and not an `lint-imports` violation, because that contract is over
-first-party packages only. So this file is the whole enforcement.
+**This is the gate you are most likely to need and least likely to think of**,
+because a store adapter is exactly the kind of change that brings a new driver
+into the tree. Each port exists so that a breaking change in someone else's
+library touches one file, and that guarantee is one `from neo4j import ...`
+away from being false. Nothing else in the gate would notice: a leaked import
+is not a test failure, not a lint finding, and not a `lint-imports` violation,
+because that contract is over first-party packages only. So this file is the
+whole enforcement.
 
-`test_no_module_outside_the_adapters_imports_langchain` walks every `.py`
-under `src/redstring/` except those beneath `src/redstring/llm/adapters/`,
-parses each with `ast`, and collects every imported module name whose name
-starts with `langchain`. It asserts the resulting mapping is `{}` — reporting
+It is a table, one row per confined library:
+
+| Library | Permitted directory | Port |
+|---|---|---|
+| `langchain*`, `openai` | `llm/adapters/` | `llm_provider`, `embedding_provider` |
+| `neo4j` | `graph/adapters/` | `graph_store` |
+| `asyncpg` | `vector/adapters/` | `vector_store` |
+| `redis` | `llm/cache/` | `cache` |
+
+**A new adapter with a new driver adds a row**, and that is the whole edit —
+the three checks below are parametrised over the table. Until the row exists,
+nothing stops the driver appearing in `composition.py`.
+
+`test_nothing_outside_the_permitted_directory_imports_it` walks every `.py`
+under `src/redstring/` except those beneath the row's directory, parses each
+with `ast`, and collects every imported module belonging to the row's
+packages. It asserts the resulting mapping is `{}` — reporting
 *every* offending path and the names each one imported, rather than the first
 one found, because a leak is usually a family of them and one failure per run
 would take as many runs to clear.
 
 Two details of how it looks are the parts that matter if you copy it.
 
-**It reads source text, never imports the modules.** A module that imports
-LangChain lazily inside a function still leaks the types into its signatures,
+**It reads source text, never imports the modules.** A module that imports its
+client lazily inside a function still leaks the types into its signatures,
 and importing everything to inspect it would need every optional extra
 installed — the failure mode `--all-extras` exists to avoid. Because the check
 is `ast.walk`, it sees imports at *any* nesting depth: inside
@@ -793,28 +809,42 @@ counted only at `node.level == 0`, so `from .langchain import ...` is not a
 finding — a first-party relative import cannot be the third-party dependency
 this is about, and `lint-imports` owns that question anyway.
 
-The part to copy, if you confine a different dependency to a different
-directory, is that the check comes with **two guards on itself** — because it
-is a search for something that should not be there, and so it passes trivially
-when it searches nothing at all:
+**Matching is on the top-level package plus its `name_*` family**, not a bare
+`startswith`, and `test_belongs_to_does_not_match_by_bare_prefix` pins both
+halves. Without the family clause `langchain_core` goes unrecognised and the
+check under-reports; with a bare prefix a module called `redistribute` reads as
+a `redis` import. The second failure is the nastier one — a *false* leak
+report, in a check whose entire value is being believed.
 
-- `test_the_walk_finds_the_library` asserts the walk found more than fifty
-  files and that `ports/llm_provider.py` is among them, so a wrong or stale
-  `SOURCE_ROOT` fails loudly rather than passing over an empty list.
-- `test_the_adapter_directory_really_does_import_langchain` asserts
-  `langchain.py` *does* import LangChain. If `ADAPTERS` pointed at the wrong
-  path it would exempt nothing and exclude nothing — the leak check would go on
-  passing while the one place the import belongs stopped being the exception.
+The rest of what to copy is that each row comes with **two guards on itself**,
+because a leak check is a search for something that should not be there and so
+passes trivially when it searches nothing at all:
 
-Note what the exemption is scoped to. It is the whole `llm/adapters/`
-directory, not a file list, so `fake.py` sits inside it and imports no
-LangChain — which is the point of a fake — and a second transport adapter
-added tomorrow needs no edit here.
+- `test_the_permitted_directory_exists` fails when a row names a directory that
+  is not there — which would exempt nothing, exclude nothing, and let the leak
+  check go on passing.
+- `test_the_permitted_directory_really_does_import_it` asserts something under
+  that directory *does* import the library. This is the staleness guard
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+  requires of every exemption: a row naming a library nobody imports any more
+  passes forever and protects nothing, so removing a dependency becomes a
+  visible decision rather than a silently inert rule.
 
-A passing check you have never seen fail is not yet evidence. Any dependency
-the architecture deliberately confines to one directory needs this second kind
-of check, and both guards with it — see
-[quality gates](../reference/quality-gates.md).
+Plus one guard shared by every row: `test_the_walk_finds_the_library` asserts
+the walk found more than fifty files and that `ports/llm_provider.py` is among
+them, so a wrong `SOURCE_ROOT` fails loudly rather than passing over an empty
+list.
+
+Note what a row is scoped to. It is a whole **directory**, not a file list, so
+`llm/adapters/fake.py` sits inside its row and imports no LangChain — which is
+the point of a fake — and a second transport adapter added tomorrow needs no
+edit at all.
+
+A passing check you have never seen fail is not yet evidence, so all three
+kinds were watched failing on purpose before this was believed: a planted
+`import neo4j` in `composition.py`, a row pointed at a directory that does not
+exist, and a row pointed at a real directory that does not import its library.
+See [quality gates](../reference/quality-gates.md).
 
 #### `model` is provenance, and empty output is an error
 

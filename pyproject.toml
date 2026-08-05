@@ -68,7 +68,7 @@ dependencies = [
     # CI resolves fresh and therefore always tests the *newest* permitted
     # version, so a too-low floor is invisible here by construction. See
     # BACKLOG B70 for the check that would measure it.
-    "eventsource-py>=0.10.0,<0.11",
+    "eventsource-py>=0.10.0,<0.12",
 ]
 
 [project.optional-dependencies]
@@ -405,7 +405,7 @@ layers = [
     # can depend only on `ports.llm_provider`. Putting `llm` lower
     # would let extraction import the LangChain adapter directly and undo the
     # port. Note that import-linter cannot see the *external* langchain
-    # imports; `tests/unit/llm/test_port_does_not_leak.py` covers those.
+    # imports; `tests/unit/test_dependencies_stay_confined.py` covers those.
     # `consolidation` joins the sibling line rather than sitting above
     # `extraction`. It needs nothing from extraction -- the tie-break both use
     # moved down to `domain.preference` when consolidation became its third

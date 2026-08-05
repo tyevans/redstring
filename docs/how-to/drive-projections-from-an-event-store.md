@@ -365,9 +365,21 @@ the base class you would be skipping.
 - **It is opaque.** The key's shape is the adapter's business. Compare
   positions, order them, store them — never do arithmetic on one, and never
   construct one to mean "position 5".
-- **It is store-scoped.** Ordering two positions from different stores raises
-  `PositionForeignError`, and equality across stores is `False`. A checkpoint
-  saved against one store is meaningless against another.
+- **It is store-scoped — as far as `store_id` is distinct.** Ordering two
+  positions from different stores raises `PositionForeignError`, and equality
+  across stores is `False`. A checkpoint saved against one store is meaningless
+  against another.
+
+    The qualifier is load-bearing, and `eventsource-py` 0.11.0 documented it
+    after the fact: the guard *is* `store_id`, and the adapter defaults are
+    derived rather than unique — `memory` for the in-memory store, `pg:{database}`
+    for Postgres, `sqlite::memory:` for SQLite. Two in-memory stores in one
+    process, or two Postgres stores against one database, therefore share an id,
+    and `PositionForeignError` silently does not fire for a pair that really is
+    foreign. If you run more than one store of a kind, set `store_id` explicitly
+    and set it once: **it is embedded in every persisted position and
+    checkpoint**, so changing it later invalidates the checkpoints you already
+    have, and a projection resumes from nowhere.
 - **It is serialisable.** `to_str()` and `Position.from_str()` round-trip it,
   which is how a resume position survives a process restart if you are
   tracking it yourself rather than through a checkpoint repository.
