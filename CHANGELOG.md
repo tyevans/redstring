@@ -14,6 +14,29 @@ under **Removed** or **Changed**. See
 
 ## [Unreleased]
 
+## [0.1.0a1] - 2026-08-05
+
+**A rehearsal of the release pipeline, published to TestPyPI as
+`redstring-test`. Not a release, and not on PyPI.**
+
+The library is identical to `0.1.0` below; this version exists so that the
+tagging, building, publishing and post-publish verification steps run once
+against a real index on a version nobody minds burning. PyPI never permits
+reusing a filename, so the first execution of that path is also irreversible —
+which is a poor combination with never having executed it.
+
+Install it, if you want to look at it, with both indexes — TestPyPI does not
+mirror PyPI, so resolving `pydantic` needs the real one:
+
+```bash
+pip install --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            redstring-test==0.1.0a1
+```
+
+The import name is `redstring` on both indexes; only the distribution is
+renamed, because `redstring` on TestPyPI belongs to an unrelated project.
+
 ## [0.1.0] - 2026-08-04
 
 First release.
