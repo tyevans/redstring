@@ -141,7 +141,7 @@ class TestTheMetadataStrategyReachesTheReservedKey:
 
         drawn: list[dict[str, Any]] = []
 
-        @settings(max_examples=count, suppress_health_check=list(HealthCheck), deadline=None)
+        @settings(max_examples=count, suppress_health_check=list(HealthCheck))
         @given(metadata=strategies.metadata_dicts())
         def collect(metadata: dict[str, Any]) -> None:
             drawn.append(metadata)

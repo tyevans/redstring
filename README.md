@@ -61,10 +61,11 @@ uv add "redstring[neo4j]"        # the Neo4j GraphStore adapter
 
 Python 3.13+. Ships `py.typed`.
 
-Two dependencies are **core** rather than extras, and one of them is an open
-question: `eventsource-py` is settled (the exported types need it, and a
-public API that fails to import without an extra is not a public API), while
-`redis` is tracked in `BACKLOG.md` B61/B38. See
+The base install carries no compiled dependency it does not use — `numpy` and
+`httpx` were both declared and imported by nothing, and are gone.
+`eventsource-py` is core deliberately (the exported types need it, and a
+public API that fails to import without an extra is not a public API);
+`asyncpg` and `redis` are core for now and tracked in `BACKLOG.md` B61. See
 [Installation](https://tyevans.github.io/redstring/installation/).
 
 ## Use

@@ -840,9 +840,9 @@ from redstring.consolidation.policy import (
     decide,
 )
 
-decide(0.99)                       # MergeDecision.MERGE
-decide(0.80)                       # MergeDecision.ADJUDICATE
-decide(0.10)                       # MergeDecision.REJECT
+decide(0.99)  # MergeDecision.MERGE
+decide(0.80)  # MergeDecision.ADJUDICATE
+decide(0.10)  # MergeDecision.REJECT
 ```
 
 Three bands, and the two bounds are **inclusive from below**: `score == high`
@@ -957,8 +957,8 @@ directly:
 ```python
 from redstring.consolidation.policy import decide
 
-decide(0.5, high=0.2, low=0.8)   # ValueError
-decide(0.5, high=0.5, low=0.5)   # MergeDecision.MERGE — legal, band is empty
+decide(0.5, high=0.2, low=0.8)  # ValueError
+decide(0.5, high=0.5, low=0.5)  # MergeDecision.MERGE — legal, band is empty
 ```
 
 **Why this is an error when `high == low` is not.** Both empty the band, and
@@ -1200,9 +1200,7 @@ log anyway:
 ```python
 from redstring import GraphProjection, project
 
-projection = GraphProjection(
-    graph_store, checkpoint_repo=checkpoints, dlq_repo=dlq
-)
+projection = GraphProjection(graph_store, checkpoint_repo=checkpoints, dlq_repo=dlq)
 report = await project(event_store, [projection])
 assert report.failed == 0
 ```

@@ -88,10 +88,11 @@ if TYPE_CHECKING:
 #: implementing `new_store()`.
 DEFAULT_MAX_EXAMPLES = int(os.environ.get("KG_COMPLIANCE_MAX_EXAMPLES", "50"))
 
-# Store construction dominates the per-example cost for real backends, so the
-# deadline is off; a slow adapter is a performance finding, not a flaky test.
+# Store construction dominates the per-example cost for real backends, and a
+# slow adapter is a performance finding rather than a flaky test. The deadline
+# that would otherwise fire is off suite-wide, in `tests/conftest.py` -- this
+# file was one of the places that argued for it.
 compliance_settings = settings(
-    deadline=None,
     max_examples=DEFAULT_MAX_EXAMPLES,
     suppress_health_check=[HealthCheck.too_slow],
 )

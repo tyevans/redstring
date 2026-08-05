@@ -34,18 +34,39 @@ repos:
   # match what `uv run` uses locally and in CI.
   - repo: local
     hooks:
+      # Both ruff hooks run over the WHOLE repository and take no filenames,
+      # because that is what CI runs (`ruff check .`, `ruff format --check .`)
+      # and the two must not be able to disagree about scope.
+      #
+      # They previously disagreed, and it cost five red pull requests at once.
+      # The hooks passed filenames under `types_or: [python, pyi]`, so a `.md`
+      # file was never handed to ruff; CI passed `.`, so it was. When ruff
+      # gained formatting for Python blocks *inside markdown*, 22 documentation
+      # files became unformatted by CI's definition and correctly formatted by
+      # the hook's -- and every Dependabot PR failed on `ruff format --check`
+      # for a file its diff had not touched. Five unrelated bumps, one cause,
+      # none of them the dependency.
+      #
+      # `types_or` still decides *whether* the hooks run; `pass_filenames:
+      # false` decides *what they look at* once they do. `markdown` is in the
+      # list so editing docs triggers them.
+      #
+      # `tests/unit/test_quality_gates_agree.py` asserts these two entries and
+      # the CI steps stay the same command. Change one and that test fails.
       - id: ruff-check
         name: ruff check
-        entry: uv run ruff check --fix --force-exclude
+        entry: uv run ruff check --fix
         language: system
-        types_or: [python, pyi]
+        types_or: [python, pyi, markdown]
+        pass_filenames: false
         require_serial: true
 
       - id: ruff-format
         name: ruff format
-        entry: uv run ruff format --force-exclude
+        entry: uv run ruff format
         language: system
-        types_or: [python, pyi]
+        types_or: [python, pyi, markdown]
+        pass_filenames: false
         require_serial: true
 
       - id: mypy

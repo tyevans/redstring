@@ -1331,127 +1331,6 @@ suites run, not whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
-### B65. `uv.lock` is gitignored, so CI cannot pin its own tooling
-
-`.gitignore` carries `uv.lock`, which is a defensible choice for a library:
-resolving fresh on every CI run is how you find out that a dependency's new
-release broke you, rather than finding out from a user six weeks later. It is
-deliberate and this entry is not arguing to reverse it blindly.
-
-What it costs is that `.github/workflows/ci.yml` cannot use
-`uv sync --all-extras --locked`, so **every tool version floats above its
-floor**. `ruff>=0.14` and `mypy>=2.3.0` mean a CI run can fail on a rule that
-did not exist when the branch was written, in a file the branch did not touch,
-while the same commit passes the pre-commit gate locally against whatever the
-contributor's venv resolved months ago. The failure names the diff and is not
-about the diff.
-
-Three ways out, in increasing cost:
-
-1. **Commit `uv.lock` and use `--locked`.** Tool and dependency versions
-   become explicit and reviewable, and `--locked` turns a stale lock into a
-   CI failure rather than silent drift. Loses the free early warning about
-   upstream breakage — recover it with a scheduled job that resolves fresh
-   and opens an issue, which is the arrangement most libraries land on.
-2. **Pin only the tooling.** Exact `==` pins in the `dev` extra with
-   Dependabot raising them; leave the runtime dependency ranges wide, which
-   is where the fresh-resolution signal actually matters.
-3. **Leave it and accept the flake.** Cheapest today, and the cost lands on
-   whoever is unlucky rather than on whoever decides.
-
-(2) is probably right: the fresh-resolution argument is about `pydantic` and
-`eventsource-py`, not about `ruff`, and pinning the tooling gives up nothing
-the argument was defending. Note that the `docs` extra has the same exposure —
-`mkdocs-material>=9.5` floating means the site can change appearance between
-two builds of an unchanged tree.
-
-### B64. The interval property suite fails the commit gate on a loaded machine
-
-**Observed once, during the packaging commit.**
-`tests/unit/domain/test_interval.py::TestProperties::test_before_and_after_are_the_only_disjoint_relations`
-failed the gate with:
-
-```
-hypothesis.errors.FlakyFailure: ... produces unreliable results:
-Failed on the first call but did not on a subsequent one
-Unreliable test timings! On an initial run, this test took 276.11ms, which
-exceeded the deadline of 200.00ms, but on a subsequent run it took 1.28 ms
-```
-
-Two orders of magnitude between the two calls, on the same input, is the
-signature of first-call cost — import, JIT of the strategy, page faults —
-landing on a machine that happened to be busy. Nothing about the interval
-code is slow: 1.28 ms is the real number. It reproduced while a wheel build
-and a throwaway venv install were running in the same session, and did not
-reproduce on a quiet tree.
-
-Why it is filed rather than shrugged at: **hypothesis reports this as a test
-failure naming the function**, so the first reading is "the interval
-properties broke", and the second reading is "flaky, retry" — the response
-`.claude/rules/testing.md` warns against, because both are wrong. The gate
-is `pre-commit`, so a developer meets it as a blocked commit with no obvious
-cause, and the loaded machine that triggers it is *the developer's own*,
-running whatever else they had going.
-
-Three candidate fixes, and choosing between them needs one decision rather
-than a patch:
-
-- `deadline=None` on this test's `@settings`. Cheapest. It gives up a real
-  signal — this is the one suite in the repo where an accidentally
-  quadratic `relate` would show as a timing regression rather than a wrong
-  answer.
-- `deadline=None` on the whole class, or a hypothesis profile for the gate
-  with deadlines off and a `ci` profile with them on. Keeps the signal where
-  it can be measured and removes it where it cannot.
-- Leave it and accept a rare blocked commit.
-
-The second is probably right, and it is the same shape as
-`KG_COMPLIANCE_MAX_EXAMPLES`: a per-run lever, not a per-test constant. Note
-that an explicit `settings(deadline=...)` on the test **outranks every
-profile**, so fixing this by editing the decorator forecloses the profile
-answer — the same trap documented for `max_examples` in
-`.claude/rules/testing.md`.
-
-Until it is decided: a `FlakyFailure` naming a *deadline* is this entry. A
-`FlakyFailure` naming anything else is a real bug and must not be retried.
-
-### B63. Six `# nosec` markers, and nothing fails when one stops applying
-
-**Found by the rename sweep, which is the only reason it was found at all.**
-The `bandit` pre-commit hook declares `types: [python]` and takes filenames,
-so it scans **only the files a commit touches**. No commit before the
-`redstring` rename had touched all of `src/`, so a whole-tree bandit run had
-never happened locally — the hook had been green for eleven slices without
-ever having seen most of the package. The rename touched every file and
-surfaced eight findings at once, all of them pre-existing:
-
-| Finding | Site | Disposition |
-|---|---|---|
-| B101 assert_used ×2 | `llm/adapters/fake.py` | **Fixed** — `raise AssertionError` instead, so it survives `python -O` |
-| B311 random | `llm/retry.py:172` | `# nosec B311` — retry jitter, no secret |
-| B608 SQL ×5 | `vector/adapters/pgvector.py` | `# nosec B608` — only `self._table` is interpolated and `_IDENTIFIER` proves it a bare identifier |
-
-The six suppressions are now an **exemption list with no staleness check**,
-which is the shape CLAUDE.md warns about: bandit does not report an unused
-`# nosec`, so a marker outliving its justification passes silently and hides
-a real finding at that line. The B608 five are the ones that matter — delete
-`_IDENTIFIER` and injection goes unreported.
-
-The B608 markers are partly covered by accident:
-`test_a_table_name_that_is_not_a_bare_identifier_is_rejected` includes a
-`"; DROP TABLE users; --` case, so removing the guard fails a test rather
-than only weakening a comment. Nothing equivalent guards the B311 marker,
-and nothing checks that any of the six still sits on a line bandit would
-flag.
-
-To fix: a test that parses `src/` for `# nosec` markers and asserts each one
-sits on a line that a bandit run **with suppressions disabled** actually
-reports — the same construction as
-`tests/unit/graph/test_compliance_coverage.py` and the empty-exemption-list
-guards in ADR 0014. Until then, CI running `bandit -r src/` over the whole
-tree (added with the release workflow) is what stops this recurring; the
-per-file hook alone demonstrably does not.
-
 ### B60. Packaging metadata beyond the licence — closed except for B61
 
 **Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
@@ -1476,16 +1355,25 @@ item genuinely cheaper before a release than after — `dependencies` is part
 of the published metadata for 0.1.0 and narrowing it later is a breaking
 change for anyone who installed under the wider set. A CHANGELOG is B22.
 
-### B61. Four of the nine core dependencies do not belong there, and two are unused
+### B61. Two of the remaining seven core dependencies belong behind extras
 
-**Measured in slice 11 by building the wheel, installing it into a throwaway
-venv, uninstalling each candidate, and importing** — not by grep alone, because
-grep cannot see a runtime import.
+**The dead half is done.** `numpy` and `httpx` are out of `dependencies`:
+`numpy` deleted outright (nothing anywhere imports it) and `httpx` moved to
+the `dev` extra, where its one real user lives —
+`tests/integration/llm/test_live_endpoint.py` probes a model server with it
+before the suite talks to it.
+
+Measured rather than grepped, to the standard this entry set for itself: a
+wheel built, installed into a venv where neither package is present, and then
+asked to build a graph, run a vector search and render a bundled schema. All
+three work. `numpy` was pulling 2.5.1 — a compiled dependency larger than
+redstring itself — for no importer at all.
+
+**What remains** are the two that are used, function-locally, by one adapter
+each:
 
 | Dependency | First-party importers in `src/` | Verdict |
 |---|---|---|
-| `numpy>=1.26.0` | **none** | Dead. Nothing in `src/` or `tests/` mentions it |
-| `httpx>=0.25.0` | **none** | Dead. Every occurrence is inside a docstring example |
 | `asyncpg>=0.31.0` | `vector/adapters/pgvector.py`, function-local | Belongs behind a `pgvector` extra |
 | `redis[hiredis]>=5.3,<6` | `llm/cache/redis.py`, function-local | Belongs behind a `redis` extra |
 
@@ -1515,11 +1403,13 @@ Use `uv remove` and `uv add --optional`, never a hand edit — and re-sync with
 `--all-extras` afterwards, because `uv remove` re-resolves and will silently
 narrow the venv (B45).
 
-The two dead entries are the cheap half and can go on their own. Note that
-`httpx`'s only trace was a module docstring describing "Ollama extraction"
-and importing `redstring.extraction.retry`, a path that moved to
-`redstring.llm.retry` in slice 6; that docstring was rewritten in slice 11,
-which is how the dependency was noticed at all.
+The dead half went on its own, as this entry suggested. It surfaced a second
+time through Dependabot, which opened a PR raising `httpx`'s floor — a bump to
+a dependency with no importer, which is what prompted actually checking rather
+than deferring again. Note that `httpx`'s only trace in `src/` had been a
+module docstring describing "Ollama extraction" and importing
+`redstring.extraction.retry`, a path that moved to `redstring.llm.retry` in
+slice 6.
 
 ### B38. There is no `eventsourcing` extra any more, and the `redis` pin is why `[all]` cannot come back
 

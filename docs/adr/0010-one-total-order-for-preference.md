@@ -301,9 +301,9 @@ That makes **position** the entire content of a deliberate slot.
 and the ordering is the whole decision:
 
 ```python
-entity.confidence,
-entity.temporal is not None,
-len(entity.description or ""),
+(entity.confidence,)
+(entity.temporal is not None,)
+(len(entity.description or ""),)
 ```
 
 A date appears in one window. A description appears in every window that

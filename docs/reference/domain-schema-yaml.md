@@ -432,11 +432,11 @@ The root model exposes six helpers over these fields, all normalizing their
 argument with `.lower().strip()` before comparing:
 
 ```python
-schema.get_entity_type_ids()          # ['dish', 'ingredient']
-schema.get_relationship_type_ids()    # ['uses']
-schema.get_entity_type("Dish")        # EntityTypeSchema | None
+schema.get_entity_type_ids()  # ['dish', 'ingredient']
+schema.get_relationship_type_ids()  # ['uses']
+schema.get_entity_type("Dish")  # EntityTypeSchema | None
 schema.get_relationship_type("USES")  # RelationshipTypeSchema | None
-schema.is_valid_entity_type("custom")         # True, always
+schema.is_valid_entity_type("custom")  # True, always
 schema.is_valid_relationship_type("related_to")  # True, always
 ```
 
@@ -910,8 +910,7 @@ files by `tests/unit/extraction/domains/test_yaml_schemas.py`:
 
 ```python
 assert len(schema.relationship_types) >= 5, (
-    f"Schema {domain_id} needs at least 5 relationship types, "
-    f"has {len(schema.relationship_types)}"
+    f"Schema {domain_id} needs at least 5 relationship types, has {len(schema.relationship_types)}"
 )
 ```
 
@@ -1703,9 +1702,7 @@ asserts, for every entity type in each of the six bundled files:
 
 ```python
 assert et.description, f"Entity type {et.id} in {domain_id} has no description"
-assert len(et.description) >= 10, (
-    f"Entity type {et.id} in {domain_id} has too short description"
-)
+assert len(et.description) >= 10, f"Entity type {et.id} in {domain_id} has too short description"
 ```
 
 The first assertion is already guaranteed by `min_length=1`. The second is
@@ -1786,8 +1783,7 @@ whole of the list's use:
 
 ```python
 ", ".join(
-    f"{prop.name} ({prop.description})" if prop.description else prop.name
-    for prop in properties
+    f"{prop.name} ({prop.description})" if prop.description else prop.name for prop in properties
 )
 ```
 
@@ -2084,8 +2080,7 @@ entire consumer of this model:
 
 ```python
 ", ".join(
-    f"{prop.name} ({prop.description})" if prop.description else prop.name
-    for prop in properties
+    f"{prop.name} ({prop.description})" if prop.description else prop.name for prop in properties
 )
 ```
 

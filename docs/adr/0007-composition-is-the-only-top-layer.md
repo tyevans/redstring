@@ -450,7 +450,9 @@ needs to change to take it.
 report = await build_graph(document, provider=provider, store=store, tenant_id=tenant_id)
 
 if report.event is not None:
-    await appender.append(document_stream(tenant_id=tenant_id, source_id=document.id), [report.event])
+    await appender.append(
+        document_stream(tenant_id=tenant_id, source_id=document.id), [report.event]
+    )
 ```
 
 From there the read model is derived rather than written:

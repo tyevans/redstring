@@ -22,6 +22,7 @@ and this one is enforced by tests rather than by prose. See
 
 ```python
 import redstring
+
 print(redstring.__all__)
 ```
 

@@ -284,9 +284,7 @@ Whatever domain was selected, `ExtractionPipeline.extract` calls the port with
 the same class:
 
 ```python
-result = await self._provider.extract(
-    chunk.text, Extraction, system_prompt=self._system_prompt
-)
+result = await self._provider.extract(chunk.text, Extraction, system_prompt=self._system_prompt)
 ```
 
 `Extraction` is a module-level import in `pipeline.py`, not a parameter, not a

@@ -20,7 +20,7 @@ import random
 from itertools import pairwise
 from uuid import UUID
 
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from redstring.extraction.mapping import (
@@ -307,9 +307,10 @@ def part_from(pairs):
 #: slice 9, in a run that changed nothing in this file.
 #:
 #: An upper bound on a one-off library import is not a property of
-#: `merge_extractions`, so the deadline is dropped rather than raised. Same
-#: reasoning, same root cause, as the two properties in
-#: `tests/unit/domain/test_temporal_parsing.py` that already do this.
+#: `merge_extractions`, so the deadline is dropped rather than raised. That
+#: reasoning generalised: deadlines are now off for the whole suite, decided
+#: once in `tests/conftest.py`, and the observation recorded here is part of
+#: why.
 
 
 def by_id(items):
@@ -318,7 +319,6 @@ def by_id(items):
 
 class TestProperties:
     @given(chunks=st.lists(MENTIONS, min_size=1, max_size=5), seed=st.integers())
-    @settings(deadline=None)
     def test_permuting_the_chunks_changes_nothing(self, chunks, seed):
         """Order-independence, over duplicates tied on confidence but not content.
 
@@ -344,7 +344,6 @@ class TestProperties:
         assert by_id(forwards.relationships) == by_id(backwards.relationships)
 
     @given(groups=st.lists(MENTIONS, min_size=1, max_size=4))
-    @settings(deadline=None)
     def test_merging_the_same_chunk_twice_equals_merging_it_once(self, groups):
         """Idempotence, over freshly built parts rather than the same object twice.
 
@@ -362,7 +361,6 @@ class TestProperties:
         )
 
     @given(groups=st.lists(MENTIONS, min_size=1, max_size=4))
-    @settings(deadline=None)
     def test_merging_an_already_merged_result_is_a_no_op(self, groups):
         """The other idempotence, and the one a fold has to have.
 
@@ -376,7 +374,6 @@ class TestProperties:
         assert merge_extractions([merged]) == merged
 
     @given(groups=st.lists(MENTIONS, min_size=2, max_size=5))
-    @settings(deadline=None)
     def test_folding_pairwise_equals_merging_everything_at_once(self, groups):
         """Associativity. A streaming caller must get the same answer as a batch one."""
         parts = [part_from(group) for group in groups]
@@ -390,7 +387,6 @@ class TestProperties:
         assert by_id(one_shot.relationships) == by_id(folded.relationships)
 
     @given(mentions=MENTIONS)
-    @settings(deadline=None)
     def test_two_mentions_of_one_entity_with_equal_preference_are_equal(self, mentions):
         """The claim "the order is total", stated as a property instead of a belief.
 
@@ -430,7 +426,6 @@ class TestProperties:
             max_size=6,
         )
     )
-    @settings(deadline=None)
     def test_two_statements_of_one_edge_with_equal_preference_are_equal(self, statements):
         """The same claim for relationships, where the argument is shorter.
 
@@ -459,7 +454,6 @@ class TestProperties:
             assert all(other == tied[0] for other in tied)
 
     @given(names_=st.lists(NAMES, min_size=1, max_size=6))
-    @settings(deadline=None)
     def test_every_entity_that_went_in_comes_out(self, names_):
         """Deduplication must never lose an id, only copies of one."""
         parts = [chunk(entity(name)) for name in names_]

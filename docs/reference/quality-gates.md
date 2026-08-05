@@ -886,8 +886,7 @@ as written in the file, not through the MRO.** The events in
 
 ```python
 @register_event
-class EntitiesMerged(TenantDomainEvent):
-    ...
+class EntitiesMerged(TenantDomainEvent): ...
 ```
 
 `TenantDomainEvent` is itself a pydantic model, but ruff cannot see that — it

@@ -1147,9 +1147,7 @@ and was parsed into a distinct object is still caught.
 
 ```python
 duplicates = sorted(
-    str(entity_id)
-    for entity_id, count in Counter(self.merged_entity_ids).items()
-    if count > 1
+    str(entity_id) for entity_id, count in Counter(self.merged_entity_ids).items() if count > 1
 )
 if duplicates:
     raise ValueError(f"merged_entity_ids contains duplicates: {duplicates}")
@@ -1190,9 +1188,7 @@ second a violation of an invariant that same event had just created.
 #### 3 — redirections carry this event's tenant
 
 ```python
-foreign = {
-    r.before.tenant_id for r in self.redirections if r.before.tenant_id != self.tenant_id
-}
+foreign = {r.before.tenant_id for r in self.redirections if r.before.tenant_id != self.tenant_id}
 ```
 
 ```
@@ -1402,9 +1398,7 @@ field declarations. In full:
 ```python
 @model_validator(mode="after")
 def _restorations_belong_to_this_tenant(self) -> MergeUndone:
-    foreign = {
-        r.tenant_id for r in self.restored_relationships if r.tenant_id != self.tenant_id
-    }
+    foreign = {r.tenant_id for r in self.restored_relationships if r.tenant_id != self.tenant_id}
     if foreign:
         raise ValueError(
             f"restored_relationships carry tenants the event does not belong "

@@ -353,6 +353,8 @@ The whole port is one property and one method:
 
 ```python
 model: str
+
+
 async def extract[S: BaseModel](
     self, text: str, schema: type[S], *, system_prompt: str | None = None
 ) -> S: ...

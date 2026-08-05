@@ -3,18 +3,73 @@
 Nothing is skipped at collection; `addopts` in pyproject.toml deselects the
 `accuracy` and `integration` markers, not this file.
 
-The one thing here is a terminal summary that says *how many* tests that
-deselection removed, and how to run them.
+Two things live here: the hypothesis profile that decides deadline policy for
+the whole suite, and a terminal summary saying *how many* tests the
+deselection removed and how to run them.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from hypothesis import HealthCheck, settings
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     import pytest
+
+# ---------------------------------------------------------------------------
+# Hypothesis deadline policy -- one declaration site
+# ---------------------------------------------------------------------------
+#
+# **`deadline=None` for the whole suite**, decided here and nowhere else.
+#
+# This was already the project's position; it was just never written down in
+# one place. Nineteen `@settings(...)` decorators carried `deadline=None`
+# individually and eight did not, and the difference was not a judgement about
+# those eight -- it was whoever wrote them not thinking about it. The residual
+# sites were therefore pure flake risk with no compensating signal: a deadline
+# enforced on a third of the property suites detects nothing systematically,
+# and blocks a commit occasionally.
+#
+# It duly did. `test_interval.py` failed the commit gate with
+# `FlakyFailure: ... Unreliable test timings! On an initial run, this test took
+# 276.11ms, which exceeded the deadline of 200.00ms, but on a subsequent run it
+# took 1.28 ms`. Two orders of magnitude between the two calls on the same
+# input: first-call cost -- imports, strategy construction, page faults --
+# landing on a machine that happened to be busy. 1.28 ms is the real number.
+#
+# Hypothesis reports that as a failure *naming the test*, so the first reading
+# is "the interval properties broke" and the second is "flaky, retry". Both are
+# wrong, and the gate is `pre-commit`, so the developer meeting it is blocked
+# with no obvious cause on a machine loaded by whatever else they were running.
+#
+# What this gives up, stated plainly: **there is no longer any check that a
+# property test has not become pathologically slow.** A per-example wall-clock
+# deadline was a poor detector of that anyway -- it cannot distinguish an
+# accidentally quadratic `relate` from a busy laptop -- but it was not nothing.
+# `tests/compliance/graph_store.py` already made the same trade in the same
+# words: "a slow adapter is a performance finding, not a flaky test." A real
+# detector is a benchmark with a baseline, which this project does not have.
+#
+# **Do not put `deadline=` back into a `settings()` decorator.** An explicit
+# value there outranks every profile, which would make this block inert for
+# that test and unfixable from one place --the same trap `max_examples` carries
+# in `tests/compliance/graph_store.py`. `tests/unit/test_hypothesis_deadline_policy.py`
+# fails if one reappears.
+settings.register_profile("default", deadline=None)
+
+# `--hypothesis-profile=strict` opts back in, for someone deliberately hunting
+# a slowdown. Kept because the alternative to a bad detector is usually no
+# detector, and this way there is at least a documented way to run one.
+settings.register_profile(
+    "strict",
+    deadline=1000,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+
+settings.load_profile("default")
 
 #: Markers `addopts` deselects, and the command that runs each.
 _DESELECTED_MARKERS = {

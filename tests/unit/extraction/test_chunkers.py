@@ -131,13 +131,13 @@ class TestSplitting:
 
 class TestProperties:
     @given(text=texts(), chunk_size=st.integers(min_value=100, max_value=2000))
-    @settings(max_examples=60, deadline=None)
+    @settings(max_examples=60)
     def test_chunking_terminates_and_no_chunk_exceeds_its_budget(self, text, chunk_size):
         """Termination is the property, and hypothesis is the way to be sure of it.
 
-        `deadline=None` because a large example is legitimately slow; the
-        failure mode being guarded against is a *hang*, which pytest's own
-        timeout surfaces, not a slow example.
+        A large example is legitimately slow, and the failure mode being
+        guarded against is a *hang* rather than a slow example. Deadlines are
+        off suite-wide (`tests/conftest.py`), so nothing here has to say so.
         """
         chunker = SlidingWindowChunker(default_chunk_size=chunk_size, default_overlap=50)
 
@@ -147,7 +147,7 @@ class TestProperties:
         assert result.total_chunks == len(result.chunks)
 
     @given(text=texts(min_size=1))
-    @settings(max_examples=60, deadline=None)
+    @settings(max_examples=60)
     def test_every_character_of_the_input_lands_in_some_chunk(self, text):
         """A silently dropped span loses entities with no error anywhere.
 
@@ -167,14 +167,14 @@ class TestProperties:
         assert covered == set(range(len(text)))
 
     @given(text=texts(min_size=1))
-    @settings(max_examples=60, deadline=None)
+    @settings(max_examples=60)
     def test_chunking_the_same_text_twice_gives_the_same_chunks(self, text):
         chunker = SlidingWindowChunker(default_chunk_size=300, default_overlap=40)
 
         assert chunker.chunk(text).chunks == chunker.chunk(text).chunks
 
     @given(text=texts(min_size=1))
-    @settings(max_examples=60, deadline=None)
+    @settings(max_examples=60)
     def test_chunks_are_ordered_and_start_at_the_beginning(self, text):
         result = SlidingWindowChunker(default_chunk_size=300, default_overlap=40).chunk(text)
         if not result.chunks:
