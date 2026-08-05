@@ -15,13 +15,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from kg_builder.extraction.domains.models import DomainSchema
+from redstring.extraction.domains.models import DomainSchema
 
 # Path to schema directory
 SCHEMA_DIR = (
     Path(__file__).parent.parent.parent.parent.parent
     / "src"
-    / "kg_builder"
+    / "redstring"
     / "extraction"
     / "domains"
     / "schemas"

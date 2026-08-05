@@ -1,6 +1,6 @@
 # Domain value types
 
-The types under `kg_builder.domain` are the vocabulary everything else in the
+The types under `redstring.domain` are the vocabulary everything else in the
 library is written in: what an entity is, what a relationship is, what a
 timespan is, and which values each of them will accept. They are pure — the
 package depends on the standard library and pydantic and nothing else, does no
@@ -25,8 +25,8 @@ are inferred on read rather than persisted, and
 [ADR 0007](../adr/0007-one-total-order-for-preference.md) for the single total
 order every tie-break in the library defers to.
 
-Not every type named here is importable from `kg_builder`. The public surface
-is `kg_builder.__all__` and nothing else — see
+Not every type named here is importable from `redstring`. The public surface
+is `redstring.__all__` and nothing else — see
 [What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md). Types that reach you
 inside an event rather than by import are described in
@@ -34,7 +34,7 @@ inside an event rather than by import are described in
 
 ## Scope and how to read this page
 
-Everything documented here lives in `src/kg_builder/domain/`, one section per
+Everything documented here lives in `src/redstring/domain/`, one section per
 concern, in roughly the order the modules build on each other:
 
 | Section | Module |
@@ -86,7 +86,7 @@ sections then name them rather than repeating them.
 
 ## Identifiers
 
-`kg_builder.domain.ids` declares four names. All four are plain type aliases —
+`redstring.domain.ids` declares four names. All four are plain type aliases —
 no wrapper classes, no `NewType`, no validation of their own:
 
 ```python
@@ -135,7 +135,7 @@ any `str` — including an empty one, which the library does not treat as
 special. (`SourceDocument.text` must be non-blank; `SourceDocument.id` has no
 such rule.)
 
-All four names are exported from `kg_builder` — see
+All four names are exported from `redstring` — see
 [What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md). They are exported
 because they appear in the signature of exported types, which is exactly the
@@ -154,7 +154,7 @@ below.
 
 ### Every datetime field is timezone-required
 
-Every validated `datetime` field in `kg_builder.domain` rejects a naive value.
+Every validated `datetime` field in `redstring.domain` rejects a naive value.
 There are five of them, across three models:
 
 | Type | Field | Optional? | Message |
@@ -347,8 +347,8 @@ the domain does not soften for it.
 
 ## Entity
 
-`kg_builder.domain.entity` declares `Entity` and `ExtractionMethod`. Both are
-exported from `kg_builder`.
+`redstring.domain.entity` declares `Entity` and `ExtractionMethod`. Both are
+exported from `redstring`.
 
 An `Entity` is a thing extracted from a source — a person, a place, a concept.
 It is a plain pydantic `BaseModel`: not frozen, no `extra="forbid"`, so unknown
@@ -417,7 +417,7 @@ Notes on the ones whose type does not tell the whole story:
 `ExtractionMethod` is declared `class ExtractionMethod(str, Enum)`, so every
 member *is* a `str`: `ExtractionMethod.LLM == "llm"` is `True`, the member can
 be used anywhere a string is expected, and pydantic serializes it as its
-value. It is exported from `kg_builder` alongside `Entity` — see
+value. It is exported from `redstring` alongside `Entity` — see
 [What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
@@ -601,8 +601,8 @@ property for the same reason: it carries no `TemporalExtent` at all.
 
 ## Relationship
 
-`kg_builder.domain.relationship` declares one name, `Relationship`, and it is
-exported from `kg_builder` — see [What is public](#what-is-public) and
+`redstring.domain.relationship` declares one name, `Relationship`, and it is
+exported from `redstring` — see [What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
 A `Relationship` is a **directed, typed edge between two entities**: seven
@@ -694,8 +694,8 @@ type is derived or computed.
 
 ## SourceDocument
 
-`kg_builder.domain.source` declares one name, `SourceDocument`, and it is
-exported from `kg_builder` — see [What is public](#what-is-public) and
+`redstring.domain.source` declares one name, `SourceDocument`, and it is
+exported from `redstring` — see [What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
 A `SourceDocument` is **what a caller hands the library**: a piece of content
@@ -792,7 +792,7 @@ Every field round-trips: `SourceDocument.model_validate(doc.model_dump())`
 reconstructs an equal object, `metadata` included, because nothing on the type
 is derived or computed. There are no properties and no methods.
 
-`SourceDocument` is exported from `kg_builder` — it is the first name in the
+`SourceDocument` is exported from `redstring` — it is the first name in the
 package docstring's worked example, being what a caller puts in. See
 [What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
@@ -938,7 +938,7 @@ an error and does not fail extraction: an expression that needs a vantage
 point is dropped and counted on `PipelineResult.undatable_relative` rather
 than resolved against today, which would make a re-extraction of the same
 document produce a different graph. `parse_temporal` raises
-`AmbiguousReferenceDateError` — a `ValueError`, not a `KgBuilderError` — only
+`AmbiguousReferenceDateError` — a `ValueError`, not a `RedstringError` — only
 for text that has been *shown* to resolve differently against two vantage
 points, so date-independent text still parses with no reference date at all.
 See
@@ -953,8 +953,8 @@ object, aware `published_at` included.
 
 ## Alias
 
-`kg_builder.domain.alias` declares one name, `Alias`, and it is exported from
-`kg_builder` — see [What is public](#what-is-public) and
+`redstring.domain.alias` declares one name, `Alias`, and it is exported from
+`redstring` — see [What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
 An `Alias` is **one entity having been merged into another**: the absorbed
@@ -1005,10 +1005,10 @@ surprised.
 Notes on the ones whose type does not tell the whole story:
 
 - **`id` is annotated as a bare `uuid.UUID`, not through an alias.** There is
-  no `AliasId` in `kg_builder.domain.ids` — see
+  no `AliasId` in `redstring.domain.ids` — see
   [Identifiers](#identifiers). The domain accepts any `UUID`, but the value is
   not arbitrary in practice: `projections/graph.py` derives it with
-  `uuid5(NAMESPACE_OID, f"kg-builder:alias:{tenant_id}:{alias_entity_id}")`,
+  `uuid5(NAMESPACE_OID, f"redstring:alias:{tenant_id}:{alias_entity_id}")`,
   so replaying the same log produces the same alias rows. A `uuid4` there
   would make a replay disagree with the run it replays, which is what the
   replay-equivalence tests forbid. The merge event's id is deliberately *not*

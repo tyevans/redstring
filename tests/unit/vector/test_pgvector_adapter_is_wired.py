@@ -39,11 +39,11 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.domain.exceptions import DimensionMismatchError
-from kg_builder.domain.vector import VectorRecord
-from kg_builder.ports.vector_store import VectorStore, entity_type_of
-from kg_builder.vector.adapters import pgvector as adapter
-from kg_builder.vector.adapters.pgvector import PgVectorStore, deduplicate, encode_vector
+from redstring.domain.exceptions import DimensionMismatchError
+from redstring.domain.vector import VectorRecord
+from redstring.ports.vector_store import VectorStore, entity_type_of
+from redstring.vector.adapters import pgvector as adapter
+from redstring.vector.adapters.pgvector import PgVectorStore, deduplicate, encode_vector
 
 DIMENSION = 8
 
@@ -309,7 +309,7 @@ class TestEncoding:
 
     def test_the_metadata_key_is_the_ports_constant(self):
         """A literal here would drift from the port silently."""
-        from kg_builder.ports.vector_store import ENTITY_TYPE_KEY
+        from redstring.ports.vector_store import ENTITY_TYPE_KEY
 
         assert entity_type_of({ENTITY_TYPE_KEY: "person"}) == "person"
 
@@ -382,7 +382,7 @@ class TestStructure:
     def test_the_in_memory_adapter_has_the_same_signatures(self):
         """Two adapters agreeing with the port is not the same as agreeing
         with each other only where the port was checked."""
-        from kg_builder.vector.adapters.memory import InMemoryVectorStore
+        from redstring.vector.adapters.memory import InMemoryVectorStore
 
         for name in ("upsert", "upsert_many", "get", "search", "delete", "delete_by_tenant"):
             assert inspect.signature(getattr(PgVectorStore, name)) == inspect.signature(

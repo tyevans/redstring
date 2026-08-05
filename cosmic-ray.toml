@@ -8,7 +8,7 @@
 #   uv run cr-report session.sqlite
 
 [cosmic-ray]
-module-path = "src/kg_builder"
+module-path = "src/redstring"
 timeout = 60.0
 test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit"
 excluded-modules = []

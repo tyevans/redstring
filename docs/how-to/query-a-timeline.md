@@ -5,7 +5,7 @@ the dates extraction pulled out of the text. This guide shows how to ask what a
 tenant's graph held over a window of time, get those entities back in
 chronological order, and derive the temporal relations between them.
 
-Everything here is `kg_builder.temporal.query.TemporalQuery`, which composes
+Everything here is `redstring.temporal.query.TemporalQuery`, which composes
 over any `GraphStore` — the in-memory adapter, Neo4j, or one of your own. It
 adds no port method and writes nothing back: a timeline read is a paged scan of
 the tenant plus interval arithmetic in Python, and an inferred relation is
@@ -18,7 +18,7 @@ You will need:
 - entities already written to a store (extraction and projection produce them),
 - some of them dated — an entity with no `temporal`, or one whose extent holds
   only a `sequence_position`, never appears in any result below,
-- `Bounds` from `kg_builder.domain.interval` to describe the window you are
+- `Bounds` from `redstring.domain.interval` to describe the window you are
   asking about. See
   [domain value types](../reference/domain-value-types.md) for what a
   `TemporalExtent` records and how precision and uncertainty markers widen or
@@ -29,15 +29,15 @@ the next section explains what that costs you.
 
 ## Before you start: temporal is not in the public API
 
-`kg_builder.__all__` is the whole supported surface, and nothing in this guide
+`redstring.__all__` is the whole supported surface, and nothing in this guide
 is in it. `TemporalQuery`, `CursorStalledError`, `InferredRelation`,
 `DEFAULT_MAX_PAIRS`, `Bounds`, `bounds` and `TemporalRelation` are all reached
 by dotted path:
 
 ```python
-from kg_builder.domain.interval import Bounds, TemporalRelation, bounds
-from kg_builder.temporal.inference import DEFAULT_MAX_PAIRS, InferredRelation
-from kg_builder.temporal.query import CursorStalledError, TemporalQuery
+from redstring.domain.interval import Bounds, TemporalRelation, bounds
+from redstring.temporal.inference import DEFAULT_MAX_PAIRS, InferredRelation
+from redstring.temporal.query import CursorStalledError, TemporalQuery
 ```
 
 Anything imported that way is internal and may change without notice,
@@ -51,15 +51,15 @@ Two consequences are worth planning around rather than discovering:
 - **The closure of exported types does not extend to these.** `Entity` and
   `TemporalExtent` *are* exported, so the values you get back are stable; the
   types you use to ask the question are not.
-- **`CursorStalledError` is a `RuntimeError`, not a `KgBuilderError`.** The
-  library's exception gate covers what descends from `KgBuilderError`, and
-  this does not — `except KgBuilderError` will not catch a stalled cursor, so
+- **`CursorStalledError` is a `RuntimeError`, not a `RedstringError`.** The
+  library's exception gate covers what descends from `RedstringError`, and
+  this does not — `except RedstringError` will not catch a stalled cursor, so
   catch it by name or let it propagate. `ValueError` from `page_size` and
   `max_pairs` is likewise a plain builtin.
 
 If you want insulation, wrap the two or three calls you make in a module of
 your own and import `Entity`, `TemporalExtent`, `DatePrecision` and
-`UncertaintyMarker` from `kg_builder` — those are exported and gated. See
+`UncertaintyMarker` from `redstring` — those are exported and gated. See
 [domain value types](../reference/domain-value-types.md) for that vocabulary.
 
 None of this constrains which store you read through. `TemporalQuery` takes the
@@ -72,8 +72,8 @@ unchanged — the instability is in this package, not in what it reads.
 `TemporalQuery` takes a store and nothing else:
 
 ```python
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
-from kg_builder.temporal.query import TemporalQuery
+from redstring.graph.adapters.memory import InMemoryGraphStore
+from redstring.temporal.query import TemporalQuery
 
 store = InMemoryGraphStore()
 query = TemporalQuery(store)
@@ -127,13 +127,13 @@ works through them in that order, starting with how to describe the window.
 ## Describe the window you are asking about (Bounds)
 
 `Bounds` is the window. It is a two-field `NamedTuple` from
-`kg_builder.domain.interval` — `lower` and `upper`, both
+`redstring.domain.interval` — `lower` and `upper`, both
 `datetime | None` — and it is what every method here takes:
 
 ```python
 from datetime import UTC, datetime
 
-from kg_builder.domain.interval import Bounds
+from redstring.domain.interval import Bounds
 
 window = Bounds(datetime(2023, 1, 1, tzinfo=UTC), datetime(2024, 1, 1, tzinfo=UTC))
 window.lower, window.upper   # the two fields
@@ -167,8 +167,8 @@ what extraction recorded — into the interval it actually denotes, and it is th
 single place that conversion happens:
 
 ```python
-from kg_builder.domain.interval import bounds
-from kg_builder.domain.temporal import DatePrecision, TemporalExtent
+from redstring.domain.interval import bounds
+from redstring.domain.temporal import DatePrecision, TemporalExtent
 
 extent = TemporalExtent(start_date=datetime(2023, 1, 1, tzinfo=UTC), precision=DatePrecision.YEAR)
 bounds(extent)
@@ -220,7 +220,7 @@ Put `None` in a bound and that side runs to infinity:
 ```python
 from datetime import UTC, datetime
 
-from kg_builder.domain.interval import Bounds
+from redstring.domain.interval import Bounds
 
 up_to_2000 = Bounds(None, datetime(2000, 1, 1, tzinfo=UTC))   # everything before 2000
 from_2000 = Bounds(datetime(2000, 1, 1, tzinfo=UTC), None)    # 2000 onwards
@@ -247,7 +247,7 @@ after_2000 = Bounds(datetime(2000, 1, 1, tzinfo=UTC), None)
 
 An implementation that read the open end as the current date would give a
 different answer next century, and would answer differently for the same data
-on two machines with different clocks. Nothing in `kg_builder.domain.interval`
+on two machines with different clocks. Nothing in `redstring.domain.interval`
 reads a clock. The same applies downwards: `Bounds(None, x)` includes an
 entity dated to the year 1, not merely one dated within recent memory.
 
@@ -264,8 +264,8 @@ You do not have to construct these by hand, and usually should not.
 `UncertaintyMarker.BEFORE` and `AFTER` produce exactly these shapes:
 
 ```python
-from kg_builder.domain.interval import bounds
-from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from redstring.domain.interval import bounds
+from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 
 before_1900 = TemporalExtent(
     start_date=datetime(1900, 1, 1, tzinfo=UTC),
@@ -336,7 +336,7 @@ back the tenant's dated entities whose extents intersect it:
 ```python
 from datetime import UTC, datetime
 
-from kg_builder.domain.interval import Bounds
+from redstring.domain.interval import Bounds
 
 window = Bounds(datetime(1900, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC))
 found = await query.entities_in_interval(tenant_id, window)
@@ -455,7 +455,7 @@ to the relations you actually want. It is keyword-only and takes any collection
 of `TemporalRelation`:
 
 ```python
-from kg_builder.domain.interval import Bounds, TemporalRelation
+from redstring.domain.interval import Bounds, TemporalRelation
 
 window = Bounds(datetime(2000, 1, 1, tzinfo=UTC), datetime(2001, 1, 1, tzinfo=UTC))
 
@@ -499,7 +499,7 @@ The default is `INTERSECTING`, which is every relation **except** `BEFORE` and
 `relations=INTERSECTING` explicitly is the same query as passing nothing:
 
 ```python
-from kg_builder.temporal.query import INTERSECTING
+from redstring.temporal.query import INTERSECTING
 
 INTERSECTING   # frozenset: DURING, CONTAINS, OVERLAPS, EQUALS
 ```
@@ -677,7 +677,7 @@ how each pair stands to the others in time:
 ```python
 from datetime import UTC, datetime
 
-from kg_builder.domain.interval import Bounds
+from redstring.domain.interval import Bounds
 
 relations = await query.relations_in_interval(
     tenant_id, Bounds(datetime(1800, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC))
@@ -750,7 +750,7 @@ ended at or before `b` began; it says nothing about the window.
 The default is `INFERRED_RELATIONS`, not `INTERSECTING`:
 
 ```python
-from kg_builder.temporal.inference import INFERRED_RELATIONS
+from redstring.temporal.inference import INFERRED_RELATIONS
 
 INFERRED_RELATIONS   # frozenset: BEFORE, CONTAINS, OVERLAPS, EQUALS
 ```
@@ -836,7 +836,7 @@ or your window. **Those two relations are never produced by
 express are in the result already, stated the other way round:
 
 ```python
-from kg_builder.domain.interval import TemporalRelation
+from redstring.domain.interval import TemporalRelation
 
 await query.relations_in_interval(tenant_id, relations={TemporalRelation.AFTER})
 # [] -- always
@@ -865,7 +865,7 @@ and you read the containing entity off `source_name` / `source_entity_id` and
 the contained one off `target_name` / `target_entity_id`:
 
 ```python
-from kg_builder.domain.interval import TemporalRelation
+from redstring.domain.interval import TemporalRelation
 
 nested = await query.relations_in_interval(
     tenant_id, relations={TemporalRelation.CONTAINS}
@@ -935,10 +935,10 @@ store never computes a relation for you.
 ## Use an InferredRelation — and why you cannot store one
 
 Every element of a `relations_in_interval` result is an `InferredRelation`, a
-seven-field `NamedTuple` from `kg_builder.temporal.inference`:
+seven-field `NamedTuple` from `redstring.temporal.inference`:
 
 ```python
-from kg_builder.temporal.inference import InferredRelation
+from redstring.temporal.inference import InferredRelation
 
 for r in await query.relations_in_interval(tenant_id, window):
     r.source_entity_id   # EntityId
@@ -1098,7 +1098,7 @@ showing a user why an edge exists, show the interval as well as the dates —
 `bounds` is the same conversion the query used:
 
 ```python
-from kg_builder.domain.interval import bounds
+from redstring.domain.interval import bounds
 
 bounds(r.source_extent)   # Bounds(2023-01-01, 2024-01-01) -- what was compared
 r.source_extent.end_date  # None -- what was recorded
@@ -1155,7 +1155,7 @@ you about a different thing:
 | `CursorStalledError` | any of the three methods | the store's cursor stopped advancing — an adapter bug, not your query |
 
 ```python
-from kg_builder.temporal.query import CursorStalledError, TemporalQuery
+from redstring.temporal.query import CursorStalledError, TemporalQuery
 
 try:
     relations = await query.relations_in_interval(tenant_id, window)
@@ -1165,12 +1165,12 @@ except CursorStalledError:
     ...   # the adapter is misbehaving; do not retry
 ```
 
-### Neither is a `KgBuilderError`
+### Neither is a `RedstringError`
 
-The library's exception gate covers what descends from `KgBuilderError`, and
+The library's exception gate covers what descends from `RedstringError`, and
 neither of these does. `CursorStalledError` is a `RuntimeError` and the
 `max_pairs` refusal is a plain builtin `ValueError`, so `except
-KgBuilderError` catches neither. Catch them by name, or let them propagate.
+RedstringError` catches neither. Catch them by name, or let them propagate.
 This is the same "temporal is not in the public API" caveat as
 [at the top of the guide](#before-you-start-temporal-is-not-in-the-public-api):
 these names are reached by dotted path and are not gated.
@@ -1227,7 +1227,7 @@ so the work is quadratic. `max_pairs` is the cap that refuses instead of
 grinding:
 
 ```python
-from kg_builder.temporal.inference import DEFAULT_MAX_PAIRS
+from redstring.temporal.inference import DEFAULT_MAX_PAIRS
 
 DEFAULT_MAX_PAIRS   # 500_000 -- roughly a thousand dated entities
 
@@ -1242,8 +1242,8 @@ except ValueError as exc:
 
 `max_pairs` is keyword-only on both `relations_in_interval` and
 `infer_relations`, and the exception is a plain builtin `ValueError` — not a
-`KgBuilderError`, so
-[`except KgBuilderError` will not catch it](#neither-is-a-kgbuildererror).
+`RedstringError`, so
+[`except RedstringError` will not catch it](#neither-is-a-kgbuildererror).
 
 ### It refuses before comparing anything
 
@@ -1337,7 +1337,7 @@ It is not about your window, your tenant or your data — it is a bug report
 about the `GraphStore` you handed to `TemporalQuery`:
 
 ```python
-from kg_builder.temporal.query import CursorStalledError
+from redstring.temporal.query import CursorStalledError
 
 try:
     found = await query.timeline(tenant_id)
@@ -1418,11 +1418,11 @@ assert page[0].id not in {e.id for e in again}              # `after` clause
 If either assertion fails, that is the bug, and the compliance suite for
 `GraphStore` is where the adapter should have caught it.
 
-### Catch it by name — it is not a `KgBuilderError`
+### Catch it by name — it is not a `RedstringError`
 
-`CursorStalledError` subclasses `RuntimeError`, not `KgBuilderError`, so
-`except KgBuilderError` will not see it, and it is reached by dotted path from
-`kg_builder.temporal.query` like everything else in this guide
+`CursorStalledError` subclasses `RuntimeError`, not `RedstringError`, so
+`except RedstringError` will not see it, and it is reached by dotted path from
+`redstring.temporal.query` like everything else in this guide
 ([temporal is not in the public API](#before-you-start-temporal-is-not-in-the-public-api)).
 
 `except RuntimeError` catches it, but catching it at all is usually the wrong
@@ -1446,7 +1446,7 @@ the entities the scan is collecting.
 many entities each `find_entities` round trip asks for:
 
 ```python
-from kg_builder.temporal.query import DEFAULT_PAGE_SIZE, TemporalQuery
+from redstring.temporal.query import DEFAULT_PAGE_SIZE, TemporalQuery
 
 DEFAULT_PAGE_SIZE   # 500
 
@@ -1500,8 +1500,8 @@ Two practical consequences:
   no partial result. A `page_size` bug is visible the moment you build the
   object.
 - **It is a plain builtin `ValueError`**, the same class `max_pairs` raises,
-  and not a `KgBuilderError` — so
-  [`except KgBuilderError` catches neither](#neither-is-a-kgbuildererror). A
+  and not a `RedstringError` — so
+  [`except RedstringError` catches neither](#neither-is-a-kgbuildererror). A
   bare `except ValueError` wrapped around both construction and a call cannot
   tell them apart; keep construction outside the block, or match on the
   message, which names `page_size`.
@@ -1638,8 +1638,8 @@ An entity takes part only if `bounds(entity.temporal)` returns an interval.
 That is the whole rule, and it excludes three shapes:
 
 ```python
-from kg_builder.domain.interval import bounds
-from kg_builder.domain.temporal import TemporalExtent
+from redstring.domain.interval import bounds
+from redstring.domain.temporal import TemporalExtent
 
 entity.temporal is None                              # never appears
 bounds(TemporalExtent(sequence_position=3))          # None -- never appears
@@ -1720,7 +1720,7 @@ interval predicate cannot be pushed into the store
 
 ### What to do with the undated ones
 
-Nothing in `kg_builder.temporal` will order or relate them — that is the point
+Nothing in `redstring.temporal` will order or relate them — that is the point
 of the exclusion rather than a gap in it. If you need them:
 
 - **Read them from the store.** `GraphStore.find_entities` returns every
@@ -1759,5 +1759,5 @@ See [domain value types](../reference/domain-value-types.md) for every field a
   [`CursorStalledError`](#handle-cursorstallederror-from-a-non-advancing-adapter-cursor)
   reports, and the compliance suite that catches it before `TemporalQuery` does.
 - [ADR 0006: the public surface is gated](../adr/0006-the-public-surface-is-gated.md)
-  — why `kg_builder.temporal` is reached by dotted path and what that costs you;
+  — why `redstring.temporal` is reached by dotted path and what that costs you;
   see [before you start](#before-you-start-temporal-is-not-in-the-public-api).

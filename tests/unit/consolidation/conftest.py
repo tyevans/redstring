@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.relationship import Relationship
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.relationship import Relationship
 
 
 def entity(

@@ -27,13 +27,13 @@ from eventsource.adapters.memory import (
     InMemorySnapshotStore,
 )
 
-from kg_builder.consolidation.candidates import CandidateFinder
-from kg_builder.consolidation.policy import AdjudicationBatch, Adjudicator
-from kg_builder.consolidation.service import ConsolidationService
-from kg_builder.domain.blocking import blocking_keys_for
-from kg_builder.events.merge import EntitiesMerged
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
-from kg_builder.projections import GraphProjection, project
+from redstring.consolidation.candidates import CandidateFinder
+from redstring.consolidation.policy import AdjudicationBatch, Adjudicator
+from redstring.consolidation.service import ConsolidationService
+from redstring.domain.blocking import blocking_keys_for
+from redstring.events.merge import EntitiesMerged
+from redstring.graph.adapters.memory import InMemoryGraphStore
+from redstring.projections import GraphProjection, project
 
 from .conftest import entity
 from .test_policy import FakeProvider, _verdict
@@ -195,7 +195,7 @@ class TestTheBandInBetween:
     async def test_a_provider_outage_merges_nothing(self):
         """Not "merges everything", and not "crashes the run" either. An
         unanswered question is not a yes."""
-        from kg_builder.domain.exceptions import EmptyCompletionError
+        from redstring.domain.exceptions import EmptyCompletionError
 
         rig, tenant = Rig(), uuid4()
         subject = keyed(tenant, "Ada Lovelace")
@@ -301,7 +301,7 @@ class TestResolveRespectsTheInvariants:
         A caller sweeping a tenant has to resolve its ids first, because
         `find_entities` returns absorbed entities too: a merge is not a delete.
         """
-        from kg_builder.domain.exceptions import MergeIntoAliasError
+        from redstring.domain.exceptions import MergeIntoAliasError
 
         rig, tenant = Rig(), uuid4()
         canonical = keyed(tenant, "Ada Lovelace")

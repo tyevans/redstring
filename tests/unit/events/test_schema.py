@@ -14,8 +14,8 @@ from uuid import uuid4
 import pytest
 from eventsource.domain.event_registry import default_registry, get_event_class
 
-from kg_builder.events import KG_EVENT_TYPES
-from kg_builder.events.streams import CONSOLIDATION_CATEGORY, DOCUMENT_CATEGORY
+from redstring.events import KG_EVENT_TYPES
+from redstring.events.streams import CONSOLIDATION_CATEGORY, DOCUMENT_CATEGORY
 
 
 def test_the_schema_is_not_empty():
@@ -104,7 +104,7 @@ def test_every_event_resolves_from_the_registry_by_its_wire_name(event_type):
 
 
 def _import_every_module_of_the_events_package():
-    """Import every module in `kg_builder.events`, and say which they were.
+    """Import every module in `redstring.events`, and say which they were.
 
     Without this the registry check has the same hole it is closing. A new
     event module that nothing imports registers nothing, so the registry would
@@ -113,13 +113,13 @@ def _import_every_module_of_the_events_package():
     package makes the *filesystem* the source of truth, which is the only
     thing here that cannot be forgotten.
     """
-    package = importlib.import_module("kg_builder.events")
+    package = importlib.import_module("redstring.events")
     for module in pkgutil.iter_modules(package.__path__):
-        importlib.import_module(f"kg_builder.events.{module.name}")
+        importlib.import_module(f"redstring.events.{module.name}")
 
 
 def _registered_kg_event_classes():
-    """Every registered event class that belongs to `kg_builder.events`.
+    """Every registered event class that belongs to `redstring.events`.
 
     Derived from the library's own registry rather than from `KG_EVENT_TYPES`,
     which is the point: the tuple is hand-maintained, and every other gate in
@@ -135,7 +135,7 @@ def _registered_kg_event_classes():
     return {
         cls
         for cls in default_registry.list_classes()
-        if cls.__module__.startswith("kg_builder.events")
+        if cls.__module__.startswith("redstring.events")
     }
 
 

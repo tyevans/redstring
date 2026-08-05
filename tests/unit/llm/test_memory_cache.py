@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from kg_builder.llm.cache.memory import MemoryCache
-from kg_builder.ports.cache import Cache
+from redstring.llm.cache.memory import MemoryCache
+from redstring.ports.cache import Cache
 from tests.compliance.cache import NOW, CacheCompliance
 
 

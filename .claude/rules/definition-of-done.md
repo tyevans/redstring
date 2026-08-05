@@ -32,13 +32,13 @@ No work is complete if the decisions it made or changed are not documented:
    means: changes to the layered import contract in `pyproject.toml`; the
    entity/graph data model; consolidation and merge semantics; anything that
    changes a public contract or a persistence format; and **the shape of the
-   `LlmProvider` port in `src/kg_builder/ports/llm_provider.py` or of the
-   plug-in protocols in `src/kg_builder/extraction/protocols.py`**. That last
+   `LlmProvider` port in `src/redstring/ports/llm_provider.py` or of the
+   plug-in protocols in `src/redstring/extraction/protocols.py`**. That last
    one is what "extraction strategy selection" now means: there is no
    selectable backend to choose between. Extraction calls one narrow port —
    `LlmProvider.extract(text, schema, *, system_prompt)` — and everything a
    chat API makes you think about stops at the adapter in
-   `kg_builder/llm/adapters/`. The only shape extraction itself plugs in is
+   `redstring/llm/adapters/`. The only shape extraction itself plugs in is
    `Chunker`; `Preprocessor` and `EntityMerger` were both removed, with the
    reasoning recorded in that module. So widening the port, adding a second
    protocol beside `Chunker`, or bringing a removed one back is an
@@ -140,7 +140,7 @@ deferral: it goes in `BACKLOG.md` with why ignoring it was correct.
 
 ## New feature
 
-1. Implementation under `src/kg_builder/`, in the correct layer — the
+1. Implementation under `src/redstring/`, in the correct layer — the
    `lint-imports` contract in `pyproject.toml` is the authority, and a
    cross-layer import means either the code is in the wrong layer or the
    contract needs an explicit, argued change (which is an ADR).
@@ -179,11 +179,11 @@ deferral: it goes in `BACKLOG.md` with why ignoring it was correct.
 
 There are no extraction "backends" to subclass any more. A new implementation
 is an **adapter behind a port**: `GraphStore`, `VectorStore`, `Cache` or
-`LlmProvider`, each a Protocol in `src/kg_builder/ports/`. See
+`LlmProvider`, each a Protocol in `src/redstring/ports/`. See
 `docs/how-to/implement-a-store-adapter.md` for the walkthrough; this list is
 what makes one *done*.
 
-1. **Implements the relevant Protocol in `src/kg_builder/ports/`**, and lives
+1. **Implements the relevant Protocol in `src/redstring/ports/`**, and lives
    under that port's sibling package (`graph/`, `vector/`, `llm/`) — not under
    `extraction/`. The Protocol is the contract; nothing else is. Widening the
    port to fit an adapter is an architectural decision and needs an ADR (see

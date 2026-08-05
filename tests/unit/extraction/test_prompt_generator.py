@@ -3,7 +3,7 @@
 Slice 10 cut this module to the one thing that has a caller
 (`domain_system_prompt`), so the JSON-schema, user-prompt and singleton tests
 that used to live here went with the code -- see the module docstring of
-`kg_builder.extraction.prompt_generator` for why each was unreachable.
+`redstring.extraction.prompt_generator` for why each was unreachable.
 
 What is tested here is the rendering. That the rendered string reaches the
 model is `test_domain_prompting.py`'s job, and that the six bundled YAML
@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import pytest
 
-from kg_builder.extraction.domains.models import (
+from redstring.extraction.domains.models import (
     DomainSchema,
     EntityTypeSchema,
     PropertySchema,
     RelationshipTypeSchema,
 )
-from kg_builder.extraction.prompt_generator import MAX_EXAMPLES_PER_TYPE, domain_system_prompt
+from redstring.extraction.prompt_generator import MAX_EXAMPLES_PER_TYPE, domain_system_prompt
 
 BOTH_PLACEHOLDERS = (
     "Entities:\n{entity_descriptions}\n\nRelationships:\n{relationship_descriptions}"

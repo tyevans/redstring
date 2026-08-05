@@ -3,9 +3,9 @@
 **Status:** accepted, slice 6 of the ring migration.
 
 Retry, rate limiting and circuit breaking are transport concerns. They sit in
-`kg_builder.llm` — beside the provider adapters, a *sibling* of `extraction`
+`redstring.llm` — beside the provider adapters, a *sibling* of `extraction`
 rather than a layer beneath it — and the state they need to survive a process
-boundary lives behind `kg_builder.ports.cache.Cache`, whose default
+boundary lives behind `redstring.ports.cache.Cache`, whose default
 implementation is in-memory. Redis is an upgrade a caller chooses when several
 workers must trip and throttle together, never the price of getting extraction
 to run.
@@ -45,7 +45,7 @@ and what they are allowed to require of a caller.
 
 Before slice 6 both modules sat in `extraction/` and imported
 `redis.asyncio` at module scope, taking their configuration from a global
-`kg_builder.config.settings`. The rate limiter kept its sliding window in a
+`redstring.config.settings`. The rate limiter kept its sliding window in a
 Redis sorted set and the circuit breaker kept `state`, a failure count, an
 `opened_at` timestamp and a half-open call count in four Redis keys under an
 `ollama_circuit` prefix. Neither had an in-memory path: importing either module
@@ -67,7 +67,7 @@ Ollama-specific.
 
 ### What a library may not require: a caller with no Redis must still get extraction
 
-`kg_builder` is a library, and the deciding constraint is what a caller must
+`redstring` is a library, and the deciding constraint is what a caller must
 *stand up* before anything works. A caller who wants extraction in one process
 should get correct rate limiting and a working circuit breaker with no server
 to run — the coordination Redis provides is only needed when several workers
@@ -80,14 +80,14 @@ never been asked about.
 So the resilience state had to move behind a port whose default implementation
 is in-process, and Redis had to become an adapter a caller *constructs* rather
 than a module-scope import anyone inherits.
-`kg_builder.ports.cache.Cache` is that port,
-`kg_builder.llm.cache.memory.MemoryCache` is that default, and
-`kg_builder.llm.cache.redis.RedisCache` is the upgrade. Both the rate limiter
+`redstring.ports.cache.Cache` is that port,
+`redstring.llm.cache.memory.MemoryCache` is that default, and
+`redstring.llm.cache.redis.RedisCache` is the upgrade. Both the rate limiter
 and the circuit breaker take `cache: Cache | None = None` and substitute
 `MemoryCache()` when it is None, so the no-infrastructure path is the one you
 get by not deciding. `RedisCache` takes a `redis.asyncio.Redis` client the
 caller has already made — it invents no URL — and defers its `redis` import to
-the one classmethod that builds a client for you, so `import kg_builder` never
+the one classmethod that builds a client for you, so `import redstring` never
 touches the driver.
 
 Note the boundary this draws, because it is easy to misread: the `redis`
@@ -99,13 +99,13 @@ infrastructure is never the price of entry.
 
 ## Decision 1: retry, rate limiting and circuit breaking are transport concerns, so they sit in `llm/`
 
-`kg_builder.llm.retry`, `kg_builder.llm.rate_limiter` and
-`kg_builder.llm.circuit_breaker` live beside the provider adapters, in the
+`redstring.llm.retry`, `redstring.llm.rate_limiter` and
+`redstring.llm.circuit_breaker` live beside the provider adapters, in the
 package the layered contract makes a *sibling* of `extraction`. Nothing
 outside `llm/` refers to them: `with_retry`, `RateLimiter` and
 `CircuitBreaker` appear nowhere else under `src/`, and the only first-party
 name `extraction/` imports from the model side is
-`kg_builder.domain.exceptions.LlmProviderError`.
+`redstring.domain.exceptions.LlmProviderError`.
 
 The test each of the three passes is the same one, and it is worth stating in
 the form that decides future cases: **would this concern still exist if the
@@ -181,13 +181,13 @@ Had `llm` been given its own line below `extraction`, the contract would still
 have been satisfied by everything the library does today — extraction is
 higher, so extraction importing `llm` would be legal. That is precisely the
 outcome the sibling line exists to make impossible: `extraction/pipeline.py`
-could then `from kg_builder.llm.adapters.langchain import ...` and the
+could then `from redstring.llm.adapters.langchain import ...` and the
 `LlmProvider` port would become advisory. Sibling placement is what converts
 "extraction talks to the port" from a convention into a gate.
 
 What extraction is left with is visible in `pipeline.py`: its only names from
-the model side are `kg_builder.ports.llm_provider.LlmProvider`, imported under
-`TYPE_CHECKING`, and `kg_builder.domain.exceptions.LlmProviderError`. A port
+the model side are `redstring.ports.llm_provider.LlmProvider`, imported under
+`TYPE_CHECKING`, and `redstring.domain.exceptions.LlmProviderError`. A port
 and an exception, both from layers *below* both siblings — which is the
 general form of how two siblings are allowed to meet. Shared vocabulary moves
 down, never sideways. `consolidation` and `temporal` are on the same line for
@@ -213,9 +213,9 @@ three modules.
 One limit, and it is the reason a test exists next to the contract:
 **`lint-imports` sees first-party imports only.** It cannot tell you that
 `langchain_core` has appeared in `extraction/pipeline.py`, because the layers
-contract is declared over `kg_builder` with `include_external_packages =
+contract is declared over `redstring` with `include_external_packages =
 false`. The sibling line stops extraction reaching the adapter *through*
-`kg_builder.llm`; nothing in it stops extraction importing LangChain directly.
+`redstring.llm`; nothing in it stops extraction importing LangChain directly.
 `tests/unit/llm/test_port_does_not_leak.py` is the other half — it parses
 every module under `src/` and fails on any `langchain*` import outside
 `llm/adapters/`, by source text rather than by importing, so a lazy
@@ -234,10 +234,10 @@ Everything `extraction/` knows about calling a model is two names, both from
 layers below the sibling line:
 
 ```python
-from kg_builder.domain.exceptions import KgBuilderError, LlmProviderError
+from redstring.domain.exceptions import RedstringError, LlmProviderError
 ...
 if TYPE_CHECKING:
-    from kg_builder.ports.llm_provider import LlmProvider
+    from redstring.ports.llm_provider import LlmProvider
 ```
 
 `pipeline.py` and `classifier.py` import exactly that pair and nothing else
@@ -284,7 +284,7 @@ than removed it.
 
 The check on all of this is a negative one, and negative properties rot
 quietly. Two gates hold it: the sibling line in the layers contract, which
-makes `from kg_builder.llm...` in `extraction/` a build failure rather than a
+makes `from redstring.llm...` in `extraction/` a build failure rather than a
 review comment, and `tests/unit/llm/test_port_does_not_leak.py`, which catches
 the third-party half the contract cannot see. Between them, the sentence "the
 pipeline reaches the port and never an adapter" is enforced rather than
@@ -350,10 +350,10 @@ existed when it was written.
 
 The rate limiter and the circuit breaker both need state that outlives a
 single call, and both take it as `cache: Cache | None = None`, substituting
-`MemoryCache()` when it is None. `kg_builder.ports.cache.Cache` is a
+`MemoryCache()` when it is None. `redstring.ports.cache.Cache` is a
 `runtime_checkable` `Protocol` with eight methods and no dependency on
-anything; `kg_builder.llm.cache.memory.MemoryCache` implements it in a dict,
-and `kg_builder.llm.cache.redis.RedisCache` implements it over a Redis client
+anything; `redstring.llm.cache.memory.MemoryCache` implements it in a dict,
+and `redstring.llm.cache.redis.RedisCache` implements it over a Redis client
 the caller owns. Neither resilience module imports `redis`, and neither
 mentions a URL.
 
@@ -466,11 +466,11 @@ into no TTL at all. Both are invisible to any test run against one adapter.
 Only the import graph, not the dependency list, is what "no infrastructure"
 means here. `redis[hiredis]` is a plain dependency of the distribution, so the
 package is always importable; what a caller is never required to have is a
-*running* Redis. `kg_builder.llm.cache.__init__` exports `MemoryCache` and
+*running* Redis. `redstring.llm.cache.__init__` exports `MemoryCache` and
 only `MemoryCache`, and `RedisCache.from_url` defers its `import
-redis.asyncio` into the classmethod body, so `import kg_builder` touches the
+redis.asyncio` into the classmethod body, so `import redstring` touches the
 driver nowhere. Choosing the upgrade is an explicit reach for
-`kg_builder.llm.cache.redis`, which is the level of deliberateness the choice
+`redstring.llm.cache.redis`, which is the level of deliberateness the choice
 deserves.
 
 `RedisCache` also takes a client rather than inventing one:

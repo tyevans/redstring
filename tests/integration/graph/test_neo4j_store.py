@@ -40,9 +40,9 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.exceptions import MissingEntityError
-from kg_builder.graph.adapters.neo4j import Neo4jGraphStore
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.exceptions import MissingEntityError
+from redstring.graph.adapters.neo4j import Neo4jGraphStore
 from tests.compliance.graph_store import GraphStoreCompliance
 
 if TYPE_CHECKING:
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
     from neo4j import AsyncDriver
 
-    from kg_builder.ports.graph_store import GraphStore
+    from redstring.ports.graph_store import GraphStore
 
 pytestmark = pytest.mark.integration
 
@@ -580,7 +580,7 @@ def _entity(*, tenant: Any, **overrides: Any) -> Entity:
 
 
 def _relationship(tenant: Any, *, source: Any, target: Any) -> Any:
-    from kg_builder.domain.relationship import Relationship
+    from redstring.domain.relationship import Relationship
 
     return Relationship(
         id=uuid4(),

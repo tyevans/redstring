@@ -1,7 +1,7 @@
 """Retry with exponential backoff and jitter.
 
 The import preamble this module used to carry is gone. It inserted a
-`MagicMock` at `sys.modules["kg_builder.config"]` and then loaded
+`MagicMock` at `sys.modules["redstring.config"]` and then loaded
 `retry.py` by absolute filesystem path, because the real module read
 `settings.OLLAMA_MAX_RETRIES` at construction and importing it dragged in the
 whole config chain. Slice 6 replaced that read with `DEFAULT_MAX_RETRIES`, so
@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import kg_builder.llm.retry as retry_module
-from kg_builder.llm.retry import (
+import redstring.llm.retry as retry_module
+from redstring.llm.retry import (
     DEFAULT_MAX_RETRIES,
     ExtractionRetryPolicy,
     RetryExhausted,

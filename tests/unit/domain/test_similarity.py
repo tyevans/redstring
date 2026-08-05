@@ -10,7 +10,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from kg_builder.domain.similarity import (
+from redstring.domain.similarity import (
     FeatureWeights,
     SimilarityFeatures,
     combined_score,

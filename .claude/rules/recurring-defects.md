@@ -10,7 +10,7 @@ paths:
 **Provenance:** imported from `eventsource-py`, where these six shapes were
 derived from an audit of ~130 `fix:` and correction commits. The *shapes* are
 general and worth carrying; the *evidence* was that project's history, and is
-summarised here abstractly rather than by SHA. kg-builder **has** now been
+summarised here abstractly rather than by SHA. redstring **has** now been
 audited against its own history: the ring-migration campaign
 (`docs/plans/ring-migration.md`) supplied instances for shapes 1, 3, 4 and 5,
 recorded with their SHAs under "Local instances" at the bottom. Read that
@@ -41,7 +41,7 @@ in one implementation and a rolling instant in the others; an in-memory
 update that rebuilt its record from scratch and silently dropped a field the
 SQL path preserved through its UPSERT column list.
 
-**Where this lives in kg-builder:** the four ports, each with two
+**Where this lives in redstring:** the four ports, each with two
 implementations that must be interchangeable —
 
 | Port | Implementations |
@@ -232,7 +232,7 @@ directly:
 
 - When you add a counter or stat field, add a test asserting it **non-zero**
   under the condition it counts. "Asserted zero in the happy path" is not
-  coverage. In kg-builder this bites hardest on the resilience counters in
+  coverage. In redstring this bites hardest on the resilience counters in
   `llm/circuit_breaker.py`, `llm/retry.py` and `llm/rate_limiter.py`, and on
   the merge tallies under `consolidation/` and in `extraction/merging.py` —
   all of which are read by humans deciding whether a pipeline run was healthy.
@@ -403,7 +403,7 @@ path is checkable by grep and survives a renumber that a bare number does not.
 
 ## Local instances
 
-kg-builder's own evidence, from the ring-migration campaign
+redstring's own evidence, from the ring-migration campaign
 (`docs/plans/ring-migration.md`). Each entry names the shape it instances, the
 commit, and — the part worth having — *how it stayed invisible*. Shapes 2 and 6
 have no entry yet and remain imported priors; add to this list rather than
@@ -447,7 +447,7 @@ zero violations (`db9805d`).** A check that has never fired is
 indistinguishable from a check that cannot fire, which is §3 applied to a
 gate rather than a counter. Turning the option on was not cosmetic: import-linter
 rejects `exhaustive` outright for a contract with no `containers`, so it
-required adding `containers = ["kg_builder"]` and making every layer name
+required adding `containers = ["redstring"]` and making every layer name
 relative. It was then *proven to bite* the only way that means anything —
 adding a throwaway top-level package, watching the contract fail, and removing
 it. A new top-level package is now a contract failure until someone places it
@@ -458,7 +458,7 @@ break it on purpose once.**
 `1a73c33`), after `6a473ff` recorded why the obvious measurement was
 worthless.** The order matters. A review measured what the `events/**`
 exemption was hiding with
-`ruff check --select ANN,TC src/kg_builder/events/` and got "All checks
+`ruff check --select ANN,TC src/redstring/events/` and got "All checks
 passed!" — a result that was **unconditional**, because `per-file-ignores`
 applies on top of `--select` and the ignore was exactly `["ANN", "TC"]`. The
 command could not have reported a finding whatever the code said; it is §4's

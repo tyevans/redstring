@@ -2,7 +2,7 @@
 
 **Every `GraphStore` adapter must pass this suite unchanged.** It is the
 executable definition of the port; the prose in
-`kg_builder.ports.graph_store` describes what these tests enforce.
+`redstring.ports.graph_store` describes what these tests enforce.
 
 ## Consistency contract
 
@@ -63,11 +63,11 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from kg_builder.domain.alias import Alias
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.exceptions import MissingEntityError
-from kg_builder.domain.relationship import Relationship
-from kg_builder.ports.graph_store import GraphStore
+from redstring.domain.alias import Alias
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.exceptions import MissingEntityError
+from redstring.domain.relationship import Relationship
+from redstring.ports.graph_store import GraphStore
 from tests.compliance import strategies as gen
 
 if TYPE_CHECKING:

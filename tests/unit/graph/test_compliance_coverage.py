@@ -21,11 +21,11 @@ import inspect
 import typing
 from collections.abc import Sequence
 
-from kg_builder.domain.alias import Alias
-from kg_builder.domain.entity import Entity
-from kg_builder.domain.ids import EntityId, RelationshipId, TenantId
-from kg_builder.domain.relationship import Relationship
-from kg_builder.ports.graph_store import GraphStore
+from redstring.domain.alias import Alias
+from redstring.domain.entity import Entity
+from redstring.domain.ids import EntityId, RelationshipId, TenantId
+from redstring.domain.relationship import Relationship
+from redstring.ports.graph_store import GraphStore
 from tests.compliance.graph_store import GraphStoreCompliance
 
 # The port annotates under `if TYPE_CHECKING`, so resolving its hints at

@@ -15,11 +15,11 @@ import pytest
 from eventsource.domain.tenant_context import tenant_scope
 from eventsource.ports.positions import ExpectedVersion
 
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.relationship import Relationship
-from kg_builder.events import DocumentExtracted
-from kg_builder.events.streams import document_stream
-from kg_builder.projections import project
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.relationship import Relationship
+from redstring.events import DocumentExtracted
+from redstring.events.streams import document_stream
+from redstring.projections import project
 
 TENANT_ID = uuid4()
 MODEL = "ollama/qwen3.6-27b"

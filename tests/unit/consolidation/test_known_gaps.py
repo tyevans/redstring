@@ -42,11 +42,11 @@ from eventsource.adapters.memory import (
 )
 from eventsource.domain.tenant_context import tenant_scope
 
-from kg_builder.aggregates.repositories import document_repository
-from kg_builder.consolidation.service import ConsolidationService
-from kg_builder.events.streams import document_stream
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
-from kg_builder.projections import GraphProjection, project
+from redstring.aggregates.repositories import document_repository
+from redstring.consolidation.service import ConsolidationService
+from redstring.events.streams import document_stream
+from redstring.graph.adapters.memory import InMemoryGraphStore
+from redstring.projections import GraphProjection, project
 
 from .conftest import edge, entity
 

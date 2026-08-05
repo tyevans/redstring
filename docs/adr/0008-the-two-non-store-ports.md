@@ -8,7 +8,7 @@ suites move with them), and [ADR 0002](0002-two-store-ports.md) covers only
 
 ## Context: four ports, two ADRs
 
-`kg_builder.ports` holds four Protocols. Two of them are stores and are argued
+`redstring.ports` holds four Protocols. Two of them are stores and are argued
 in ADR 0002. The other two — `Cache` and `LlmProvider` — are the subject here.
 They are grouped into one decision because they are the same decision made
 twice: each stands between the library's own vocabulary and a piece of
@@ -232,7 +232,7 @@ promises `close` and a default that made it a no-op would let a `RedisCache`
 leak the connection its `_owns_client` flag exists to manage.
 
 The one thing this decision does *not* buy is a smaller install. `redis` is a
-hard dependency of the project, not an extra, so importing `kg_builder` pulls
+hard dependency of the project, not an extra, so importing `redstring` pulls
 the client library either way; `langchain` is the dependency behind an extra.
 "Runs with no Redis" means no server to stand up, not no package to install.
 
@@ -369,7 +369,7 @@ the port is shaped like that purpose rather than like the transport underneath.
 A port shaped like a chat API would put `AIMessage` and friends into every
 caller's signature, and LangChain's interfaces move fast enough that a
 breaking change would then touch every one. Shaped as it is, such a change
-touches `kg_builder/llm/adapters/` and nothing else.
+touches `redstring/llm/adapters/` and nothing else.
 
 The same reasoning was applied one level down, inside the adapter, and it is
 worth recording because the idiomatic choice lost. `LangChainLlmProvider` uses
@@ -385,7 +385,7 @@ error contract below stateable at all.
 ### The confinement is enforced, not advised
 
 `tests/unit/llm/test_port_does_not_leak.py` walks the AST of every module
-under `src/kg_builder` and fails on a `langchain*` import anywhere outside
+under `src/redstring` and fails on a `langchain*` import anywhere outside
 `llm/adapters/`. This is a separate gate because a leaked import is not a test
 failure, not a lint finding, and — decisively — not an import-linter
 violation: the architecture contract is declared over first-party packages
@@ -625,7 +625,7 @@ port with a compliance tier looks like from the outside.
 
 `LlmProvider`, `FakeLlmProvider` (with `Response` and `EMPTY`), and the whole
 `LlmProviderError` family — `EmptyCompletionError`, `MalformedCompletionError`,
-`RefusedCompletionError` — are exported from `kg_builder`. **`Cache`,
+`RefusedCompletionError` — are exported from `redstring`. **`Cache`,
 `MemoryCache` and `RedisCache` are not**, nor are `CircuitBreaker` and
 `RateLimiter`: the cache is the transport's internal coordination, and
 exporting it would promise a cache abstraction the port is deliberately not.

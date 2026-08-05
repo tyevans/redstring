@@ -1,7 +1,7 @@
 """Classifying content into a domain, over the `LlmProvider` port.
 
 Rewritten in slice 6. The classifier used to take an `InferenceProvider` from
-the deleted `kg_builder.inference` package and parse a JSON object out of
+the deleted `redstring.inference` package and parse a JSON object out of
 whatever prose came back, so the old suite was built on an `AsyncMock` whose
 `infer` returned a hand-written string. Two whole classes of it --
 `TestJsonExtraction` and the "JSON with surrounding text" cases -- tested that
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import pytest
 
-from kg_builder.extraction.classifier import (
+from redstring.extraction.classifier import (
     CC_PATTERN,
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_FALLBACK_DOMAIN,
@@ -36,7 +36,7 @@ from kg_builder.extraction.classifier import (
     SSN_PATTERN,
     ContentClassifier,
 )
-from kg_builder.llm.adapters.fake import EMPTY, FakeLlmProvider
+from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider
 
 DOMAINS = {
     "technical_documentation": "Technical docs and API references",

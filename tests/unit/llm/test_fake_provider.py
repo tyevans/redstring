@@ -13,9 +13,9 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, Field
 
-from kg_builder.domain.exceptions import EmptyCompletionError, MalformedCompletionError
-from kg_builder.llm.adapters.fake import EMPTY, FakeLlmProvider
-from kg_builder.ports.llm_provider import LlmProvider
+from redstring.domain.exceptions import EmptyCompletionError, MalformedCompletionError
+from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider
+from redstring.ports.llm_provider import LlmProvider
 
 
 class _Thing(BaseModel):

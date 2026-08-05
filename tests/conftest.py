@@ -1,4 +1,4 @@
-"""Test configuration for kg-builder.
+"""Test configuration for redstring.
 
 Nothing is skipped at collection; `addopts` in pyproject.toml deselects the
 `accuracy` and `integration` markers, not this file.

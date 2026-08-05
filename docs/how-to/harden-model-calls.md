@@ -1,6 +1,6 @@
 # Harden model calls
 
-This guide wraps a working `LlmProvider` in the three pieces `kg_builder`
+This guide wraps a working `LlmProvider` in the three pieces `redstring`
 ships for surviving a flaky or overloaded model server: retry with backoff, a
 per-tenant rate limit, and a circuit breaker. The result is a class that still
 satisfies the `LlmProvider` port, so `build_graph` takes it unchanged.
@@ -13,7 +13,7 @@ You need two things.
 will do, but usually it is
 
 ```python
-from kg_builder.llm.adapters.langchain import LangChainLlmProvider
+from redstring.llm.adapters.langchain import LangChainLlmProvider
 
 inner = LangChainLlmProvider.openai_compatible(
     base_url="http://192.168.1.14:8080/v1",  # the /v1 root
@@ -23,7 +23,7 @@ inner = LangChainLlmProvider.openai_compatible(
 
 which covers llama.cpp, llama-swap, vLLM, Ollama's OpenAI shim and OpenAI
 itself — they agree on the wire format that matters here. It needs the `llm`
-extra (`uv add 'kg-builder[llm]'`); without `langchain-openai` installed the
+extra (`uv add 'redstring[llm]'`); without `langchain-openai` installed the
 constructor raises `ImportError` naming the extra. `api_key` defaults to
 `"not-needed"` because local servers ignore it and the OpenAI client refuses
 to start without one; pass a real key for a hosted endpoint. The provenance
@@ -47,24 +47,24 @@ Everything here is `async`, including `Cache`, `RateLimiter` and
 
 ## These pieces are not on the public surface
 
-`kg_builder.__all__` is the whole promise (see
+`redstring.__all__` is the whole promise (see
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md)). None of the three
 hardening pieces is in it, nor the `Cache` port they store state behind, so
 you import all of them by dotted path:
 
 ```python
-from kg_builder.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
-from kg_builder.llm.rate_limiter import RateLimitExceeded, RateLimiter
-from kg_builder.llm.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
-from kg_builder.llm.cache import MemoryCache
-from kg_builder.llm.cache.redis import RedisCache
-from kg_builder.ports.cache import Cache
+from redstring.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
+from redstring.llm.rate_limiter import RateLimitExceeded, RateLimiter
+from redstring.llm.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
+from redstring.llm.cache import MemoryCache
+from redstring.llm.cache.redis import RedisCache
+from redstring.ports.cache import Cache
 ```
 
 Two details of that block are not arbitrary:
 
-- `MemoryCache` comes from the package (`kg_builder.llm.cache`); `RedisCache`
-  is **only** reachable from `kg_builder.llm.cache.redis`. That is deliberate:
+- `MemoryCache` comes from the package (`redstring.llm.cache`); `RedisCache`
+  is **only** reachable from `redstring.llm.cache.redis`. That is deliberate:
   the Redis adapter's client import is deferred so the package `__init__` does
   not drag `redis` in for callers who never asked for it. Importing it from
   the package will fail.
@@ -82,7 +82,7 @@ dotted import.
 Practical consequences, in the order they will bite you:
 
 1. **Pin the version you tested against.** A compatible-release constraint
-   (`kg-builder~=X.Y`) is not enough; these pieces sit outside the promise
+   (`redstring~=X.Y`) is not enough; these pieces sit outside the promise
    that constraint expresses.
 2. **Keep the wrapper in one module of your own.** Every dotted import in this
    guide belongs in that file, so an upgrade that renames something is one
@@ -118,7 +118,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from kg_builder import LlmProvider
+from redstring import LlmProvider
 
 
 class HardenedLlmProvider:
@@ -142,7 +142,7 @@ That is already a conforming provider — it just hardens nothing yet. Four
 things about it are load-bearing.
 
 **There is nothing to inherit and nothing to register.** `LlmProvider` is a
-`runtime_checkable` `Protocol` (`kg_builder.ports.llm_provider`), so
+`runtime_checkable` `Protocol` (`redstring.ports.llm_provider`), so
 structural conformance is the entire requirement: a `model` property and an
 async `extract`. Subclassing it would work too, but it buys nothing and drags
 the port into your class's MRO. Note the limit of `runtime_checkable`:
@@ -203,7 +203,7 @@ you want retried and it re-invokes that call on the exception types you name,
 sleeping between attempts:
 
 ```python
-from kg_builder.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
+from redstring.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
 
 
 @with_retry(retryable_exceptions=(ConnectionError, TimeoutError))
@@ -357,8 +357,8 @@ on that seed is the order-dependent kind this repo treats as a bug.
 When every attempt has failed on a *retryable* exception, `with_retry` raises
 `RetryExhausted`. Three things about it will catch you out.
 
-**It is a plain `Exception`, not a `KgBuilderError`.** An
-`except KgBuilderError` around your pipeline — the clause that catches
+**It is a plain `Exception`, not a `RedstringError`.** An
+`except RedstringError` around your pipeline — the clause that catches
 everything else this library raises — does not catch it. If you have one
 handler for the library, add `RetryExhausted` to it explicitly. (See
 [Reference: the exceptions](#reference-the-exceptions).)
@@ -456,10 +456,10 @@ gets an identical answer, so retrying only spends tokens, latency and rate-limit
 slots to reach the same failure.
 
 All three are `LlmProviderError` subclasses and all three are exported from
-`kg_builder`, so *not* naming them is one import away from being reviewable:
+`redstring`, so *not* naming them is one import away from being reviewable:
 
 ```python
-from kg_builder import (
+from redstring import (
     EmptyCompletionError,
     MalformedCompletionError,
     RefusedCompletionError,
@@ -470,7 +470,7 @@ You exclude them by **leaving them out of `retryable_exceptions`** — there is
 no deny-list parameter, and none is needed: anything outside the tuple
 propagates on the first attempt, unwrapped, with its own traceback. The one
 tuple that gets this wrong is the default. `(Exception,)` catches all three,
-because `LlmProviderError` derives from `KgBuilderError` which derives from
+because `LlmProviderError` derives from `RedstringError` which derives from
 `Exception`. So does any tuple written as `(LlmProviderError,)` in the hope of
 catching "model problems" — that spelling names exactly the three failures
 that cannot be helped and none of the transport failures that can.
@@ -556,7 +556,7 @@ protects the *server* from you — and, because the allowance is per tenant,
 protects each of your tenants from the others.
 
 ```python
-from kg_builder.llm.rate_limiter import RateLimitExceeded, RateLimiter
+from redstring.llm.rate_limiter import RateLimitExceeded, RateLimiter
 
 limiter = RateLimiter(rpm=60)
 ```
@@ -616,7 +616,7 @@ call is worth making and outside the retry decorator:
 ```python
 import asyncio
 
-from kg_builder.llm.rate_limiter import RateLimitExceeded
+from redstring.llm.rate_limiter import RateLimitExceeded
 
 try:
     await limiter.acquire(tenant_id)
@@ -861,7 +861,7 @@ Retry handles a call that failed. The breaker handles a model that has
 each one into four, and the only useful thing to do is stop calling.
 
 ```python
-from kg_builder.llm.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
+from redstring.llm.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
 
 breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
 ```
@@ -1047,7 +1047,7 @@ pipeline uses. That is why the raise is written out in full in
 [the call sequence](#the-call-sequence) rather than hidden inside the breaker:
 
 ```python
-from kg_builder.llm.circuit_breaker import CircuitOpen
+from redstring.llm.circuit_breaker import CircuitOpen
 
 if not await breaker.allow_request():
     raise CircuitOpen(
@@ -1061,7 +1061,7 @@ optional wait, and exposes both as attributes — `.message` (as well as the
 usual `str(error)`) and `.retry_after`. Pass the number; the default of `0.0`
 means "no idea", and a caller that sleeps on it spins.
 
-It derives from `KgBuilderError`, so a single `except KgBuilderError` around
+It derives from `RedstringError`, so a single `except RedstringError` around
 your pipeline catches it — along with `RateLimitExceeded` and the
 `LlmProviderError` family, but **not** `RetryExhausted`, which is the one
 outlier ([reference](#reference-the-exceptions)).
@@ -1355,11 +1355,11 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from kg_builder import InMemoryGraphStore, LlmProvider, SourceDocument, build_graph
-from kg_builder.llm.adapters.langchain import LangChainLlmProvider
-from kg_builder.llm.circuit_breaker import CircuitBreaker, CircuitOpen
-from kg_builder.llm.rate_limiter import RateLimitExceeded, RateLimiter
-from kg_builder.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
+from redstring import InMemoryGraphStore, LlmProvider, SourceDocument, build_graph
+from redstring.llm.adapters.langchain import LangChainLlmProvider
+from redstring.llm.circuit_breaker import CircuitBreaker, CircuitOpen
+from redstring.llm.rate_limiter import RateLimitExceeded, RateLimiter
+from redstring.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -1471,7 +1471,7 @@ worker count, and a failing model is discovered separately by every one of
 them.
 
 ```python
-from kg_builder.llm.cache.redis import RedisCache
+from redstring.llm.cache.redis import RedisCache
 
 cache = RedisCache.from_url("redis://localhost:6379/0")
 limiter = RateLimiter(rpm=60, cache=cache)
@@ -1540,13 +1540,13 @@ Do not assume the layers are connected. Prove each one can fire:
 
 | Exception | Module | Base | Extra attributes |
 |---|---|---|---|
-| `RetryExhausted` | `kg_builder.llm.retry` | `Exception` | `message`, `attempts`; real error on `__cause__` |
-| `RateLimitExceeded` | `kg_builder.llm.rate_limiter` | `KgBuilderError` | `retry_after` (seconds until a slot frees) |
-| `CircuitOpen` | `kg_builder.llm.circuit_breaker` | `KgBuilderError` | `message`, `retry_after` (estimated) |
+| `RetryExhausted` | `redstring.llm.retry` | `Exception` | `message`, `attempts`; real error on `__cause__` |
+| `RateLimitExceeded` | `redstring.llm.rate_limiter` | `RedstringError` | `retry_after` (seconds until a slot frees) |
+| `CircuitOpen` | `redstring.llm.circuit_breaker` | `RedstringError` | `message`, `retry_after` (estimated) |
 
 `RetryExhausted` is the odd one: it derives from `Exception`, not
-`KgBuilderError`, so `except KgBuilderError` does not catch it. None of the
-three is exported from `kg_builder` — all three are reached by dotted path, as
+`RedstringError`, so `except RedstringError` does not catch it. None of the
+three is exported from `redstring` — all three are reached by dotted path, as
 above.
 
 ## Related reading

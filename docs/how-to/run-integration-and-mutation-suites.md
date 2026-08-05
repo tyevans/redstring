@@ -112,7 +112,7 @@ does run. That is a deliberate trade, and it has a cost this project has
 already paid once.
 
 An interrupted cosmic-ray run left a mutant in
-`src/kg_builder/graph/adapters/neo4j.py`:
+`src/redstring/graph/adapters/neo4j.py`:
 
 ```
 -    if limit is not None and limit < 0:
@@ -558,9 +558,9 @@ environment, and asks that installed copy for all six bundled domains —
 `literature_fiction`, `news_journalism`, `technical_documentation`. All six on
 purpose: a packaging rule that caught five and missed the sixth is exactly the
 partial failure a single-domain check would report as success. The probe script
-asserts `"site-packages" in kg_builder.__file__`, so a wheel shadowed by the
+asserts `"site-packages" in redstring.__file__`, so a wheel shadowed by the
 source tree fails rather than passing for the wrong reason, and it imports only
-`kg_builder`'s public surface — which also catches a dependency the wheel's
+`redstring`'s public surface — which also catches a dependency the wheel's
 metadata does not pull in.
 
 It is marked `integration` for cost, not for infrastructure, and it is the one
@@ -705,7 +705,7 @@ so its `ensure_schema` tests
 volume already holds, and only a run started from a genuinely fresh volume
 proves the five DDL statements did the creating. Do a `down -v` before the run
 you intend to believe on that point — before a release, and after touching
-`SCHEMA_STATEMENTS` in `src/kg_builder/graph/adapters/neo4j.py`. It is the
+`SCHEMA_STATEMENTS` in `src/redstring/graph/adapters/neo4j.py`. It is the
 "at least one test per stateful setup path must start from nothing" rule from
 [`.claude/rules/testing.md`](../../.claude/rules/testing.md), enforced by hand
 for the one adapter that cannot enforce it itself.
@@ -745,8 +745,8 @@ same thing:
 
 | | Runner | Configured in | Tests it runs |
 |---|---|---|---|
-| mutmut | `paths_to_mutate = ["src/kg_builder/"]` | `[tool.mutmut]` in `pyproject.toml` | `uv run pytest -x -q --no-header -p no:randomly` over `tests/unit/` |
-| cosmic-ray | `module-path = "src/kg_builder"` | `cosmic-ray.toml` | `uv run pytest -x -q --no-header -p no:randomly tests/unit` |
+| mutmut | `paths_to_mutate = ["src/redstring/"]` | `[tool.mutmut]` in `pyproject.toml` | `uv run pytest -x -q --no-header -p no:randomly` over `tests/unit/` |
+| cosmic-ray | `module-path = "src/redstring"` | `cosmic-ray.toml` | `uv run pytest -x -q --no-header -p no:randomly tests/unit` |
 
 Three flags are common to both commands and each earns its place:
 
@@ -761,7 +761,7 @@ Three flags are common to both commands and each earns its place:
 
 That last choice has a consequence worth stating plainly: **mutants in
 integration-only code are unkillable by the default configuration.** The Cypher
-bodies in `src/kg_builder/graph/adapters/neo4j.py` execute only with Docker up
+bodies in `src/redstring/graph/adapters/neo4j.py` execute only with Docker up
 (**B10a**), so a session over that module needs an integration `test-command`
 instead — the one recorded under **B10e**:
 
@@ -825,7 +825,7 @@ command in your shell cannot drift apart.
 
 ```toml
 [tool.mutmut]
-paths_to_mutate = ["src/kg_builder/"]
+paths_to_mutate = ["src/redstring/"]
 tests_dir = ["tests/unit/"]
 runner = "uv run pytest -x -q --no-header -p no:randomly"
 also_copy = ["pyproject.toml", "tests/conftest.py"]
@@ -837,7 +837,7 @@ result.
 **`tests_dir` is `tests/unit/`, so integration-only code cannot be measured
 here.** Combined with `addopts`, the suite mutmut runs is exactly the commit
 gate's, which is the same scoping cosmic-ray uses and the same limitation:
-mutants in the Cypher bodies of `src/kg_builder/graph/adapters/neo4j.py` are
+mutants in the Cypher bodies of `src/redstring/graph/adapters/neo4j.py` are
 unkillable by this configuration because no unit test executes them (**B10a**).
 Retargeting mutmut at the integration suite means editing `tests_dir` and
 `runner` together, and then
@@ -866,7 +866,7 @@ both runners pay one suite execution per mutant. Narrow `paths_to_mutate` to
 the module you changed, or name it on the command line:
 
 ```
-uv run mutmut run src/kg_builder/domain/preference.py
+uv run mutmut run src/redstring/domain/preference.py
 ```
 
 Read the results with:
@@ -908,8 +908,8 @@ considers yours. Run it from a `git worktree` or a fresh clone, never from the
 checkout you are editing:
 
 ```
-git worktree add ../kg-builder-mutation
-cd ../kg-builder-mutation
+git worktree add ../redstring-mutation
+cd ../redstring-mutation
 uv sync --all-extras
 uv run pytest -x -q --no-header -p no:randomly tests/unit   # Step 1, here
 ```
@@ -939,7 +939,7 @@ The config it reads is four lines and each is worth knowing:
 
 ```toml
 [cosmic-ray]
-module-path = "src/kg_builder"
+module-path = "src/redstring"
 timeout = 60.0
 test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit"
 excluded-modules = []
@@ -1049,7 +1049,7 @@ sheet ([Step 2](#step-2-run-mutmut)). Check the same three things.
 session is a legitimate result — `exec` is resumable and `cr-report` reads a
 half-finished database quite happily — but the number that matters is the one
 it did not cover. The B10e session over
-`src/kg_builder/graph/adapters/neo4j.py` completed **16 of 289 mutants
+`src/redstring/graph/adapters/neo4j.py` completed **16 of 289 mutants
 (5.5%)**: 11 killed, 5 survived, and all 5 survivors were
 `ReplaceBinaryOperator_BitOr_*` — the `|` in `X | None` annotations. So nothing
 of concern was found and also nothing much was looked at, which is why the
@@ -1172,7 +1172,7 @@ loaded rather than reading the file again:
 
 ```python
 import dis
-from kg_builder.domain.entity import Entity
+from redstring.domain.entity import Entity
 dis.dis(Entity.__init__)
 ```
 

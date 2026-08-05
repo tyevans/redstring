@@ -1,6 +1,6 @@
 """A library reads no environment. Its caller does, and passes the values in.
 
-This is the rule that killed `kg_builder.config` (BACKLOG B56). A 287-line
+This is the rule that killed `redstring.config` (BACKLOG B56). A 287-line
 `Settings` object survived nine slices of deletion because each slice could
 only argue about the keys it had just orphaned, and the object itself was
 never the subject. The rule replaces that argument with a check.
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "kg_builder"
+SRC = Path(__file__).resolve().parents[2] / "src" / "redstring"
 
 #: Names whose appearance means a module is reaching for the process
 #: environment. `dotenv` is here because it is the same act with a file in

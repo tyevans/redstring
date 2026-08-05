@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 
 # Import directly from the domains subpackage to avoid triggering
-# the full kg_builder.extraction package which pulls in database dependencies
-from kg_builder.extraction.domains.models import DomainSchema, DomainSummary
-from kg_builder.extraction.domains.registry import (
+# the full redstring.extraction package which pulls in database dependencies
+from redstring.extraction.domains.models import DomainSchema, DomainSummary
+from redstring.extraction.domains.registry import (
     DEFAULT_SCHEMA_DIR,
     DomainSchemaRegistry,
     get_default_domain_schema,
@@ -199,7 +199,7 @@ class TestDomainSchemaRegistryLoading:
 
     def test_invalid_schema_raises_error(self, tmp_path: Path):
         """Test that invalid schema raises error."""
-        from kg_builder.extraction.domains.loader import SchemaLoadError
+        from redstring.extraction.domains.loader import SchemaLoadError
 
         (tmp_path / "invalid.yaml").write_text(INVALID_YAML)
 

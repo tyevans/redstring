@@ -1,9 +1,9 @@
-"""Tests for kg_builder.domain.normalization."""
+"""Tests for redstring.domain.normalization."""
 
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kg_builder.domain.normalization import normalize_name
+from redstring.domain.normalization import normalize_name
 
 
 def test_casefolds():

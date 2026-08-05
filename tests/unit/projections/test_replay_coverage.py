@@ -19,7 +19,7 @@ from __future__ import annotations
 import pytest
 from eventsource.adapters.memory import InMemorySnapshotStore
 
-from kg_builder.events import KG_EVENT_TYPES
+from redstring.events import KG_EVENT_TYPES
 
 from .conftest import fresh_rig
 from .log_builder import build_log
@@ -56,9 +56,9 @@ def test_every_event_type_has_a_projection_handler(event_type):
     but never the right *accident*, so it has to be argued for here rather
     than discovered when a query comes back empty.
     """
-    from kg_builder.graph.adapters.memory import InMemoryGraphStore
-    from kg_builder.projections import GraphProjection, VectorProjection
-    from kg_builder.vector.adapters.memory import InMemoryVectorStore
+    from redstring.graph.adapters.memory import InMemoryGraphStore
+    from redstring.projections import GraphProjection, VectorProjection
+    from redstring.vector.adapters.memory import InMemoryVectorStore
 
     handled: set = set()
     handled.update(GraphProjection(InMemoryGraphStore()).subscribed_to())

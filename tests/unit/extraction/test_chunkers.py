@@ -21,8 +21,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from kg_builder.extraction.chunkers import SlidingWindowChunker
-from kg_builder.extraction.errors import ChunkSizeError
+from redstring.extraction.chunkers import SlidingWindowChunker
+from redstring.extraction.errors import ChunkSizeError
 
 
 def texts(min_size: int = 1, max_size: int = 4000) -> st.SearchStrategy[str]:
@@ -190,6 +190,6 @@ def test_the_chunker_reports_the_type_the_protocol_asks_for():
 
 
 def test_a_chunker_satisfies_the_protocol():
-    from kg_builder.extraction.protocols import Chunker
+    from redstring.extraction.protocols import Chunker
 
     assert isinstance(SlidingWindowChunker(), Chunker)

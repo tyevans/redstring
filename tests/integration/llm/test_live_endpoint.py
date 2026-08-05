@@ -34,8 +34,8 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field
 
-from kg_builder.domain.exceptions import EmptyCompletionError
-from kg_builder.llm.adapters.langchain import LangChainLlmProvider
+from redstring.domain.exceptions import EmptyCompletionError
+from redstring.llm.adapters.langchain import LangChainLlmProvider
 
 pytestmark = pytest.mark.integration
 

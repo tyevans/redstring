@@ -7,11 +7,11 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.interval import Bounds, TemporalRelation
-from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
-from kg_builder.temporal.query import CursorStalledError, TemporalQuery
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.interval import Bounds, TemporalRelation
+from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from redstring.graph.adapters.memory import InMemoryGraphStore
+from redstring.temporal.query import CursorStalledError, TemporalQuery
 
 pytestmark = pytest.mark.asyncio
 

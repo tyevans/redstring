@@ -12,7 +12,7 @@ This module tests all domain schema models for:
 import pytest
 from pydantic import ValidationError
 
-from kg_builder.extraction.domains.models import (
+from redstring.extraction.domains.models import (
     ClassificationResult,
     ConfidenceThresholds,
     DomainSchema,
@@ -894,7 +894,7 @@ class TestModelIntegration:
 
     def test_imports_from_package(self):
         """Test that all models can be imported from the package."""
-        from kg_builder.extraction.domains import (
+        from redstring.extraction.domains import (
             ClassificationResult,
             ConfidenceThresholds,
             DomainSchema,

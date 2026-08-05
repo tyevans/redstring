@@ -40,7 +40,7 @@ import pytest
 from eventsource.adapters.memory import InMemorySnapshotStore
 from hypothesis import given, settings
 
-from kg_builder.projections import project
+from redstring.projections import project
 
 from .conftest import fresh_rig
 from .log_builder import DocumentSpec, Scenario, build_log, scenarios

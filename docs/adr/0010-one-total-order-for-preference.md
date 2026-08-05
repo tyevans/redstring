@@ -8,7 +8,7 @@ Three call sites now defer to one order, and the moment a second definition
 appears the library has two tie-breaks that can disagree about which mention of
 an entity survives — a difference nobody would go looking for, in a durable,
 replayable event log. Until now the whole argument lived in
-`kg_builder/domain/preference.py`'s docstrings, which is the right place for
+`redstring/domain/preference.py`'s docstrings, which is the right place for
 it to be *maintained* and the wrong place for it to be *found*. This records
 it where a reader looking for decisions will look, together with the rule for
 extending the order and the defects that shaped it.
@@ -32,7 +32,7 @@ to choose:
 
 ## Decision: the order lives in `domain`, below all three callers
 
-`kg_builder/domain/preference.py` defines `preference` (entities) and
+`redstring/domain/preference.py` defines `preference` (entities) and
 `relationship_preference` (relationships). Higher wins. All three call sites
 import from there; none defines its own comparison.
 

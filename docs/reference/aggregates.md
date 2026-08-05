@@ -13,24 +13,24 @@ For the events these commands emit, see
 
 ### What is exported (`Document`) and what is dotted-path internal (`ConsolidationLog`, the repository factories)
 
-`kg_builder.__all__` is the whole public promise. From this area it carries
+`redstring.__all__` is the whole public promise. From this area it carries
 exactly two names:
 
 | Name | Public? | Import |
 |---|---|---|
-| `Document` | yes | `from kg_builder import Document` |
-| `document_stream` | yes | `from kg_builder import document_stream` |
-| `ConsolidationLog` | no | `kg_builder.aggregates.ConsolidationLog` |
-| `document_repository`, `consolidation_repository` | no | `kg_builder.aggregates` |
-| `consolidation_stream`, `DOCUMENT_CATEGORY`, `CONSOLIDATION_CATEGORY` | no | `kg_builder.events.streams` |
+| `Document` | yes | `from redstring import Document` |
+| `document_stream` | yes | `from redstring import document_stream` |
+| `ConsolidationLog` | no | `redstring.aggregates.ConsolidationLog` |
+| `document_repository`, `consolidation_repository` | no | `redstring.aggregates` |
+| `consolidation_stream`, `DOCUMENT_CATEGORY`, `CONSOLIDATION_CATEGORY` | no | `redstring.events.streams` |
 | `MergeRecord`, `DocumentState`, `ConsolidationLogState` | no | the defining module |
-| `MergeIntoAliasError`, `DoubleMergeError`, `UnknownMergeError` | no | `kg_builder.domain.exceptions` |
+| `MergeIntoAliasError`, `DoubleMergeError`, `UnknownMergeError` | no | `redstring.domain.exceptions` |
 
 Anything reached by a dotted path is internal and may change without notice.
 
 ## Stream keys
 
-Defined in `kg_builder.events.streams`.
+Defined in `redstring.events.streams`.
 
 ### `DOCUMENT_CATEGORY` and `CONSOLIDATION_CATEGORY`
 
@@ -99,12 +99,12 @@ function is what keeps them equal if that ever stops being true.
 
 ## `Document`
 
-`kg_builder.aggregates.document.Document`, an
+`redstring.aggregates.document.Document`, an
 `AggregateRoot[DocumentState]` with `aggregate_type = DOCUMENT_CATEGORY`.
 Construct it with the aggregate id from `document_stream`:
 
 ```python
-from kg_builder import Document, document_stream
+from redstring import Document, document_stream
 
 stream = document_stream(tenant_id=tenant_id, source_id="doc-1")
 document = Document(stream.aggregate_id)
@@ -390,14 +390,14 @@ exceptions.
 
 ## `ConsolidationLog`
 
-`kg_builder.aggregates.consolidation_log.ConsolidationLog`, an
+`redstring.aggregates.consolidation_log.ConsolidationLog`, an
 `AggregateRoot[ConsolidationLogState]` with
 `aggregate_type = CONSOLIDATION_CATEGORY`. Not exported; construct it with the
 aggregate id from `consolidation_stream`:
 
 ```python
-from kg_builder.aggregates import ConsolidationLog
-from kg_builder.events.streams import consolidation_stream
+from redstring.aggregates import ConsolidationLog
+from redstring.events.streams import consolidation_stream
 
 log = ConsolidationLog(consolidation_stream(tenant_id=tenant_id).aggregate_id)
 ```
@@ -433,7 +433,7 @@ store (see *Repositories* below).
 ### `MergeRecord` fields
 
 One merge as the log remembers it. A pydantic `BaseModel`, internal
-(`kg_builder.aggregates.consolidation_log.MergeRecord`), and never constructed
+(`redstring.aggregates.consolidation_log.MergeRecord`), and never constructed
 by a caller: the only writer is `_apply`, from an applied `EntitiesMerged`.
 
 | Field | Type | Default | Source on `EntitiesMerged` |
@@ -618,9 +618,9 @@ guard against a state the other invalidated.
 ### Exceptions raised by `merge` — `MergeIntoAliasError`, `DoubleMergeError`
 
 Both are raised by `ConsolidationLog.merge`, both subclass
-`ConsolidationInvariantError` → `KgBuilderError`, both take keyword-only
+`ConsolidationInvariantError` → `RedstringError`, both take keyword-only
 constructor arguments, and both are internal
-(`kg_builder.domain.exceptions`). `merge` has no `None` path, so these are the
+(`redstring.domain.exceptions`). `merge` has no `None` path, so these are the
 only two ways it declines.
 
 | Exception | Raised when | Attributes |
@@ -771,8 +771,8 @@ aliases.
 ### Exceptions raised by `undo_merge` — `UnknownMergeError`
 
 `undo_merge` has no `None` path and exactly one failure. It is internal
-(`kg_builder.domain.exceptions.UnknownMergeError`), subclasses
-`ConsolidationInvariantError` → `KgBuilderError`, and takes one keyword-only
+(`redstring.domain.exceptions.UnknownMergeError`), subclasses
+`ConsolidationInvariantError` → `RedstringError`, and takes one keyword-only
 argument.
 
 | Exception | Raised when | Attributes | Message |
@@ -994,7 +994,7 @@ model.
 
 ## Repositories
 
-`kg_builder.aggregates.repositories`. Both return
+`redstring.aggregates.repositories`. Both return
 `TenantAwareRepository`, so a `save` outside a `tenant_scope` raises rather than
 writing, and an event whose `tenant_id` disagrees with the ambient scope raises
 rather than landing in the log.
@@ -1052,7 +1052,7 @@ stream *is* a tenant.
 | `ValueError` | `document_stream` | positional message (blank `source_id`) |
 
 All three consolidation errors subclass `ConsolidationInvariantError` →
-`KgBuilderError`, and all take keyword-only arguments.
+`RedstringError`, and all take keyword-only arguments.
 
 ## Related
 

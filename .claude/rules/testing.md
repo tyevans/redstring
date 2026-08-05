@@ -59,7 +59,7 @@ the compliance module first, then specialise if an adapter genuinely differs.
 
 ### `tests/unit/`
 
-Mirrors the package layout under `src/kg_builder/` one directory per package —
+Mirrors the package layout under `src/redstring/` one directory per package —
 `aggregates/`, `consolidation/`, `domain/`, `events/`, `extraction/`,
 `graph/`, `llm/`, `projections/`, `temporal/`, `vector/` — with the
 cross-cutting surface gates (`test_composition.py`,

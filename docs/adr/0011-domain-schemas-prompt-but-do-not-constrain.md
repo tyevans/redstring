@@ -850,7 +850,7 @@ give-up observable at the boundary a caller actually reads.
 ### `UnknownDomainError` translates the registry's bare `KeyError` and lists available domains
 
 `domain_system_prompt` is public surface
-([ADR 0006](0006-the-public-surface-is-gated.md)), and `KgBuilderError` is the
+([ADR 0006](0006-the-public-surface-is-gated.md)), and `RedstringError` is the
 documented base of everything this library raises deliberately — a `KeyError`
 escaping is a leak of the registry's implementation. A typo in a domain id is
 the overwhelmingly likely cause, so the message lists the ids that do exist.

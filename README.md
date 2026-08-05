@@ -1,4 +1,4 @@
-# kg-builder
+# redstring
 
 Build a knowledge graph out of documents you already have: extract entities and
 relationships with a language model, consolidate duplicates, and keep a graph store
@@ -9,15 +9,15 @@ You supply the documents. This library does not fetch anything.
 ## Install
 
 ```
-uv add kg-builder                 # in-memory adapters, the fake provider
-uv add "kg-builder[llm]"          # any OpenAI-compatible server, via langchain-openai
-uv add "kg-builder[neo4j]"        # the Neo4j GraphStore adapter
+uv add redstring                 # in-memory adapters, the fake provider
+uv add "redstring[llm]"          # any OpenAI-compatible server, via langchain-openai
+uv add "redstring[neo4j]"        # the Neo4j GraphStore adapter
 ```
 
 Python 3.13+.
 
 `redis` is a **core** dependency, not an extra: `pyproject.toml`'s `dependencies`
-carries `redis[hiredis]>=5.3,<6`, so `kg_builder.llm.cache.redis.RedisCache` works on
+carries `redis[hiredis]>=5.3,<6`, so `redstring.llm.cache.redis.RedisCache` works on
 the base install with nothing added. That may change — `BACKLOG.md` B61 proposes moving
 `redis` behind an extra (the only remaining user is that one adapter, which imports
 `redis.asyncio` inside a function), and B38 records the pin conflict that makes the
@@ -28,8 +28,8 @@ If you change extras yourself, re-sync with `--all-extras` afterwards — `uv ad
 ## Use
 
 ```python
-from kg_builder import InMemoryGraphStore, SourceDocument, build_graph
-from kg_builder.llm.adapters.langchain import LangChainLlmProvider
+from redstring import InMemoryGraphStore, SourceDocument, build_graph
+from redstring.llm.adapters.langchain import LangChainLlmProvider
 from langchain_openai import ChatOpenAI
 
 # Any OpenAI-compatible server: llama.cpp, vLLM, Ollama's shim, OpenAI itself.
@@ -56,7 +56,7 @@ not show, because it is the one step that is langchain's rather than this librar
 
 Pass `domain="literature_fiction"` to specialise the prompt to one of the bundled domain
 schemas, or `domain=AUTO` to have the content classifier choose (one extra model call).
-`AUTO` is the sentinel exported from `kg_builder` — `from kg_builder import AUTO` — not
+`AUTO` is the sentinel exported from `redstring` — `from redstring import AUTO` — not
 the string `"auto"`, which is read as a domain id like any other.
 
 **`AUTO` never raises.** It falls back to `encyclopedia_wiki` on three paths: a document
@@ -75,12 +75,12 @@ encyclopedia article would. The confidence is the only field that tells them apa
 
 ## The public API
 
-`from kg_builder import ...` — everything in that module's `__all__` is supported.
+`from redstring import ...` — everything in that module's `__all__` is supported.
 Anything reached through a dotted path is internal and may change. The module docstring
 is the reference, and it says what is deliberately left out.
 
 The surface is **closed**: every type an exported signature names is either exported too
-or recorded with the package it comes from, and every `KgBuilderError` is either exported
+or recorded with the package it comes from, and every `RedstringError` is either exported
 or recorded as belonging to a capability that is not. That is a test
 (`tests/unit/test_public_surface_is_self_contained.py`), not an intention. ADR
 `docs/adr/0006-the-public-surface-is-gated.md` records why it is gated rather than curated.
@@ -90,13 +90,13 @@ are all in `__all__`, so the snippet above needs no dotted path.
 
 **Consolidation is not exported**, and the module docstring's "What is deliberately not
 here" is the reason: consolidation and temporal inference are both real
-(`kg_builder.consolidation`, `kg_builder.temporal`) and both tested, but neither has a
+(`redstring.consolidation`, `redstring.temporal`) and both tested, but neither has a
 composed entry point yet, and exporting the classes would publish an API whose shape is
 still being decided by the callers it does not have. So the consolidation how-to reaches
 its entry point by dotted path, deliberately:
 
 ```python
-from kg_builder.consolidation.service import ConsolidationService
+from redstring.consolidation.service import ConsolidationService
 ```
 
 Import it by path and expect movement. See
@@ -109,17 +109,17 @@ The same wording applies to the middleware around model calls. None of these are
 
 | Module | What it holds |
 |---|---|
-| `kg_builder.llm.retry` | `with_retry`, `ExtractionRetryPolicy`, `RetryExhausted` |
-| `kg_builder.llm.rate_limiter` | `RateLimiter`, `RateLimitExceeded` |
-| `kg_builder.llm.circuit_breaker` | `CircuitBreaker`, `CircuitState`, `CircuitOpen` |
-| `kg_builder.llm.cache.memory` | `MemoryCache` — the default, no infrastructure |
-| `kg_builder.llm.cache.redis` | `RedisCache`, `RedisCache.from_url` — for processes that must agree |
+| `redstring.llm.retry` | `with_retry`, `ExtractionRetryPolicy`, `RetryExhausted` |
+| `redstring.llm.rate_limiter` | `RateLimiter`, `RateLimitExceeded` |
+| `redstring.llm.circuit_breaker` | `CircuitBreaker`, `CircuitState`, `CircuitOpen` |
+| `redstring.llm.cache.memory` | `MemoryCache` — the default, no infrastructure |
+| `redstring.llm.cache.redis` | `RedisCache`, `RedisCache.from_url` — for processes that must agree |
 
 They are real and they are tested; what they do not have is a composed entry point, so
 their shape is still being decided by callers they do not yet have. Reaching for them
 means taking on **movement without notice** — a rename, a changed signature, or a move to
 another module is not a breaking change here, because nothing in the promise covers them.
-`CircuitOpen` and `RateLimitExceeded` are `KgBuilderError` subclasses that the public
+`CircuitOpen` and `RateLimitExceeded` are `RedstringError` subclasses that the public
 surface deliberately does not export, and `tests/unit/test_public_surface_is_self_contained.py`
 records both as middleware rather than letting the omission pass unnoticed.
 
@@ -140,12 +140,12 @@ would do, records that as an `EntitiesMerged` (or a `MergeUndone`), and writes t
 of its own (`consolidation/service.py`'s module docstring; `docs/adr/0004-consolidation-emits-events.md`).
 Both therefore fold through `GraphProjection`, which handles all three events, and the
 store stays a projection of the log rather than a second source of truth. `build_graph` does both in one call for a caller who has no event store; a caller
-who has one appends `report.event` and drives `kg_builder.projections.project` over the
+who has one appends `report.event` and drives `redstring.projections.project` over the
 feed instead. That separation is why a store can be rebuilt from the log.
 
 ### Consolidating duplicates
 
-`ConsolidationService` (`kg_builder.consolidation.service`, dotted path — it is not
+`ConsolidationService` (`redstring.consolidation.service`, dotted path — it is not
 exported) has two ways in.
 
 `resolve(subject, *, finder, adjudicator=None, high=..., low=...)` is the whole pipeline
@@ -181,10 +181,10 @@ are dotted-path (nothing here is exported):
 
 | Knob | Module | Default | What it does |
 |---|---|---|---|
-| `HIGH_SIMILARITY` | `kg_builder.consolidation.policy` | `0.92` | At or above, merge without asking a model |
-| `LOW_SIMILARITY` | `kg_builder.consolidation.policy` | `0.75` | Below, never merge and never ask |
-| `ADJUDICATION_BATCH_SIZE` | `kg_builder.consolidation.policy` | `10` | How many pairs go into one model call |
-| `EMBEDDING_SEARCH_K` | `kg_builder.consolidation.candidates` | `50` | How many nearest vectors the embedding step asks for |
+| `HIGH_SIMILARITY` | `redstring.consolidation.policy` | `0.92` | At or above, merge without asking a model |
+| `LOW_SIMILARITY` | `redstring.consolidation.policy` | `0.75` | Below, never merge and never ask |
+| `ADJUDICATION_BATCH_SIZE` | `redstring.consolidation.policy` | `10` | How many pairs go into one model call |
+| `EMBEDDING_SEARCH_K` | `redstring.consolidation.candidates` | `50` | How many nearest vectors the embedding step asks for |
 
 The first two are **per-call keyword arguments**, not just constants: `resolve(subject, *,
 finder, adjudicator=None, high=HIGH_SIMILARITY, low=LOW_SIMILARITY)` takes both, so tuning
@@ -212,15 +212,15 @@ renormalizes over the features it has.
 
 | Package | What it is |
 |---|---|
-| `kg_builder.composition` | `build_graph` — the only module that holds both halves |
-| `kg_builder.domain` | `Entity`, `Relationship`, `Alias`, similarity, temporal parsing |
-| `kg_builder.ports` | `GraphStore`, `VectorStore`, `LlmProvider` |
-| `kg_builder.graph` / `.vector` | Adapters: in-memory, Neo4j, pgvector |
-| `kg_builder.llm` | Provider adapters, retry, rate limiting, circuit breaking, caching — only the adapters (`llm.adapters.langchain`, `llm.adapters.fake`) are part of the promise; the rest is internal, dotted-path only |
-| `kg_builder.extraction` | Chunking, the pipeline, mapping, merging, domain prompting |
-| `kg_builder.consolidation` | Deciding that two entities are one and undoing it: the `resolve()` block/score/band/adjudicate pipeline, the explicit `merge()`/`undo()`, emitting `EntitiesMerged` / `MergeUndone` and writing to no store |
-| `kg_builder.temporal` | Interval inference and time-sliced queries |
-| `kg_builder.aggregates` / `.events` / `.projections` | The write model and the read model |
+| `redstring.composition` | `build_graph` — the only module that holds both halves |
+| `redstring.domain` | `Entity`, `Relationship`, `Alias`, similarity, temporal parsing |
+| `redstring.ports` | `GraphStore`, `VectorStore`, `LlmProvider` |
+| `redstring.graph` / `.vector` | Adapters: in-memory, Neo4j, pgvector |
+| `redstring.llm` | Provider adapters, retry, rate limiting, circuit breaking, caching — only the adapters (`llm.adapters.langchain`, `llm.adapters.fake`) are part of the promise; the rest is internal, dotted-path only |
+| `redstring.extraction` | Chunking, the pipeline, mapping, merging, domain prompting |
+| `redstring.consolidation` | Deciding that two entities are one and undoing it: the `resolve()` block/score/band/adjudicate pipeline, the explicit `merge()`/`undo()`, emitting `EntitiesMerged` / `MergeUndone` and writing to no store |
+| `redstring.temporal` | Interval inference and time-sliced queries |
+| `redstring.aggregates` / `.events` / `.projections` | The write model and the read model |
 
 Implementing a port of your own? `tests/compliance/` is a suite you can point at it;
 it is what says whether you got the contract right.

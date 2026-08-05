@@ -46,7 +46,7 @@ see [Consolidate duplicate entities](consolidate-duplicate-entities.md).
 ### What you need: an `AggregateStore`, and a `SnapshotStore` for consolidation
 
 Both repositories are built over an `eventsource` `AggregateStore` — that is
-your event log, and kg-builder never creates one for you. Consolidation
+your event log, and redstring never creates one for you. Consolidation
 additionally needs a `SnapshotStore`; it is a required positional argument, not
 an optional one, because a tenant's merge stream grows without bound and an
 omitted snapshot store surfaces as slow merges long after the code that omitted
@@ -71,24 +71,24 @@ from eventsource.domain.tenant_context import tenant_scope
 
 ### What is exported and what you import by path
 
-`Document` and `document_stream` are in `kg_builder.__all__`, so import them
+`Document` and `document_stream` are in `redstring.__all__`, so import them
 from the package root:
 
 ```python
-from kg_builder import Document, document_stream
+from redstring import Document, document_stream
 ```
 
 The rest of the write model is reached by path. `ConsolidationLog` and the two
-repository factories live in `kg_builder.aggregates`; `consolidation_stream`
-lives in `kg_builder.events.streams`:
+repository factories live in `redstring.aggregates`; `consolidation_stream`
+lives in `redstring.events.streams`:
 
 ```python
-from kg_builder.aggregates import (
+from redstring.aggregates import (
     ConsolidationLog,
     consolidation_repository,
     document_repository,
 )
-from kg_builder.events.streams import consolidation_stream
+from redstring.events.streams import consolidation_stream
 ```
 
 That split is a statement about stability, not an accident of packaging.
@@ -98,18 +98,18 @@ classes would publish a shape still being decided. Import them and expect
 movement.
 
 `CONSOLIDATION_SNAPSHOT_EVERY`, the default snapshot interval, comes from
-`kg_builder.aggregates.repositories` if you want to reference it rather than
+`redstring.aggregates.repositories` if you want to reference it rather than
 retype its value:
 
 ```python
-from kg_builder.aggregates.repositories import CONSOLIDATION_SNAPSHOT_EVERY
+from redstring.aggregates.repositories import CONSOLIDATION_SNAPSHOT_EVERY
 ```
 
-The errors you will catch come from `eventsource` and from kg-builder both.
+The errors you will catch come from `eventsource` and from redstring both.
 `TenantContextNotSetError`, `TenantMismatchError` and `OptimisticLockError`
 are `eventsource.domain.exceptions`; the merge invariant errors —
 `MergeIntoAliasError`, `DoubleMergeError`, `UnknownMergeError`, and their
-shared base `ConsolidationInvariantError` — are `kg_builder.domain.exceptions`:
+shared base `ConsolidationInvariantError` — are `redstring.domain.exceptions`:
 
 ```python
 from eventsource.domain.exceptions import (
@@ -117,10 +117,10 @@ from eventsource.domain.exceptions import (
     TenantContextNotSetError,
     TenantMismatchError,
 )
-from kg_builder.domain.exceptions import ConsolidationInvariantError
+from redstring.domain.exceptions import ConsolidationInvariantError
 ```
 
-`ConsolidationInvariantError` derives from `KgBuilderError`, so a caller that
+`ConsolidationInvariantError` derives from `RedstringError`, so a caller that
 already handles that base handles all three merge failures without naming
 them.
 
@@ -130,7 +130,7 @@ the commands emit, [the events reference](../reference/events.md).
 
 ## Build a repository
 
-Both factories live in `kg_builder.aggregates` and both return an
+Both factories live in `redstring.aggregates` and both return an
 `eventsource` `TenantAwareRepository` — the same type, with the same
 `create_new` / `load` / `load_or_create` / `save` surface. What differs is
 what you have to hand them.
@@ -138,7 +138,7 @@ what you have to hand them.
 ### `document_repository(event_store)` — no snapshot store, and why
 
 ```python
-from kg_builder.aggregates import document_repository
+from redstring.aggregates import document_repository
 
 documents = document_repository(event_store)
 ```
@@ -167,7 +167,7 @@ For what `Document` holds and what each command returns, see
 ### `consolidation_repository(event_store, snapshot_store, snapshot_every=CONSOLIDATION_SNAPSHOT_EVERY)` — the snapshot store is required
 
 ```python
-from kg_builder.aggregates import consolidation_repository
+from redstring.aggregates import consolidation_repository
 
 consolidations = consolidation_repository(event_store, snapshot_store)
 ```
@@ -184,7 +184,7 @@ required, the decision has to be made once, at the call site, in the open.
 (currently `100`). It is the number of events between snapshots:
 
 ```python
-from kg_builder.aggregates.repositories import CONSOLIDATION_SNAPSHOT_EVERY
+from redstring.aggregates.repositories import CONSOLIDATION_SNAPSHOT_EVERY
 
 consolidations = consolidation_repository(
     event_store, snapshot_store, snapshot_every=CONSOLIDATION_SNAPSHOT_EVERY
@@ -237,8 +237,8 @@ Both helpers take keyword arguments only, and both return an `eventsource`
 `StreamId` whose `aggregate_id` is the `UUID` the repository wants:
 
 ```python
-from kg_builder import document_stream
-from kg_builder.events.streams import consolidation_stream
+from redstring import document_stream
+from redstring.events.streams import consolidation_stream
 
 document_id = document_stream(tenant_id=tenant_id, source_id="doc-1").aggregate_id
 consolidation_id = consolidation_stream(tenant_id=tenant_id).aggregate_id
@@ -277,7 +277,7 @@ valid-looking stream shared by every document that had one.
 
 The `StreamId` also carries a `category` — `DOCUMENT_CATEGORY`
 (`"Document"`) or `CONSOLIDATION_CATEGORY` (`"Consolidation"`), both exported
-from `kg_builder.events.streams`. You do not pass it to the repository, which
+from `redstring.events.streams`. You do not pass it to the repository, which
 takes the `aggregate_id` alone, but it is what you match on when subscribing
 to the log downstream; see
 [Drive projections from an event store](drive-projections-from-an-event-store.md).
@@ -527,14 +527,14 @@ document.record_extraction(...)  # ValueError: entities carries tenants the even
 ```
 
 Two different tenant checks, then, at two different moments: a `ValueError`
-from `kg_builder.events` when a payload disagrees with its event, and a
+from `redstring.events` when a payload disagrees with its event, and a
 `TenantMismatchError` from `eventsource` when an event disagrees with the
 scope. Neither subsumes the other, and only the second is affected by where
 your `async with` starts.
 
 `TenantMismatchError` and `TenantContextNotSetError` both come from
 `eventsource.domain.exceptions`; the merge invariant errors below come from
-`kg_builder.domain.exceptions` and are a different family entirely. For which
+`redstring.domain.exceptions` and are a different family entirely. For which
 events each command emits and what each carries, see
 [the events reference](../reference/events.md); for why the streams are shaped
 this way, [ADR 0001](../adr/0001-event-log-schema-and-granularity.md).
@@ -667,7 +667,7 @@ Embeddings are recorded on the same `Document` aggregate, by a second
 keyword-only command:
 
 ```python
-from kg_builder.domain.vector import VectorRecord
+from redstring.domain.vector import VectorRecord
 
 vectors = [
     VectorRecord(entity_id=entity.id, tenant_id=scoped_tenant, vector=embedding)
@@ -783,7 +783,7 @@ later reader has to reconstruct "what produced these entities" from. If
 nothing changed, the run is not worth recording and `None` is the right
 answer.
 
-`model_version` is free-form text and kg-builder does not parse it, compare
+`model_version` is free-form text and redstring does not parse it, compare
 it, or order it — `Document` only ever tests it for membership in
 `DocumentState.extraction_model_versions`, the list of versions already seen.
 So `"@2"`, `"2026-08-04-prompt-fix"` and `"qwen3.6-27b+schema-v3"` are all
@@ -832,8 +832,8 @@ caller error rather than a retry that has already happened.
 `None` and empty:
 
 ```python
-from kg_builder.aggregates import ConsolidationLog, consolidation_repository
-from kg_builder.events.streams import consolidation_stream
+from redstring.aggregates import ConsolidationLog, consolidation_repository
+from redstring.events.streams import consolidation_stream
 
 consolidations = consolidation_repository(event_store, snapshot_store)
 
@@ -877,7 +877,7 @@ immediately; the invariants do not wait for the append.
 `RelationshipRedirection` per edge the merge moved or dropped:
 
 ```python
-from kg_builder.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import RelationshipRedirection
 
 RelationshipRedirection(before=edge, after=edge.model_copy(update={"source_entity_id": canonical.id}))
 RelationshipRedirection(before=edge)  # after defaults to None: the merge dropped it
@@ -934,7 +934,7 @@ entity it names was already merged last Tuesday.
 ### Catch `MergeIntoAliasError` — the canonical target has itself been merged away
 
 ```python
-from kg_builder.domain.exceptions import MergeIntoAliasError
+from redstring.domain.exceptions import MergeIntoAliasError
 
 try:
     log.merge(tenant_id=scoped_tenant, canonical_entity_id=b, merged_entity_ids=[c])
@@ -1002,7 +1002,7 @@ a projection maintains from these events, [ADR
 ### Catch `DoubleMergeError` — an entity in the batch already has a canonical parent
 
 ```python
-from kg_builder.domain.exceptions import DoubleMergeError
+from redstring.domain.exceptions import DoubleMergeError
 
 try:
     log.merge(tenant_id=scoped_tenant, canonical_entity_id=c, merged_entity_ids=[x, b, y])
@@ -1106,7 +1106,7 @@ be absorbed by someone else.
 ### Catch `UnknownMergeError` — no merge in effect with that event id
 
 ```python
-from kg_builder.domain.exceptions import UnknownMergeError
+from redstring.domain.exceptions import UnknownMergeError
 
 try:
     log.undo_merge(tenant_id=scoped_tenant, merge_event_id=merge_event_id)
@@ -1134,7 +1134,7 @@ is gone.
 ### All three derive from `ConsolidationInvariantError` if you want one handler
 
 ```python
-from kg_builder.domain.exceptions import ConsolidationInvariantError
+from redstring.domain.exceptions import ConsolidationInvariantError
 
 try:
     log.merge(...)
@@ -1143,7 +1143,7 @@ except ConsolidationInvariantError as exc:
 ```
 
 `MergeIntoAliasError`, `DoubleMergeError` and `UnknownMergeError` all derive
-from `ConsolidationInvariantError`, which derives from `KgBuilderError` — so a
+from `ConsolidationInvariantError`, which derives from `RedstringError` — so a
 caller that already handles the library's base exception handles all three
 without naming them, and a batch job that wants to skip a refused merge and
 continue can catch the one type.
@@ -1153,7 +1153,7 @@ are raised by the command, before any event exists, so the aggregate is
 unchanged and there is nothing half-applied: no store was touched, no event
 was appended, and the same aggregate can take the corrected call immediately.
 
-They come from `kg_builder.domain.exceptions`, not from `eventsource`. Keep
+They come from `redstring.domain.exceptions`, not from `eventsource`. Keep
 them apart from `TenantMismatchError` and `OptimisticLockError` in your
 handling — those two mean the write was rejected at the boundary and the
 correct response is a scope fix or a reload, while these three mean the merge

@@ -1,4 +1,4 @@
-"""Tests for kg_builder.domain.temporal."""
+"""Tests for redstring.domain.temporal."""
 
 from datetime import UTC, datetime
 
@@ -7,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 
 aware_datetimes = st.datetimes(
     min_value=datetime(1, 1, 1),

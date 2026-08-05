@@ -19,9 +19,9 @@ from eventsource.adapters.memory import (
 from eventsource.application.projections.retry import ExponentialBackoffRetryPolicy
 from eventsource.application.subscriptions.retry import RetryConfig
 
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
-from kg_builder.projections import GraphProjection, VectorProjection
-from kg_builder.vector.adapters.memory import InMemoryVectorStore
+from redstring.graph.adapters.memory import InMemoryGraphStore
+from redstring.projections import GraphProjection, VectorProjection
+from redstring.vector.adapters.memory import InMemoryVectorStore
 
 #: Vector length for every embedding in this suite.
 DIMENSION = 4

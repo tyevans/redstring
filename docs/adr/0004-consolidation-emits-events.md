@@ -11,7 +11,7 @@ two. This records what that would cost.
 ## Context
 
 The deleted `SimpleMerger`/`LLMMerger` (recoverable from
-`ff36ec7:src/kg_builder/services/consolidation/`) decided that "Ada" and "Ada
+`ff36ec7:src/redstring/services/consolidation/`) decided that "Ada" and "Ada
 Lovelace" were the same entity **inside extraction**, and wrote the merged
 result. Two consequences followed from that placement, and neither was a
 performance concern:

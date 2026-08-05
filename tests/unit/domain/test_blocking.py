@@ -9,7 +9,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from kg_builder.domain.blocking import (
+from redstring.domain.blocking import (
     DEFAULT_STRATEGIES,
     PREFIX_LENGTH,
     BlockingKeyStrategy,
@@ -18,7 +18,7 @@ from kg_builder.domain.blocking import (
     prefix_key,
     soundex_key,
 )
-from kg_builder.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity, ExtractionMethod
 
 
 def _entity(name: str, entity_type: str = "person") -> Entity:

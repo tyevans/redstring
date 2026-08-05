@@ -1,18 +1,18 @@
-"""Tests for kg_builder.domain.exceptions."""
+"""Tests for redstring.domain.exceptions."""
 
 from uuid import uuid4
 
 import pytest
 
-from kg_builder.domain.exceptions import KgBuilderError, MissingEntityError
+from redstring.domain.exceptions import MissingEntityError, RedstringError
 
 
 def test_missing_entity_error_is_a_domain_error():
-    assert issubclass(MissingEntityError, KgBuilderError)
+    assert issubclass(MissingEntityError, RedstringError)
 
 
 def test_domain_error_is_an_exception():
-    assert issubclass(KgBuilderError, Exception)
+    assert issubclass(RedstringError, Exception)
 
 
 def test_missing_entity_error_carries_the_ids_it_could_not_find():

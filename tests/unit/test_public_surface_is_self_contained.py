@@ -1,6 +1,6 @@
 """An exported name may not mention a type a caller cannot reach.
 
-`kg_builder.__init__` promises that everything in `__all__` is supported and
+`redstring.__init__` promises that everything in `__all__` is supported and
 everything else is internal. Slice 10's review found four places where the
 promise could not be kept: `RefusedCompletionError` is raised by exported code
 and was not exported, so `except RefusedCompletionError` needed a dotted path
@@ -20,7 +20,7 @@ For every exported name, every identifier in every annotation of its public
 signature must be one of:
 
 - **exported itself**, or
-- **not a `kg_builder` type at all**, and then listed in
+- **not a `redstring` type at all**, and then listed in
   `DOCUMENTED_FOREIGN_TYPES` with the reason. Re-exporting another library's
   types under our own name is worse than depending on them openly, but a
   caller still has to be told which package to import from -- so the list is
@@ -57,10 +57,10 @@ from pathlib import Path
 
 import pytest
 
-import kg_builder
-from kg_builder.domain.exceptions import KgBuilderError
+import redstring
+from redstring.domain.exceptions import RedstringError
 
-SRC = Path(kg_builder.__file__).resolve().parent
+SRC = Path(redstring.__file__).resolve().parent
 
 #: Types from other packages that a caller of the public API has to know
 #: about, and where each comes from. Keyed by the name as it is *written* in
@@ -123,12 +123,12 @@ _NOT_A_TYPE_REFERENCE = frozenset(
     }
 )
 
-EXPORTED = frozenset(kg_builder.__all__)
+EXPORTED = frozenset(redstring.__all__)
 
 
 @cache
 def _module_tree(module_name: str) -> ast.Module:
-    path = SRC / (module_name.removeprefix("kg_builder.").replace(".", "/") + ".py")
+    path = SRC / (module_name.removeprefix("redstring.").replace(".", "/") + ".py")
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
@@ -162,9 +162,9 @@ def _surface_of(name: str) -> list[tuple[str, str, str]]:
     and whose parameters are five `eventsource` types. A gate that read only
     the class's own body would have reported it clean, which is the shape of
     green that means nothing. So the MRO is walked, and every base defined
-    under `kg_builder` contributes its annotations too.
+    under `redstring` contributes its annotations too.
     """
-    obj = getattr(kg_builder, name)
+    obj = getattr(redstring, name)
     if inspect.isfunction(obj):
         module = obj.__module__
         return [(module, where, ann) for where, ann in _annotations_at(module, obj.__name__)]
@@ -174,7 +174,7 @@ def _surface_of(name: str) -> list[tuple[str, str, str]]:
     found = []
     for klass in inspect.getmro(obj):
         module = getattr(klass, "__module__", "")
-        if not module.startswith("kg_builder"):
+        if not module.startswith("redstring"):
             continue
         for where, ann in _annotations_at(module, klass.__name__):
             found.append((module, where, ann))
@@ -245,14 +245,13 @@ def _gated_names() -> list[str]:
     """The exported names that have a signature at all."""
     names = [
         name
-        for name in sorted(kg_builder.__all__)
-        if inspect.isclass(getattr(kg_builder, name))
-        or inspect.isfunction(getattr(kg_builder, name))
+        for name in sorted(redstring.__all__)
+        if inspect.isclass(getattr(redstring, name)) or inspect.isfunction(getattr(redstring, name))
     ]
     # `__version__` and the `AUTO` sentinel instance are the only two without
     # one. If this ever collapses to a handful, the gate has stopped looking
     # at the surface it claims to.
-    assert len(names) > 20, f"expected most of the {len(kg_builder.__all__)} exports, got {names}"
+    assert len(names) > 20, f"expected most of the {len(redstring.__all__)} exports, got {names}"
     return names
 
 
@@ -267,13 +266,13 @@ def test_exported_name_mentions_only_reachable_types(name: str) -> None:
             if identifier in EXPORTED or identifier in DOCUMENTED_FOREIGN_TYPES:
                 continue
             origin = _origins(module).get(identifier, "")
-            kind = "internal" if origin.startswith("kg_builder") else f"foreign ({origin or '?'})"
+            kind = "internal" if origin.startswith("redstring") else f"foreign ({origin or '?'})"
             leaks.append(f"{where}: {annotation}  ->  {identifier} [{kind}]")
 
     assert not leaks, (
         f"`{name}` is exported but its signature names types a caller cannot reach:\n  "
         + "\n  ".join(sorted(leaks))
-        + f"\n\nEither export the type from `kg_builder/__init__.py`, or -- if it belongs "
+        + f"\n\nEither export the type from `redstring/__init__.py`, or -- if it belongs "
         f"to another package -- add it to DOCUMENTED_FOREIGN_TYPES in {Path(__file__).name} "
         f"with the import path, so a caller is told where to get it."
     )
@@ -298,31 +297,31 @@ def test_no_documented_foreign_type_is_stale() -> None:
     )
 
 
-#: `KgBuilderError` subclasses that are deliberately not exported, and why.
+#: `RedstringError` subclasses that are deliberately not exported, and why.
 #:
 #: Every one of these is raised only by a capability that is itself not on the
 #: public surface. That makes the entry a *pair* -- when the capability is
 #: exported, its errors have to be, and the reason string is what tells the
 #: next person that.
 UNEXPORTED_BECAUSE_THEIR_RAISER_IS = {
-    "ConsolidationInvariantError": "kg_builder.consolidation is not exported yet",
-    "MergeIntoAliasError": "kg_builder.consolidation is not exported yet",
-    "DoubleMergeError": "kg_builder.consolidation is not exported yet",
-    "UnknownMergeError": "kg_builder.consolidation is not exported yet",
-    "CircuitOpen": "kg_builder.llm.circuit_breaker is middleware, not exported",
-    "RateLimitExceeded": "kg_builder.llm.rate_limiter is middleware, not exported",
+    "ConsolidationInvariantError": "redstring.consolidation is not exported yet",
+    "MergeIntoAliasError": "redstring.consolidation is not exported yet",
+    "DoubleMergeError": "redstring.consolidation is not exported yet",
+    "UnknownMergeError": "redstring.consolidation is not exported yet",
+    "CircuitOpen": "redstring.llm.circuit_breaker is middleware, not exported",
+    "RateLimitExceeded": "redstring.llm.rate_limiter is middleware, not exported",
 }
 
 
-def _kg_builder_error_subclasses() -> list[type]:
-    """Every `KgBuilderError` subclass, with the whole package imported first.
+def _redstring_error_subclasses() -> list[type]:
+    """Every `RedstringError` subclass, with the whole package imported first.
 
     Importing the package is what makes this complete: `__subclasses__` only
     knows about classes whose module has been executed, so a subclass in a
-    module `kg_builder/__init__.py` does not reach would be invisible and the
+    module `redstring/__init__.py` does not reach would be invisible and the
     check would pass by not looking.
     """
-    for module in pkgutil.walk_packages(kg_builder.__path__, "kg_builder."):
+    for module in pkgutil.walk_packages(redstring.__path__, "redstring."):
         with suppress(ImportError):  # optional extras: neo4j, langchain
             importlib.import_module(module.name)
 
@@ -333,7 +332,7 @@ def _kg_builder_error_subclasses() -> list[type]:
             found.add(subclass)
             descend(subclass)
 
-    descend(KgBuilderError)
+    descend(RedstringError)
     assert len(found) > 10, (
         f"expected the whole hierarchy, found {sorted(c.__name__ for c in found)}"
     )
@@ -341,10 +340,10 @@ def _kg_builder_error_subclasses() -> list[type]:
 
 
 @pytest.mark.parametrize(
-    "error", _kg_builder_error_subclasses(), ids=lambda c: f"{c.__module__}.{c.__name__}"
+    "error", _redstring_error_subclasses(), ids=lambda c: f"{c.__module__}.{c.__name__}"
 )
 def test_every_error_is_catchable_from_the_public_surface(error: type) -> None:
-    """`KgBuilderError` promises to be the base of every deliberate error.
+    """`RedstringError` promises to be the base of every deliberate error.
 
     A promise a caller cannot act on is not one. `RefusedCompletionError` was
     the case that made this: its own docstring argues at length that a caller
@@ -357,14 +356,14 @@ def test_every_error_is_catchable_from_the_public_surface(error: type) -> None:
     """
     name = error.__name__
     assert name in EXPORTED or name in UNEXPORTED_BECAUSE_THEIR_RAISER_IS, (
-        f"`{name}` ({error.__module__}) is a KgBuilderError and a caller cannot name it. "
+        f"`{name}` ({error.__module__}) is a RedstringError and a caller cannot name it. "
         f"Export it, or add it to UNEXPORTED_BECAUSE_THEIR_RAISER_IS with the capability "
         f"whose export would bring it along."
     )
 
 
 def test_no_unexported_error_reason_is_stale() -> None:
-    live = {error.__name__ for error in _kg_builder_error_subclasses()}
+    live = {error.__name__ for error in _redstring_error_subclasses()}
     stale = sorted(set(UNEXPORTED_BECAUSE_THEIR_RAISER_IS) - live)
     assert not stale, f"UNEXPORTED_BECAUSE_THEIR_RAISER_IS names {stale}, which no longer exist."
 

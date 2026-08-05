@@ -1,19 +1,19 @@
 # Implement a store adapter
 
-This guide walks through adding a new backend behind one of `kg_builder`'s
+This guide walks through adding a new backend behind one of `redstring`'s
 four ports — `GraphStore`, `VectorStore`, `Cache`, or `LlmProvider` — and
 proving it correct against the shared compliance suites in `tests/compliance/`.
 
 Follow it when you want to store the graph in something other than the two
-adapters that ship (`kg_builder.graph.adapters.memory` and
-`kg_builder.graph.adapters.neo4j`), keep vectors somewhere other than
-`kg_builder.vector.adapters.memory` or `.pgvector`, coordinate the LLM
+adapters that ship (`redstring.graph.adapters.memory` and
+`redstring.graph.adapters.neo4j`), keep vectors somewhere other than
+`redstring.vector.adapters.memory` or `.pgvector`, coordinate the LLM
 transport through something other than the default in-process cache, or speak
 to a model without going through the LangChain adapter.
 
 The work is the same shape every time:
 
-1. Write the class against the `Protocol` in `src/kg_builder/ports/`.
+1. Write the class against the `Protocol` in `src/redstring/ports/`.
 2. Subclass the compliance suite for that port and give it a way to build a
    fresh, empty instance.
 3. Add the read-method isolation and tenant tests the coverage gates require.
@@ -50,7 +50,7 @@ suite at all.
 
 ### What the compliance suites are (and why the port docstring is not the contract)
 
-The ports in `src/kg_builder/ports/` are `runtime_checkable` `Protocol`s. That
+The ports in `src/redstring/ports/` are `runtime_checkable` `Protocol`s. That
 buys structural conformance and nothing more: `mypy --strict` will confirm your
 `get_entity` has the right signature and cannot confirm it scopes by tenant,
 returns a copy, or sees a write that has already returned.
@@ -58,7 +58,7 @@ returns a copy, or sees a write that has already returned.
 The executable definition lives in `tests/compliance/`, and each suite's own
 docstring says so — "**Every `GraphStore` adapter must pass this suite
 unchanged.** It is the executable definition of the port; the prose in
-`kg_builder.ports.graph_store` describes what these tests enforce." Read the
+`redstring.ports.graph_store` describes what these tests enforce." Read the
 port docstring for intent and the suite for the requirement. Where they appear
 to disagree, the suite wins and the docstring is a bug.
 
@@ -132,7 +132,7 @@ ports](../adr/0007-the-two-non-store-ports.md) explains why `Cache` and
 0002](../adr/0002-two-store-ports.md) explains why the two stores are separate
 ports rather than one.
 
-## Step 1: Write the adapter against the Protocol in `src/kg_builder/ports/`
+## Step 1: Write the adapter against the Protocol in `src/redstring/ports/`
 
 Open the port module and write a plain class with the same methods. There is
 nothing to inherit — `GraphStore`, `VectorStore`, `Cache` and `LlmProvider` are
@@ -226,7 +226,7 @@ plausible:
   every backend.
 
 Do not write your own reading of the `entity_type` metadata convention. Call
-`kg_builder.ports.vector_store.entity_type_of`, which lives with the port
+`redstring.ports.vector_store.entity_type_of`, which lives with the port
 because the two adapters wrote their own and diverged: pgvector nulled every
 non-string (its column is `text`) while the in-memory store compared the raw
 value against a `set` and raised `TypeError: unhashable type: 'list'` on a
@@ -252,7 +252,7 @@ your own, and **raise rather than return an empty result** —
 `EmptyCompletionError` for no usable content, `MalformedCompletionError` for
 content that does not validate. Only a successfully parsed schema instance
 holding nothing means "this document had no entities". Keep every
-`langchain*` import inside `kg_builder/llm/adapters/`; the gate in step 2
+`langchain*` import inside `redstring/llm/adapters/`; the gate in step 2
 parses `src/` and fails on a leak.
 
 When the class is written, `isinstance(store, YourPort)` is a cheap smoke check
@@ -765,7 +765,7 @@ finding, and not an `lint-imports` violation, because that contract is over
 first-party packages only. So this file is the whole enforcement.
 
 `test_no_module_outside_the_adapters_imports_langchain` walks every `.py`
-under `src/kg_builder/` except those beneath `src/kg_builder/llm/adapters/`,
+under `src/redstring/` except those beneath `src/redstring/llm/adapters/`,
 parses each with `ast`, and collects every imported module name whose name
 starts with `langchain`. It asserts the resulting mapping is `{}` — reporting
 *every* offending path and the names each one imported, rather than the first
@@ -853,7 +853,7 @@ type exists; add your adapter's new failure mode to that family rather than
 beside it.
 
 One consequence for testing anything *downstream* of a provider: use
-`FakeLlmProvider` from `kg_builder.llm.adapters.fake`, not an `AsyncMock`. It
+`FakeLlmProvider` from `redstring.llm.adapters.fake`, not an `AsyncMock`. It
 takes **payload dicts** and validates them against the caller's schema through
 the same gate the real adapter uses, so a test cannot smuggle a pre-built
 schema instance past validation — which is what would let a malformed-output

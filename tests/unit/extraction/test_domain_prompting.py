@@ -27,15 +27,15 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder import KgBuilderError, UnknownDomainError
-from kg_builder.domain.source import SourceDocument
-from kg_builder.extraction import (
+from redstring import RedstringError, UnknownDomainError
+from redstring.domain.source import SourceDocument
+from redstring.extraction import (
     DEFAULT_SYSTEM_PROMPT,
     ExtractionPipeline,
     domain_system_prompt,
 )
-from kg_builder.extraction.domains import get_domain_schema
-from kg_builder.llm.adapters.fake import FakeLlmProvider
+from redstring.extraction.domains import get_domain_schema
+from redstring.llm.adapters.fake import FakeLlmProvider
 
 TENANT_ID = uuid4()
 
@@ -83,13 +83,13 @@ class TestDomainSystemPrompt:
         with pytest.raises(UnknownDomainError, match="literature_fiction"):
             domain_system_prompt("underwater_basket_weaving")
 
-    def test_an_unknown_domain_is_catchable_as_a_kg_builder_error(self) -> None:
-        # `KgBuilderError` is documented as the base of every error this
+    def test_an_unknown_domain_is_catchable_as_a_redstring_error(self) -> None:
+        # `RedstringError` is documented as the base of every error this
         # library raises deliberately, and `domain_system_prompt` is public.
         # A bare `KeyError` from the internal registry escaping through it
         # would make that promise false for the one public function most
         # likely to be handed a typo.
-        with pytest.raises(KgBuilderError):
+        with pytest.raises(RedstringError):
             domain_system_prompt("underwater_basket_weaving")
 
 

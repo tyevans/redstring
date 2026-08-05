@@ -28,7 +28,7 @@ import pytest
 
 PROJECT = Path(__file__).resolve().parents[2]
 
-#: What a caller must be able to ask for after `pip install kg-builder`. The
+#: What a caller must be able to ask for after `pip install redstring`. The
 #: whole bundled set, not one of them: a packaging rule that caught five files
 #: and missed the sixth is exactly the partial failure a single-domain check
 #: would report as success.
@@ -46,12 +46,12 @@ BUNDLED_DOMAINS = (
 #: does not pull in.
 PROBE = """
 import sys
-from kg_builder import domain_system_prompt, load_schema_from_string  # noqa: F401
-import kg_builder
+from redstring import domain_system_prompt, load_schema_from_string  # noqa: F401
+import redstring
 
 # Not the checkout: if the wheel were shadowed by the source tree the whole
 # test would be measuring the thing it is trying to avoid measuring.
-assert "site-packages" in kg_builder.__file__, kg_builder.__file__
+assert "site-packages" in redstring.__file__, redstring.__file__
 
 for domain in sys.argv[1:]:
     prompt = domain_system_prompt(domain)

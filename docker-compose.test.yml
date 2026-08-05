@@ -1,4 +1,4 @@
-# Test backends kg-builder owns. Start them deliberately:
+# Test backends redstring owns. Start them deliberately:
 #
 #     docker compose -f docker-compose.test.yml up -d
 #     KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest -m integration

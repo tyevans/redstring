@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from kg_builder.extraction.domains.loader import (
+from redstring.extraction.domains.loader import (
     SchemaLoadError,
     get_available_domain_ids,
     get_schema_directory,
@@ -24,7 +24,7 @@ from kg_builder.extraction.domains.loader import (
     load_schema_from_string,
     validate_schema_file,
 )
-from kg_builder.extraction.domains.models import DomainSchema
+from redstring.extraction.domains.models import DomainSchema
 
 
 class TestGetSchemaDirectory:

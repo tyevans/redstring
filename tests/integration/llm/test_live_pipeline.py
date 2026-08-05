@@ -18,14 +18,14 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.aggregates.document import Document
-from kg_builder.domain.entity import ExtractionMethod
-from kg_builder.domain.source import SourceDocument
-from kg_builder.events import DocumentExtracted
-from kg_builder.events.streams import document_stream
-from kg_builder.extraction.chunkers import SlidingWindowChunker
-from kg_builder.extraction.pipeline import ExtractionPipeline
-from kg_builder.llm.adapters.langchain import LangChainLlmProvider
+from redstring.aggregates.document import Document
+from redstring.domain.entity import ExtractionMethod
+from redstring.domain.source import SourceDocument
+from redstring.events import DocumentExtracted
+from redstring.events.streams import document_stream
+from redstring.extraction.chunkers import SlidingWindowChunker
+from redstring.extraction.pipeline import ExtractionPipeline
+from redstring.llm.adapters.langchain import LangChainLlmProvider
 from tests.integration.llm.test_live_endpoint import BASE_URL, MODEL, serving
 
 pytestmark = pytest.mark.integration

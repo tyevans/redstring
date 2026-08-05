@@ -8,7 +8,7 @@ nothing reports. This records why there are three.
 
 ## Context
 
-`kg_builder.__all__` is the whole promise. Anything reached through a dotted
+`redstring.__all__` is the whole promise. Anything reached through a dotted
 path is internal and may change without notice. That claim is only worth
 something if it is checked, and the natural check — "does `__all__` name things
 that exist" — is the weakest of the available ones. Ruff's F822 already does it
@@ -23,13 +23,13 @@ Three tests, each of which exists because the other two cannot see its failure:
    an unexported type is an unusable export — the caller cannot construct the
    argument. F822 is blind to this: the `__all__` entry resolves fine.
 
-2. **Every `KgBuilderError` subclass is either exported or listed** against the
+2. **Every `RedstringError` subclass is either exported or listed** against the
    capability whose export would bring it. A *signature* gate cannot see
    exceptions at all — removing `MissingEntityError` from `__all__` passes
    check 1 unchanged, and the caller then cannot write an `except` clause for
    an error the library documents as raisable.
 
-3. **The end-to-end example imports nothing but `kg_builder`**, asserted by
+3. **The end-to-end example imports nothing but `redstring`**, asserted by
    walking its AST (`tests/unit/test_end_to_end_example.py`, over
    `docs/examples/build_a_graph.py`). Without it the example can reach into an
    adapter module and pass while the exported surface is empty — the example

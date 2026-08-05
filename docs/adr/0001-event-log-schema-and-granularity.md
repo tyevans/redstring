@@ -10,11 +10,11 @@ was made. This records the choices while the reasoning is still available.
 
 ## Context
 
-kg-builder is becoming event-sourced: the event log is the write model, and
+redstring is becoming event-sourced: the event log is the write model, and
 `GraphStore` and `VectorStore` are projections of it -- derived, disposable,
 and rebuildable by replay.
 
-`kg_builder/events/` held 67 event classes at the start of this slice. They
+`redstring/events/` held 67 event classes at the start of this slice. They
 were shaped against the SQLAlchemy models, and **none had ever been emitted**,
 so there was no compatibility to preserve and no reason to carry their
 mistakes into something permanent.
@@ -125,7 +125,7 @@ from the class name.
 Both of those are properties of an event class, and a per-class property is
 only as good as the list of classes it is applied to. So the schema is now
 **closed**: `KG_EVENT_TYPES` in `events/__init__.py` is a tuple naming every
-event kg-builder writes -- currently `DocumentExtracted`, `EntitiesEmbedded`,
+event redstring writes -- currently `DocumentExtracted`, `EntitiesEmbedded`,
 `EntitiesMerged` and `MergeUndone` -- and it exists as a tuple rather than as
 prose precisely so the properties above can be asserted by introspection over
 it. A new event class inherits every check in the suite by joining it.
@@ -146,10 +146,10 @@ The tuple is the schema surface a reader should start from; see
 A hand-maintained tuple that everything keys off is a single point of
 forgetting, so one test refuses to read it.
 `test_the_tuple_lists_exactly_the_registered_events` in
-`tests/unit/events/test_schema.py` walks every module of `kg_builder.events`
+`tests/unit/events/test_schema.py` walks every module of `redstring.events`
 with `pkgutil.iter_modules`, importing each, then collects from
 `eventsource`'s `default_registry` the classes whose `__module__` starts with
-`kg_builder.events`. It asserts set equality against `KG_EVENT_TYPES` in
+`redstring.events`. It asserts set equality against `KG_EVENT_TYPES` in
 **both** directions, and the two directions fail for different reasons:
 
 - `missing` -- registered but absent from the tuple. Such an event gets no
@@ -678,7 +678,7 @@ wiring a snapshot store into a caller.
   existed only because the legacy modules inherited from it, and
   `document.py` and `merge.py` had always imported that class directly.
   What is left is `document.py`, `merge.py` and `streams.py`, so **every
-  module in `kg_builder/events/` is now schema this library actually
+  module in `redstring/events/` is now schema this library actually
   writes** -- which is the precondition for the package walk in Decision 3
   being a complete check rather than a check with an exception list.
 - `eventsource-py` moved from 0.5.0 to `>=0.9.1,<0.11`. 0.5.0 predates the

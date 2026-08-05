@@ -1,4 +1,4 @@
-# kg-builder re-architecture plan (historical)
+# redstring re-architecture plan (historical)
 
 > **This is history, not a plan.** Every slice below is done, and it is written
 > in the future tense about work that has been finished, re-scoped, or
@@ -8,13 +8,13 @@
 >
 > It is kept for two things. **Global Constraints** below is what all eleven
 > slices were held to, and it is reusable for the next campaign of this kind.
-> And the "What kg-builder is not" and "Input contract" sections record scope
+> And the "What redstring is not" and "Input contract" sections record scope
 > boundaries that are still enforced, which is why proposals to widen them keep
 > arriving without knowing what was already argued.
 >
 > Archived unchanged in slice 11, from `docs/plans/ring-migration.md`.
 
-Turn kg-builder into a library that constructs knowledge graphs, with
+Turn redstring into a library that constructs knowledge graphs, with
 pluggable graph and vector storage — and nothing else. Clean breaks only:
 no deprecation shims, no compatibility re-exports left behind.
 
@@ -79,7 +79,7 @@ These bind every slice. Implementers and reviewers are held to all of them.
     reason in the message.
 11. Small commits. Every hook run stays fast; every commit stays reviewable.
 
-## What kg-builder is
+## What redstring is
 
 **Given content, produce a knowledge graph.** Entity and relationship
 extraction, entity consolidation, temporal enrichment, embeddings.
@@ -134,7 +134,7 @@ live is the real argument for the pattern.
 Tenant isolation is the property this project treats as most important, so
 having it enforced by tested library code beats re-deriving it.
 
-## What kg-builder is not
+## What redstring is not
 
 Three scope cuts, decided deliberately:
 
@@ -237,7 +237,7 @@ optional extra. It stops being the library's persistence layer.
 ## Target layout
 
 ```
-src/kg_builder/
+src/redstring/
   domain/           Entity, Relationship, Alias, SourceDocument, temporal
                     value objects, domain events. Pure; no I/O, no ORM.
   ports/            GraphStore, VectorStore, LlmProvider, EmbeddingProvider,
@@ -309,7 +309,7 @@ EmbeddingProvider.dimension -> int
 
 LangChain's `BaseChatModel` and `Embeddings` are **adapter
 implementations**, never the port. `domain/` must import nothing from
-`kg_builder` beyond `domain/`, and certainly not an LLM framework — leaking
+`redstring` beyond `domain/`, and certainly not an LLM framework — leaking
 `AIMessage` into a domain type would undo the layering. LangChain's
 interfaces also move fast; a breaking change should touch one adapter.
 
@@ -441,7 +441,7 @@ with `after is None` meaning the merge dropped it. See
 Slices 4 and 5 need backends that cannot be faked. Neither is reachable
 today, and Docker is available.
 
-**kg-builder owns its own test backends.** A `docker-compose.test.yml` in the
+**redstring owns its own test backends.** A `docker-compose.test.yml` in the
 repo root provides Neo4j on host port **7688** and
 **`pgvector/pgvector:pg16`** on **5434** — deliberately off the default
 ports so nothing collides with a local install, and specifically *not* plain
@@ -449,8 +449,8 @@ ports so nothing collides with a local install, and specifically *not* plain
 
 Do not borrow another project's test containers. eventsource-py runs its own
 on 5433/6380; using them would couple two repos' test infrastructure so that
-one suite can break the other, and a kg-builder failure would have a cause
-outside kg-builder.
+one suite can break the other, and a redstring failure would have a cause
+outside redstring.
 
 **Adapter compliance runs are `integration`-marked** and excluded from the
 default gate (`addopts = -m "not accuracy and not integration"`). This is
@@ -487,7 +487,7 @@ Slices 0 and 0b are complete. Dispatch the rest one at a time.
 | 7 | **Consolidation onto the ports.** Key-based blocking as pure domain logic, fuzzy blocking via `VectorStore.search`; `MergeStrategy` port with the simple implementations only. Merges emit events; **undo becomes a compensating event, not displaced values on an edge** — see "Consolidation design". Prove it: merge, undo, and assert the projection matches the pre-merge graph. | Targeted + `lint-imports` |
 | 8 | **Temporal onto the ports.** | Targeted + `lint-imports` |
 | 9 | **Delete the relational layer.** `models/`, `db.py`, `sync_status`, SQL in `timeline_query`/`vector_ops`; trim `config.py` and `encryption.py`. | Full gate |
-| 10 | **`pipelines/` + public API.** The composed use cases and a deliberate `kg_builder/__init__.py`. | Full gate |
+| 10 | **`pipelines/` + public API.** The composed use cases and a deliberate `redstring/__init__.py`. | Full gate |
 | 11 | **Docs & meta.** ADR 0001 (this architecture), README rewrite, CHANGELOG with the breaking paths, `CLAUDE.md` structure block, import-linter contract rewrite. | Sweep clean |
 
 Slice 1 is pure deletion and should land first — every later slice is

@@ -4,7 +4,7 @@
 
 Accepted, slice 5 (the pgvector adapter). Pinned by three integration tests and
 one BACKLOG entry (B10k); revisiting it means arguing with
-`src/kg_builder/vector/adapters/pgvector.py`'s module docstring first.
+`src/redstring/vector/adapters/pgvector.py`'s module docstring first.
 
 ## Context
 
@@ -17,7 +17,7 @@ way that produces plausible results rather than an error.
 
 ### The port rule this protects: filters are applied before `k`
 
-`VectorStore.search` in `src/kg_builder/ports/vector_store.py` says it outright:
+`VectorStore.search` in `src/redstring/ports/vector_store.py` says it outright:
 
 > **Filtering happens before `k` is applied.** A store that took the `k`
 > nearest and *then* filtered would return fewer than `k` results while
@@ -460,7 +460,7 @@ Its docstring is deliberately an argument rather than a description — it
 restates the outcome-A failure and ends "whoever adds it has to come here and
 argue with this docstring first." That sentence is the whole mechanism. The
 test cannot prove the absence is *correct*; this ADR and
-`src/kg_builder/vector/adapters/pgvector.py`'s module docstring do that. What
+`src/redstring/vector/adapters/pgvector.py`'s module docstring do that. What
 it does is make the absence **load-bearing**, so an ANN index cannot arrive as
 a line in a performance commit — it arrives as a deliberate edit to a red
 test, with a docstring pointing at the reasoning it has to defeat. See
@@ -807,7 +807,7 @@ this tenant's have survived the filter.
 
 They are recorded as a task in BACKLOG B10k, in the same order and with the
 same costs — if one of them is taken, the entry and this section are deleted
-together, and `src/kg_builder/vector/adapters/pgvector.py`'s module docstring
+together, and `src/redstring/vector/adapters/pgvector.py`'s module docstring
 is the third place that has to change in the same commit.
 
 Two things apply to all three, and both are easy to skip past on the way to the
@@ -899,7 +899,7 @@ adapter that can.
 Recorded as option (1) in BACKLOG B10k, and this is the option the entry means
 by "the index then only ever sees one tenant". Taking it deletes that entry,
 this section, and the corresponding paragraph of
-`src/kg_builder/vector/adapters/pgvector.py`'s module docstring in one commit;
+`src/redstring/vector/adapters/pgvector.py`'s module docstring in one commit;
 the operational consequences belong in
 [How to use the pgvector store](../how-to/use-the-pgvector-store.md), which
 currently promises "no ANN index build, no schema plugin" as part of its setup
@@ -930,7 +930,7 @@ passes, which is not a test.
 - [ADR 0002 (two store ports)](0002-two-store-ports.md) — why `VectorStore` has
   a recall tier at all, and why merging it with `GraphStore` would have made
   the weaker contract win.
-- `src/kg_builder/vector/adapters/pgvector.py` module docstring — the decision
+- `src/redstring/vector/adapters/pgvector.py` module docstring — the decision
   at the point of use, alongside the other three choices in that adapter.
 - [How to use the pgvector store](../how-to/use-the-pgvector-store.md) — the
   operational view.

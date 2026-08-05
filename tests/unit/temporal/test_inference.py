@@ -9,10 +9,10 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.interval import Bounds, TemporalRelation, relate_bounds
-from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-from kg_builder.temporal.inference import (
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.interval import Bounds, TemporalRelation, relate_bounds
+from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from redstring.temporal.inference import (
     _CANONICAL,
     INFERRED_RELATIONS,
     InferredRelation,
@@ -279,7 +279,7 @@ class TestNotARelationship:
     caller must not be able to mistake one for something the log recorded."""
 
     def test_an_inferred_relation_is_not_a_relationship(self):
-        from kg_builder.domain.relationship import Relationship
+        from redstring.domain.relationship import Relationship
 
         (relation,) = infer_relations([dated("a", year(1900)), dated("b", year(1950))])
         assert not isinstance(relation, Relationship)

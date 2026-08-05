@@ -11,15 +11,15 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from kg_builder.aggregates.consolidation_log import ConsolidationLog
-from kg_builder.domain.consolidation import RelationshipRedirection
-from kg_builder.domain.exceptions import (
+from redstring.aggregates.consolidation_log import ConsolidationLog
+from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.exceptions import (
     DoubleMergeError,
     MergeIntoAliasError,
     UnknownMergeError,
 )
-from kg_builder.domain.relationship import Relationship
-from kg_builder.events import EntitiesMerged, MergeUndone
+from redstring.domain.relationship import Relationship
+from redstring.events import EntitiesMerged, MergeUndone
 
 
 @pytest.fixture

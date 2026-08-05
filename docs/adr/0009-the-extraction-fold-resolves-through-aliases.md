@@ -206,7 +206,7 @@ absorbed entity id:
 
 ```python
 def _alias_id(tenant_id: TenantId, alias_entity_id: EntityId) -> UUID:
-    return uuid5(NAMESPACE_OID, f"kg-builder:alias:{tenant_id}:{alias_entity_id}")
+    return uuid5(NAMESPACE_OID, f"redstring:alias:{tenant_id}:{alias_entity_id}")
 ```
 
 The obvious alternative is `uuid4()` at the point `_apply_merge` builds the

@@ -436,7 +436,7 @@ must not use `-n auto` over the Neo4j suite (B10f).
 
 ### B10e. The Neo4j adapter's mutation coverage is unestablished
 
-A cosmic-ray run over `src/kg_builder/graph/adapters/neo4j.py` completed **16
+A cosmic-ray run over `src/redstring/graph/adapters/neo4j.py` completed **16
 of 289 mutants (5.5%)** before being interrupted: 11 killed, 5 survived, and
 all 5 survivors were `ReplaceBinaryOperator_BitOr_*` — the `|` in `X | None`
 annotations, unkillable under `from __future__ import annotations` and exactly
@@ -1058,7 +1058,7 @@ things decided it, and only the first is the obvious one:
    library already has.
 3. **It predates the architecture and was never fitted to it.** Its exception
    hierarchy rooted in `EncryptionError(Exception)` rather than
-   `KgBuilderError`, which every module written or ported in slices 2-10 does.
+   `RedstringError`, which every module written or ported in slices 2-10 does.
 
 **What the work would be, if the answer turns out to be yes.** A port declaring
 what is encrypted and when, an adapter per store implementing it, and a
@@ -1080,9 +1080,9 @@ verified resolvable in slice 11**:
 
 | Module | Ref |
 |---|---|
-| `project_timeline_query.py` (677 lines) | `d49f56b:src/kg_builder/services/project_timeline_query.py` |
-| `timeline_export.py` (630 lines) | `d49f56b:src/kg_builder/services/timeline_export.py` |
-| `timeline_cache.py` (428 lines) | `d49f56b:src/kg_builder/services/timeline_cache.py` |
+| `project_timeline_query.py` (677 lines) | `d49f56b:src/redstring/services/project_timeline_query.py` |
+| `timeline_export.py` (630 lines) | `d49f56b:src/redstring/services/timeline_export.py` |
+| `timeline_cache.py` (428 lines) | `d49f56b:src/redstring/services/timeline_cache.py` |
 | `test_timeline_export.py` (566 lines) | `d49f56b:tests/unit/services/test_timeline_export.py` |
 | `test_timeline_cache.py` (512 lines) | `d49f56b:tests/unit/services/test_timeline_cache.py` |
 
@@ -1128,7 +1128,7 @@ things that have no home on `TemporalExtent`, all dropped deliberately:
   are we about this date" is ever wanted: the old number was a table of
   hand-tuned constants rather than a calibrated probability, so resurrecting it
   adds a figure that looks meaningful and is not. The table is at
-  `d49f56b:src/kg_builder/services/temporal_parser.py::_calculate_confidence`
+  `d49f56b:src/redstring/services/temporal_parser.py::_calculate_confidence`
   (verified resolvable in slice 11).
 - **Named eras.** The old parser dated "medieval period" to 500-1500 CE,
   "renaissance" to 1400-1600 and "ancient" to 1-500. Those are claims about
@@ -1164,7 +1164,7 @@ a real corpus, this is the first thing to try reverting.
 schema was "still present on the legacy `extraction/schemas.py`, which slice 9
 owns". Both that file and `TemporalEventProperties` were deleted in slice 9 and
 neither exists anywhere in the tree. The recoverable copy is under
-`src/kg_builder/extraction/schemas.py` at `66f589d` or earlier.
+`src/redstring/extraction/schemas.py` at `66f589d` or earlier.
 
 ### B57. Extraction is not constrained to a domain's vocabulary, only prompted with it
 
@@ -1231,7 +1231,7 @@ numbers (`domain/types.py` contents, which locations are "settled" vs.
 "transitional", `AggregateTypeNotSetError`, ADRs 0030–0046) — none of which
 exists here.
 
-The transferable part is the Dependency Rule itself, and kg-builder already
+The transferable part is the Dependency Rule itself, and redstring already
 declares its layered contract in `pyproject.toml`, enforced by
 `lint-imports`, and summarised in `CLAUDE.md`. Restating it a third time in a
 rules file would be defect shape §2 — a redundant declaration site with
@@ -1240,7 +1240,7 @@ undocumented precedence — in the file that warns against it.
 Revisit when `docs/plans/ring-migration.md` lands: at that point there will
 be per-ring guidance ("what belongs in `domain/`", "why this import is
 forbidden") that the contract expresses only as a graph and that `CLAUDE.md`
-should not grow to hold. The rule to write then is kg-builder's own, derived
+should not grow to hold. The rule to write then is redstring's own, derived
 from its rings — not a port of eventsource's.
 
 ### B28. Three property-merge strategies deferred
@@ -1331,6 +1331,43 @@ suites run, not whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
+### B63. Six `# nosec` markers, and nothing fails when one stops applying
+
+**Found by the rename sweep, which is the only reason it was found at all.**
+The `bandit` pre-commit hook declares `types: [python]` and takes filenames,
+so it scans **only the files a commit touches**. No commit before the
+`redstring` rename had touched all of `src/`, so a whole-tree bandit run had
+never happened locally — the hook had been green for eleven slices without
+ever having seen most of the package. The rename touched every file and
+surfaced eight findings at once, all of them pre-existing:
+
+| Finding | Site | Disposition |
+|---|---|---|
+| B101 assert_used ×2 | `llm/adapters/fake.py` | **Fixed** — `raise AssertionError` instead, so it survives `python -O` |
+| B311 random | `llm/retry.py:172` | `# nosec B311` — retry jitter, no secret |
+| B608 SQL ×5 | `vector/adapters/pgvector.py` | `# nosec B608` — only `self._table` is interpolated and `_IDENTIFIER` proves it a bare identifier |
+
+The six suppressions are now an **exemption list with no staleness check**,
+which is the shape CLAUDE.md warns about: bandit does not report an unused
+`# nosec`, so a marker outliving its justification passes silently and hides
+a real finding at that line. The B608 five are the ones that matter — delete
+`_IDENTIFIER` and injection goes unreported.
+
+The B608 markers are partly covered by accident:
+`test_a_table_name_that_is_not_a_bare_identifier_is_rejected` includes a
+`"; DROP TABLE users; --` case, so removing the guard fails a test rather
+than only weakening a comment. Nothing equivalent guards the B311 marker,
+and nothing checks that any of the six still sits on a line bandit would
+flag.
+
+To fix: a test that parses `src/` for `# nosec` markers and asserts each one
+sits on a line that a bandit run **with suppressions disabled** actually
+reports — the same construction as
+`tests/unit/graph/test_compliance_coverage.py` and the empty-exemption-list
+guards in ADR 0014. Until then, CI running `bandit -r src/` over the whole
+tree (added with the release workflow) is what stops this recurring; the
+per-file hook alone demonstrably does not.
+
 ### B60. Packaging metadata beyond the licence
 
 **The licence is done** — MIT, `LICENSE` at the repo root, `license = "MIT"`
@@ -1367,12 +1404,12 @@ grep cannot see a runtime import.
 | `asyncpg>=0.31.0` | `vector/adapters/pgvector.py`, function-local | Belongs behind a `pgvector` extra |
 | `redis[hiredis]>=5.3,<6` | `llm/cache/redis.py`, function-local | Belongs behind a `redis` extra |
 
-With `numpy` and `httpx` uninstalled, `import kg_builder` succeeds, all 62
+With `numpy` and `httpx` uninstalled, `import redstring` succeeds, all 62
 exported names resolve, and `domain_system_prompt("news_journalism")` renders.
-With `asyncpg`, `redis` and `hiredis` also uninstalled, `import kg_builder`
+With `asyncpg`, `redis` and `hiredis` also uninstalled, `import redstring`
 still succeeds **and so do
-`from kg_builder.vector.adapters.pgvector import PgVectorStore` and
-`from kg_builder.llm.cache.redis import RedisCache`** — both adapters keep
+`from redstring.vector.adapters.pgvector import PgVectorStore` and
+`from redstring.llm.cache.redis import RedisCache`** — both adapters keep
 their third-party imports inside functions, which is what makes the extras
 split free.
 
@@ -1395,8 +1432,8 @@ narrow the venv (B45).
 
 The two dead entries are the cheap half and can go on their own. Note that
 `httpx`'s only trace was a module docstring describing "Ollama extraction"
-and importing `kg_builder.extraction.retry`, a path that moved to
-`kg_builder.llm.retry` in slice 6; that docstring was rewritten in slice 11,
+and importing `redstring.extraction.retry`, a path that moved to
+`redstring.llm.retry` in slice 6; that docstring was rewritten in slice 11,
 which is how the dependency was noticed at all.
 
 ### B38. There is no `eventsourcing` extra any more, and the `redis` pin is why `[all]` cannot come back
@@ -1404,8 +1441,8 @@ which is how the dependency was noticed at all.
 **Rewritten in slice 11; the previous version described an extra that no longer
 exists.** It said `pyproject.toml` declares
 `eventsourcing = ["eventsource-py>=0.9.1,<0.11"]`. Slice 10 moved
-`eventsource-py` to a **core dependency** — `kg_builder.__init__` exports
-`Document`, `DocumentExtracted` and both projections, so `import kg_builder`
+`eventsource-py` to a **core dependency** — `redstring.__init__` exports
+`Document`, `DocumentExtracted` and both projections, so `import redstring`
 needs it, and an API that fails to import without an extra is not one. The
 extras today are `neo4j`, `llm`, `all` and `dev`.
 
@@ -1414,7 +1451,7 @@ What survives is the underlying conflict. The dependency used to be
 
 ```
 eventsource-py[all]>=0.9.1  requires  redis>=8.0,<9.0
-kg-builder                  requires  redis[hiredis]>=5.3,<6
+redstring                  requires  redis[hiredis]>=5.3,<6
 ```
 
 `redis` is a direct dependency here, so this is a real conflict rather than a
@@ -1437,7 +1474,7 @@ was already resolving under a bare `>=0.9.1` -- and 0.11 would arrive with no
 one deciding to take it. Raise the cap deliberately, with the suite green
 under the new version, rather than discovering it in a failed CI run.
 
-To fix, in order of preference: widen kg-builder's `redis` pin to `<9` and
+To fix, in order of preference: widen redstring's `redis` pin to `<9` and
 verify `llm/cache/redis.py` against redis-py 8 (the 5→8 API is largely
 source-compatible, but that module is not covered against a real server, so
 this needs the integration suite B41 asks for); or take the narrow extras
@@ -1515,7 +1552,7 @@ Hardcodes `eventsource` as the root package and allowlists
 never run during this migration — the sweeps were done by hand — so it is
 untested against this repo as well as unparameterised.
 
-Parameterise for `kg_builder` before relying on it, or delete it. Note that
+Parameterise for `redstring` before relying on it, or delete it. Note that
 `docs/history/` and `docs/adr/` are now the paths that legitimately hold stale
 references to deleted packages, and any sweep must exclude them or it will
 report the migration's own record as a defect.

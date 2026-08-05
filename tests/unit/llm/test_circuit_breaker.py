@@ -16,8 +16,8 @@ import asyncio
 
 import pytest
 
-from kg_builder.llm.cache.memory import MemoryCache
-from kg_builder.llm.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
+from redstring.llm.cache.memory import MemoryCache
+from redstring.llm.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
 
 
 async def open_the_circuit(breaker: CircuitBreaker) -> None:

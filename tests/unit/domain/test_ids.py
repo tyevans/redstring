@@ -1,8 +1,8 @@
-"""Tests for kg_builder.domain.ids."""
+"""Tests for redstring.domain.ids."""
 
 import uuid
 
-from kg_builder.domain.ids import EntityId, RelationshipId, SourceId, TenantId
+from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 
 
 def test_entity_id_is_uuid():

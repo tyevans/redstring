@@ -10,11 +10,11 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
-from kg_builder.domain.consolidation import RelationshipRedirection
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.relationship import Relationship
-from kg_builder.domain.vector import VectorRecord
-from kg_builder.events import (
+from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.relationship import Relationship
+from redstring.domain.vector import VectorRecord
+from redstring.events import (
     DocumentExtracted,
     EntitiesEmbedded,
     EntitiesMerged,

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Sweep for stale references to a retired kg_builder package.
+# Sweep for stale references to a retired redstring package.
 # Usage: .claude/skills/migrating-modules-to-rings/sweep.sh <pkg>
-#   e.g. sweep.sh schemas   (checks for kg_builder.schemas)
+#   e.g. sweep.sh schemas   (checks for redstring.schemas)
 # Run from the repo root.
 #
 # Exit status is driven by the FATAL checks only:
-#   1. import-shaped references (`from kg_builder.<pkg> ...` /
-#      `import kg_builder.<pkg>`) anywhere except locations that reference
+#   1. import-shaped references (`from redstring.<pkg> ...` /
+#      `import redstring.<pkg>`) anywhere except locations that reference
 #      the retired path by design:
 #        docs/adr/     - ADR bodies are immutable
 #        docs/plans/   - live plan artifacts name old paths freely
@@ -15,7 +15,7 @@
 #        tests/unit/test_end_to_end_example.py - public-surface guards
 #      (ModuleNotFoundError guard tests should use
 #       importlib.import_module("...") so they don't trip this check)
-#   2. leftover dirs at src/kg_builder/<pkg> or tests/unit/<pkg> -- even
+#   2. leftover dirs at src/redstring/<pkg> or tests/unit/<pkg> -- even
 #      __pycache__-only debris resurrects the old import path as a PEP 420
 #      namespace package.
 #      tests/integration/ and tests/compliance/ are NOT checked: they are
@@ -52,8 +52,8 @@ GREP_EXCLUDES=(
     --exclude=test_end_to_end_example.py
 )
 
-echo "== FATAL: import-shaped references to kg_builder.${pkg} =="
-imports=$(grep -rnE "(from|import)[[:space:]]+kg_builder\.${pkg}\b" . "${GREP_EXCLUDES[@]}" | drop_ignored)
+echo "== FATAL: import-shaped references to redstring.${pkg} =="
+imports=$(grep -rnE "(from|import)[[:space:]]+redstring\.${pkg}\b" . "${GREP_EXCLUDES[@]}" | drop_ignored)
 if [ -n "$imports" ]; then
     printf '%s\n' "$imports"
     fail=1
@@ -63,7 +63,7 @@ fi
 
 echo "== FATAL: leftover dirs at retired paths =="
 leftovers=0
-for old in "src/kg_builder/${pkg}" "tests/unit/${pkg}"; do
+for old in "src/redstring/${pkg}" "tests/unit/${pkg}"; do
     if [ -d "$old" ]; then
         echo "$old still exists:"
         find "$old" -not -type d | head -10
@@ -76,14 +76,14 @@ else
     fail=1
 fi
 
-echo "== triage (non-fatal): other mentions of kg_builder.${pkg} =="
-triage=$(grep -rn "kg_builder\.${pkg}\b" . "${GREP_EXCLUDES[@]}" \
-    | grep -vE "(from|import)[[:space:]]+kg_builder\.${pkg}\b" | drop_ignored)
+echo "== triage (non-fatal): other mentions of redstring.${pkg} =="
+triage=$(grep -rn "redstring\.${pkg}\b" . "${GREP_EXCLUDES[@]}" \
+    | grep -vE "(from|import)[[:space:]]+redstring\.${pkg}\b" | drop_ignored)
 if [ -n "$triage" ]; then printf '%s\n' "$triage"; else echo "(none)"; fi
 
 if [ "$fail" -ne 0 ]; then
     echo "SWEEP FAILED: fatal findings above" >&2
 else
-    echo "sweep clean for kg_builder.${pkg} (triage list may need review)"
+    echo "sweep clean for redstring.${pkg} (triage list may need review)"
 fi
 exit "$fail"

@@ -16,17 +16,17 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.aggregates.document import Document
-from kg_builder.domain.exceptions import EmptyCompletionError, MalformedCompletionError
-from kg_builder.domain.source import SourceDocument
-from kg_builder.events import DocumentExtracted
-from kg_builder.events.streams import document_stream
-from kg_builder.extraction.chunkers import SlidingWindowChunker
-from kg_builder.extraction.pipeline import (
+from redstring.aggregates.document import Document
+from redstring.domain.exceptions import EmptyCompletionError, MalformedCompletionError
+from redstring.domain.source import SourceDocument
+from redstring.events import DocumentExtracted
+from redstring.events.streams import document_stream
+from redstring.extraction.chunkers import SlidingWindowChunker
+from redstring.extraction.pipeline import (
     ExtractionPipeline,
     PartialExtractionError,
 )
-from kg_builder.llm.adapters.fake import EMPTY, FakeLlmProvider
+from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider
 
 MODEL = "fake/canned-v1"
 

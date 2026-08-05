@@ -1,4 +1,4 @@
-"""Tests for kg_builder.domain.relationship."""
+"""Tests for redstring.domain.relationship."""
 
 from uuid import uuid4
 
@@ -7,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from kg_builder.domain.relationship import Relationship
+from redstring.domain.relationship import Relationship
 
 
 def _relationship(**overrides):

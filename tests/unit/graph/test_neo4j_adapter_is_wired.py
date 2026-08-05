@@ -47,12 +47,12 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from kg_builder.domain.alias import Alias
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.exceptions import MissingEntityError
-from kg_builder.domain.relationship import Relationship
-from kg_builder.graph.adapters import neo4j as adapter
-from kg_builder.ports.graph_store import GraphStore
+from redstring.domain.alias import Alias
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.exceptions import MissingEntityError
+from redstring.domain.relationship import Relationship
+from redstring.graph.adapters import neo4j as adapter
+from redstring.ports.graph_store import GraphStore
 
 SOURCE_ROOT = Path(adapter.__file__).parent.parent.parent
 
@@ -635,7 +635,7 @@ def _as_node(row: dict[str, object]) -> dict[str, object]:
 
 
 def _modules_containing_cypher() -> dict[str, list[str]]:
-    """Every module under `src/kg_builder` holding a Cypher marker."""
+    """Every module under `src/redstring` holding a Cypher marker."""
     found = {}
     for path in SOURCE_ROOT.rglob("*.py"):
         markers = [marker for marker in CYPHER_MARKERS if marker in path.read_text()]

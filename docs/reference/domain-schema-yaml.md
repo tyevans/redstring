@@ -1,14 +1,14 @@
 # Domain schema YAML reference
 
 A *domain schema* is a YAML file describing the entity types, relationship types
-and prompt template that kg-builder uses when extracting a knowledge graph from
+and prompt template that redstring uses when extracting a knowledge graph from
 one kind of content. Six are bundled with the package, under
-`src/kg_builder/extraction/domains/schemas/`; you can also load your own from
+`src/redstring/extraction/domains/schemas/`; you can also load your own from
 any directory.
 
 Every file is parsed with `yaml.safe_load` and then validated against the
 `DomainSchema` pydantic model in
-`src/kg_builder/extraction/domains/models.py`. That model is the authority for
+`src/redstring/extraction/domains/models.py`. That model is the authority for
 everything on this page: field names, defaults, bounds, and the rules that
 reject a file. Each model in the hierarchy sets `extra="forbid"` and
 `str_strip_whitespace=True`, so an unrecognised key is an error and surrounding
@@ -81,10 +81,10 @@ Out of scope:
   only as a value a schema author will see, never authors.
 
 Two entry points are part of the public surface — `load_schema_from_file` and
-`load_schema_from_string` are exported from `kg_builder`, alongside
+`load_schema_from_string` are exported from `redstring`, alongside
 `DomainSchema` itself. Everything else named here (the registry,
 `load_all_schemas`, `validate_schema_file`, `SchemaLoadError`) is reached by a
-dotted path into `kg_builder.extraction.domains`, which makes it internal by
+dotted path into `redstring.extraction.domains`, which makes it internal by
 the rule in
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md): documented so you can
 use it knowingly, not promised.
@@ -94,7 +94,7 @@ use it knowingly, not promised.
 ### The bundled directory
 
 The six schemas that ship with the package live in
-`src/kg_builder/extraction/domains/schemas/`, one file per domain:
+`src/redstring/extraction/domains/schemas/`, one file per domain:
 
 ```
 academic_research.yaml
@@ -182,8 +182,8 @@ loaded by exactly the calls you would make:
 ```python
 from pathlib import Path
 
-from kg_builder.extraction.domains import load_all_schemas
-from kg_builder.extraction.domains.registry import DomainSchemaRegistry
+from redstring.extraction.domains import load_all_schemas
+from redstring.extraction.domains.registry import DomainSchemaRegistry
 
 # One-shot: a plain dict of domain_id -> DomainSchema
 schemas = load_all_schemas(Path("./my-schemas"))
@@ -250,7 +250,7 @@ Loading it:
 ```python
 from pathlib import Path
 
-from kg_builder import load_schema_from_file
+from redstring import load_schema_from_file
 
 schema = load_schema_from_file(Path("recipes.yaml"))
 ```
@@ -357,7 +357,7 @@ and YAML will read a bare `1.2` as a float, so **quote it**.
 
 A schema is easiest to get right by starting from a bundled one rather than
 from this minimum —
-`src/kg_builder/extraction/domains/schemas/technical_documentation.yaml` is the
+`src/redstring/extraction/domains/schemas/technical_documentation.yaml` is the
 most fully populated of the six. For the writing process rather than the
 format, see [Author a domain schema](../how-to/author-a-domain-schema.md).
 
@@ -828,7 +828,7 @@ order the model reads:
 Three things about that rendering are worth knowing while authoring the list:
 
 - **Only the first 3 examples of each type appear.** `MAX_EXAMPLES_PER_TYPE` in
-  `src/kg_builder/extraction/prompt_generator.py` is 3, while the model permits
+  `src/redstring/extraction/prompt_generator.py` is 3, while the model permits
   10. Examples 4 through 10 are stored on the schema and never shown to the
   extractor; put the most disambiguating ones first.
 - **Every property is listed, with its description in parentheses** when it has
@@ -1060,7 +1060,7 @@ anywhere in the package, and no template engine of any kind parses it.
 #### Substitution is two literal `str.replace` calls
 
 `domain_system_prompt` in
-`src/kg_builder/extraction/prompt_generator.py` does exactly this:
+`src/redstring/extraction/prompt_generator.py` does exactly this:
 
 ```python
 schema.extraction_prompt_template.replace(
@@ -1205,7 +1205,7 @@ error, not seventy percent.
 This is the field's most important property and the easiest to get wrong.
 Grep the package and `confidence_thresholds` appears in exactly three places:
 its definition in `models.py`, the re-exports in
-`kg_builder/__init__.py` and `extraction/domains/__init__.py`, and the tests.
+`redstring/__init__.py` and `extraction/domains/__init__.py`, and the tests.
 **No extraction, merging, mapping or projection code consults it.** Setting
 `entity_extraction: 1.0` does not cause a single entity to be dropped, and
 setting `0.0` does not admit one that would otherwise have been filtered.
@@ -1376,7 +1376,7 @@ All six bundled schemas are at `1.0.0` and have never moved.
   is a minor; fixing a typo in a description is a patch.
 - **Bump the major when you rename or remove a declared id.** Downstream code
   and stored graphs may key on entity and relationship type ids, so removing
-  one is the schema's breaking change even though nothing in kg-builder will
+  one is the schema's breaking change even though nothing in redstring will
   say so.
 - **Do not encode anything but three integers.** The pattern rejects `-rc1` and
   build metadata, so a release process that appends either produces a schema
@@ -1441,7 +1441,7 @@ for what a duplicate does (it loads, and `get_entity_type` returns the first).
 
 ### The whole type in one line of prompt
 
-`_entity_descriptions` in `src/kg_builder/extraction/prompt_generator.py`
+`_entity_descriptions` in `src/redstring/extraction/prompt_generator.py`
 renders each entity type as one bullet, plus a second indented line when it has
 properties:
 
@@ -1523,7 +1523,7 @@ field in the format that is **rewritten** rather than merely checked.
 #### The normalization, exactly
 
 `EntityTypeSchema.validate_entity_type_id` in
-`src/kg_builder/extraction/domains/models.py` runs four steps in this order:
+`src/redstring/extraction/domains/models.py` runs four steps in this order:
 
 1. `v.lower().strip()` — lowercase, then trim surrounding whitespace
 2. `.replace(" ", "_").replace("-", "_")` — spaces and hyphens become
@@ -1551,7 +1551,7 @@ The last two are the surprises. `str.isidentifier()` is the whole test, and it
 accepts any Unicode identifier character, so `café` and `entité` load. It also
 accepts Python keywords, because `keyword.iskeyword` is not consulted — an
 entity type called `class`, `import` or `None` is legal here. Nothing in
-kg-builder `eval`s or `exec`s an id, so neither is a hazard; they are just not
+redstring `eval`s or `exec`s an id, so neither is a hazard; they are just not
 rejected.
 
 Note also what is *not* rewritten: only the space and the hyphen become
@@ -1629,7 +1629,7 @@ relationships, and nothing validates entity types. See
   `isidentifier()` grants them, not because anything wants them.
 - **Treat it as permanent.** Stored graphs and downstream code key on entity
   type ids, so renaming one is the schema's breaking change — bump the major
-  `version`, and expect nothing in kg-builder to warn you.
+  `version`, and expect nothing in redstring to warn you.
 - **Check for a normalization collision after editing.** Two ids that differ
   only in case, spacing or hyphenation load as duplicates in silence for your
   schemas; the bundled files are protected by
@@ -1673,7 +1673,7 @@ while this one reaches extraction and never reaches the classifier.
 
 #### Exactly where it goes
 
-`_entity_line` in `src/kg_builder/extraction/prompt_generator.py` is the whole
+`_entity_line` in `src/redstring/extraction/prompt_generator.py` is the whole
 of its use:
 
 ```python
@@ -1781,7 +1781,7 @@ documented under [Property fields
 
 #### What a property reaches the model as
 
-`_property_hints` in `src/kg_builder/extraction/prompt_generator.py` is the
+`_property_hints` in `src/redstring/extraction/prompt_generator.py` is the
 whole of the list's use:
 
 ```python
@@ -1940,7 +1940,7 @@ the prompt builder, and at a much lower number.
 #### Only the first three reach the model
 
 `MAX_EXAMPLES_PER_TYPE` in
-`src/kg_builder/extraction/prompt_generator.py` is **3**, and `_entity_line`
+`src/redstring/extraction/prompt_generator.py` is **3**, and `_entity_line`
 slices with it:
 
 ```python
@@ -2079,7 +2079,7 @@ legal and renders as a bare name.
 
 ### Only two of the four fields reach the model
 
-`_property_hints` in `src/kg_builder/extraction/prompt_generator.py` is the
+`_property_hints` in `src/redstring/extraction/prompt_generator.py` is the
 entire consumer of this model:
 
 ```python

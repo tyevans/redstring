@@ -8,8 +8,8 @@ The extension is deliberate rather than a later amendment. The no-`delete_entity
 argument below was always conditional on something keeping the merge fact
 durable, and slices 6-7 supplied it: `upsert_alias`, `remove_alias`,
 `find_aliases` and `resolve_entity_ids` on the port
-(`src/kg_builder/ports/graph_store.py`), resolve-before-write in the extraction
-fold (`src/kg_builder/projections/graph.py`), and an alias tier in
+(`src/redstring/ports/graph_store.py`), resolve-before-write in the extraction
+fold (`src/redstring/projections/graph.py`), and an alias tier in
 `tests/compliance/graph_store.py`. Read the alias methods as part of this
 decision, not as news arriving after it — the ADR is not settled without them,
 and B34 is closed by them. B32 remains open and is unaffected.
@@ -59,7 +59,7 @@ found:
    alias.
 
    The write is `upsert_alias`. `_apply_merge` in
-   `src/kg_builder/projections/graph.py:155` calls it once per absorbed id,
+   `src/redstring/projections/graph.py:155` calls it once per absorbed id,
    before it touches any relationship redirection, carrying the absorbed
    entity's name and normalized name across so the merge fact survives even
    though the entity is no longer reachable as itself. Keyed on
@@ -97,8 +97,8 @@ found:
    through the alias table before writing, which requires the alias to still be
    there. That was `BACKLOG` B34, and it is **closed** — by
    `upsert_alias`/`remove_alias` keeping the merge fact durable on the port
-   (`src/kg_builder/ports/graph_store.py:146,160`) and by
-   `_resolve_endpoints` in `src/kg_builder/projections/graph.py:139` putting
+   (`src/redstring/ports/graph_store.py:146,160`) and by
+   `_resolve_endpoints` in `src/redstring/projections/graph.py:139` putting
    every edge's endpoints through `resolve_entity_ids` before the extraction
    fold writes them. The mechanism is what closed it, so removing any of the
    three re-opens it.
@@ -151,7 +151,7 @@ input two later writes read.
 refuses to merge *into* an alias — which is what stops cycles — but it does
 not refuse to merge a canonical entity away afterwards. So `B -> A` followed
 by `A -> C` is a legal pair of merges, and `B` must resolve to `C`, through
-`A`'s row (`src/kg_builder/ports/graph_store.py:181`). Delete `A` when the
+`A`'s row (`src/redstring/ports/graph_store.py:181`). Delete `A` when the
 second merge absorbs it and the walk loses its middle hop: `B` resolves to
 `A`, an entity that no longer stands for anything. Note the asymmetry with
 `find_aliases`, which is deliberately *direct* — `find_aliases(C)` gives `A`
@@ -167,7 +167,7 @@ to a fixed point" agree, so `d -> c -> b -> a` is what separates them.
 one merge absorbs both ends of a relationship, resolution collapses them onto
 the same id, and `Relationship` rejects a self-loop outright — so there is no
 value the resolver could return that means "and this one must go". `_resolved`
-in `src/kg_builder/projections/graph.py:139` deletes the edge in place and
+in `src/redstring/projections/graph.py:139` deletes the edge in place and
 drops it from the batch; it is the only path through the resolver that does
 not end in an upsert. That decision is reachable only because the aliases are
 still there to collapse the endpoints. Without them a re-extraction writes the
@@ -208,7 +208,7 @@ dependency becomes structural — `_resolve_endpoints` cannot write an edge
 without calling `resolve_entity_ids`, `resolve_entity_ids` cannot answer
 without the alias rows, and an adapter that discards them fails the compliance
 tier rather than a code review. The port docstring
-(`src/kg_builder/ports/graph_store.py:20-32`) states this in the same terms,
+(`src/redstring/ports/graph_store.py:20-32`) states this in the same terms,
 deliberately: the no-delete rule and the alias surface are one decision written
 in two places.
 
@@ -240,7 +240,7 @@ through aliases* carries the fold's half of that contract.
 
 Each of the four carries one decision that an adapter could plausibly get
 wrong, and the port states it rather than leaving it to be inferred
-(`src/kg_builder/ports/graph_store.py:146-200`).
+(`src/redstring/ports/graph_store.py:146-200`).
 
 **`upsert_alias`** is idempotent and last-write-wins, keyed on
 `(tenant_id, alias_entity_id)` — the absorbed id, not the canonical one. That
@@ -261,7 +261,7 @@ endpoint: an edge is a claim about two things in the graph, an alias is a claim
 about identity, and only the former is meaningless without its endpoints.
 
 **`remove_alias`** returns `bool` rather than raising, and the return type is
-the decision. `_apply_unmerge` in `src/kg_builder/projections/graph.py:203`
+the decision. `_apply_unmerge` in `src/redstring/projections/graph.py:203`
 calls it once per unmerged id and ignores the result; under at-least-once
 delivery the second copy of `EntitiesUnmerged` finds nothing to remove, and a
 method that raised there would turn ordinary redelivery into a poisoned event.
@@ -317,7 +317,7 @@ over rows the replay did not create.
 The port does not merely *offer* `resolve_entity_ids`. **A write that carries
 entity ids which may predate a merge must resolve them first**, and that is
 stated by the port rather than left as a habit of the current callers
-(`src/kg_builder/ports/graph_store.py:20-31`: "`resolve_entity_ids` is the read
+(`src/redstring/ports/graph_store.py:20-31`: "`resolve_entity_ids` is the read
 a fold makes before writing an edge"). A fold that writes such an edge without
 resolving is a defect against this ADR, not a style preference.
 
@@ -328,13 +328,13 @@ is, so "did you resolve?" is a question with a definite answer at every call
 site, and the two production call sites are the two places a stale id does
 damage:
 
-- `src/kg_builder/projections/graph.py:140` — `_resolved` collects both
+- `src/redstring/projections/graph.py:140` — `_resolved` collects both
   endpoints of every relationship in a `DocumentExtracted`, makes one
   `resolve_entity_ids` call for the whole document, and rewrites the edges from
   the returned map before `_apply_extraction` upserts them
   (`graph.py:112-117`). This is the obligation's original case: extraction data
   can predate a merge and does not know it.
-- `src/kg_builder/consolidation/candidates.py:170` — the same call, used to
+- `src/redstring/consolidation/candidates.py:170` — the same call, used to
   *exclude* rather than to rewrite. A candidate that has already been merged
   away cannot be merged again — `ConsolidationLog` refuses it — so proposing it
   produces a candidate nobody can act on. One resolution call for the whole
@@ -384,7 +384,7 @@ some merge to name an entity that is *already* an alias as its canonical, and
 terminates — as an argument about the write model.
 
 **The port requires adapters to bound it anyway**
-(`src/kg_builder/ports/graph_store.py:195-201`). That is the
+(`src/redstring/ports/graph_store.py:195-201`). That is the
 "bound any loop whose exit depends on adapter-supplied data" rule from
 `CLAUDE.md`, and resolution is exactly its shape: the loop's exit condition
 comes from rows the adapter read, not from anything the fold computed. A store
@@ -393,14 +393,14 @@ applied write — turns a walk that trusts them into a hang. **A hang is worse
 than an error**: in CI it reads as infrastructure trouble and gets retried
 rather than investigated, so the one signal that would name the corrupt tenant
 is the one that never appears. `AliasCycleError`
-(`src/kg_builder/domain/exceptions.py:51`) carries `entity_id` and `tenant_id`
+(`src/redstring/domain/exceptions.py:51`) carries `entity_id` and `tenant_id`
 for that reason; it is the cheap half of the trade, and it is public, so
 ADR 0006's gates apply to it.
 
 The two adapters bound the walk differently, and the difference is instructive
 about what the port is actually asking for.
 
-- **In-memory** (`src/kg_builder/graph/adapters/memory.py:162`) walks the dict
+- **In-memory** (`src/redstring/graph/adapters/memory.py:162`) walks the dict
   hop by hop with `limit = len(aliases) + 1` and raises from the `for`/`else`.
   The bound is the tenant's alias count rather than a visited set: a walk longer
   than every alias in the tenant has necessarily revisited a node. The `+ 1` is
@@ -409,7 +409,7 @@ about what the port is actually asking for.
   `tests/unit/graph/test_memory_store.py`) — a chain using *every* alias is the
   worst legal history, and `len(aliases)` alone would reject it, converting the
   longest correct case into a spurious error.
-- **Neo4j** (`src/kg_builder/graph/adapters/neo4j.py:459`) does not loop in
+- **Neo4j** (`src/redstring/graph/adapters/neo4j.py:459`) does not loop in
   Python at all. The chain is a variable-length match, and Cypher's
   relationship-uniqueness rule is what terminates it — a cycle simply yields no
   chain end. The bound is therefore free, but the *detection* is not: an empty

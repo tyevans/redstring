@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kg_builder.domain.merge_strategy import (
+from redstring.domain.merge_strategy import (
     IMPLEMENTED,
     PropertyMergeStrategy,
     resolve,

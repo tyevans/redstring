@@ -4,11 +4,11 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.aggregates.document import Document
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.vector import VectorRecord
-from kg_builder.events import DocumentExtracted, EntitiesEmbedded
-from kg_builder.events.streams import document_stream
+from redstring.aggregates.document import Document
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.vector import VectorRecord
+from redstring.events import DocumentExtracted, EntitiesEmbedded
+from redstring.events.streams import document_stream
 
 SOURCE_ID = "doc-1"
 MODEL = "ollama/qwen3.6-27b"

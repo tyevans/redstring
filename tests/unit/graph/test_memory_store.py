@@ -11,11 +11,11 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.domain.alias import Alias
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.exceptions import AliasCycleError
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
-from kg_builder.ports.graph_store import GraphStore
+from redstring.domain.alias import Alias
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.exceptions import AliasCycleError
+from redstring.graph.adapters.memory import InMemoryGraphStore
+from redstring.ports.graph_store import GraphStore
 from tests.compliance.graph_store import GraphStoreCompliance
 
 

@@ -14,14 +14,14 @@ events that fail to apply are recoverable rather than merely counted.
 Everything you need is exported from the package root:
 
 ```python
-from kg_builder import GraphProjection, ReplayReport, VectorProjection, project
+from redstring import GraphProjection, ReplayReport, VectorProjection, project
 ```
 
 Everything else is `eventsource`'s, not this package's. `project`'s signature
 names those types directly — `GlobalEventFeed` (the `feed` argument),
 `EventSubscriber` (what a projection is, as far as `project` is concerned) and
 `Position` — as do the projection constructors, with `ProjectionCheckpoints`
-and `DLQRepository`. Import them from `eventsource`: `kg_builder.__all__` is
+and `DLQRepository`. Import them from `eventsource`: `redstring.__all__` is
 the whole promise this package makes, and it deliberately does not re-export
 another library's ports.
 

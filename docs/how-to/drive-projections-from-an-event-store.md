@@ -3,7 +3,7 @@
 This guide shows you how to run extraction and projection as two separate
 steps with a durable event log in between: extract with `build_graph`, append
 the `DocumentExtracted` event it returns to an `EventStore`, and drive
-`kg_builder.project` over the store's global feed to fold that log into a
+`redstring.project` over the store's global feed to fold that log into a
 `GraphStore` and a `VectorStore`.
 
 `build_graph` on its own already writes to a graph store — it applies the
@@ -157,7 +157,7 @@ both halves.
 
 ## What you need before you start
 
-Five things, three of which kg-builder does not supply and never will.
+Five things, three of which redstring does not supply and never will.
 
 **An `LlmProvider`, and a document to extract.** Step 1 is still a
 `build_graph` call, so you need whatever you would need for one: a
@@ -167,7 +167,7 @@ like the real one, which is what makes this guide runnable end to end without
 a server.
 
 **An event store that both appends and reads a global feed.** This is
-`eventsource`'s, not ours — kg-builder never creates one. Two capabilities are
+`eventsource`'s, not ours — redstring never creates one. Two capabilities are
 needed and they are two different ports: appending `report.event` needs an
 `EventAppender` (`append(stream, events, expected)`), and `project` needs a
 `GlobalEventFeed` (`read_all(from_position)`). `eventsource`'s
@@ -214,10 +214,10 @@ applied.
 ### What you import, and from where
 
 Everything of ours comes from the package root, because
-`kg_builder.__all__` is the whole promise and a dotted path is internal:
+`redstring.__all__` is the whole promise and a dotted path is internal:
 
 ```python
-from kg_builder import (
+from redstring import (
     FakeLlmProvider,
     GraphProjection,
     InMemoryGraphStore,
@@ -246,9 +246,9 @@ and `eventsource` is a core dependency, so they are always importable.
 
 ### Two prerequisites that are easy to miss
 
-**Importing `kg_builder` is what registers the events.** `DocumentExtracted`
+**Importing `redstring` is what registers the events.** `DocumentExtracted`
 and `EntitiesEmbedded` are registered with `eventsource`'s event registry at
-import of `kg_builder.events.document`, which `import kg_builder` pulls in. A
+import of `redstring.events.document`, which `import redstring` pulls in. A
 store that has to rebuild an event from its serialised form — every durable
 adapter — needs that registration to have happened in the reading process too,
 not just the writing one. A rebuild worker that imports only `eventsource`
@@ -277,7 +277,7 @@ Live catch-up on a timer is a different job with a different component.
 ## The foreign types this path needs, and where they come from (`EventStore`, `GlobalEventFeed`, `EventSubscriber`, `Position` from `eventsource`)
 
 Four `eventsource` names show up in the signatures you are about to call, and
-none of them is re-exported under a kg-builder name. That is deliberate — see
+none of them is re-exported under a redstring name. That is deliberate — see
 the note at the end of this section — so it is worth knowing what each one is
 before you go looking for ours.
 
@@ -415,15 +415,15 @@ the base. Step 3 covers what to pass.
 
 ### Why these keep their own names
 
-Everything of ours comes from `kg_builder`'s root — `__all__` is the whole
+Everything of ours comes from `redstring`'s root — `__all__` is the whole
 promise. These do not, and the alternative is worse: re-exporting another
 package's ports under our names would hide that a `GlobalEventFeed` you got
 from `eventsource` is the same type our signature wants, and it would make
 every `eventsource` upgrade a change to our public surface. `eventsource` is a
-core dependency, so all of these are importable wherever `kg_builder` is.
+core dependency, so all of these are importable wherever `redstring` is.
 
 The one thing that is ours and shares the neighbourhood is `ReplayReport` —
-a kg-builder dataclass, exported from the root, described under
+a redstring dataclass, exported from the root, described under
 [Reading the `ReplayReport`](#reading-the-replayreport-applied-failed-last_position)
 below.
 
@@ -568,7 +568,7 @@ One call, and everything interesting about it is in the arguments:
 ```python
 from eventsource.ports.positions import ExpectedVersion
 
-from kg_builder import document_stream
+from redstring import document_stream
 
 stream = document_stream(tenant_id=tenant_id, source_id=document.id)
 
@@ -670,7 +670,7 @@ below — but the log itself de-duplicates by refusing.
 
 ### No `tenant_scope` is needed for a direct append
 
-`kg_builder.aggregates.document_repository` wraps its repository in
+`redstring.aggregates.document_repository` wraps its repository in
 `TenantAwareRepository`, so loading and saving through it must happen inside
 `async with tenant_scope(tenant_id)` and an event whose `tenant_id` disagrees
 with the ambient scope is refused. A direct `event_store.append` goes through
@@ -771,7 +771,7 @@ from eventsource.adapters.memory import (
 from eventsource.application.projections.retry import ExponentialBackoffRetryPolicy
 from eventsource.application.subscriptions.retry import RetryConfig
 
-from kg_builder import GraphProjection, InMemoryGraphStore, InMemoryVectorStore, VectorProjection
+from redstring import GraphProjection, InMemoryGraphStore, InMemoryVectorStore, VectorProjection
 
 checkpoints = InMemoryCheckpointRepository()
 dlq = InMemoryDLQRepository()
@@ -969,7 +969,7 @@ to fold with, and somewhere for progress and poison to go. Step 4 is one call.
 ## Step 4: drive `project` over the feed
 
 ```python
-from kg_builder import project
+from redstring import project
 
 report = await project(event_store, projections)
 ```
@@ -1094,7 +1094,7 @@ class ReplayReport:
     last_position: Position | None
 ```
 
-It is exported from the package root (`from kg_builder import ReplayReport`),
+It is exported from the package root (`from redstring import ReplayReport`),
 frozen, and compares by value — two runs that read the same amount of the same
 feed produce equal reports, which is convenient in tests and meaningless as a
 health check.
@@ -1836,7 +1836,7 @@ produces the same row:
 
 ```python
 def _alias_id(tenant_id, alias_entity_id):
-    return uuid5(NAMESPACE_OID, f"kg-builder:alias:{tenant_id}:{alias_entity_id}")
+    return uuid5(NAMESPACE_OID, f"redstring:alias:{tenant_id}:{alias_entity_id}")
 ```
 
 The merge event's id is deliberately *not* in that hash even though it is to
@@ -1966,7 +1966,7 @@ from eventsource.application.projections.retry import ExponentialBackoffRetryPol
 from eventsource.application.subscriptions.retry import RetryConfig
 from eventsource.ports.positions import ExpectedVersion
 
-from kg_builder import (
+from redstring import (
     FakeLlmProvider,
     GraphProjection,
     InMemoryGraphStore,
@@ -2090,7 +2090,7 @@ Four substitutions, none of which changes the composition:
 | `max_retries=0` | the default policy | a remote store makes a transient failure a real category — see [step 3](#step-3-construct-the-projections-graphprojection-vectorprojection-with-a-checkpoint-repository-a-dlq-repository-and-a-retry-policy) |
 
 The one thing that does change with a durable log: **every process that reads
-it must `import kg_builder`**, because that import is what registers
+it must `import redstring`**, because that import is what registers
 `DocumentExtracted` and `EntitiesEmbedded` with `eventsource`'s registry. A
 rebuild worker importing only `eventsource` fails on the first envelope it
 tries to deserialise.
@@ -2113,9 +2113,9 @@ and, for one read model at a time, in
 
 `docs/examples/drive_projections.py`, executed by a test modelled on
 `tests/unit/test_end_to_end_example.py` — an example nothing runs is an
-example that rots. That test asserts every import is from `kg_builder`
+example that rots. That test asserts every import is from `redstring`
 itself, so its `ALLOWED_NON_KG_ROOTS` has to admit `eventsource` for this
 one: the foreign types are the point of the guide, and re-exporting another
 package's ports under our names would be worse than depending on them openly.
-Nothing else is admitted, so the kg-builder half of the script stays evidence
+Nothing else is admitted, so the redstring half of the script stays evidence
 about the public surface.

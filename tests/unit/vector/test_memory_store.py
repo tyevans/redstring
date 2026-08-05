@@ -9,9 +9,9 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.domain.vector import VectorRecord
-from kg_builder.ports.vector_store import VectorStore
-from kg_builder.vector.adapters.memory import InMemoryVectorStore
+from redstring.domain.vector import VectorRecord
+from redstring.ports.vector_store import VectorStore
+from redstring.vector.adapters.memory import InMemoryVectorStore
 from tests.compliance.vector_store import VectorStoreCompliance
 
 
