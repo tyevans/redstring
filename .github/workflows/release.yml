@@ -417,10 +417,8 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Wait for the index to propagate
-        run: sleep 60
-
       - name: Install from the index it was published to, and use it
+        id: install
         env:
           TARGET: ${{ needs.validate.outputs.publish_target }}
           VERSION: ${{ needs.validate.outputs.version }}
@@ -464,8 +462,48 @@ jobs:
           # package is independent of what the index calls it. A rehearsal that
           # installed `redstring` would not be testing the artifact that was
           # actually published.
-          uv pip install --python /tmp/verify/bin/python \
-            "${INDEX_ARGS[@]}" "${DIST_NAME}==${VERSION}"
+          # Retried, not slept at. This step used to `sleep 60` and install
+          # once, and v0.2.0 is where that lost: both files uploaded 200 OK,
+          # the install ran 75 seconds later, and uv reported "there is no
+          # version of redstring==0.2.0". The package was fine -- it resolved
+          # and passed this exact smoke test by hand a few minutes afterwards.
+          #
+          # A fixed sleep is a guess at how long someone else's CDN takes, and
+          # a guess that is usually right is the worst kind: it fails rarely,
+          # after a successful publish, on the one job whose whole purpose is
+          # to say whether the publish was good. It reads as a broken release
+          # when nothing is broken, which invites re-running a workflow that
+          # can never succeed twice on one version.
+          #
+          # `--refresh-package` is the other half, and it covers a *different*
+          # cause with the same symptom: uv caches index responses, and
+          # `UV_CACHE_DIR` here is restored by setup-uv from an earlier run
+          # that may have looked this distribution up when the new version did
+          # not exist. That failure does not heal with time -- no amount of
+          # sleeping expires a cache -- so waiting alone could not have fixed
+          # it. Which of the two actually bit v0.2.0 is not established; this
+          # closes both, and the second costs one flag.
+          ATTEMPTS=20
+          for attempt in $(seq 1 "$ATTEMPTS"); do
+            if uv pip install --python /tmp/verify/bin/python \
+                 --refresh-package "${DIST_NAME}" \
+                 "${INDEX_ARGS[@]}" "${DIST_NAME}==${VERSION}" 2>&1 | tee /tmp/install.log
+            then
+              echo "Installed ${DIST_NAME}==${VERSION} on attempt ${attempt}."
+              break
+            fi
+
+            # Bounded, and it names the cause when it gives up -- a step that
+            # hangs or fails vaguely here reads as infrastructure trouble and
+            # gets retried rather than investigated.
+            if [[ "$attempt" -eq "$ATTEMPTS" ]]; then
+              echo "::error::${DIST_NAME}==${VERSION} was published but did not become installable within ~10 minutes. The upload succeeded, so check whether the index is serving it (https://pypi.org/simple/${DIST_NAME}/) before assuming the artifact is bad; if it is listed there, this step is at fault and not the release."
+              cat /tmp/install.log
+              exit 1
+            fi
+            echo "Attempt ${attempt}/${ATTEMPTS}: not resolvable yet, waiting 30s."
+            sleep 30
+          done
 
           /tmp/verify/bin/python - <<'EOF'
           import asyncio

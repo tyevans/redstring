@@ -1760,3 +1760,39 @@ the union of the table's `packages` plus a small allowed-everywhere set
 (`pydantic`, `eventsource`, `jellyfish`, `yaml`). That needs no metadata and
 fails the day an unlisted client appears. Worth doing before the fifth adapter,
 not after.
+
+### B72. A failed `verify` is unrecoverable, because the tag is spent
+
+`verify` runs after `publish-pypi`, and v0.2.0 showed what happens when it
+fails on a *good* release: the artifact is on PyPI, correct and attested, and
+the workflow is red. **Re-running it cannot help.** PyPI never permits reusing
+a filename, so the publish step fails on a second attempt no matter what, and
+the only ways back to green are pushing a new version or leaving a red run
+next to a good release.
+
+The retry-and-refresh fix makes the false failure much less likely without
+changing that: any *other* failure in `verify` — a genuinely broken wheel, a
+dependency that will not resolve, a smoke test that catches something real —
+lands in the same unrecoverable place, and those are the cases where you most
+want to act rather than shrug.
+
+Three shapes worth weighing, none obviously right:
+
+- **Split `verify` into its own `workflow_dispatch` workflow** taking a
+  version, so it is re-runnable against an already-published artifact. Cheap,
+  and it makes the check *more* useful — you can run it against any past
+  release, which is the only way to notice an artifact that rotted because a
+  dependency yanked a version.
+- **Keep it in the pipeline but `continue-on-error`,** with a separate
+  notification. Turns a blocking red into an advisory one, which is honest
+  about what it can do post-publish; the risk is that an advisory failure is
+  one nobody reads.
+- **Move the smoke test before publish,** against the built wheel from
+  `build`. `tests/integration/test_wheel_contents.py` already does much of
+  this. It cannot check the thing `verify` exists to check — that the *index*
+  serves an installable artifact — so this narrows the gate rather than
+  moving it.
+
+The first is probably right, and the reason to write it down rather than do it
+now is that it is a change to the release pipeline made immediately after a
+release, which is the worst time to touch one.
