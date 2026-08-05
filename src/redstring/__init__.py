@@ -74,11 +74,16 @@ them under our own name would be worse than depending on them openly.
 
 ## What is deliberately not here
 
-- **Consolidation and temporal inference.** Both are real
-  (`redstring.consolidation`, `redstring.temporal`) and both are tested,
-  but neither has a composed entry point yet -- exporting the classes would
-  publish an API whose shape is still being decided by the callers it does
-  not have. Import them by path and expect movement.
+- **Temporal inference.** `redstring.temporal` is real and tested and has no
+  composed entry point yet, so exporting its classes would publish an API
+  whose shape is still being decided by callers it does not have. Import it
+  by path and expect movement.
+
+  Consolidation used to be listed here too. `Consolidator` is the composed
+  entry point it was waiting for (ADR 0015), and it is exported -- together
+  with the closure that came with it: `CandidateFinder`, `Adjudicator`, the
+  two merge events, the four value types those name, and the four
+  consolidation errors.
 - **No scraping, no HTML preprocessing.** A caller supplies a
   `SourceDocument`. Fetching content is a different job with different
   failure modes, and it was removed rather than left unfinished (slice 1).
@@ -101,26 +106,42 @@ separation is not decoration -- it is why a store can be rebuilt, and
 """
 
 from redstring.aggregates.document import Document
-from redstring.composition import AUTO, AutoDomain, GraphBuildReport, build_graph
+from redstring.composition import (
+    AUTO,
+    AutoDomain,
+    ConsolidationReport,
+    Consolidator,
+    GraphBuildReport,
+    build_graph,
+)
+from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
+from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
 from redstring.domain.alias import Alias
+from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import (
     AliasCycleError,
+    ConsolidationInvariantError,
     DimensionMismatchError,
+    DoubleMergeError,
     EmptyCompletionError,
     LlmProviderError,
     MalformedCompletionError,
+    MergeIntoAliasError,
     MissingEntityError,
     RedstringError,
     RefusedCompletionError,
     UnknownDomainError,
+    UnknownMergeError,
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.relationship import Relationship
+from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
 from redstring.domain.source import SourceDocument
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.domain.vector import VectorMatch, VectorRecord
 from redstring.events.document import DocumentExtracted, EntitiesEmbedded
+from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.events.streams import document_stream
 from redstring.extraction.chunking import Chunk, ChunkingResult
 from redstring.extraction.domains.loader import load_schema_from_file, load_schema_from_string
@@ -154,9 +175,12 @@ __all__ = [
     "AUTO",
     "DEFAULT_SYSTEM_PROMPT",
     "EMPTY",
+    "AdjudicationVerdict",
+    "Adjudicator",
     "Alias",
     "AliasCycleError",
     "AutoDomain",
+    "CandidateFinder",
     "Chunk",
     "ChunkSizeError",
     "Chunker",
@@ -164,19 +188,25 @@ __all__ = [
     "ChunkingError",
     "ChunkingResult",
     "ConfidenceThresholds",
+    "ConsolidationInvariantError",
+    "ConsolidationReport",
+    "Consolidator",
     "DatePrecision",
     "DimensionMismatchError",
     "Document",
     "DocumentExtracted",
     "DomainSchema",
+    "DoubleMergeError",
     "EmptyCompletionError",
     "EntitiesEmbedded",
+    "EntitiesMerged",
     "Entity",
     "EntityId",
     "EntityTypeSchema",
     "ExtractionMethod",
     "ExtractionPipeline",
     "FakeLlmProvider",
+    "FeatureWeights",
     "GraphBuildReport",
     "GraphProjection",
     "GraphStore",
@@ -185,6 +215,8 @@ __all__ = [
     "LlmProvider",
     "LlmProviderError",
     "MalformedCompletionError",
+    "MergeIntoAliasError",
+    "MergeUndone",
     "MissingEntityError",
     "PartialExtractionError",
     "PipelineResult",
@@ -193,15 +225,19 @@ __all__ = [
     "RefusedCompletionError",
     "Relationship",
     "RelationshipId",
+    "RelationshipRedirection",
     "RelationshipTypeSchema",
     "ReplayReport",
     "Response",
+    "ScoredCandidate",
+    "SimilarityFeatures",
     "SourceDocument",
     "SourceId",
     "TemporalExtent",
     "TenantId",
     "UncertaintyMarker",
     "UnknownDomainError",
+    "UnknownMergeError",
     "VectorMatch",
     "VectorProjection",
     "VectorRecord",

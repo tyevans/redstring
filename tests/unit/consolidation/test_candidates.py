@@ -174,7 +174,53 @@ class TestScoring:
     async def test_the_per_signal_scores_are_reported(self):
         """A threshold decision that cannot be explained is one nobody can
         tune -- and "the name matched but nothing else did" reaches the same
-        number as "everything matched a little"."""
+        number as "everything matched a little".
+
+        The subject is given a neighbour so the graph feature has something to
+        report. It used to be built from two *isolated* entities and assert
+        `graph is not None`, which passed only because the finder scored an
+        empty-vs-empty comparison as `0.0` -- see
+        `test_two_entities_with_no_neighbours_get_no_graph_signal` below, and
+        `CandidateFinder._graph_feature` for why that was wrong. This test is
+        about features being reported individually, so the fix is a fixture
+        where the feature exists rather than a weaker assertion.
+        """
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace")
+        other = keyed(tenant, "Ada Lovelace")
+        neighbour = keyed(tenant, "Charles Babbage", entity_type="person")
+        store = await _store_with(subject, other, neighbour)
+        await store.upsert_relationships([edge(tenant, source=subject.id, target=neighbour.id)])
+
+        # The neighbour shares the `t:person` blocking key, so it is a
+        # candidate too. Pick the pair this test is about rather than
+        # asserting the block has one member.
+        scored = await CandidateFinder(store).candidates(subject)
+        found = next(c for c in scored if c.entity.id == other.id)
+
+        assert found.features.name == 1.0
+        assert found.features.graph == 0.0
+        assert found.features.embedding is None
+
+    async def test_two_entities_with_no_neighbours_get_no_graph_signal(self):
+        """An empty-vs-empty neighbour comparison is *absent*, not zero.
+
+        `graph_similarity` scores two empty sets `0.0` on purpose -- "nothing
+        is known about either" must not read as "these agree perfectly". The
+        finder used to pass that straight through, which made the same
+        mistake in the other direction: it read as "these positively
+        disagree".
+
+        The cost was not theoretical. Two entities named "Ada Lovelace" with
+        no edges scored **0.7143** rather than 1.0, and `LOW_SIMILARITY` is
+        0.75 -- so the most obvious duplicate there is was rejected outright,
+        not even adjudicated, by a feature with nothing to say. Two entities
+        freshly extracted from one document have no neighbours, so this is the
+        first thing a new caller consolidates.
+
+        Nothing caught it because every other test in this package builds its
+        finder with `use_graph_signal=False`.
+        """
         tenant = uuid4()
         subject = keyed(tenant, "Ada Lovelace")
         other = keyed(tenant, "Ada Lovelace")
@@ -182,9 +228,36 @@ class TestScoring:
 
         [found] = await CandidateFinder(store).candidates(subject)
 
-        assert found.features.name == 1.0
-        assert found.features.graph is not None
-        assert found.features.embedding is None
+        assert found.features.graph is None
+        assert found.score == 1.0
+
+    async def test_a_disjoint_neighbourhood_still_scores_zero(self):
+        """The distinction the fix rests on: absence is not disagreement, but
+        disagreement is still disagreement.
+
+        Both entities have structure and share none of it. That is a real
+        finding about two entities, and it must keep pulling the score down --
+        otherwise "absent when empty" would have quietly deleted the graph
+        signal altogether.
+        """
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace")
+        other = keyed(tenant, "Ada Lovelace")
+        left = keyed(tenant, "Charles Babbage", entity_type="person")
+        right = keyed(tenant, "Mary Somerville", entity_type="person")
+        store = await _store_with(subject, other, left, right)
+        await store.upsert_relationships(
+            [
+                edge(tenant, source=subject.id, target=left.id),
+                edge(tenant, source=other.id, target=right.id),
+            ]
+        )
+
+        scored = await CandidateFinder(store).candidates(subject)
+        found = next(c for c in scored if c.entity.id == other.id)
+
+        assert found.features.graph == 0.0
+        assert found.score < 1.0
 
     async def test_the_graph_signal_can_be_turned_off(self):
         """And when it is, the feature is absent rather than zero -- a zero

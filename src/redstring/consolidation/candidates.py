@@ -130,14 +130,7 @@ class CandidateFinder:
             features = SimilarityFeatures(
                 name=string_similarity(subject.name, candidate.name),
                 embedding=embedding_scores.get(candidate.id),
-                graph=(
-                    None
-                    if subject_neighbours is None
-                    else graph_similarity(
-                        subject_neighbours,
-                        await self._neighbours(candidate.id, candidate.tenant_id) or (),
-                    )
-                ),
+                graph=await self._graph_feature(subject_neighbours, candidate),
             )
             score = combined_score(features, self._weights)
             if score >= minimum_score:
@@ -197,6 +190,48 @@ class CandidateFinder:
         # was prompted by three cosmic-ray survivors on the comparison, which
         # is what an unreachable guard looks like from outside.
         return {match.entity_id: match.score for match in matches}
+
+    async def _graph_feature(
+        self, subject_neighbours: list[EntityId] | None, candidate: Entity
+    ) -> float | None:
+        """The graph signal for one candidate, or `None` when there is none.
+
+        Three cases, and the third is the one that was wrong.
+
+        1. **The signal is off.** `subject_neighbours is None`; nobody asked.
+        2. **At least one side has neighbours.** Jaccard overlap, including
+           `0.0` when the two sets are disjoint -- that is a real finding
+           about two entities that both have structure and share none of it.
+        3. **Neither side has any neighbours.** Previously this also scored
+           `0.0`, and `graph_similarity` documents that choice deliberately:
+           "nothing is known about either" must not read as "these agree
+           perfectly", so two empty sets are not `1.0`. That reasoning is
+           right and the conclusion did not follow, because there was a third
+           option the module already uses everywhere else -- **absent**.
+
+        Case 3 scoring `0.0` manufactures evidence out of an absence, which is
+        the exact thing case 1 exists to avoid. And it is not a corner: two
+        entities extracted from one document before any relationship is
+        written have no neighbours, which is the *first* thing a new caller
+        consolidates.
+
+        Measured, on two entities named "Ada Lovelace" with no edges: the
+        combined score was **0.7143** with the graph signal on and 1.0 with it
+        off. `LOW_SIMILARITY` is 0.75, so an identical-name pair was not merged
+        and not even adjudicated -- it was rejected, silently, by a feature
+        that had nothing to say. Returning `None` lets `combined_score`
+        renormalize over the features that do, which puts it back at 1.0.
+
+        The reason no test caught it: every existing consolidation test builds
+        its finder with `use_graph_signal=False`, so nothing in the suite ever
+        reached this branch with two isolated entities.
+        """
+        if subject_neighbours is None:
+            return None
+        candidate_neighbours = await self._neighbours(candidate.id, candidate.tenant_id) or ()
+        if not subject_neighbours and not candidate_neighbours:
+            return None
+        return graph_similarity(subject_neighbours, candidate_neighbours)
 
     async def _neighbours(self, entity_id: EntityId, tenant_id: TenantId) -> list[EntityId] | None:
         """Ids adjacent to `entity_id`, or `None` when the signal is off.

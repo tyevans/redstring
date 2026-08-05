@@ -149,8 +149,8 @@ path and expect movement.
 
 -   **Understand a decision**
 
-    [Decisions](adr/index.md) — fourteen ADRs covering the choices that are
-    expensive to revisit, each with the alternative that was rejected and why.
+    [Decisions](adr/index.md) — the choices that are expensive to revisit,
+    each with the alternative that was rejected and why.
 
 </div>
 
