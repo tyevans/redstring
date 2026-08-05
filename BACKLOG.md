@@ -1598,11 +1598,17 @@ What is **not** built, and is the obvious next work:
 - **Vectors go stale on merge.** A consolidated entity keeps the vector of its
   pre-merge name until something re-embeds it. Related to B67 and not solved by
   either.
-- **No integration test against a live embeddings endpoint.** The compliance
-  suite runs against `FakeEmbeddingProvider` and a stubbed LangChain client, so
-  what is unproven is exactly what a stub cannot show: that a real server
-  returns results positionally under batching. `tests/integration/llm/` is
-  where that goes, alongside the existing live-endpoint tests.
+- ~~No integration test against a live embeddings endpoint.~~ **Done, and it
+  immediately earned its keep.** `tests/integration/llm/test_live_embeddings.py`
+  runs the whole compliance body against a real server. Its first run failed
+  two clauses -- not because the adapter was wrong, but because the *contract*
+  was: it asserted `==` for determinism and for positional order, which passed
+  against a hash and a stub and which no real backend can satisfy. Batch
+  composition changes floating-point accumulation by up to `4e-3` per
+  component. Ordering was fine (cosine 0.9996 matched against 0.27 mismatched);
+  the equality was not. Fixed by comparing with cosine above a stated threshold
+  plus a check that mismatched pairs fall below it -- tolerance alone is not a
+  test, because every vector is somewhat similar to every other.
 
 ### B67. No way to find entities that were never consolidated
 
