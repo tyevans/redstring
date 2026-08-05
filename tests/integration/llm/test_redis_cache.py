@@ -89,3 +89,38 @@ class TestRedisCache(CacheCompliance):
 
 async def test_the_redis_cache_satisfies_the_port(cache: RedisCache):
     assert isinstance(cache, Cache)
+
+
+class TestClientsTheCallerBuilt:
+    """`__init__` takes any client, and the port's `str` promise must survive it.
+
+    `CacheCompliance` reaches this adapter through `from_url`, which sets
+    `decode_responses=True` itself -- so the suite's
+    `test_a_value_comes_back_as_str_not_bytes` proves the *constructor*
+    configures the client correctly and proves nothing about the other way in.
+
+    `RedisCache(client)` is a documented entry point ("or with a client you
+    own"), and a caller's client has whatever settings the caller gave it. A
+    library that returns `str` or `bytes` depending on how its collaborator
+    was built has not implemented `Cache`; it has implemented one of the two
+    behaviours the compliance suite exists to keep apart.
+    """
+
+    async def test_a_client_without_decode_responses_still_yields_str(self):
+        probe = await _probe()
+        if probe is None:
+            pytest.skip(f"Redis at {REDIS_URL} did not round-trip a value.")
+        await probe.close()
+
+        import redis.asyncio as redis_asyncio
+
+        raw_client = redis_asyncio.from_url(REDIS_URL)  # decode_responses defaults to False
+        cache = RedisCache(raw_client, owns_client=True)
+        try:
+            await cache.set("state", "open")
+
+            assert await cache.get("state") == "open"
+            assert isinstance(await cache.get("state"), str)
+        finally:
+            await cache.delete("state")
+            await cache.close()
