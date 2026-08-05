@@ -208,6 +208,16 @@ jobs:
           --health-timeout 10s
           --health-retries 10
 
+      redis:
+        image: redis:7
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
       postgres:
         image: pgvector/pgvector:pg16
         env:
@@ -254,4 +264,5 @@ jobs:
           KG_TEST_NEO4J_USER: neo4j
           KG_TEST_NEO4J_PASSWORD: redstring
           KG_TEST_POSTGRES_DSN: postgresql://postgres:redstring@localhost:5434/redstring_test
+          KG_TEST_REDIS_URL: redis://localhost:6381/0
         run: uv run pytest -m integration --cov-fail-under=0

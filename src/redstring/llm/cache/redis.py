@@ -26,6 +26,7 @@ the deployment that has Redis.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 if TYPE_CHECKING:
     import redis.asyncio
@@ -96,7 +97,20 @@ class RedisCache:
             # The member must be unique or two hits at the same instant
             # collapse into one, which under-counts exactly when a burst is
             # what the caller is trying to detect.
-            pipe.zadd(window, {f"{at!r}:{id(self):x}": at})
+            #
+            # `uuid4()` rather than anything derived from `self`. This was
+            # `f"{at!r}:{id(self):x}"`, which is constant for the life of the
+            # cache object -- so it told two *instances* apart and never two
+            # hits, which is the only thing it was there to do. The comment
+            # above was already correct and the code under it was not;
+            # `CacheCompliance` had simply never been run against this
+            # adapter (BACKLOG B41), and `MemoryCache` cannot exhibit the bug
+            # because it appends to a list.
+            #
+            # `id()` would have been wrong across processes as well: it is a
+            # memory address, so two callers sharing one Redis can collide on
+            # it outright.
+            pipe.zadd(window, {f"{at!r}:{uuid4().hex}": at})
             pipe.pexpire(window, max(1, int(ttl_seconds * 1000)))
             await pipe.execute()
 

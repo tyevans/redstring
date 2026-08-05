@@ -361,32 +361,46 @@ shape without settling B48 at the same time.
 *The lesson is worth more than the entry: this claim survived two slices
 because it was plausible and nobody ran it. It took ninety seconds to check.*
 
-### B41. `RedisCache` has no test against a real Redis
+### B41. `RedisCache` compliance — closed, and it found a bug
 
-`llm/cache/redis.py` is the only `Cache` adapter with no run of
-`tests/compliance/cache.py` behind it. `MemoryCache` passes the suite in the
-default gate; `RedisCache` passes nothing.
+**Closed.** `tests/integration/llm/test_redis_cache.py` runs
+`CacheCompliance` against a real Redis (`docker-compose.test.yml`, port 6381,
+in CI's integration job). 26 tests; every adapter of every port in this
+repository is now held to its port's contract.
 
-**Why this is riskier than it looks.** The compliance suite exists precisely
-because the two adapters' natural implementations disagree, and three of its
-cases were written against divergences this adapter *could* have:
-`get` returning `bytes` rather than `str` (a client left at its default does),
-`ZCOUNT` being inclusive at the boundary where a `>` comparison is not, and two
-hits at one instant collapsing into one sorted-set member. Each was reasoned
-about and coded for, and none is *verified*.
+The entry predicted what it would find and was right about one of them.
+`ZADD` member uniqueness: **two hits recorded at the same instant collapsed
+into one**, so `count_hits` under-reported exactly when a burst is what a
+caller is trying to detect.
 
-**What to do.** Add `tests/integration/llm/test_redis_cache.py` subclassing
-`CacheCompliance`, with a `cache` fixture pointing at a `redis` service in
-`docker-compose.test.yml` and a skip probe that round-trips a key — not a TCP
-connect, for the reason `tests/integration/vector/test_pgvector_store.py`
-spells out. Give each xdist worker its own key prefix; B10f is the same hazard
-one layer down.
+The interesting part is that the bug was *guarded against*, in a comment
+directly above it:
 
-**Why deferring is safe rather than merely convenient.** Nothing in the library
-constructs a `RedisCache`: both `RateLimiter` and `CircuitBreaker` default to
-`MemoryCache`, so a caller reaches it only by importing it and passing it
-explicitly. The single-process path — which is every current caller — is fully
-covered.
+```python
+# The member must be unique or two hits at the same instant
+# collapse into one, which under-counts exactly when a burst is
+# what the caller is trying to detect.
+pipe.zadd(window, {f"{at!r}:{id(self):x}": at})
+```
+
+The comment is correct and the code under it does not do what the comment
+says. `id(self)` is the *cache object's* address — constant for its whole
+life — so it distinguished two `RedisCache` instances and never two hits,
+which is the only thing it was there for. Across processes it is worse than
+useless: an address can collide outright between two callers sharing one
+Redis.
+
+`MemoryCache` cannot exhibit this at all, because it appends to a list. That
+is the "in-memory reference more forgiving than the real backend" failure the
+compliance directory exists to prevent — demonstrated, at last, by the one
+adapter that had been excused from the suite written about it.
+
+Fixed with `uuid4().hex`. Proved by restoring `id(self)` and watching the
+same test fail.
+
+**B38 is now unblocked.** The `redis<6` cap was justified by absence of
+evidence; there is now a suite that can supply some. Widening it means
+running these 26 tests against a redis 6/7/8 client and reading the result.
 
 ### B10a. The Cypher-executing half of the Neo4j adapter is not in the gate
 
