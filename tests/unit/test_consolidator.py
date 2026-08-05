@@ -395,3 +395,33 @@ class TestTheStoresTheCallerSupplies:
         assert asked, (
             "the graph signal was never consulted, so `use_graph_signal` no longer defaults to True"
         )
+
+    async def test_merge_takes_its_arguments_by_keyword(self, store, tenant_id):
+        """`merge`'s `*` mutated to `/` survived too.
+
+        `tenant_id` and `canonical_entity_id` are both UUIDs and adjacent. A
+        caller who swapped them positionally would merge into a nonexistent
+        entity under a tenant that is really an entity id — a lookup failure
+        far from the call, rather than a `TypeError` at it.
+        """
+        ada = entity(tenant_id, "Ada Lovelace")
+        alt = entity(tenant_id, "Ada King")
+        await store.upsert_entities([ada, alt])
+
+        with pytest.raises(TypeError):
+            await Consolidator(store).merge(tenant_id, ada.id, [alt.id])  # type: ignore[misc]
+
+    async def test_resolve_takes_its_options_by_keyword(self, store, tenant_id):
+        """And `resolve`'s.
+
+        `subject` is deliberately positional — it is what the call is *about*.
+        Everything after it is a collaborator or a threshold, and `finder`,
+        `adjudicator`, `high` and `low` have no order a caller would recall.
+        Two of them are floats, so a swapped pair is silent: `high=0.75,
+        low=0.92` inverts the bands rather than raising.
+        """
+        ada = entity(tenant_id, "Ada Lovelace")
+        await store.upsert_entities([ada])
+
+        with pytest.raises(TypeError):
+            await Consolidator(store).resolve(ada, None, None, 0.92)  # type: ignore[misc]
