@@ -9,7 +9,6 @@ a plain import works and the module no longer poisons `sys.modules` for every
 test that runs after it -- part of BACKLOG B10d.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -455,9 +454,27 @@ class TestRetryTiming:
     """Tests for retry timing behavior."""
 
     @pytest.mark.asyncio
-    async def test_delay_between_retries(self):
-        """Test that delays occur between retry attempts."""
-        call_times = []
+    async def test_the_delay_multiplies_between_successive_retries(self):
+        """Backoff grows: 0.1s, then 0.2s.
+
+        Asserted on the values handed to `asyncio.sleep`, not on elapsed wall
+        clock. The previous version measured `event_loop.time()` around each
+        attempt and required the second gap to be `<= 0.25`, which **cannot be
+        made reliable**: `asyncio.sleep(d)` promises to sleep *at least* `d`
+        and says nothing about the upper bound, so any ceiling is an assertion
+        about machine load. It duly failed the commit gate at 0.276s on a busy
+        machine.
+
+        That is the same defect as the hypothesis deadline in
+        `tests/conftest.py` -- a wall-clock upper bound used as a proxy for a
+        property that is not about wall clock -- and it fails the same way,
+        by naming the retry code when the problem is the laptop.
+
+        The distinction from `test_async_sleep_called` below is the multiplier:
+        that test has one retry and so cannot see growth at all. This one is
+        the only place the *sequence* is pinned.
+        """
+        attempts = 0
 
         @with_retry(
             retryable_exceptions=(ValueError,),
@@ -468,23 +485,19 @@ class TestRetryTiming:
                 jitter=0.0,
             ),
         )
-        async def timed_func():
-            call_times.append(asyncio.get_event_loop().time())
-            if len(call_times) < 3:
+        async def flaky():
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
                 raise ValueError("Fail")
             return "success"
 
-        await timed_func()
+        with patch.object(retry_module.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
+            assert await flaky() == "success"
 
-        assert len(call_times) == 3
-
-        # First retry delay should be ~0.1s
-        first_delay = call_times[1] - call_times[0]
-        assert 0.08 <= first_delay <= 0.15, f"First delay was {first_delay}"
-
-        # Second retry delay should be ~0.2s
-        second_delay = call_times[2] - call_times[1]
-        assert 0.15 <= second_delay <= 0.25, f"Second delay was {second_delay}"
+        assert attempts == 3
+        delays = [call.args[0] for call in mock_sleep.call_args_list]
+        assert delays == pytest.approx([0.1, 0.2]), delays
 
     @pytest.mark.asyncio
     async def test_async_sleep_called(self):
