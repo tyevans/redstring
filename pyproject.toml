@@ -55,7 +55,20 @@ dependencies = [
     # a public API. The events are the write model, not an optional backend.
     # The `<0.11` cap stays deliberate: this is a pre-1.0 library whose entire
     # API changed between 0.5 and 0.9. See BACKLOG B38.
-    "eventsource-py>=0.9.1,<0.11",
+    #
+    # **The floor is 0.10.0 because `projections/base.py` forwards
+    # `retry_policy` and `tracer`**, which `DeclarativeProjection.__init__`
+    # gained in 0.10.0. It was `>=0.9.1`, and `0.1.0` shipped with that -- a
+    # resolver picking the low end got `TypeError: unexpected keyword argument
+    # 'retry_policy'` at the first projection construction. Not at import, so
+    # a smoke test that imports the package would not have caught it.
+    # (`tenant_filter`, forwarded alongside them, did exist in 0.9.1.)
+    #
+    # Reported by a downstream project, not by this repository's own gates:
+    # CI resolves fresh and therefore always tests the *newest* permitted
+    # version, so a too-low floor is invisible here by construction. See
+    # BACKLOG B70 for the check that would measure it.
+    "eventsource-py>=0.10.0,<0.11",
 ]
 
 [project.optional-dependencies]

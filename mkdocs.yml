@@ -55,6 +55,22 @@ exclude_docs: |
 # `.claude/rules/recurring-defects.md` §6.
 strict: true
 
+# `strict: true` promotes WARNING to an error, and **anchors were reported at
+# INFO** -- so a link to `page.md#heading-that-was-renamed` did not fail the
+# build even though a link to a missing *page* did. That gap was precisely the
+# half of the ADR renumber that went unnoticed: 71 in-page anchors resolving
+# nowhere, found by a one-off sweep rather than by the gate that was supposed
+# to make the sweep unnecessary. Turning this on surfaced 48 more.
+#
+# A gate that catches missing files and shrugs at missing anchors is the more
+# dangerous kind, because the sweep it does catch is what earns it the trust it
+# then fails to deserve.
+validation:
+  anchors: warn
+  links:
+    absolute_links: warn
+    unrecognized_links: warn
+
 markdown_extensions:
   - admonition
   - attr_list

@@ -18,8 +18,7 @@ passed around, never mutated in place. The ones that are validated are
 validated at construction, so an invalid `Entity` or `TemporalExtent` does not
 exist to be handed on. Where a rule looks arbitrary — a required timezone, a
 confidence ceiling, an interval that is half-open — the reasoning is recorded
-either in the module docstring (indexed under
-[Where the reasoning lives](#where-the-reasoning-lives)) or in an ADR:
+either in the module docstring or in an ADR:
 [ADR 0005](../adr/0005-temporal-inference-on-read.md) for why temporal edges
 are inferred on read rather than persisted, and
 [ADR 0010](../adr/0010-one-total-order-for-preference.md) for the single total
@@ -27,7 +26,6 @@ order every tie-break in the library defers to.
 
 Not every type named here is importable from `redstring`. The public surface
 is `redstring.__all__` and nothing else — see
-[What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md). Types that reach you
 inside an event rather than by import are described in
 [Events](events.md).
@@ -136,7 +134,6 @@ special. (`SourceDocument.text` must be non-blank; `SourceDocument.id` has no
 such rule.)
 
 All four names are exported from `redstring` — see
-[What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md). They are exported
 because they appear in the signature of exported types, which is exactly the
 condition the public-surface gate enforces.
@@ -176,8 +173,8 @@ datetime to UTC on the way in, so a value stored with `+02:00` comes back
 with `+02:00`.
 
 The reason is comparison. These values are ordered against each other —
-`end_date >= start_date` here, interval bounds in
-[Temporal intervals](#temporal-intervals), timeline ordering in
+`end_date >= start_date` here, interval bounds in `domain/interval.py`,
+timeline ordering in
 [How to query a timeline](../how-to/query-a-timeline.md) — and Python raises
 `TypeError` when an aware and a naive datetime are compared. Admitting one
 naive value would make every later comparison it participates in a runtime
@@ -190,8 +187,7 @@ neither is a pydantic field:
 - The `reference_date` argument to `parse_temporal` enforces the same
   requirement in the same way — `reference_date.tzinfo is None` — but as a
   function it raises a plain `ValueError` rather than a
-  `pydantic.ValidationError`; see
-  [ValueError for a naive reference_date](#valueerror-for-a-naive-reference_date).
+  `pydantic.ValidationError`.
 - `Bounds.lower` and `Bounds.upper` are fields of a `NamedTuple`, which
   validates nothing at all. They do not need to: `bounds()` derives them from
   a `TemporalExtent` that was validated at construction, so an aware value is
@@ -237,8 +233,7 @@ pair permanently unmergeable with no error anywhere.
 confidence of `1.0` is something a caller asserts, not something the type
 assumes on their behalf, so every `Entity` and `Relationship` in existence
 carries a number somebody chose. The `SimilarityFeatures` fields default to
-`None`, which means "not computed" and is distinct from a computed `0.0` —
-see [SimilarityFeatures: None vs 0.0](#similarityfeatures-none-vs-00).
+`None`, which means "not computed" and is distinct from a computed `0.0`.
 
 Four nearby numbers reach this scale differently, and are worth reading as
 exceptions to the rule rather than as instances of it:
@@ -271,8 +266,7 @@ particular. `VectorStore.search` takes `min_score` on this same `0.0..1.0`
 scale and drops results scoring strictly below it, so `min_score=0.0` is not
 a disabled filter but an assertion that any match at all will do, and `0.5` is
 the score of two *orthogonal* vectors rather than a midpoint between "alike"
-and "unalike". The mapping that puts it there is described under
-[VectorMatch.score](#vectormatchscore-is-1--cosine--2-on-01-not-a-distance).
+and "unalike". The mapping that puts it there is `(1 + cosine) / 2`.
 
 ### Non-blank string fields
 
@@ -291,8 +285,7 @@ rejected, and pydantic reports the `ValueError` as a `ValidationError`.
 **Neither validator strips.** A value that merely *has* surrounding whitespace
 is accepted and stored exactly as given: `Entity(name="  Ada  ")` constructs
 and keeps both pairs of spaces. Normalization is a separate concern with its
-own function and its own field — see
-[normalize_name](#normalize_name-casefold-strip-collapse-whitespace-hyphens-preserved-never-raises)
+own function and its own field — `normalize_name`
 and `Entity.normalized_name`, which is populated by the caller rather than
 derived here.
 
@@ -391,7 +384,7 @@ Notes on the ones whose type does not tell the whole story:
   populates it from `name`, and no validator relates the two: an entity whose
   `normalized_name` disagrees with `normalize_name(name)` constructs happily.
   Callers pass the result of
-  [`normalize_name`](#normalize_name-casefold-strip-collapse-whitespace-hyphens-preserved-never-raises).
+  `normalize_name`.
 - **`entity_type` is a free string, not an enum.** `entity_type="plot_point"`
   is legal. `original_entity_type` is where the source's own label is kept
   when extraction mapped it onto something else.
@@ -401,8 +394,8 @@ Notes on the ones whose type does not tell the whole story:
 - **`blocking_keys` is `frozenset[str] | None`, and `None` is not the same as
   `frozenset()`** — it means the keys were never computed, where the empty set
   would mean they were computed and came out empty. The entity *carries* the
-  keys; the store groups by them and computes nothing. See
-  [`blocking_keys_for`](#blocking_keys_for-frozenset-result-when-it-can-be-empty).
+  keys; the store groups by them and computes nothing — `blocking_keys_for`
+  is what computes them.
 - **`model` names which model produced the entity**, by convention
   provider-qualified and versioned (`"ollama/qwen3.6-27b-mtp"`,
   `"anthropic/claude-opus-4-20250514"`) and never a bare family name like
@@ -418,7 +411,6 @@ Notes on the ones whose type does not tell the whole story:
 member *is* a `str`: `ExtractionMethod.LLM == "llm"` is `True`, the member can
 be used anywhere a string is expected, and pydantic serializes it as its
 value. It is exported from `redstring` alongside `Entity` — see
-[What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
 Six members, and the set is exactly these six:
@@ -498,7 +490,7 @@ precisely because a valid `Entity` cannot normalize to nothing.
 `if not 0.0 <= value <= 1.0`. Both endpoints are legal; `NaN` is rejected
 because the comparison chain evaluates `False`. The field is required — there
 is no default, so every `Entity` carries a number somebody chose. See
-[Confidence and score fields](#confidence-and-score-fields-are-bounded-0001-inclusive).
+[Confidence and score fields](#confidence-and-score-fields-are-bounded-0010-inclusive).
 The tests pin the boundary as `@example` values (`-1e-9`, `1.0 + 1e-9`, `1.5`,
 `2.0`) alongside the property, because a sampler drawing floats reached the
 far extremes readily and the immediate neighbourhood of `1.0` rarely — a
@@ -583,7 +575,6 @@ negatives).
 `is_temporal` is not the same question as `has_range`, which asks specifically
 whether *both* endpoints are present. An extent with a `start_date` and no
 `end_date` is temporal and has no range; an extent that is empty is neither.
-See [Temporal value types](#temporal-value-types).
 
 `is_temporal` is a property, not a field. It does not appear in
 `Entity.model_fields`, is not serialized by `model_dump()`, and cannot be
@@ -602,8 +593,7 @@ property for the same reason: it carries no `TemporalExtent` at all.
 ## Relationship
 
 `redstring.domain.relationship` declares one name, `Relationship`, and it is
-exported from `redstring` — see [What is public](#what-is-public) and
-[ADR 0006](../adr/0006-the-public-surface-is-gated.md).
+exported from `redstring` — see [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
 A `Relationship` is a **directed, typed edge between two entities**: seven
 fields, two validators, no derived properties. It is a plain pydantic
@@ -613,7 +603,7 @@ exactly as for `Entity`. Validation runs at construction only.
 
 The type is deliberately smaller than `Entity`. It carries no `TemporalExtent`,
 no `extraction_method`, no `model` and no `blocking_keys`; the reasons are
-given under [Fields and defaults](#fields-and-defaults-1). What it does carry
+given under [Fields and defaults](#fields-and-defaults_1). What it does carry
 it enforces strictly, and one of those rules — the self-loop rejection — is
 depended on by three packages outside the domain, which makes it the most
 load-bearing four lines in the module:
@@ -625,8 +615,7 @@ load-bearing four lines in the module:
 - `consolidation/planning.py` drops an edge whose endpoints were both absorbed
   by the same merge, and `domain/consolidation.py` records that as
   `RelationshipRedirection(after=None)` — "the edge was dropped", not "nothing
-  happened". See
-  [RelationshipRedirection](#relationshipredirection).
+  happened". See [`RelationshipRedirection`](events.md#relationshipredirection).
 - `projections/graph.py` treats the same case as nothing to upsert, and says so
   in a comment naming this validator.
 
@@ -671,7 +660,7 @@ Notes on the ones whose type does not tell the whole story:
   unvalidated here; a store that persists them imposes its own constraints.
 - **`confidence` is required and bounded `0.0..1.0` inclusive**, by the same
   validator and the same message as `Entity.confidence` — see
-  [Confidence and score fields](#confidence-and-score-fields-are-bounded-0001-inclusive).
+  [Confidence and score fields](#confidence-and-score-fields-are-bounded-0010-inclusive).
 
 Four fields `Entity` has are absent, and each absence is a decision rather
 than an omission:
@@ -695,8 +684,7 @@ type is derived or computed.
 ## SourceDocument
 
 `redstring.domain.source` declares one name, `SourceDocument`, and it is
-exported from `redstring` — see [What is public](#what-is-public) and
-[ADR 0006](../adr/0006-the-public-surface-is-gated.md).
+exported from `redstring` — see [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
 A `SourceDocument` is **what a caller hands the library**: a piece of content
 to build a graph from, plus whatever provenance the caller wants to carry
@@ -719,7 +707,7 @@ an argument, not a stored record: the tenant is supplied beside it at the call
 (`ExtractionPipeline.extract(document, tenant_id)`,
 `build_graph(document, ..., tenant_id=...)`), so the same document can be fed
 to two tenants without being rebuilt. See
-[Fields and defaults](#fields-and-defaults-2) below.
+[Fields and defaults](#fields-and-defaults_2) below.
 
 ### Fields and defaults
 
@@ -777,16 +765,16 @@ Notes on the ones whose type does not tell the whole story:
   all. `None` means "this document is undated", and expressions needing a
   vantage point are then dropped and counted rather than silently resolved
   against today. It is timezone-required when present — see
-  [Every datetime field is timezone-required](#every-datetime-field-is-timezone-required)
-  and
-  [reference_date is required and may be None only for date-independent text](#reference_date-is-required-and-may-be-none-only-for-date-independent-text).
+  [Every datetime field is timezone-required](#every-datetime-field-is-timezone-required);
+  `reference_date` is the one exception, and may be `None` only for
+  date-independent text.
 - **`metadata` defaults to an empty dict** written as a bare mutable literal.
   Pydantic deep-copies a default per instance, so two documents constructed
   without it do not share a dict. Its values are `Any` and unvalidated, and —
   like `uri` and `title` — nothing in the library reads it. It does not reach
   an event payload, and it is not the same thing as `VectorRecord.metadata`,
   which is validated and must be JSON-storable; see
-  [Metadata must be JSON-storable](#metadata-must-be-json-storable-nul-characters-rejected).
+  Metadata must be JSON-storable.
 
 Every field round-trips: `SourceDocument.model_validate(doc.model_dump())`
 reconstructs an equal object, `metadata` included, because nothing on the type
@@ -794,7 +782,6 @@ is derived or computed. There are no properties and no methods.
 
 `SourceDocument` is exported from `redstring` — it is the first name in the
 package docstring's worked example, being what a caller puts in. See
-[What is public](#what-is-public) and
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
 ### Validation: confidence range, self-loops rejected
@@ -818,7 +805,7 @@ succeeds and produces a self-loop the type would have refused.
 base. Both endpoints are legal; `NaN` is rejected because the comparison chain
 evaluates `False`. The field is required, so every `Relationship` carries a
 number somebody chose. See
-[Confidence and score fields](#confidence-and-score-fields-are-bounded-0001-inclusive).
+[Confidence and score fields](#confidence-and-score-fields-are-bounded-0010-inclusive).
 
 **2. The two endpoints must differ.** The check is
 `self.source_entity_id == self.target_entity_id`, on a `model_validator`
@@ -849,7 +836,7 @@ each avoids constructing the forbidden object instead of catching the
   by the same merge — it has no post-redirection signature to group by — and
   `domain/consolidation.py` records that as `RelationshipRedirection(after=None)`,
   which means "the edge was dropped", not "nothing happened". See
-  [RelationshipRedirection](#relationshipredirection) and the module docstring
+  RelationshipRedirection and the module docstring
   in `consolidation/planning.py`, which argues why a dropped edge is a
   redirection rather than an omission.
 - `projections/graph.py` treats the same case as nothing to upsert
@@ -906,7 +893,7 @@ indistinguishable from a document the model genuinely found nothing in.
 Note what the rule does *not* cover on this type. `id` is a `SourceId` and
 accepts an empty string; that is caught later, by
 `events.streams.document_stream`, and only because someone wrote the guard
-there — see [Fields and defaults](#fields-and-defaults-2) and
+there — see [Fields and defaults](#fields-and-defaults_2) and
 [Events](events.md). `uri`, `title` and the values in `metadata` are unchecked.
 
 **2. `published_at` must be timezone-aware when present.** The check is
@@ -927,7 +914,7 @@ follow from the validator:
   `ValueError` for a naive `reference_date`**, because it is a function
   argument rather than a model field and can arrive from somewhere other than
   a `SourceDocument`. The two spellings agree deliberately; see
-  [ValueError for a naive reference_date](#valueerror-for-a-naive-reference_date).
+  ValueError for a naive reference_date.
 - **A naive `published_at` would otherwise fail at parse time**, at a distance
   from the construction that allowed it, and once per expression rather than
   once per document. Rejecting at construction keeps the failure attached to
@@ -942,9 +929,9 @@ document produce a different graph. `parse_temporal` raises
 for text that has been *shown* to resolve differently against two vantage
 points, so date-independent text still parses with no reference date at all.
 See
-[reference_date is required and may be None only for date-independent text](#reference_date-is-required-and-may-be-none-only-for-date-independent-text)
+reference_date is required and may be None only for date-independent text
 and
-[AmbiguousReferenceDateError and the two-probe ambiguity check](#ambiguousreferencedateerror-and-the-two-probe-ambiguity-check).
+AmbiguousReferenceDateError and the two-probe ambiguity check.
 
 Both validators return the value unchanged, so neither participates in the
 round trip beyond admitting it:
@@ -954,8 +941,7 @@ object, aware `published_at` included.
 ## Alias
 
 `redstring.domain.alias` declares one name, `Alias`, and it is exported from
-`redstring` — see [What is public](#what-is-public) and
-[ADR 0006](../adr/0006-the-public-surface-is-gated.md).
+`redstring` — see [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
 An `Alias` is **one entity having been merged into another**: the absorbed
 entity's id, the canonical entity's id, when it happened, and — when they are
@@ -973,7 +959,7 @@ assignable after construction and neither validator re-runs on assignment.
 An `Alias` records that a merge happened. It is **not** a record of what the
 merge displaced: there is no `displaced` payload, because undo is a
 compensating `MergeUndone` event carrying typed
-[`RelationshipRedirection`](#relationshipredirection)s and the log therefore
+`RelationshipRedirection`s and the log therefore
 already holds the pre-merge state. A field here would be a second, unversioned
 copy of it. See [Events](events.md).
 
@@ -1107,7 +1093,7 @@ that never terminates in the useful direction. `resolve_canonical` on
 `GraphStore` refuses to merge *into* an alias, which is what stops longer
 cycles and is reported as `AliasCycleError`; this validator is what stops the
 degenerate one-element case at construction. See
-[AliasCycleError](#aliascycleerror-entity_id-tenant_id).
+AliasCycleError.
 
 Three rules the type conspicuously does **not** enforce:
 

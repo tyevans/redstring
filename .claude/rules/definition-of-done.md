@@ -232,10 +232,21 @@ what makes one *done*.
    Note that the two store compliance suites must be run in **separate pytest
    invocations** (`BACKLOG.md` B10m).
 
-4. **There is no accuracy step, and its absence is a known gap rather than a
-   licence.** `tests/accuracy/` holds only `__init__.py`, and `-m accuracy`
-   collects zero tests, so nothing in this repo can tell you whether a change
-   made extraction *better* or *worse* — only whether it stayed correct. If
-   your adapter or strategy changes extraction quality, say so in the commit
-   body and add what you observed to `BACKLOG.md` B12, which tracks building
-   the suite that would have measured it.
+4. **If the change could move extraction quality, run the accuracy suite and
+   say what it did.** `tests/accuracy/` measures precision, recall and F1 over
+   a graded corpus:
+
+   ```bash
+   KG_LLM_BASE_URL=http://host:8080/v1 uv run pytest -m accuracy tests/accuracy/
+   ```
+
+   Every other gate here checks that the library is *correct*; this is the only
+   one that checks it finds the **right** things, and a change can satisfy
+   every invariant in `tests/unit/` while extracting worse.
+
+   Two limits to state honestly when you quote it. The corpus is five
+   hand-graded documents — enough to catch a regression, not enough to be a
+   benchmark — and the floors are set where a regression trips them rather
+   than where a good model sits. A run that clears the floors is not evidence
+   that quality improved; it is evidence that it did not visibly fall. If you
+   are claiming an improvement, quote the counts, not the F1.

@@ -451,7 +451,7 @@ reasons that is the right shape:
 
 The configuration is `strict = true` plus `warn_unreachable`,
 `warn_return_any`, `disallow_untyped_defs` and the pydantic plugin; details in
-[mypy configuration](#mypy-configuration-files-strict-warn_unreachable-warn_return_any-pydantic-plugin-asyncpg-override-no-exclude).
+[mypy configuration](#mypy-configuration).
 The `types_or: [python, pyi]` filter still decides *whether* the hook runs —
 a commit touching no Python skips it — it just does not decide what gets
 checked.
@@ -493,7 +493,7 @@ round.
 
 What it enforces — `root_packages`, `containers`, `exhaustive = true` and the
 layer order — is in
-[import-linter contract](#import-linter-contract-root_packages-containers-exhaustive-layer-order).
+[import-linter contract](#import-linter-contract).
 It sees first-party imports only, so it cannot catch a `langchain` import
 appearing outside the adapter package; `tests/unit/llm/test_port_does_not_leak.py`
 is what covers that, and it runs in the hook below.
@@ -514,7 +514,7 @@ Because it is the last hook, `fail_fast` means it only ever executes on a
 commit where the five checks above it are already clean. Its own contract —
 the baseline file, `TOLERANCE`, the exact pytest arguments, the exit codes,
 and how to accept a deliberate drop — is
-[documented below](#the-coverage-ratchet-contract-scriptscoverage_ratchetpy).
+[documented below](#python-scriptscoverage_ratchetpy).
 
 ### None of these should be run as a separate pre-commit step
 
@@ -694,7 +694,7 @@ inline:
   event timestamps are compared and ordered across the package, and a naive
   datetime does not fail, it compares wrongly. `TID`'s banned-api entries
   extend this to the two spellings `DTZ` cannot see; both are covered in
-  [per-file-ignores and banned-api](#ruff-per-file-ignores-and-banned-api-tests-annb011dtz001-datetimeutcnow-ban).
+  [per-file-ignores and banned-api](#ruff-per-file-ignores-and-banned-api).
 - **`ANN`** — mypy `--strict` rejects an untyped `def` in `src/`, but ruff
   reports it first and much faster. The two overlap deliberately, and `ANN` is
   the reason `tests/**` needs a per-file ignore rather than a global one.
@@ -950,7 +950,7 @@ The package, and only the package. `tests/` is not type-checked at all, which
 is what makes ruff's `ANN` per-file ignore for `tests/**` coherent rather than
 a hole: an annotation on a test function would be read by nothing, so
 requiring one produces findings with no consumer. See
-[per-file-ignores](#ruff-per-file-ignores-and-banned-api-tests-annb011dtz001-datetimeutcnow-ban).
+[per-file-ignores](#ruff-per-file-ignores-and-banned-api).
 
 Because the hook passes no filenames, `files` is the *only* thing that decides
 scope. A one-line edit type-checks the whole package — which is the correct
@@ -1142,7 +1142,7 @@ them fire on the entire idiom of a test suite:
 - **B101 (`assert_used`)** — `assert` is compiled away under `python -O`, so it
   is a real finding in a library and the whole vocabulary of a suite. This is
   the same reasoning behind ruff's `B011` per-file ignore for `tests/**`; see
-  [per-file-ignores](#ruff-per-file-ignores-and-banned-api-tests-annb011dtz001-datetimeutcnow-ban).
+  [per-file-ignores](#ruff-per-file-ignores-and-banned-api).
 - **B404 / B603 / B607 (`subprocess`)** — the suite shells out deliberately, to
   drive the tools it is testing.
 
@@ -1559,11 +1559,10 @@ $ uv run pytest --collect-only -q
 
 — so roughly a tenth of the suite does not run on commit.
 
-`tests/accuracy/` currently holds only `__init__.py`, so `-m accuracy` collects
-**zero tests**. The marker is declared and excluded for a suite that has not
-been written; that absence is a known gap tracked as `BACKLOG.md` B12, not a
-licence to assume extraction quality is measured. Nothing in this repo can tell
-you whether a change made extraction better or worse — only whether it stayed
+`tests/accuracy/` is excluded for a different reason: it needs a live model.
+Its scorer and corpus need nothing and do run on commit, through
+`tests/unit/accuracy/`, which is what makes a live number from it believable.
+Nothing else in this repo can tell
 correct.
 
 ### A `-m` on the command line replaces this one
@@ -1613,14 +1612,14 @@ Two consequences worth carrying:
 
 - **Coverage is measured over the default run**, so the ratchet's number
   describes the code the deselected suites do not exclusively own. See
-  [The coverage ratchet contract](#the-coverage-ratchet-contract-scriptscoverage_ratchetpy).
+  [The coverage ratchet contract](#python-scriptscoverage_ratchetpy).
 - **Mutation testing inherits the same blind spot.** `cosmic-ray.toml`'s
   `test-command` is `uv run pytest -x -q --no-header -p no:randomly tests/unit`
   and mutmut's `runner` is the same command without a path, so an adapter whose
   only tests are integration-marked has no killing tests at all — every mutant
   in it survives, or, if the environment is incomplete, every mutant appears to
   die. See
-  [Verifying a mutation run before trusting it](#verifying-a-mutation-run-before-trusting-it).
+  [proving the harness works before trusting a run](../how-to/run-integration-and-mutation-suites.md#step-1-prove-the-harness-works--run-the-configured-test-command-unmutated).
 
 The procedures for actually running the excluded suites — bringing the backends
 up, pointing the LLM tests at an endpoint — are in
@@ -1651,7 +1650,7 @@ that measure.
 | Marker | Applied to | Effect on the gate |
 | --- | --- | --- |
 | `integration` | 197 tests across 5 files | deselected by `addopts` |
-| `accuracy` | **nothing** | deselected by `addopts`; selects zero tests |
+| `accuracy` | 4 tests in 1 file | deselected by `addopts` |
 | `unit` | 7 tests in 1 file | none — `unit` is not in the marker expression |
 | `slow` | **nothing** | none |
 
@@ -1691,24 +1690,28 @@ adapters. That is the blind spot `tests/conftest.py`'s terminal summary exists
 to announce; see
 [addopts](#pytest-addopts--m-not-accuracy-and-not-integration).
 
-### `accuracy` — declared, excluded, and empty
+### `accuracy` — declared, excluded, and load-bearing
 
-`grep -rn "mark.accuracy" tests/` returns nothing. `tests/accuracy/` contains
-`__init__.py` and no test module, so `-m accuracy` collects **zero tests**.
+`tests/accuracy/test_extraction_accuracy.py` carries the marker and needs a
+live model, so it is deselected for the same reason `integration` is: the
+commit gate stays infra-free.
 
-The marker is declared and deselected for a suite that has not been written.
-Both halves of that are deliberate — the exclusion is in place so the suite can
-land without changing the gate — but the consequence is worth stating plainly
-rather than inferring from an empty directory: **nothing in this repository
-measures extraction quality.** The gates tell you a change stayed correct, not
-whether it made extraction better or worse. The gap is tracked as `BACKLOG.md`
-B12.
+What is *not* deselected is the part that can be checked cheaply. The scorer
+(`tests/accuracy/scoring.py`) and the graded corpus are pure, and
+`tests/unit/accuracy/` exercises both plus the whole extraction harness against
+`FakeLlmProvider` — because an accuracy suite fails silently in two directions
+that both look like results, and neither is visible from a live run.
 
-An empty marker is also the exact shape
+The exclusion keeps the commit gate infra-free; the split keeps the suite
+honest. Both are deliberate.
+
+**Read the collected count, not the exit code**, which is the habit the marker
+taught the hard way. For most of this project's life `accuracy` selected
+nothing, and `uv run pytest -m accuracy` exited green over zero tests —
+indistinguishable from a green run over a suite, and the exact shape
 [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
-warns about, arriving from a third direction: `uv run pytest -m accuracy` exits
-green, and a green run over zero tests is indistinguishable from a green run
-over a suite. Read the collected count, not the exit code.
+warns about arriving from a third direction. `slow` is still in that state
+below.
 
 ### `unit` — applied seven times, and selects nothing useful
 
@@ -1781,7 +1784,7 @@ tearing down, reading a skip — are in
 | pgvector `VectorStore` | `uv run pytest -m integration tests/integration/vector` | `… up -d postgres` |
 | live LLM | `uv run pytest -m integration tests/integration/llm` | an OpenAI-compatible endpoint |
 | wheel packaging | `uv run pytest -m integration tests/integration/test_wheel_contents.py` | `uv`, a build backend, seconds |
-| accuracy | `uv run pytest -m accuracy tests/accuracy/` | a live LLM — and selects **zero tests** today |
+| accuracy | `KG_LLM_BASE_URL=… uv run pytest -m accuracy tests/accuracy/` | a live LLM |
 
 ### `-m` replaces the configured expression, it does not intersect
 
@@ -1846,7 +1849,7 @@ OpenAI-compatible server, and the probe skips cleanly when nothing answers.
 `KG_COMPLIANCE_MAX_EXAMPLES` is the knob to reach for when a run is too slow
 while iterating — `KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest -m integration`
 is the form every module docstring uses. It is covered in full in
-[the next section](#kg_compliance_max_examples-default-50-read-in-testscompliancegraph_storepy-and-vector_storepy-process-wide-only).
+[the next section](#kg_compliance_max_examples).
 
 ### `-n auto` is safe for the vector suite and not for the whole one
 
@@ -1883,13 +1886,23 @@ every domain id for every installed user, with the whole suite green.
 
 Run it before a release.
 
-### The accuracy suite does not exist yet
+### The accuracy suite measures a different property, and is not in the gate
 
-`grep -rn "mark.accuracy" tests/` returns nothing and `tests/accuracy/` holds
-only `__init__.py`, so `uv run pytest -m accuracy` collects zero tests and
-exits green. Nothing in this repository measures extraction quality; the gates
-say a change stayed correct, not whether extraction got better or worse. The
-gap is `BACKLOG.md` B12.
+Every gate above asks whether the library is **correct**. `tests/accuracy/`
+asks whether extraction finds the **right** things, which a correct library can
+fail: every invariant in `tests/unit/` can hold while the model returns
+entities that are simply wrong.
+
+It needs a live model, so it is not on commit:
+
+```bash
+KG_LLM_BASE_URL=http://host:8080/v1 uv run pytest -m accuracy tests/accuracy/
+```
+
+Read its output with two limits in mind. The corpus is five hand-graded
+documents — enough to catch a regression, not enough to be a benchmark — and
+the floors are set where a regression trips them, not where a good model sits.
+Clearing them is evidence that quality did not visibly fall, not that it rose.
 
 ### A default run is partial evidence, by construction
 
@@ -1901,7 +1914,7 @@ one line of the adapter ever ran. `tests/conftest.py` prints a terminal
 summary naming the deselected count and the command that runs it, which stops
 the omission being silent; only a combined coverage run would close it
 (`BACKLOG.md` B10a). See
-[Verifying a mutation run before trusting it](#verifying-a-mutation-run-before-trusting-it).
+[proving the harness works before trusting a run](../how-to/run-integration-and-mutation-suites.md#step-1-prove-the-harness-works--run-the-configured-test-command-unmutated).
 
 ## `KG_COMPLIANCE_MAX_EXAMPLES`
 
@@ -2025,7 +2038,7 @@ Two things follow:
 - **A lowered value makes a mutation result non-deterministic**, and the
   natural misreading of a survivor that used to die is "something changed in
   the source." Nothing had. See
-  [Verifying a mutation run before trusting it](#verifying-a-mutation-run-before-trusting-it).
+  [proving the harness works before trusting a run](../how-to/run-integration-and-mutation-suites.md#step-1-prove-the-harness-works--run-the-configured-test-command-unmutated).
 - **Where a guard names a specific value, pin it as an example.**
   `test_k_zero_returns_nothing_rather_than_raising` in
   `tests/compliance/vector_store.py` exists for precisely this, and its

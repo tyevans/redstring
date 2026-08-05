@@ -271,62 +271,46 @@ first needs to rebuild a single tenant in anger.
 Code that may well be correct, with nothing that would tell us if it were not.
 These are the entries most likely to become section 1 without warning.
 
-### B12. There is no accuracy suite, and it is the only thing that could say whether extraction is any *good*
+### B12. The accuracy suite — built, and what it still cannot tell you
 
-Slice 6 deleted `tests/accuracy/test_extraction_accuracy.py`, the only file
-carrying the `accuracy` marker. It measured `OllamaExtractionService`, which no
-longer exists. `tests/accuracy/` is now an empty package and the marker is
-declared in `pyproject.toml` with nothing using it. `uv run pytest -m accuracy
-tests/accuracy/` collects **zero tests** — verified in slice 11.
+**Closed by building it rather than by deleting the marker**, which was the
+choice the entry framed. `tests/accuracy/` now holds a scorer, a graded corpus
+and a live-model test module, and `-m accuracy` collects four tests where it
+collected zero.
 
-Everything else in this repo checks that the library is *correct*. Nothing
-checks that it is *accurate*, and those are different properties: extraction
-can satisfy every invariant, round-trip through every adapter, and still find
-the wrong entities.
+The design decision worth keeping is the split. "Measure extraction accuracy"
+reads as one job needing a model, a corpus and a metric at once, and that
+reading is why the entry stayed open for eleven slices. It is two jobs:
+deciding whether a predicted entity *is* an expected one, which needs nothing
+and is where a wrong answer is silent, and getting predictions, which needs
+everything. The scorer and corpus are pure and run in the commit gate through
+`tests/unit/accuracy/`; only `test_extraction_accuracy.py` needs an endpoint.
 
-The environmental blocker this entry used to describe is **resolved**: the
-reference endpoint moved to `http://192.168.1.14:8080/v1` (llama-swap), and
-`qwen3.6-27b-mtp` serves real completions. `tests/integration/llm/` talks to it
-and is green. What is missing is the graded corpus.
+That split is also what makes a live number believable. An accuracy suite fails
+silently in two directions and both look like results — measuring nothing gives
+F1 = 0.0 and reads as a bad model, comparing the corpus against itself gives
+1.0 and reads as a good one. `test_harness.py` pins an exactly-right answer, an
+empty answer and a *wrong* answer against `FakeLlmProvider`. The third is the
+load-bearing one: a self-comparison cannot produce a false positive whatever
+the model says.
 
-**What it would take, precisely, so this stops being a wish.** Four pieces, in
-dependency order:
+**What it still cannot do**, which is the part to carry forward:
 
-1. **A graded corpus.** 20-50 documents with hand-annotated entities and
-   relationships, in-repo as fixtures rather than downloaded, because a
-   corpus that moves makes every number incomparable to the last. Budget this
-   honestly: annotation is the expensive part and there is no way around it.
-   Cover the six bundled domains, and include at least one document that
-   *should* yield nothing — a suite that only sees positive cases cannot
-   measure precision.
-2. **A matcher, which is the hard design problem.** Extraction produces
-   `uuid5`-derived ids, so "did it find Ada Lovelace" cannot be an id
-   comparison. It has to be a name match through `normalize_name` plus a
-   decision about partial credit: is "Lovelace" a hit, a miss, or a half?
-   Whatever is chosen must be stated in the suite, because it silently sets
-   every number the suite reports.
-3. **Metrics with a tolerance band, not equality.** Precision and recall per
-   document and in aggregate, asserted against a floor
-   (`recall >= 0.7`), never an exact value. `tests/integration/llm/test_live_pipeline.py`
-   is the model for what *not* to pin: it deliberately asserts that Ada
-   Lovelace is extracted and deliberately does **not** assert which
-   `entity_type` the model assigns her, because that changes between model
-   versions and a suite that pins it fails on every upgrade for no reason.
-4. **A probe that fails rather than skips.** The integration probe asks for one
-   completion and *skips* when the model is absent. An accuracy run must
-   **fail** loudly instead — a skipped accuracy suite reports "no data" as
-   silence, and silence is indistinguishable from success.
-
-Non-determinism is the part to plan for rather than discover: the same model on
-the same document does not return the same entities twice. Either fix the seed
-and temperature and accept that the number is about one sampling path, or run
-each document `n` times and assert on the mean, which multiplies the runtime by
-`n`. Decide before writing, because it changes the fixture shape.
-
-Two entries are waiting on this and cannot be settled without it: **B57**
-(whether constrained decoding extracts better) and **B52** (whether dropping
-the model's date-normalisation fields hurt temporal recall). Both are currently
-arguments. This suite is what would make them measurements.
+- **Five documents is not a benchmark.** It catches a regression; it cannot
+  rank two models, and an F1 quoted from it is not a figure anyone should
+  publish. Growing the corpus is the obvious next step and needs a second
+  grader more than it needs more documents — the grading rule that a second
+  person gets wrong is stated at the top of `corpus.yaml`.
+- **The floors are regression floors.** Set where a real fall trips them, not
+  where the current endpoint sits. Raising them to track a good model turns
+  the suite into a test of that model.
+- **One negative document carries the whole hallucination check.**
+  `empty-negative` grades nothing, so recall is vacuous and precision is the
+  only movable metric. Every other document rewards finding things. If that
+  document ever acquires a graded entity, the only test of its kind is retired
+  silently — `test_the_negative_document_grades_nothing` exists to stop that.
+- **It does not settle ADR 0011.** It can show that off-schema extraction got
+  worse; it cannot show that constraining to the schema would be better.
 
 ### B53. `Entity.temporal` round-trips through Neo4j but no shared test says so
 
@@ -1547,73 +1531,139 @@ delete statement) adds a third statement to every batch upsert, whose write
 cost ADR 0003 measured carefully. Measure the leak before paying for it, and
 correct the ADR either way.
 
-### B63. `mkdocs --strict` does not fail on a broken in-page anchor, and 48 are broken
+### B65. Two reference pages document a fraction of what they link to
 
-`mkdocs.yml` sets `strict: true`, which promotes WARNING to an error. **Anchors
-are reported at INFO**, so a link to `page.md#heading-that-was-renamed` builds
-green today. Missing *pages* fail; missing *anchors* do not.
+Fixing B63 surfaced this and it is the larger finding. The broken anchors were
+not renamed headings — **most pointed at sections that exist nowhere in the
+docs.** Both pages were written against an outline, and the outline is still
+visible in the links while the content was never filled in.
 
-That is a hole in the one gate this repository points at for prose. `mkdocs.yml`
-line 51 and `recurring-defects.md` §6 both credit `--strict` with making a
-half-finished renumber impossible to land — and the half that went unnoticed the
-first time was 71 in-page anchors, which is precisely the half still unguarded.
-A gate that catches the coarse failure and shrugs at the fine one is the more
-dangerous kind, because catching the coarse one is what earns the trust it then
-fails to deserve.
+`reference/domain-value-types.md` has 22 headings and covers `Entity`,
+`Relationship`, `SourceDocument` and `Alias`. It linked to, and does not
+contain, sections on: temporal value types, temporal intervals,
+`SimilarityFeatures`, `VectorMatch.score`, `normalize_name`,
+`blocking_keys_for`, `RelationshipRedirection`, `AliasCycleError`,
+`AmbiguousReferenceDateError`, and a "what is public" summary. Its own module
+map table lists `temporal.py`, `temporal_parsing.py`, `interval.py` and
+`merge_strategy.py` as things the page covers.
 
-Add to `mkdocs.yml`, which is the whole fix on the config side:
+`reference/domain-schema-yaml.md` documents top-level, entity-type and
+property fields, and stops. There is no relationship-type field section, and
+`RelationshipTypeSchema`'s per-element rules — `id` normalization, the
+description bounds, the two endpoint lists, `bidirectional` — are named in
+prose as "documented under" a section that does not exist.
 
-```yaml
-validation:
-  anchors: warn
-  links:
-    absolute_links: warn
-    unrecognized_links: warn
+**The dangling links are now repaired, so this is invisible again**, which is
+why it needs an entry rather than a comment. Where a real section covered the
+subject the link was repointed; where nothing did, the sentence was rewritten
+to state the fact rather than promise a section. No content was invented.
+
+One repair is worth knowing about because it was a *wrong* claim rather than a
+missing one: the dead anchor for `VectorMatch.score` encoded the mapping as
+`(1 - cosine) / 2`. `domain/vector.py` says `(1 + cosine) / 2`, and the two
+differ on every input. The prose now states the formula from the source. A
+link nobody can follow is also a claim nobody re-checks.
+
+Picking this up means writing the missing sections against the code, not
+against the old outline — the outline is three slices stale and was wrong at
+least once.
+
+### B66. `EmbeddingProvider` port is missing, so nothing can populate a `VectorStore`
+
+Reported by the first downstream project to build on redstring, as their "the
+real one". They are right, and the shape of the gap is worse than a missing
+convenience: **the port list is asymmetric.** `LlmProvider` lets extraction
+turn text into entities without knowing about a model; there is no equivalent
+letting anything turn text into a vector, so `VectorStore` can only be fed
+vectors the caller computed elsewhere. `VectorProjection` writes what it is
+given, and nothing in the library ever produces one.
+
+That makes the vector half of this library unreachable from its own pipeline.
+A caller who wants semantic search has to run an embedding model themselves,
+match redstring's chunking, and construct `VectorRecord`s by hand — at which
+point the port is doing very little for them.
+
+This is an architectural decision and needs an ADR, not just a Protocol:
+
+- `ports/embedding_provider.py` sits beside `ports/llm_provider.py`, and the
+  adapter goes under `llm/` for the same reason `LangChainLlmProvider` does —
+  so nothing above the sibling band can reach a client library.
+- **The dimension is the hard part.** `VectorStore` fixes a dimension at
+  construction (pgvector's column type), the provider determines it, and the
+  two must agree or every write fails at the database rather than at the seam.
+  Deciding whether the provider *declares* a dimension the store validates, or
+  the store asks the provider, is the decision the ADR is for. Note the
+  CLAUDE.md warning while doing it: a dimension check written with `is not`
+  passes at a test dimension of 8 and rejects every real 768-wide vector.
+- It needs a compliance suite, like every other port here, and a fake
+  implementation for the commit gate. A deterministic fake — hash the text into
+  a unit vector — is enough to make `build_graph` populate a vector store in a
+  test with no model.
+
+### B67. No way to find entities that were never consolidated
+
+Reported downstream. `Entity` carries no consolidation state, so "resolve
+whatever has not been resolved yet" is a scan of every entity in the tenant.
+Consolidation is a problem this library claims to own, and the incremental case
+— documents arriving continuously, consolidation running periodically — is the
+normal one rather than an exotic one.
+
+Do not solve it by adding a mutable `consolidated: bool` to `Entity`. The write
+model is event-sourced and `Entity` is a value handed to a projection; a flag on
+it would be state the log does not own, and the first replay would have to
+reconstruct it anyway. The candidates worth weighing are a projection that
+maintains an unresolved set from `DocumentExtracted` and `EntitiesMerged`, or a
+store-level query over "entities with no alias and no merge event". Both are
+real designs; neither is a field.
+
+### B68. `project()` cannot scope to a stream or category
+
+Reported downstream, who are using `tenant_filter` as the workaround. A shared
+event store replays every foreign event through every projection, which is
+correctness-neutral and cost-linear in other people's traffic. The workaround
+is real but is a filter applied after delivery, not a narrower subscription.
+
+Whether this is redstring's to fix depends on what `eventsource-py` exposes —
+check before designing, because a scoped subscription in the library that
+filters client-side is the same cost with more code.
+
+### B69. `ReplayReport.failed` counts poison events instead of raising
+
+Reported downstream. There is no supported strict mode, so a replay that drops
+every event still returns a report and exits successfully. That is a reasonable
+default for a rebuild over a long log and a bad one for a test or a first
+deployment, which is exactly when a silent partial rebuild is most costly and
+least visible.
+
+A `strict=True` that raises on the first failure is the obvious shape. The
+thing to get right is that the failure has to name the event — an exception
+saying "replay failed" with a count is the same problem in a louder voice.
+
+### B70. `eventsource-py` floor was too low, and the library was published with it
+
+**Fixed, and recorded here because the shipped `0.1.0` carries the wrong
+floor.** Reported downstream as trivial; it is trivial to fix and was not
+trivial in effect.
+
+`pyproject.toml` declared `eventsource-py>=0.9.1,<0.11` while
+`projections/base.py` forwards `retry_policy`, `tracer` and `tenant_filter` to
+`DeclarativeProjection.__init__`. Measured across both versions rather than
+assumed — and the downstream report is right in substance and slightly off in
+detail, which matters for anyone pinning:
+
+```
+0.9.1:  (checkpoint_repo, dlq_repo, enable_tracing, *, tenant_filter)
+0.10.0: (checkpoint_repo, dlq_repo, enable_tracing, *, retry_policy, tracer, tenant_filter)
 ```
 
-**Deferred because turning it on surfaces 48 warnings and therefore reddens CI
-until every one is repaired**, and they are unrelated to whatever change is in
-flight. Measured, not estimated — run the snippet above and `uv run mkdocs build
---strict` reports `Aborted with 48 warnings in strict mode!`. The clusters are
-`reference/quality-gates.md` (6), `reference/domain-value-types.md` (5),
-`reference/events.md` (2), with the rest spread thinner.
+`tenant_filter` existed in 0.9.1. Only `retry_policy` and `tracer` are new, so
+the failure is `TypeError: unexpected keyword argument 'retry_policy'` at
+**projection construction**, not at import — `import redstring` succeeds and the
+first `GraphProjection(...)` does not.
 
-Two things learned that the next person should not have to rediscover:
-
-- The anchors are mostly *self*-links within a page whose headings were later
-  edited — the slug in the link is a verbatim snapshot of an old heading, so
-  each one is repairable by reading the current headings rather than by
-  guessing. `#kg_compliance_max_examples-default-50-read-in-...-process-wide-only`
-  is a heading that has since been shortened, not a page that moved.
-- Do the config change and the repairs in **one** commit. Landing the repairs
-  first leaves nothing preventing the next one, and landing the config first is
-  a red build. This is the §6 lesson about renumbering, in a different costume.
-
-### B64. The release guard permits `main` and nothing else, which forecloses a hotfix branch
-
-`release.yml`'s "The tagged commit must be on main" step requires the tagged
-commit to be reachable from `main`. That is right for every release this
-project can currently make, and it will be wrong the first time it needs a
-patch to an older line — `0.1.x` fixed on a `release/0.1` branch after `main`
-has moved to `0.2`, tagged `v0.1.1`, is a legitimate release the guard rejects.
-
-Not fixed now because the fix has a wrong-looking easy version and the right
-version needs a decision. The easy one is to accept any branch matching
-`release/*`, which reintroduces most of the hole: a branch is cheap to create,
-and "publishes from any branch called release-something" is close to
-"publishes from anywhere". The alternative is to require the tag be reachable
-from *some protected* branch — the API answers that
-(`repos/{repo}/branches?protected=true`) — which keeps the property that
-publishing follows from a reviewed state rather than from a naming convention.
-
-Deferred rather than guessed because the choice depends on a branching policy
-this project does not have yet: there has never been a maintenance branch, and
-inventing the guard before the workflow means the guard decides the workflow.
-
-When it is picked up: `tests/unit/test_release_requires_tag_on_main.py` stubs
-`gh` and executes the real `run:` body, so widening the rule means adding cases
-to that file rather than rewriting the harness. The four statuses it pins
-(`behind`/`identical` allowed, `ahead`/`diverged` and anything unrecognised
-rejected, an API failure treated as a failure) all still hold under any
-widening — a second permitted *base* changes which commits are on it, not what
-the compare statuses mean.
+The floor is now `>=0.10.0`. What remains open is the general case: nothing
+proves a declared floor actually works, because CI resolves fresh and gets the
+newest release. A test that installs the declared floor into a temporary venv
+and constructs a projection would close it, and is the same shape as
+`test_wheel_contents.py` — slow, `integration`-marked, and the only kind of
+check that measures the claim rather than a proxy for it.

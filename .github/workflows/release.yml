@@ -94,27 +94,62 @@ jobs:
       #
       # Asked through the API rather than with `git merge-base`, because
       # `persist-credentials: false` leaves the checkout without credentials to
-      # fetch `main` with, and re-enabling them to answer one question is a
-      # poor trade in a workflow that mints an OIDC identity. `compare` reports
-      # the tagged commit as `behind` or `identical` exactly when `main`
-      # contains it.
-      - name: The tagged commit must be on main
+      # fetch with, and re-enabling them to answer one question is a poor trade
+      # in a workflow that mints an OIDC identity. `compare` reports the tagged
+      # commit as `behind` or `identical` exactly when the base contains it.
+      #
+      # ## Why *protected*, and not `main`, and not `release/*`
+      #
+      # Requiring `main` alone rejects a legitimate `v0.1.1` cut from a
+      # maintenance branch after `main` has moved on. The obvious widening --
+      # accept anything matching `release/*` -- gives most of the hole back,
+      # because a branch is cheap to create and "publishes from any branch
+      # named release-something" is close to "publishes from anywhere".
+      #
+      # Asking the API which branches are *protected* keeps the property that
+      # actually matters: **a release follows from a state someone reviewed.**
+      # That is a claim about the repository's settings rather than about a
+      # naming convention, and it cannot be satisfied by pushing a branch.
+      #
+      # Two consequences, both wanted. Unprotecting `main` breaks releasing,
+      # which is the correct direction to fail. And a repository with no
+      # protected branches at all publishes nothing -- the loop simply never
+      # matches, so the fail-closed case needs no special handling beyond
+      # saying why.
+      #
+      # What this does *not* check is how strong the protection is; a branch
+      # protected without a review requirement still counts. Tightening that
+      # means reading the protection rules, which is a different question from
+      # the one this step exists to answer.
+      - name: The tagged commit must be on a protected branch
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          STATUS=$(gh api "repos/${REPO}/compare/main...${SHA}" --jq .status)
-          case "$STATUS" in
-            behind|identical)
-              echo "Tagged commit ${SHA} is on main (${STATUS})."
-              ;;
-            *)
-              echo "::error::Tagged commit ${SHA} is not on main (compare status: ${STATUS}). Merge first, then tag the merged commit on main."
-              exit 1
-              ;;
-          esac
+
+          BRANCHES=$(gh api --paginate \
+            "repos/${REPO}/branches?protected=true&per_page=100" --jq '.[].name')
+
+          if [ -z "$BRANCHES" ]; then
+            echo "::error::${REPO} has no protected branches, so no tag can be shown to follow from a reviewed state. Protect the release branch before tagging."
+            exit 1
+          fi
+
+          for BRANCH in $BRANCHES; do
+            STATUS=$(gh api "repos/${REPO}/compare/${BRANCH}...${SHA}" --jq .status)
+            case "$STATUS" in
+              behind|identical)
+                echo "Tagged commit ${SHA} is on protected branch ${BRANCH} (${STATUS})."
+                exit 0
+                ;;
+            esac
+            echo "Not on ${BRANCH} (${STATUS})."
+          done
+
+          echo "::error::Tagged commit ${SHA} is not on any protected branch (checked: $(echo $BRANCHES | tr '\n' ' ')). Merge first, then tag the merged commit."
+          exit 1
 
       - name: Classify the tag
         id: version

@@ -17,9 +17,14 @@ Both are excluded by `addopts = ["-m", "not accuracy and not integration"]` in
 CLI `-m` overrides that setting, which is why every command below passes one.
 
 This guide gives the exact invocations, the environment variables each suite
-reads, and — in [Troubleshooting](#troubleshooting) — the four failure modes
-this project has actually hit, all of which look like flakiness and none of
-which are.
+reads, and the four failure modes this project has actually hit — all of
+which look like flakiness and none of which are. Those are not gathered into a
+troubleshooting section, because each belongs with the invocation that provokes
+it: [Step 3](#step-3-run-it-serially---m-integration-never--n-auto) and
+[Step 4](#step-4-do-not-combine-it-with-the-unit-suite-in-one-invocation) of
+Part 1, [reading the result](#reading-the-result-skipped-is-honest-failed-means-the-backend-is-reachable-but-wrong),
+and [Step 4](#step-4-read-the-report--a-zero-survivor-run-means-the-harness-is-broken)
+of Part 2.
 
 Run the integration suite when you have touched an adapter
 ([Neo4j](../reference/neo4j-graph-store.md),
@@ -149,9 +154,9 @@ up and `coverage combine`s an integration run with the default one — not a
 commit hook made conditional on Docker, which trades a deterministic gate for
 a flaky one. Two traps wait for whoever writes it, and both look like
 flakiness: it must be **two invocations combined** rather than one widened
-marker expression ([B10m](#failedhealthcheck-called-from-multiple-different-executors-two-adapters-in-one-invocation--b10m)),
+marker expression ([B10m](#step-4-do-not-combine-it-with-the-unit-suite-in-one-invocation)),
 and it must not put `-n auto` over the Neo4j suite
-([B10f](#36-neo4j-failures-that-look-like-flakiness-xdist-wiping-a-shared-database--b10f)).
+([B10f](#step-3-run-it-serially---m-integration-never--n-auto)).
 
 Until then, running this suite by hand after touching an adapter is not
 optional politeness — it is the only thing that executes the Cypher.
@@ -427,7 +432,7 @@ see [why it is not in the commit gate](#why-it-is-not-in-the-commit-gate) —
 **combine the coverage data, not the invocations**. `parallel = true` is
 already set under `[tool.coverage.run]` in `pyproject.toml`, so each run leaves
 its own data file and `coverage combine` merges them. That target has a second
-trap in [Step 3](#step-3-run-it-serially--m-integration-never-n-auto): no
+trap in [Step 3](#step-3-run-it-serially---m-integration-never--n-auto): no
 `-n auto` over the Neo4j suite.
 
 Two other fixes exist and neither is in place, deliberately. Adding
@@ -489,7 +494,7 @@ reads through a callable, not a `settings(max_examples=...)` on the subclass.
 
 **It is not a substitute for parallelism, and parallelism is not available.**
 If the run is too slow, lower this rather than reaching for `-n auto`, which
-produces [36 Neo4j failures](#36-neo4j-failures-that-look-like-flakiness-xdist-wiping-a-shared-database--b10f).
+produces [36 Neo4j failures](#step-3-run-it-serially---m-integration-never--n-auto).
 
 `tests/unit/vector/test_compliance_coverage.py::TestTheSuiteIsTunable` asserts
 that `compliance_settings.max_examples` still tracks `DEFAULT_MAX_EXAMPLES`, so
@@ -506,7 +511,7 @@ changed, because `k=0` was covered only by a property drawing `k` from `0..12`.
 So a low value makes a mutation result *non-deterministic*, and the natural
 misreading of a survivor that used to die is "something changed in the source."
 See
-[a survivor that died on the previous run](#a-survivor-that-died-on-the-previous-run-non-deterministic-boundary-coverage-under-a-lowered-max_examples),
+[survivors worth investigating](#survivors-worth-investigating),
 and pin boundaries as `@example`s rather than trusting the sampler
 ([`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)).
 
@@ -664,10 +669,10 @@ Three exceptions, all with a name and a cause:
 
 - **36 Neo4j failures, varying run to run** — you passed `-n auto`, and the
   workers are wiping each other's data
-  ([B10f](#36-neo4j-failures-that-look-like-flakiness-xdist-wiping-a-shared-database--b10f)).
+  ([B10f](#step-3-run-it-serially---m-integration-never--n-auto)).
 - **21 or 13 `FailedHealthCheck: ... multiple different executors`** — the unit
   and integration suites are in one invocation
-  ([B10m](#failedhealthcheck-called-from-multiple-different-executors-two-adapters-in-one-invocation--b10m)).
+  ([B10m](#step-4-do-not-combine-it-with-the-unit-suite-in-one-invocation)).
 - **A single `DeadlineExceeded` that passes on its own** — hypothesis's 200 ms
   default deadline is not survivable under contention for a property doing real
   work (**B59**). It has been seen in the *unit* suite under the gate's

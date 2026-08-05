@@ -1,0 +1,88 @@
+# A graded corpus for extraction accuracy.
+#
+# READ THIS BEFORE QUOTING A NUMBER OFF IT.
+#
+# Five short documents, hand-graded by one person. That is enough to answer
+# "is extraction working" and nowhere near enough to answer "how well". A
+# change in F1 across five documents is noise until it is large, and none of
+# these texts is adversarial, long, or drawn from a real corpus. Growing this
+# is tracked in BACKLOG.md; the floors in test_extraction_accuracy.py are set
+# where only a real regression trips them, not where a good model sits.
+#
+# GRADING RULES (the first one is the one a second grader gets wrong):
+#
+#  1. Grade what the text STATES, not what is true. If a document does not say
+#     someone is a mathematician, that entity is not graded, and a model that
+#     supplies it from its own knowledge is wrong *here* even though the fact
+#     is right.
+#  2. Entity `type` must be an id declared by the named `domain` schema.
+#  3. Omission is a claim. Anything not listed scores as a false positive if
+#     extracted, so a half-graded document reports a precision failure that
+#     belongs to the grader.
+#  4. Every relationship endpoint must also appear under `entities`. The loader
+#     enforces this, because an unmatched endpoint reads as a model failure and
+#     is a grading error.
+
+documents:
+  - id: newsroom-quote
+    domain: news_journalism
+    text: >-
+      Maria Chen, chief executive of Northwind Energy, said the company would
+      close its Aberdeen plant. "We have no alternative," Chen said.
+    entities:
+      - {name: Maria Chen, type: person}
+      - {name: Northwind Energy, type: organization}
+      - {name: Aberdeen, type: location}
+    relationships:
+      - {source: Northwind Energy, target: Maria Chen, type: employs}
+      - {source: Maria Chen, target: Northwind Energy, type: leads}
+
+  - id: newsroom-event
+    domain: news_journalism
+    text: >-
+      The Halberd Summit opened in Geneva. Delegates from Ferrolux Industries
+      attended.
+    entities:
+      - {name: Halberd Summit, type: event}
+      - {name: Geneva, type: location}
+      - {name: Ferrolux Industries, type: organization}
+    relationships:
+      - {source: Halberd Summit, target: Geneva, type: occurred_in}
+
+  - id: docs-function
+    domain: technical_documentation
+    text: >-
+      The `retry_with_backoff` function calls `compute_delay` and raises
+      `RetryBudgetExhausted` when the budget runs out.
+    entities:
+      - {name: retry_with_backoff, type: function}
+      - {name: compute_delay, type: function}
+      - {name: RetryBudgetExhausted, type: exception}
+    relationships:
+      - {source: retry_with_backoff, target: compute_delay, type: calls}
+      - {source: retry_with_backoff, target: RetryBudgetExhausted, type: raises}
+
+  - id: docs-class
+    domain: technical_documentation
+    text: >-
+      `SqliteCheckpointStore` implements the `CheckpointStore` protocol and
+      lives in the `persistence` module.
+    entities:
+      - {name: SqliteCheckpointStore, type: class}
+      - {name: CheckpointStore, type: class}
+      - {name: persistence, type: module}
+    relationships:
+      - {source: SqliteCheckpointStore, target: CheckpointStore, type: implements}
+
+  # Deliberately states nothing extractable under its schema. A run that
+  # returns entities here is hallucinating, and this is the only document in
+  # the corpus that can show it -- every other one rewards finding things.
+  # Its expected sets are empty, which makes recall vacuously 1.0 and leaves
+  # precision as the only metric it moves. That asymmetry is the point.
+  - id: empty-negative
+    domain: technical_documentation
+    text: >-
+      This paragraph is filler. It describes nothing in particular and names
+      no software.
+    entities: []
+    relationships: []

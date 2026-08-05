@@ -12,8 +12,8 @@ choices are load-bearing rather than taste.
 Four trees, and they are not interchangeable: `tests/unit/` (the commit gate),
 `tests/compliance/` (shared port contracts, not itself collected),
 `tests/integration/` (real backends from `docker-compose.test.yml`), and
-`tests/accuracy/` (an empty marker package — see below before believing
-otherwise).
+`tests/accuracy/` (extraction quality against a live model, plus a scorer and
+corpus that need nothing and run in the commit gate).
 
 The second frontmatter path is deliberate. `tests/compliance/` holds no
 `test_*.py` files, so `tests/**/*.py` matches it only by accident of the glob
@@ -43,7 +43,7 @@ where, against what:
 | `tests/unit/` | yes | nothing external |
 | `tests/compliance/` | **never collected** | imported by unit and integration modules |
 | `tests/integration/` | no (`-m` excludes it) | `docker-compose.test.yml` backends; `llm/` also a live LLM |
-| `tests/accuracy/` | no | nothing — it is empty |
+| `tests/accuracy/` | no (`-m` excludes it) | a live LLM for the test module; `scoring.py`/`corpus.py` need nothing |
 
 `tests/compliance/` is the one that breaks the pattern and the one worth
 understanding first. It is a *library*, not a suite: `graph_store.py`,
@@ -158,12 +158,26 @@ that "an event 90 seconds ago" is a number rather than a 90-second test.
 packaging check rather than a backend one. Only the `llm/` subset needs a live
 model; the rest needs containers.
 
-`tests/accuracy/` contains `__init__.py` and nothing else. It collects zero
-tests, and the `accuracy` marker is declared and unused. Do not read it as an
-extraction-quality suite — that suite does not exist. Tracked as **B12**; the
-choice is to build it or delete both the package and the marker, and until
-then no claim about measured extraction quality is backed by anything in this
-repo.
+`tests/accuracy/` is the only suite that asks whether extraction finds the
+**right** things, as opposed to whether the library is correct about what it
+found. It is three parts, and the split is the reason it exists at all:
+`scoring.py` (precision/recall/F1, pure, no model), `corpus.py` + `corpus.yaml`
+(five hand-graded documents), and `test_extraction_accuracy.py` (marked
+`accuracy`, needs `KG_LLM_BASE_URL`).
+
+**The first two run in the commit gate**, through `tests/unit/accuracy/`, and
+that is what makes any live number believable: an accuracy suite fails silently
+in two directions that both look like results — measuring nothing reports
+F1 = 0.0 and reads as a bad model, comparing the corpus against itself reports
+1.0 and reads as a good one. `test_harness.py` runs the whole pipeline against
+`FakeLlmProvider` and pins both before the live suite is trusted, which is the
+mutation runbook's "a zero-survivor run means the harness is broken" applied to
+a different measurement.
+
+The corpus is a **starter, not a benchmark**: five short documents graded by one
+person answer "is extraction working" and not "how well". The floors in the
+test module are set where a regression trips them, not where a good model sits.
+Growing it is tracked in `BACKLOG.md`.
 
 ### `tests/integration/`
 
@@ -250,43 +264,52 @@ and `docs/how-to/implement-a-store-adapter.md` for adding a backend.
 
 ### `tests/accuracy/`
 
-**Empty.** The package contains `__init__.py` and nothing else; no module in
-the repo carries `pytest.mark.accuracy`, and `uv run pytest -m accuracy
-tests/accuracy/` collects **zero tests**. The `accuracy` marker is declared in
-`pyproject.toml` and used by nothing except the `addopts` deselection that
-excludes it.
+Three modules and one data file, split by what each needs:
 
-Its own docstring still describes a suite that measures precision, recall and
-F1 against documentation samples via a running Ollama instance. **That
-description is stale and should not be believed.** Slice 6 deleted
-`tests/accuracy/test_extraction_accuracy.py` — the only file that ever carried
-the marker — because it exercised `OllamaExtractionService`, which no longer
-exists. Nothing replaced it.
+| Path | Needs | Runs |
+|---|---|---|
+| `scoring.py` | nothing | commit gate, via `tests/unit/accuracy/test_scoring.py` |
+| `corpus.py`, `corpus.yaml` | nothing | commit gate, via `tests/unit/accuracy/test_harness.py` |
+| `runner.py` | an `LlmProvider` — either one | both |
+| `test_extraction_accuracy.py` | a **live model** | `-m accuracy` only |
 
-So: **no claim about this library's extraction quality is backed by anything in
-this repo.** Every other tree here checks that the library is *correct* —
-invariants hold, adapters agree on their ports, events replay to the same
-graph. Correct and accurate are different properties, and extraction can
-satisfy every invariant in `tests/unit/` while finding entities that are simply
-wrong. There is currently no measurement that would notice.
+**The split is the whole design.** "Measure extraction accuracy" reads as one
+job needing a model, a corpus and a metric at once, and that reading is why the
+suite did not exist for eleven slices. It is two jobs: deciding whether a
+predicted entity *is* an expected one, which needs nothing and is where a wrong
+answer is silent, and getting predictions, which needs everything.
 
-Tracked as **B12**, which names the four pieces this would take and notes that
-the environmental blocker is gone — `tests/integration/llm/` talks to a real
-model and is green, so what is missing is the graded corpus rather than a
-place to run it. Two things follow for anyone working near here:
+`runner.py` takes an `LlmProvider` rather than building one, which is what lets
+one code path serve both — `FakeLlmProvider` in the gate, a real endpoint under
+the marker.
 
-- **Do not cite an accuracy number.** If a prompt, threshold or model choice is
-  justified by "it extracts better", that justification is currently
-  unmeasured. Say so, in `BACKLOG.md`, rather than implying a suite backs it.
-- **The end state is a decision, not a default.** Either build the suite or
-  delete both the package and the marker. Leaving an empty package named after
-  a guarantee is the worse of the three options, because it reads from the
-  directory listing as coverage that exists.
+**Prove the harness before believing the number.** An accuracy suite fails
+silently in two directions and both look like results: measuring nothing
+reports F1 = 0.0 and reads as a bad model, comparing the corpus against itself
+reports 1.0 and reads as a good one. `test_harness.py` runs the pipeline
+against a scripted provider and pins an exactly-right answer, an empty answer
+and a *wrong* answer. The third is load-bearing — a self-comparison cannot
+produce a false positive no matter what the model says, so that assertion is
+what distinguishes a measurement from a tautology.
 
-The suite's original skip probe is also the origin of the rule stated for
-`tests/integration/` above: it probed Ollama's *model listing*, the model was
-listed but would not load, and eight tests failed instead of skipping. If this
-package is ever rebuilt, its probe must require a real completion.
+Three conventions to preserve:
+
+- **The corpus is a starter, not a benchmark.** Five short documents graded by
+  one person. `corpus.yaml` carries the grading rules; the first one is the one
+  a second grader gets wrong — *grade what the text states, not what is true*.
+- **`empty-negative` grades nothing on purpose.** Every other document rewards
+  finding things, so a model returning entities for everything scores well on
+  all of them. That one makes recall vacuous and leaves precision as the only
+  movable metric, which is what detects hallucination. Giving it a graded
+  entity would silently retire the only test of that kind.
+- **Floors, not targets.** The thresholds are set where a regression trips
+  them, not where the current model sits. A floor tuned to one endpoint is a
+  test of that endpoint.
+
+Its skip probe runs a real extraction and requires a real entity back. The
+predecessor suite probed Ollama's *model list*, the model was listed, the
+weights would not load, and eight tests failed instead of skipping — which is
+the origin of the probe rule now stated for every integration suite here.
 
 ## Port compliance suites
 
@@ -466,7 +489,7 @@ real work:
 |---|---|---|
 | `integration` | every module under `tests/integration/` | **load-bearing** — it is what keeps real backends out of the commit gate |
 | `unit` | seven tests in `tests/unit/test_jellyfish_import.py` | decorative; nothing selects on it |
-| `accuracy` | nothing | declared and unused (**B12**) |
+| `accuracy` | `tests/accuracy/test_extraction_accuracy.py` | **load-bearing** — keeps a live-model suite out of the commit gate |
 | `slow` | nothing | declared and unused |
 
 The deselection is:
@@ -503,13 +526,17 @@ Three things follow that are easy to get wrong:
   test in `tests/unit/` is already in the gate. The seven existing uses are
   historical.
 
-`accuracy` and `slow` naming nothing is the state to resolve rather than
-preserve. `accuracy` is tracked as **B12** (see `tests/accuracy/` above): the
-suite it was declared for was deleted, and the marker plus the empty package
-should either be rebuilt or removed together. `slow` has never been applied;
-adding a test that deserves it is fine, but do not deselect on a marker no
-test carries — an `-m "not slow"` run today is indistinguishable from a plain
-one, which is the vacuous-check shape this repo has been bitten by elsewhere.
+**`slow` names nothing, and that is the state to resolve rather than preserve.**
+It has never been applied; adding a test that deserves it is fine, but do not
+deselect on a marker no test carries — an `-m "not slow"` run today is
+indistinguishable from a plain one, which is the vacuous-check shape this repo
+has been bitten by elsewhere.
+
+`accuracy` was in the same position and is not any more: the suite it was
+declared for had been deleted, leaving a marker selecting nothing and an empty
+package that read from a directory listing as coverage. B12 called that the
+worst of the three available states, and it was resolved by building the suite
+rather than by deleting the marker.
 
 Selection interacts with the parallelism and multi-invocation constraints
 below: `-m integration` alone still cannot be combined with the default run,
@@ -881,8 +908,15 @@ Three constraints, each argued above rather than here:
 - **The `llm/` subset needs a live model**, pointed at with `KG_LLM_BASE_URL`
   and `KG_LLM_MODEL`; the rest needs only the containers.
 
-There is no accuracy suite to run. `-m accuracy tests/accuracy/` collects zero
-tests — see `tests/accuracy/` above and **B12**.
+The accuracy suite needs a live model and is selected the same way:
+
+```bash
+KG_LLM_BASE_URL=http://host:8080/v1 uv run pytest -m accuracy tests/accuracy/
+```
+
+Its scorer and corpus need nothing and are already covered by the commit gate
+through `tests/unit/accuracy/` — see `tests/accuracy/` above for why that
+split is what makes a live number believable.
 
 See `docs/how-to/run-integration-and-mutation-suites.md` for the full runbook,
 including mutation testing, and `docs/reference/quality-gates.md` for what the
