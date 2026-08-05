@@ -1415,43 +1415,6 @@ answer — the same trap documented for `max_examples` in
 Until it is decided: a `FlakyFailure` naming a *deadline* is this entry. A
 `FlakyFailure` naming anything else is a real bug and must not be retried.
 
-### B63. Six `# nosec` markers, and nothing fails when one stops applying
-
-**Found by the rename sweep, which is the only reason it was found at all.**
-The `bandit` pre-commit hook declares `types: [python]` and takes filenames,
-so it scans **only the files a commit touches**. No commit before the
-`redstring` rename had touched all of `src/`, so a whole-tree bandit run had
-never happened locally — the hook had been green for eleven slices without
-ever having seen most of the package. The rename touched every file and
-surfaced eight findings at once, all of them pre-existing:
-
-| Finding | Site | Disposition |
-|---|---|---|
-| B101 assert_used ×2 | `llm/adapters/fake.py` | **Fixed** — `raise AssertionError` instead, so it survives `python -O` |
-| B311 random | `llm/retry.py:172` | `# nosec B311` — retry jitter, no secret |
-| B608 SQL ×5 | `vector/adapters/pgvector.py` | `# nosec B608` — only `self._table` is interpolated and `_IDENTIFIER` proves it a bare identifier |
-
-The six suppressions are now an **exemption list with no staleness check**,
-which is the shape CLAUDE.md warns about: bandit does not report an unused
-`# nosec`, so a marker outliving its justification passes silently and hides
-a real finding at that line. The B608 five are the ones that matter — delete
-`_IDENTIFIER` and injection goes unreported.
-
-The B608 markers are partly covered by accident:
-`test_a_table_name_that_is_not_a_bare_identifier_is_rejected` includes a
-`"; DROP TABLE users; --` case, so removing the guard fails a test rather
-than only weakening a comment. Nothing equivalent guards the B311 marker,
-and nothing checks that any of the six still sits on a line bandit would
-flag.
-
-To fix: a test that parses `src/` for `# nosec` markers and asserts each one
-sits on a line that a bandit run **with suppressions disabled** actually
-reports — the same construction as
-`tests/unit/graph/test_compliance_coverage.py` and the empty-exemption-list
-guards in ADR 0014. Until then, CI running `bandit -r src/` over the whole
-tree (added with the release workflow) is what stops this recurring; the
-per-file hook alone demonstrably does not.
-
 ### B60. Packaging metadata beyond the licence — closed except for B61
 
 **Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
