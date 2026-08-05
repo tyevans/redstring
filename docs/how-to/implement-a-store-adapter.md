@@ -172,10 +172,16 @@ blocking-key reads. Two behaviours are easy to miss on a first pass:
 
 - **Dangling edges are not permitted.** `upsert_relationship` raises
   `MissingEntityError` when either endpoint is absent from that tenant, and
-  `upsert_relationships` is *not* atomic: a failure part-way through leaves
-  earlier elements written. Do not make your adapter more permissive than the
-  port — an adapter that accepts a dangling edge is useless as a reference,
-  because tests written against it pass there and fail on Neo4j.
+  `upsert_relationships` is **atomic**: a failure writes nothing at all, not
+  even the elements before the offending one. Validate the whole batch before
+  writing any of it — Neo4j does this in one query because per-element round
+  trips would be the expensive way to write it, and the in-memory adapter
+  makes two passes. This used to be the opposite, and the weaker promise is
+  what let those two adapters differ in a way nothing asserted; see
+  [ADR 0018](../adr/0018-batch-relationship-writes-are-atomic.md). Do not make
+  your adapter more permissive than the port — an adapter that accepts a
+  dangling edge is useless as a reference, because tests written against it
+  pass there and fail on Neo4j.
 - **There is no `delete_entity`, and there will not be one.** A merged entity
   survives as an alias node. `delete_relationship` and `delete_by_tenant` are
   the only removals.

@@ -355,9 +355,11 @@ under a provisional name (branch name or date suffix), and allocate the number
 at merge time after checking the ADR directory on current `main`. Before
 merging any branch that adds an ADR, re-check the number.
 
-The directory is **`docs/adr/`**, singular — not `docs/adrs/`. It holds
-`0001` through `0014`, so a new ADR is numbered against the highest one
-there:
+The directory is **`docs/adr/`**, singular — not `docs/adrs/`. A new ADR is
+numbered against the highest one there, which you find by asking rather than
+by reading a number out of this file — the count written here went stale
+within three ADRs of being written, which is §5 catching the section that
+warns about §5:
 
 ```
 git ls-tree --name-only main docs/adr/ | sort | tail -1

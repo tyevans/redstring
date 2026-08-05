@@ -50,8 +50,12 @@ No work is complete if the decisions it made or changed are not documented:
    `.claude/rules/recurring-defects.md` §5.
 5. **ADR numbers are allocated at merge, not at drafting.** Draft under a
    provisional name; re-check `docs/adr/` on current `main` before merging.
-   ADRs `0001` through `0014` exist, so the next number is allocated against
-   the highest already on `main` at the moment the work merges — not against
+   **Do not trust a range written here** -- run the command in
+   `recurring-defects.md` §6 instead. This sentence has already gone stale
+   once, naming `0014` as the highest while `0015` through `0017` were on
+   `main`, which is §5 happening to the rule that warns about §5. The number
+   is allocated against the highest already on `main` at the moment the work
+   merges — not against
    the highest you saw when you started drafting. Parallel branches routinely
    draft the same next number; the one that merges second renumbers.
 
@@ -81,6 +85,10 @@ know what is already decided, so here is the set, by what each one settles:
 | [`0012` no ANN index in a multi-tenant vector store](../../docs/adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) | Why pgvector carries no `hnsw`/`ivfflat` index, and what an index does to `tenant_id`. |
 | [`0013` resilience behind the cache port](../../docs/adr/0013-resilience-behind-the-cache-port.md) | Retry, rate limiting and circuit breaking live in `llm/` over `Cache`, not in the pipeline. |
 | [`0014` exemption lists are empty and must stay falsifiable](../../docs/adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md) | An exemption list needs a test that its entries still match something; an emptied *exclusion* is deleted rather than kept. |
+| [`0015` consolidation gets a composed entry point](../../docs/adr/0015-consolidation-gets-a-composed-entry-point.md) | Consolidation's entry point, and why an absent graph signal stopped meaning zero. |
+| [`0016` `GraphStore` is five capabilities](../../docs/adr/0016-graph-store-is-five-capabilities.md) | The port is five capability protocols, composed, rather than one flat interface. |
+| [`0017` the embedding provider port](../../docs/adr/0017-the-embedding-provider-port.md) | `EmbeddingProvider` is a port and declares its own dimension. |
+| [`0018` batch relationship writes are atomic](../../docs/adr/0018-batch-relationship-writes-are-atomic.md) | `upsert_relationships` is all-or-nothing; what the two adapters disagreed about before, and what a new backend now owes. |
 
 Anything touching an event payload, a store port, consolidation, temporal
 relations, or `__all__` has a related ADR by construction — say for each one

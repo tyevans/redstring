@@ -169,32 +169,6 @@ problem is currently worth:
 slice 6, when extraction actually emits." Slice 6 happened and did not take it
 up. It is open on its own merits now, not scheduled.
 
-### B10g. `upsert_relationships` is atomic in Neo4j, where the port permits partial writes
-
-`ports/graph_store.py::upsert_relationships` says a `MissingEntityError`
-part-way through **leaves earlier elements written**.
-`graph/adapters/memory.py` behaves that way.
-`graph/adapters/neo4j.py::upsert_relationships` validates every endpoint in one
-query before writing anything, so on a dangling edge it writes **nothing** --
-strictly stronger than the contract.
-
-Nothing pins either behaviour: the compliance suite asserts that the error is
-raised, never what survived it, so the two adapters differ on an axis no test
-covers. That is exactly the kind of difference that gets depended on by
-accident.
-
-**What a caller may rely on:** that `MissingEntityError` was raised and that
-the batch is not *fully* written. **What a caller may not rely on:** which
-of the earlier elements landed. Code that retries the whole batch after the
-error is correct against both adapters; code that skips the prefix it assumes
-was written is correct against neither.
-
-Resolving it means choosing: pin the weak contract in the compliance suite
-(and accept that Neo4j is gratuitously stronger), or strengthen the port to
-all-or-nothing (and make the in-memory adapter validate up front, which is a
-few lines). The second is the better contract for replay, and it is cheap
-because the adapter that would find it hard already does it.
-
 ### B35. `GraphProjection.reset()` raises instead of truncating
 
 `projections/graph.py` and `projections/vector.py` --

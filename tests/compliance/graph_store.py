@@ -564,6 +564,54 @@ class GraphStoreCompliance:
                 ]
             )
 
+    async def test_a_rejected_batch_writes_nothing_at_all(self, store: GraphStore) -> None:
+        """All-or-nothing, including the elements *before* the bad one.
+
+        The port used to permit a partial write and say so, which left the two
+        adapters differing on an axis nothing asserted: Neo4j validates every
+        endpoint in one query and so wrote nothing, while the in-memory
+        reference wrote the prefix. Both passed, because the test above stops
+        at "it raised" (BACKLOG B10g).
+
+        Note where the good edge is: **first**. A batch whose only element is
+        the bad one cannot tell a partial write from an atomic one, which is
+        why the divergence survived a test that looked like it covered this.
+        """
+        tenant = uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        good = _example_relationship(tenant, source=a.id, target=b.id)
+
+        with pytest.raises(MissingEntityError):
+            await store.upsert_relationships(
+                [good, _example_relationship(tenant, source=a.id, target=uuid4())]
+            )
+
+        assert await store.get_relationships(a.id, tenant) == []
+        assert await store.neighbors(a.id, tenant) == []
+
+    async def test_a_batch_that_fails_leaves_an_earlier_batch_alone(
+        self, store: GraphStore
+    ) -> None:
+        """Atomicity is about *this* call, not about the store.
+
+        Rolling back further than the failed batch would be a different and
+        much worse bug, and an implementation that cleared the tenant's edges
+        on failure would pass the test above.
+        """
+        tenant = uuid4()
+        a, b = _example_entity(tenant=tenant), _example_entity(tenant=tenant)
+        await store.upsert_entities([a, b])
+        established = _example_relationship(tenant, source=a.id, target=b.id)
+        await store.upsert_relationships([established])
+
+        with pytest.raises(MissingEntityError):
+            await store.upsert_relationships(
+                [_example_relationship(tenant, source=b.id, target=uuid4())]
+            )
+
+        assert [r.id for r in await store.get_relationships(a.id, tenant)] == [established.id]
+
     async def test_negative_depth_is_rejected(self, store: GraphStore) -> None:
         with pytest.raises(ValueError, match="depth"):
             await store.neighbors(uuid4(), uuid4(), depth=-1)

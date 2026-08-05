@@ -253,11 +253,27 @@ class RelationshipStore(Protocol):
         ...
 
     async def upsert_relationships(self, relationships: Sequence[Relationship]) -> None:
-        """Upsert many relationships. Equivalent to `upsert_relationship` each.
+        """Upsert many relationships, **atomically**.
 
-        Not atomic: a `MissingEntityError` part-way through leaves earlier
-        elements written. Callers replaying an event log get the same final
-        state on retry because every element is individually idempotent.
+        Either every element is written or none is. A `MissingEntityError`
+        leaves the store exactly as it was before the call -- in particular
+        the elements *before* the offending one are not written.
+
+        This used to say the opposite, and the weaker promise is what made the
+        two adapters differ: Neo4j validates every endpoint in one query and so
+        always wrote nothing, while the in-memory reference wrote the prefix.
+        Nothing failed, because the compliance suite asserted the error and
+        never what survived it (BACKLOG B10g). Tightening rather than pinning
+        the weak version was the cheaper direction *and* the better contract --
+        the adapter that would find atomicity hard already had it, and a
+        replaying caller that has to retry the whole batch anyway gains nothing
+        from a defined prefix.
+
+        Atomicity is scoped to this call. A failure here does not disturb
+        anything a previous call wrote.
+
+        Every element remains individually idempotent, so a caller replaying an
+        event log reaches the same final state on retry either way.
         """
         ...
 
