@@ -57,7 +57,9 @@ class RedisCache:
         try:
             import redis.asyncio as redis_asyncio
         except ImportError as error:  # pragma: no cover -- needs redis absent
-            raise ImportError("RedisCache.from_url needs the `redis` package") from error
+            raise ImportError(
+                "RedisCache.from_url needs redis: install `redstring[redis]`"
+            ) from error
 
         # redis-py ships no inline annotations for `from_url`.
         client: Any = redis_asyncio.from_url(  # type: ignore[no-untyped-call]

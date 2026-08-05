@@ -25,11 +25,15 @@ these docs.
 |---|---|---|
 | `llm` | `LangChainLlmProvider`, via `langchain-core` and `langchain-openai` | you want a real model rather than `FakeLlmProvider` |
 | `neo4j` | `Neo4jGraphStore`, via the `neo4j` driver | you want the graph in Neo4j rather than in memory |
-| `all` | both of the above | — |
+| `pgvector` | `PgVectorStore`, via `asyncpg` | you want vectors in Postgres rather than in memory |
+| `redis` | `RedisCache`, via `redis[hiredis]` | you want the model cache shared between processes |
+| `all` | all four | — |
 
 ```bash
 uv add "redstring[llm]"
 uv add "redstring[neo4j]"
+uv add "redstring[pgvector]"
+uv add "redstring[redis]"
 uv add "redstring[all]"
 ```
 
@@ -56,29 +60,36 @@ The dependency ranges are deliberately wide (`langchain-core>=0.3,<2`) rather
 than pinned. That is what the `LlmProvider` port is for: a breaking change
 upstream touches `llm/adapters/langchain.py` and nothing else.
 
-### pgvector needs no extra
+### Every adapter module imports without its package
 
-`PgVectorStore` uses `asyncpg`, which is a **core** dependency. What it needs
-is a Postgres with the `vector` extension available, not a different install.
-See [Use the pgvector store](how-to/use-the-pgvector-store.md).
+The four adapter modules are importable on a base install; only the
+constructor that builds its own connection needs the package. So
+`redstring/__init__.py` can export the store types without dragging a
+Postgres driver in, and a caller who never touches `PgVectorStore.connect`
+never needs `asyncpg`.
 
-## Two dependencies that will surprise you
+Reaching one without its extra is an `ImportError` naming the extra, not a
+`ModuleNotFoundError` naming a package you did not ask for:
 
-Both are recorded in `BACKLOG.md`, and both are live questions rather than
-settled ones.
+```
+PgVectorStore.connect needs asyncpg: install `redstring[pgvector]`
+RedisCache.from_url needs redis: install `redstring[redis]`
+```
 
-**`redis` is core, not an extra.** `dependencies` carries
-`redis[hiredis]>=5.3,<6`, so `redstring.llm.cache.redis.RedisCache` works on
-the base install. Its only user is that one adapter, which imports
-`redis.asyncio` inside a function — so moving it behind an extra is proposed
-(B61) and blocked on a pin conflict: `eventsource-py[all]` wants
-`redis>=8.0,<9.0`, which this range excludes (B38).
+`tests/unit/test_optional_dependency_guards.py` asserts both, by putting
+`None` into `sys.modules` — which is the only way to test it, since everyone
+working on this repository has every extra installed and would never see the
+failure.
 
-**`eventsource-py` is core too, and used to be an extra.** `redstring`'s
-`__init__` exports `build_graph`, `Document`, `DocumentExtracted` and both
-projections, and every one of those needs it — a public API that fails to
-import without an extra is not a public API. The `<0.11` cap is deliberate:
-that library is pre-1.0 and its entire API changed between 0.5 and 0.9.
+### One dependency is core and will stay that way
+
+`eventsource-py`. `redstring.__init__` exports `Document`,
+`DocumentExtracted` and both projections, and every one of those needs it —
+a public API that fails to import without an extra is not a public API. The
+events are the write model, not an optional backend.
+
+The `<0.11` cap is deliberate: that library is pre-1.0 and its entire API
+changed between 0.5 and 0.9.
 
 ## Verifying the install
 

@@ -1331,7 +1331,7 @@ suites run, not whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
-### B60. Packaging metadata beyond the licence — closed except for B61
+### B60. Packaging metadata beyond the licence — closed
 
 **Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
 Changelog), `keywords`, `maintainers`, and eleven trove `classifiers`
@@ -1350,66 +1350,11 @@ where annotations are read directly. `tests/integration/test_wheel_contents.py`
 now asserts the marker is present in an installed wheel, and was proved red
 by removing it.
 
-What remains is **B61's dependency narrowing**, which is the one packaging
-item genuinely cheaper before a release than after — `dependencies` is part
-of the published metadata for 0.1.0 and narrowing it later is a breaking
-change for anyone who installed under the wider set. A CHANGELOG is B22.
-
-### B61. Two of the remaining seven core dependencies belong behind extras
-
-**The dead half is done.** `numpy` and `httpx` are out of `dependencies`:
-`numpy` deleted outright (nothing anywhere imports it) and `httpx` moved to
-the `dev` extra, where its one real user lives —
-`tests/integration/llm/test_live_endpoint.py` probes a model server with it
-before the suite talks to it.
-
-Measured rather than grepped, to the standard this entry set for itself: a
-wheel built, installed into a venv where neither package is present, and then
-asked to build a graph, run a vector search and render a bundled schema. All
-three work. `numpy` was pulling 2.5.1 — a compiled dependency larger than
-redstring itself — for no importer at all.
-
-**What remains** are the two that are used, function-locally, by one adapter
-each:
-
-| Dependency | First-party importers in `src/` | Verdict |
-|---|---|---|
-| `asyncpg>=0.31.0` | `vector/adapters/pgvector.py`, function-local | Belongs behind a `pgvector` extra |
-| `redis[hiredis]>=5.3,<6` | `llm/cache/redis.py`, function-local | Belongs behind a `redis` extra |
-
-With `numpy` and `httpx` uninstalled, `import redstring` succeeds, all 62
-exported names resolve, and `domain_system_prompt("news_journalism")` renders.
-With `asyncpg`, `redis` and `hiredis` also uninstalled, `import redstring`
-still succeeds **and so do
-`from redstring.vector.adapters.pgvector import PgVectorStore` and
-`from redstring.llm.cache.redis import RedisCache`** — both adapters keep
-their third-party imports inside functions, which is what makes the extras
-split free.
-
-So the README's claim that the base install is "in-memory adapters, the fake
-provider" is true of the *code* and false of the *install*: it currently drags
-a Postgres driver, a Redis client with a C extension, and two libraries with no
-user at all.
-
-**Why this is worth doing before `0.1.0` rather than after.** Narrowing a
-dependency set post-release breaks environments that were relying on the
-transitive install; doing it now costs nothing because nothing depends on it
-yet. The `redis` move also interacts with **B38**: `redis` being a *direct*
-dependency is precisely what blocks `eventsource-py[all]`, so moving it behind
-an extra may dissolve that conflict rather than requiring the pin to be
-widened. Check that when doing this.
-
-Use `uv remove` and `uv add --optional`, never a hand edit — and re-sync with
-`--all-extras` afterwards, because `uv remove` re-resolves and will silently
-narrow the venv (B45).
-
-The dead half went on its own, as this entry suggested. It surfaced a second
-time through Dependabot, which opened a PR raising `httpx`'s floor — a bump to
-a dependency with no importer, which is what prompted actually checking rather
-than deferring again. Note that `httpx`'s only trace in `src/` had been a
-module docstring describing "Ollama extraction" and importing
-`redstring.extraction.retry`, a path that moved to `redstring.llm.retry` in
-slice 6.
+B61's dependency narrowing is done too, and it was the item genuinely
+cheaper before a release than after: `dependencies` is published metadata for
+0.1.0, and narrowing it in 0.2 would break anyone who had installed under the
+wider set. Every backend is behind an extra now. A CHANGELOG is B22, also
+closed.
 
 ### B38. There is no `eventsourcing` extra any more, and the `redis` pin is why `[all]` cannot come back
 
@@ -1421,16 +1366,27 @@ exists.** It said `pyproject.toml` declares
 needs it, and an API that fails to import without an extra is not one. The
 extras today are `neo4j`, `llm`, `all` and `dev`.
 
-What survives is the underlying conflict. The dependency used to be
-`eventsource-py[all]`, and the `[all]` was dropped because it cannot resolve:
+**The conflict is now conditional rather than unconditional, which is most of
+the way to gone.** `redis` moved behind a `redis` extra when B61 closed, so a
+base install of redstring declares no `redis` range at all and
+`eventsource-py[all]` resolves beside it. The clash only reappears for
+someone installing `redstring[redis]` *and* `eventsource-py[all]`:
 
 ```
-eventsource-py[all]>=0.9.1  requires  redis>=8.0,<9.0
-redstring                  requires  redis[hiredis]>=5.3,<6
+eventsource-py[all]>=0.9.1   requires  redis>=8.0,<9.0
+redstring[redis]             requires  redis[hiredis]>=5.3,<6
 ```
 
-`redis` is a direct dependency here, so this is a real conflict rather than a
-lockfile accident. It was for `services/embedding_cache.py` and `cache.py`
+What is left is the `<6` cap, and the honest reason for it is **absence of
+evidence, not a known incompatibility**: `RedisCache` is the one adapter in
+this repository its port's compliance suite has never been run against
+(B41), so nothing here can say whether a redis 6/7/8 client still returns
+`str` rather than `bytes` — which is precisely the divergence
+`tests/compliance/cache.py` was written to catch.
+
+So the order is: **B41 first, then widen.** Running `CacheCompliance` against
+a real Redis is what makes the cap a measurement instead of a guess, and it
+is the same work either way. It was for `services/embedding_cache.py` and `cache.py`
 too, both since deleted -- so the conflict now rests on **`llm/cache/redis.py`
 alone**, which imports `redis.asyncio` inside a function and takes an
 already-built client. Widening the pin is therefore cheaper to verify than
