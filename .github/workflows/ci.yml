@@ -11,11 +11,15 @@
 # 47 phantom mypy errors in untouched files.
 #
 # There is deliberately no `--locked`: `uv.lock` is not committed (it is in
-# `.gitignore`), which is a defensible choice for a library -- resolving fresh
-# is how you find out that a dependency's new release broke you, rather than
-# finding out from a user. The cost is that tool versions float above their
-# floors, so a CI failure can come from a new ruff or mypy rather than from
-# the diff. See BACKLOG B65.
+# `.gitignore`), which is a defensible choice for a library -- resolving
+# runtime dependencies fresh is how you find out that a new `pydantic` broke
+# you, rather than finding out from a user.
+#
+# That argument covers runtime dependencies only. The `dev` and `docs` extras
+# are **pinned exactly** in `pyproject.toml`, because a floating tool version
+# means this gate can change under a branch that changed nothing -- which is
+# not hypothetical here: a ruff release once turned five unrelated Dependabot
+# PRs red at once, each on a file its diff had not touched.
 #
 # Third-party actions are pinned to a full commit SHA, with the tag in a
 # trailing comment. A tag is a mutable pointer: whoever controls the action

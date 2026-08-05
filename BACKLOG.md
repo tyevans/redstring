@@ -1331,40 +1331,6 @@ suites run, not whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
-### B65. `uv.lock` is gitignored, so CI cannot pin its own tooling
-
-`.gitignore` carries `uv.lock`, which is a defensible choice for a library:
-resolving fresh on every CI run is how you find out that a dependency's new
-release broke you, rather than finding out from a user six weeks later. It is
-deliberate and this entry is not arguing to reverse it blindly.
-
-What it costs is that `.github/workflows/ci.yml` cannot use
-`uv sync --all-extras --locked`, so **every tool version floats above its
-floor**. `ruff>=0.14` and `mypy>=2.3.0` mean a CI run can fail on a rule that
-did not exist when the branch was written, in a file the branch did not touch,
-while the same commit passes the pre-commit gate locally against whatever the
-contributor's venv resolved months ago. The failure names the diff and is not
-about the diff.
-
-Three ways out, in increasing cost:
-
-1. **Commit `uv.lock` and use `--locked`.** Tool and dependency versions
-   become explicit and reviewable, and `--locked` turns a stale lock into a
-   CI failure rather than silent drift. Loses the free early warning about
-   upstream breakage — recover it with a scheduled job that resolves fresh
-   and opens an issue, which is the arrangement most libraries land on.
-2. **Pin only the tooling.** Exact `==` pins in the `dev` extra with
-   Dependabot raising them; leave the runtime dependency ranges wide, which
-   is where the fresh-resolution signal actually matters.
-3. **Leave it and accept the flake.** Cheapest today, and the cost lands on
-   whoever is unlucky rather than on whoever decides.
-
-(2) is probably right: the fresh-resolution argument is about `pydantic` and
-`eventsource-py`, not about `ruff`, and pinning the tooling gives up nothing
-the argument was defending. Note that the `docs` extra has the same exposure —
-`mkdocs-material>=9.5` floating means the site can change appearance between
-two builds of an unchanged tree.
-
 ### B60. Packaging metadata beyond the licence — closed except for B61
 
 **Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
