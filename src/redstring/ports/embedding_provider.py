@@ -23,6 +23,20 @@ and forgetting to re-expand. The compliance suite checks it with inputs that
 differ from each other, because a suite that embeds `["a", "a", "a"]` cannot
 see a reordering.
 
+## Vectors are reproducible in direction, not bit-for-bit
+
+The same text embedded twice gives the *same* vector in the sense that matters
+-- cosine above 0.99 -- and not an identical one. Measured against llama.cpp
+behind `nomic-embed-text`: embedding a string alone and again inside a batch of
+four differs by up to `4e-3` per component, because floating-point accumulation
+depends on how the batch was packed. Short inputs came back bit-identical and
+long ones did not.
+
+So a caller must not compare vectors with `==`, and must not store a hash of
+one as an identity. The compliance suite states the contract this way for the
+same reason: an earlier version asserted equality, passed against a hash and a
+stub, and failed on its first contact with a real server.
+
 ## Dimension is declared, not discovered
 
 `dimension` is a property here and on `VectorStore`, and the composition point

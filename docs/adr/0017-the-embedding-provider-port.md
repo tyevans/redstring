@@ -134,6 +134,25 @@ reason `FakeLlmProvider` is: a caller cannot write a test for their own
 pipeline without one, and the alternative is every downstream project writing
 the same hash-into-a-unit-vector by hand.
 
+**Reproducibility is directional, and the contract says so.** The port
+promises that the same text embeds to the same vector; it does *not* promise
+bit-identity, because no real backend provides it. Batch composition changes
+floating-point accumulation -- measured at up to `4e-3` per component against
+llama.cpp -- so the compliance suite compares by cosine above a stated
+threshold, with an explicit check that mismatched pairs fall far below it.
+
+That clause was wrong when this ADR was accepted. The suite asserted `==`, and
+it passed, because both adapters behind it at the time were exactly
+reproducible: a hash and a stub. The first run against a live endpoint failed
+two clauses. **The failure mode is worth recording because it is the inverse of
+the usual one** -- `recurring-defects.md` §1 warns about an in-memory reference
+being *more forgiving* than production, and this was a shared contract stricter
+than production can be. It is the more dangerous direction: the natural repair
+is an exemption for the real adapter, after which the suite describes the fake
+permanently. The fix was to weaken the shared claim exactly as far as the
+backend forces, which is the same move `tests/compliance/vector_store.py`
+already makes for float32 storage.
+
 **What this does not do.** It does not chunk for embedding: entity text is
 short and embedded whole. A document-level embedding, or a chunk-level one for
 retrieval, is a different feature over the same port and is not built. It also
