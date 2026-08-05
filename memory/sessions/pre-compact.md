@@ -1,21 +1,16 @@
 ## Pre-Compact Snapshot
-**Time**: 2026-08-04T05:12:15Z
+**Time**: 2026-08-05T07:19:04Z
 
 ### Recent Commits
-c1d43a5 Name the failure shape behind four of this project's test defects
-0d86a48 Settle the slice 4 deferrals with the evidence behind each
-cdd16d8 Record the unfinished mutation run as B10e
-2d1afcf Put the Neo4j adapter back inside the commit gate
-e3e9b92 Add the Neo4j GraphStore adapter
+c246f31 Release 0.2.0
+317e7a5 Compare embeddings by cosine: the contract was stricter than reality (#19)
+f87ba86 Mutation-test `composition.py` and add the `EmbeddingProvider` port (#18)
+f980fe3 Backlog sweep: doc-anchor gate, protected-branch release guard, accuracy suite, eventsource floor (#17)
+dbad339 Return to 0.1.0 after the TestPyPI rehearsal (#16)
 
 ### Working Tree
- D .claude/tackline/memory/sessions/2026-08-03T23-32-41Z.md
- M .claude/tackline/memory/sessions/last.md
-?? .claude/tackline/memory/sessions/2026-08-04T04-28-01Z.md
-?? .claude/tackline/memory/sessions/2026-08-04T04-36-06Z.md
-?? .claude/tackline/memory/sessions/2026-08-04T04-45-40Z.md
-?? .claude/tackline/memory/sessions/pre-compact.md
-?? memory/
+ M .claude/tackline/memory/sessions/pre-compact.md
+ M memory/sessions/pre-compact.md
 
 ### Open Questions
 (fill in before context is lost)

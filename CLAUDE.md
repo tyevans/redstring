@@ -525,8 +525,16 @@ with it — a stale layer diagram in binding instructions sends the next author
 to a package that does not exist.
 
 **`lint-imports` only sees first-party imports**, so it cannot catch a
-`langchain*` import appearing where it should not. That is what
-`tests/unit/llm/test_port_does_not_leak.py` is for — it parses every module
-under `src/` and fails on a third-party leak outside the adapter package.
-Any dependency the architecture deliberately confines to one module needs
-that second kind of check; the contract alone will not do it.
+`langchain*` or `neo4j` import appearing where it should not. That is what
+`tests/unit/test_dependencies_stay_confined.py` is for — it parses every module
+under `src/` and fails on a third-party leak outside the directory that library
+is confined to. It carries a **table**, currently four rows: `langchain*`/
+`openai` in `llm/adapters/`, `neo4j` in `graph/adapters/`, `asyncpg` in
+`vector/adapters/`, `redis` in `llm/cache/`.
+
+**A new third-party client adds a row, in the same commit.** Three of those
+four were confined by convention alone until slice 11, each correctly placed
+and each one commit from not being — which is `recurring-defects.md` §3 exactly:
+a rule that holds only because nobody has broken it is indistinguishable from
+no rule. Every row is guarded in both directions, so a row naming a directory
+that has stopped importing its library fails rather than passing forever.

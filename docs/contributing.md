@@ -149,9 +149,11 @@ point: decide where it sits, or argue the contract should change — which is an
 ADR.
 
 `lint-imports` only sees first-party imports, so it cannot catch a `langchain`
-import appearing where it should not. `tests/unit/llm/test_port_does_not_leak.py`
-is what covers that. Any dependency the architecture confines to one module
-needs that second kind of check.
+or `neo4j` import appearing where it should not.
+`tests/unit/test_dependencies_stay_confined.py` is what covers that: a table of
+four confined libraries and the one directory each may be imported from. **Add
+a row when you add a client** — it is the only thing keeping the driver out of
+`composition.py`.
 
 ## Architecture decisions
 

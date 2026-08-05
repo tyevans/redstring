@@ -400,7 +400,7 @@ error contract below stateable at all.
 
 ### The confinement is enforced, not advised
 
-`tests/unit/llm/test_port_does_not_leak.py` walks the AST of every module
+`tests/unit/test_dependencies_stay_confined.py` walks the AST of every module
 under `src/redstring` and fails on a `langchain*` import anywhere outside
 `llm/adapters/`. This is a separate gate because a leaked import is not a test
 failure, not a lint finding, and — decisively — not an import-linter
@@ -430,6 +430,25 @@ pass silently.
 
 Any dependency the architecture confines to a single module needs this second
 kind of check. The contract alone will not do it.
+
+> **Amendment (slice 11).** The paragraph immediately above was true, correct,
+> and **not applied to this ADR's own other port for three slices.** `Cache`
+> has a Redis adapter; `redis` was confined to `llm/cache/` by convention with
+> nothing checking it, and the same held for `neo4j` and `asyncpg`. The gate
+> generalised from one library to a four-row table, and the two self-guards
+> described above are now per-row — so a row naming a directory that has
+> stopped importing its library fails, rather than passing forever.
+>
+> Two names in this section are consequently historical:
+> `test_the_adapter_directory_really_does_import_langchain` is now
+> `test_the_permitted_directory_really_does_import_it`, parametrised, and the
+> module moved out of `tests/unit/llm/` because it is no longer about the LLM
+> port. The reasoning is unchanged; only its reach is.
+>
+> Worth recording that the prompt was **external**. `eventsource-py` 0.11.0
+> widened its own driver contract from one library to six, and reading its
+> changelog is what surfaced a gap three slices of local review had not — the
+> rule was written down here, correctly, and written down is not enforced.
 
 ### `model` is exposed as provenance, not as configuration
 

@@ -56,7 +56,20 @@ under **Removed** or **Changed**. See
   graded corpus. Five hand-graded documents — enough to catch a regression, not
   a benchmark, and it says so.
 
+- **Every third-party client is confined to one directory, and that is now
+  checked.** `langchain`/`openai`, `neo4j`, `asyncpg` and `redis` may each be
+  imported from exactly one place. Only the first was enforced; the other three
+  were correct by convention with nothing holding them there. This is internal,
+  but it is what keeps `import redstring` from pulling a driver in, so it
+  protects a promise the public surface makes.
+
 ### Fixed
+
+- **`eventsource-py` is now `>=0.10.0,<0.12`**, tested against 0.11.0. The
+  0.11.0 release renames `ports.readmodels.OptimisticLockError` to
+  `ReadModelVersionConflictError` — redstring uses no read models, so nothing
+  here changes and **the floor stays at 0.10.0**: it states what this library
+  needs, not what is newest. Both versions work.
 
 - **`eventsource-py` floor raised to `>=0.10.0`.** `0.1.0` declared `>=0.9.1`
   while `redstring.projections` forwards `retry_policy` and `tracer`, which

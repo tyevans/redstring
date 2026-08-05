@@ -1677,3 +1677,45 @@ newest release. A test that installs the declared floor into a temporary venv
 and constructs a projection would close it, and is the same shape as
 `test_wheel_contents.py` — slow, `integration`-marked, and the only kind of
 check that measures the claim rather than a proxy for it.
+
+**Update (slice 11).** That test now exists as
+`tests/integration/test_declared_floors_work.py`, and it covers
+`eventsource-py` only. **The general case is still open** — no other declared
+floor is proved, and each one is a separate `>=` that CI never resolves to.
+The cap also moved to `<0.12`, tested against 0.11.0; the floor deliberately
+did **not** move with it, because a floor states what the library needs and
+nothing here needs anything 0.11.0 added.
+
+### B71. The confined-dependency table is hand-kept, so a new driver is silent
+
+`tests/unit/test_dependencies_stay_confined.py` carries `CONFINEMENTS`, four
+rows naming a third-party client and the one directory it may be imported
+from. Every row is guarded in both directions — a row whose directory has
+stopped importing its library fails, and a leak outside it fails — so the rows
+that *exist* cannot rot.
+
+**What nothing catches is a fifth library with no row at all.** Add
+`uv add --optional graph some-driver`, import it from `composition.py`, and the
+suite stays green: the file only knows about what someone listed. That is
+`recurring-defects.md` §2 — the set of confined dependencies is declared in two
+places (`pyproject.toml`'s optional-dependency tables and this tuple) with
+nothing failing when they disagree — and it is the same shape the test itself
+exists to fix, one level up.
+
+The reason it was left: deriving the list from `pyproject.toml` is not the
+one-liner it looks like. `[project.optional-dependencies]` names
+*distributions* (`langchain-openai`, `neo4j`), not import names
+(`langchain_openai`, `neo4j`), and the mapping between them is only
+discoverable from installed package metadata (`importlib.metadata.packages_distributions()`),
+which needs the extra installed — the condition `--all-extras` exists to
+guarantee and that CLAUDE.md records losing a mutation run to. It also has no
+opinion about *which* directory a given distribution belongs in, so the
+directory column stays hand-written regardless; the derivable part is only
+"every optional distribution has a row", which is the half that matters.
+
+A cheaper 80% is a test asserting the set of top-level packages imported
+anywhere under `src/` and not in the stdlib and not first-party is a subset of
+the union of the table's `packages` plus a small allowed-everywhere set
+(`pydantic`, `eventsource`, `jellyfish`, `yaml`). That needs no metadata and
+fails the day an unlisted client appears. Worth doing before the fifth adapter,
+not after.

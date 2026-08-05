@@ -222,7 +222,7 @@ consequences to carry into any migration that touches this:
 - **`lint-imports` cannot see this one all the way.** The contract is over
   first-party packages, so a stray `from langchain_core...` in a non-adapter
   module is not a violation, not a lint finding, and not a test failure.
-  `tests/unit/llm/test_port_does_not_leak.py` parses every file under `src/`
+  `tests/unit/test_dependencies_stay_confined.py` parses every file under `src/`
   and fails on the leak. Any dependency the architecture confines to one
   directory needs that second, source-text check; the layer contract alone will
   not do it.
@@ -359,7 +359,7 @@ Two failure modes specific to this step:
 - **`lint-imports` sees only first-party imports.** A cross-layer dependency
   smuggled in as a third-party import — a `langchain*` import outside
   `llm/adapters/` — passes the contract silently.
-  `tests/unit/llm/test_port_does_not_leak.py` parses every module under `src/`
+  `tests/unit/test_dependencies_stay_confined.py` parses every module under `src/`
   and is what catches it. Any confinement the contract cannot express needs
   that second, source-text check written in the same slice.
 
@@ -1020,7 +1020,7 @@ of which pay off during a migration:
   layer?" at the point someone is about to add one back. Write the same when
   you dissolve a package.
 - **Name the check the contract cannot perform.** The `llm` comment ends by
-  pointing at `tests/unit/llm/test_port_does_not_leak.py`, because
+  pointing at `tests/unit/test_dependencies_stay_confined.py`, because
   import-linter cannot see third-party imports. Any confinement in the same
   shape gets the same pointer.
 

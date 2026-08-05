@@ -153,10 +153,12 @@ imported outside its adapter module:
 - `redstring.graph` re-exports nothing on purpose, so `import
   redstring.graph` does not pull the driver in — reaching an adapter is a
   deliberate act at the composition root.
-- `langchain*` may be imported only under `redstring/llm/adapters/`, and
-  `tests/unit/llm/test_port_does_not_leak.py` parses every module under
-  `src/` to enforce that. `lint-imports` cannot see it: the contract only
-  reasons about first-party imports.
+- Each third-party client may be imported only under one directory —
+  `langchain*`/`openai` under `redstring/llm/adapters/`, `neo4j` under
+  `graph/adapters/`, `asyncpg` under `vector/adapters/`, `redis` under
+  `llm/cache/` — and `tests/unit/test_dependencies_stay_confined.py` parses
+  every module under `src/` to enforce that. `lint-imports` cannot see it: the
+  contract only reasons about first-party imports.
 
 `LangChainLlmProvider.openai_compatible` defers its `langchain_openai` import
 to call time and re-raises a missing one as
@@ -494,9 +496,10 @@ round.
 What it enforces — `root_packages`, `containers`, `exhaustive = true` and the
 layer order — is in
 [import-linter contract](#import-linter-contract).
-It sees first-party imports only, so it cannot catch a `langchain` import
-appearing outside the adapter package; `tests/unit/llm/test_port_does_not_leak.py`
-is what covers that, and it runs in the hook below.
+It sees first-party imports only, so it cannot catch a `langchain` or `neo4j`
+import appearing outside the directory that library belongs in;
+`tests/unit/test_dependencies_stay_confined.py` is what covers that, and it
+runs in the hook below.
 
 ### `python scripts/coverage_ratchet.py`
 
@@ -1258,13 +1261,20 @@ That second key is a statement of what this tool can and cannot do for you.
 here can catch `import langchain_openai` appearing in
 `src/redstring/extraction/`. The layer rules keep `extraction` off
 `redstring.llm.adapters`; they say nothing about the package that adapter
-wraps. `tests/unit/llm/test_port_does_not_leak.py` is what covers the external
+wraps. `tests/unit/test_dependencies_stay_confined.py` is what covers the external
 half — it parses every module under `src/` and fails on a third-party leak
-outside the adapter package.
+outside the directory that library is confined to.
 
 The general rule: **any dependency the architecture deliberately confines to
 one module needs a second check of that kind.** The contract alone will not do
 it, and the gap is silent rather than loud.
+
+That rule went unapplied for three of the four confined clients until slice 11:
+`neo4j`, `asyncpg` and `redis` were each in the right place with nothing
+holding them there, while `langchain` alone was enforced. The prompt to
+generalise came from upstream — `eventsource-py` 0.11.0 widened its own Tier 0
+contract from `sqlalchemy` to six drivers, having noticed `redis` had been an
+optional extra since 0.5.0 with nothing asserting its absence.
 
 ### `containers` and layer names
 
