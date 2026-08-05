@@ -701,8 +701,8 @@ deliberate concession on the graph side.** Both are named
 assertions differ:
 
 ```python
-    assert len(read_methods()) >= 8              # graph
-    assert read_methods() == {"get", "search"}   # vector
+assert len(read_methods()) >= 8  # graph
+assert read_methods() == {"get", "search"}  # vector
 ```
 
 The exact form is strictly stronger, in a way that matters beyond vacuity. An

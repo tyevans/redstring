@@ -136,8 +136,8 @@ from datetime import UTC, datetime
 from redstring.domain.interval import Bounds
 
 window = Bounds(datetime(2023, 1, 1, tzinfo=UTC), datetime(2024, 1, 1, tzinfo=UTC))
-window.lower, window.upper   # the two fields
-lower, upper = window        # it is a tuple; unpack it if you prefer
+window.lower, window.upper  # the two fields
+lower, upper = window  # it is a tuple; unpack it if you prefer
 ```
 
 Three properties of a window, each of which decides an answer you will see
@@ -222,9 +222,9 @@ from datetime import UTC, datetime
 
 from redstring.domain.interval import Bounds
 
-up_to_2000 = Bounds(None, datetime(2000, 1, 1, tzinfo=UTC))   # everything before 2000
-from_2000 = Bounds(datetime(2000, 1, 1, tzinfo=UTC), None)    # 2000 onwards
-everything = Bounds(None, None)                               # every dated entity
+up_to_2000 = Bounds(None, datetime(2000, 1, 1, tzinfo=UTC))  # everything before 2000
+from_2000 = Bounds(datetime(2000, 1, 1, tzinfo=UTC), None)  # 2000 onwards
+everything = Bounds(None, None)  # every dated entity
 ```
 
 `Bounds(None, None)` is the honest way to say "the whole timeline" to
@@ -272,7 +272,7 @@ before_1900 = TemporalExtent(
     precision=DatePrecision.YEAR,
     uncertainty=UncertaintyMarker.BEFORE,
 )
-bounds(before_1900)   # Bounds(None, datetime(1900, 1, 1, tzinfo=UTC))
+bounds(before_1900)  # Bounds(None, datetime(1900, 1, 1, tzinfo=UTC))
 ```
 
 Note where the closed end lands. `BEFORE` stops where the named unit *begins* —
@@ -340,7 +340,7 @@ from redstring.domain.interval import Bounds
 
 window = Bounds(datetime(1900, 1, 1, tzinfo=UTC), datetime(2000, 1, 1, tzinfo=UTC))
 found = await query.entities_in_interval(tenant_id, window)
-[e.name for e in found]   # ['inside']
+[e.name for e in found]  # ['inside']
 ```
 
 It is `async`, and it returns a `list[Entity]` — every match, held in memory.
@@ -348,10 +348,10 @@ The signature is:
 
 ```python
 await query.entities_in_interval(
-    tenant_id,               # positional; the only tenant read
-    interval,                # positional; Bounds, not Bounds | None
+    tenant_id,  # positional; the only tenant read
+    interval,  # positional; Bounds, not Bounds | None
     relations=INTERSECTING,  # keyword-only
-    entity_type=None,        # keyword-only
+    entity_type=None,  # keyword-only
 )
 ```
 
@@ -398,7 +398,7 @@ dates. An entity recorded as "2023" — `start_date=2023-01-01`,
 ```python
 await query.entities_in_interval(
     tenant_id, Bounds(utc(2023, 7, 1), utc(2023, 8, 1))
-)   # -> [the entity dated 2023]
+)  # -> [the entity dated 2023]
 ```
 
 Neither stored date falls inside that window. This is the row a
@@ -459,9 +459,7 @@ from redstring.domain.interval import Bounds, TemporalRelation
 
 window = Bounds(datetime(2000, 1, 1, tzinfo=UTC), datetime(2001, 1, 1, tzinfo=UTC))
 
-inside = await query.entities_in_interval(
-    tenant_id, window, relations={TemporalRelation.DURING}
-)
+inside = await query.entities_in_interval(tenant_id, window, relations={TemporalRelation.DURING})
 spanning = await query.entities_in_interval(
     tenant_id, window, relations={TemporalRelation.CONTAINS}
 )
@@ -501,7 +499,7 @@ The default is `INTERSECTING`, which is every relation **except** `BEFORE` and
 ```python
 from redstring.temporal.query import INTERSECTING
 
-INTERSECTING   # frozenset: DURING, CONTAINS, OVERLAPS, EQUALS
+INTERSECTING  # frozenset: DURING, CONTAINS, OVERLAPS, EQUALS
 ```
 
 Which means the two disjoint relations are opt-in. Ask for them by name if you
@@ -569,16 +567,16 @@ optional and keyword-only, so the whole dated tenant is the default question:
 
 ```python
 everything = await query.timeline(tenant_id)
-[e.name for e in everything]   # ['first', 'second', 'third']
+[e.name for e in everything]  # ['first', 'second', 'third']
 ```
 
 The signature is:
 
 ```python
 await query.timeline(
-    tenant_id,          # positional; the only tenant read
-    interval=None,      # keyword-only; Bounds | None, None means no restriction
-    entity_type=None,   # keyword-only
+    tenant_id,  # positional; the only tenant read
+    interval=None,  # keyword-only; Bounds | None, None means no restriction
+    entity_type=None,  # keyword-only
 )
 ```
 
@@ -594,10 +592,8 @@ and sort the result yourself, or narrow the window instead.
 Pass `interval=` and only entities intersecting it are ordered:
 
 ```python
-found = await query.timeline(
-    tenant_id, interval=Bounds(utc(1900, 1, 1), utc(2000, 1, 1))
-)
-[e.name for e in found]   # ['in']   -- an entity dated 2050 is absent
+found = await query.timeline(tenant_id, interval=Bounds(utc(1900, 1, 1), utc(2000, 1, 1)))
+[e.name for e in found]  # ['in']   -- an entity dated 2050 is absent
 ```
 
 `interval=None` is not `Bounds(None, None)` in code, but it is the same answer:
@@ -690,11 +686,11 @@ The signature is:
 
 ```python
 await query.relations_in_interval(
-    tenant_id,                       # positional; the only tenant read
-    interval=None,                   # positional *or* keyword; Bounds | None
-    relations=INFERRED_RELATIONS,    # keyword-only
-    entity_type=None,                # keyword-only
-    max_pairs=DEFAULT_MAX_PAIRS,     # keyword-only
+    tenant_id,  # positional; the only tenant read
+    interval=None,  # positional *or* keyword; Bounds | None
+    relations=INFERRED_RELATIONS,  # keyword-only
+    entity_type=None,  # keyword-only
+    max_pairs=DEFAULT_MAX_PAIRS,  # keyword-only
 )
 ```
 
@@ -721,9 +717,7 @@ are computed from their **whole** extents:
 
 ```python
 # 'a' 1900, 'b' 1950, 'far' 2500
-relations = await query.relations_in_interval(
-    tenant_id, Bounds(utc(1800, 1, 1), utc(2000, 1, 1))
-)
+relations = await query.relations_in_interval(tenant_id, Bounds(utc(1800, 1, 1), utc(2000, 1, 1)))
 # 'far' appears in no relation at all
 ```
 
@@ -752,7 +746,7 @@ The default is `INFERRED_RELATIONS`, not `INTERSECTING`:
 ```python
 from redstring.temporal.inference import INFERRED_RELATIONS
 
-INFERRED_RELATIONS   # frozenset: BEFORE, CONTAINS, OVERLAPS, EQUALS
+INFERRED_RELATIONS  # frozenset: BEFORE, CONTAINS, OVERLAPS, EQUALS
 ```
 
 Four relations, not six. `AFTER` and `DURING` are missing because each pair is
@@ -867,10 +861,8 @@ the contained one off `target_name` / `target_entity_id`:
 ```python
 from redstring.domain.interval import TemporalRelation
 
-nested = await query.relations_in_interval(
-    tenant_id, relations={TemporalRelation.CONTAINS}
-)
-[(r.source_name, r.target_name) for r in nested]   # (container, contained)
+nested = await query.relations_in_interval(tenant_id, relations={TemporalRelation.CONTAINS})
+[(r.source_name, r.target_name) for r in nested]  # (container, contained)
 ```
 
 The default, `INFERRED_RELATIONS`, is those four and only those four —
@@ -941,13 +933,13 @@ seven-field `NamedTuple` from `redstring.temporal.inference`:
 from redstring.temporal.inference import InferredRelation
 
 for r in await query.relations_in_interval(tenant_id, window):
-    r.source_entity_id   # EntityId
-    r.target_entity_id   # EntityId
-    r.relation           # TemporalRelation
-    r.source_name        # str, the entity's name, so you can print without a re-read
-    r.target_name        # str
-    r.source_extent      # TemporalExtent | None -- what it was computed from
-    r.target_extent      # TemporalExtent | None
+    r.source_entity_id  # EntityId
+    r.target_entity_id  # EntityId
+    r.relation  # TemporalRelation
+    r.source_name  # str, the entity's name, so you can print without a re-read
+    r.target_name  # str
+    r.source_extent  # TemporalExtent | None -- what it was computed from
+    r.target_extent  # TemporalExtent | None
 ```
 
 Read it in field order and it states one fact: source, target, and how the
@@ -974,8 +966,8 @@ around with a `frozen=True` flag: `TemporalExtent` is a pydantic model and is
 not hashable, so a tuple containing one is not either.
 
 ```python
-set(relations)             # TypeError: unhashable type
-{(r.source_entity_id, r.target_entity_id, r.relation) for r in relations}   # do this
+set(relations)  # TypeError: unhashable type
+{(r.source_entity_id, r.target_entity_id, r.relation) for r in relations}  # do this
 ```
 
 Key on the endpoint ids and the relation when you need set semantics or a
@@ -991,8 +983,8 @@ difference is not cosmetic. `GraphStore.upsert_relationship` takes a
 those:
 
 ```python
-await store.upsert_relationship(inferred)   # never valid: no id, no tenant_id,
-                                            # no relationship_type, no confidence
+await store.upsert_relationship(inferred)  # never valid: no id, no tenant_id,
+# no relationship_type, no confidence
 ```
 
 There is no `.to_relationship()` and no adapter that will take one. That is the
@@ -1079,9 +1071,9 @@ them. So `source_extent` is always the extent of whatever `source_name` and
 # 'year' is "2023"; 'era' is "2023-2025". Compared, this pair is DURING;
 # it is emitted as CONTAINS with the longer extent as source.
 (r,) = await query.relations_in_interval(tenant_id, None)
-r.relation                       # <TemporalRelation.CONTAINS>
-r.source_name                    # 'era'
-r.source_extent.original_text    # '2023-2025'
+r.relation  # <TemporalRelation.CONTAINS>
+r.source_name  # 'era'
+r.source_extent.original_text  # '2023-2025'
 ```
 
 This is the practical payoff of inverting after the comparison rather than
@@ -1100,7 +1092,7 @@ showing a user why an edge exists, show the interval as well as the dates —
 ```python
 from redstring.domain.interval import bounds
 
-bounds(r.source_extent)   # Bounds(2023-01-01, 2024-01-01) -- what was compared
+bounds(r.source_extent)  # Bounds(2023-01-01, 2024-01-01) -- what was compared
 r.source_extent.end_date  # None -- what was recorded
 ```
 
@@ -1118,7 +1110,7 @@ so every row from a query has both extents populated. A type checker will
 still make you handle it:
 
 ```python
-if r.source_extent is not None:      # always true from relations_in_interval
+if r.source_extent is not None:  # always true from relations_in_interval
     show(r.source_extent)
 ```
 
@@ -1160,9 +1152,9 @@ from redstring.temporal.query import CursorStalledError, TemporalQuery
 try:
     relations = await query.relations_in_interval(tenant_id, window)
 except ValueError:
-    ...   # too many dated participants; narrow the question
+    ...  # too many dated participants; narrow the question
 except CursorStalledError:
-    ...   # the adapter is misbehaving; do not retry
+    ...  # the adapter is misbehaving; do not retry
 ```
 
 ### Neither is a `RedstringError`
@@ -1229,7 +1221,7 @@ grinding:
 ```python
 from redstring.temporal.inference import DEFAULT_MAX_PAIRS
 
-DEFAULT_MAX_PAIRS   # 500_000 -- roughly a thousand dated entities
+DEFAULT_MAX_PAIRS  # 500_000 -- roughly a thousand dated entities
 
 try:
     relations = await query.relations_in_interval(tenant_id, interval=None)
@@ -1282,9 +1274,7 @@ In order of preference:
 
 ```python
 # 1. Ask about a window rather than all of history.
-await query.relations_in_interval(
-    tenant_id, Bounds(utc(1990, 1, 1), utc(2000, 1, 1))
-)
+await query.relations_in_interval(tenant_id, Bounds(utc(1990, 1, 1), utc(2000, 1, 1)))
 
 # 2. Restrict the type -- pushed down to the store, so it also reads less.
 await query.relations_in_interval(tenant_id, window, entity_type="Event")
@@ -1411,8 +1401,8 @@ The fix is in the adapter. Reproduce it directly against the store, outside
 ```python
 page = await store.find_entities(tenant_id, limit=2)
 again = await store.find_entities(tenant_id, limit=2, after=page[-1].id)
-assert [e.id for e in page] == sorted(e.id for e in page)   # ordering clause
-assert page[0].id not in {e.id for e in again}              # `after` clause
+assert [e.id for e in page] == sorted(e.id for e in page)  # ordering clause
+assert page[0].id not in {e.id for e in again}  # `after` clause
 ```
 
 If either assertion fails, that is the bug, and the compliance suite for
@@ -1448,10 +1438,10 @@ many entities each `find_entities` round trip asks for:
 ```python
 from redstring.temporal.query import DEFAULT_PAGE_SIZE, TemporalQuery
 
-DEFAULT_PAGE_SIZE   # 500
+DEFAULT_PAGE_SIZE  # 500
 
-query = TemporalQuery(store)                   # 500 per round trip
-chatty = TemporalQuery(store, page_size=50)    # more trips, smaller pages
+query = TemporalQuery(store)  # 500 per round trip
+chatty = TemporalQuery(store, page_size=50)  # more trips, smaller pages
 greedy = TemporalQuery(store, page_size=5000)  # fewer trips, bigger pages
 ```
 
@@ -1467,7 +1457,7 @@ exhausted, so `page_size` changes only the number of round trips:
 ```python
 a = await TemporalQuery(store, page_size=4).timeline(tenant_id)
 b = await TemporalQuery(store, page_size=5000).timeline(tenant_id)
-a == b   # True -- same entities, same order
+a == b  # True -- same entities, same order
 ```
 
 It is **not** a limit, not a `LIMIT`, and not a way to cap a large result. A
@@ -1481,8 +1471,8 @@ you want to bound the cost of `relations_in_interval`, that is
 ### `page_size < 1` raises `ValueError`, at construction
 
 ```python
-TemporalQuery(store, page_size=0)    # ValueError: page_size must be at least 1, got 0
-TemporalQuery(store, page_size=-1)   # ValueError: page_size must be at least 1, got -1
+TemporalQuery(store, page_size=0)  # ValueError: page_size must be at least 1, got 0
+TemporalQuery(store, page_size=-1)  # ValueError: page_size must be at least 1, got -1
 ```
 
 The reason is the paging loop. Each trip asks for `page_size` entities and
@@ -1592,8 +1582,8 @@ happened.
 The way to tell them apart is to drop one constraint at a time:
 
 ```python
-await query.timeline(tenant_id)                          # any dated entity at all?
-await query.timeline(tenant_id, entity_type="Persson")   # [] -- the typo
+await query.timeline(tenant_id)  # any dated entity at all?
+await query.timeline(tenant_id, entity_type="Persson")  # [] -- the typo
 ```
 
 If the first is non-empty and the second is not, the type string is the
@@ -1641,8 +1631,8 @@ That is the whole rule, and it excludes three shapes:
 from redstring.domain.interval import bounds
 from redstring.domain.temporal import TemporalExtent
 
-entity.temporal is None                              # never appears
-bounds(TemporalExtent(sequence_position=3))          # None -- never appears
+entity.temporal is None  # never appears
+bounds(TemporalExtent(sequence_position=3))  # None -- never appears
 bounds(TemporalExtent(original_text="last summer"))  # None -- never appears
 ```
 
@@ -1697,9 +1687,9 @@ Drop constraints one at a time to tell them apart, starting from the widest
 question this package can ask:
 
 ```python
-await query.timeline(tenant_id)                         # every dated entity
-await query.timeline(tenant_id, entity_type="Person")   # ... of one type
-await query.timeline(tenant_id, interval=window)        # ... in a window
+await query.timeline(tenant_id)  # every dated entity
+await query.timeline(tenant_id, entity_type="Person")  # ... of one type
+await query.timeline(tenant_id, interval=window)  # ... in a window
 ```
 
 If the first is already `[]`, the tenant has no dated entities and no query in

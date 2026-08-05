@@ -139,8 +139,8 @@ the result, and a flag recording that this store created the driver — so it is
 called without `await`:
 
 ```python
-store = Neo4jGraphStore.connect(uri, auth=auth)   # no await
-await store.ensure_schema()                        # the first await
+store = Neo4jGraphStore.connect(uri, auth=auth)  # no await
+await store.ensure_schema()  # the first await
 ```
 
 Nothing is dialled, no credentials are checked and no schema is created here.
@@ -1371,7 +1371,7 @@ If the driver is managed by the surrounding application, construct the store
 around it instead and let the application close it:
 
 ```python
-store = Neo4jGraphStore(driver)   # close() is then a no-op
+store = Neo4jGraphStore(driver)  # close() is then a no-op
 ```
 
 ## See also

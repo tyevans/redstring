@@ -1173,6 +1173,7 @@ loaded rather than reading the file again:
 ```python
 import dis
 from redstring.domain.entity import Entity
+
 dis.dis(Entity.__init__)
 ```
 

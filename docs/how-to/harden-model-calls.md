@@ -17,7 +17,7 @@ from redstring.llm.adapters.langchain import LangChainLlmProvider
 
 inner = LangChainLlmProvider.openai_compatible(
     base_url="http://192.168.1.14:8080/v1",  # the /v1 root
-    model="qwen3.6-27b-mtp",                 # the server's model id
+    model="qwen3.6-27b-mtp",  # the server's model id
 )
 ```
 
@@ -762,8 +762,8 @@ for the common case, not a constraint: the two arguments together say "`rpm`
 calls per `window_seconds` seconds", so
 
 ```python
-RateLimiter(rpm=10, window_seconds=1.0)     # ten per second
-RateLimiter(rpm=600, window_seconds=3600)   # six hundred an hour
+RateLimiter(rpm=10, window_seconds=1.0)  # ten per second
+RateLimiter(rpm=600, window_seconds=3600)  # six hundred an hour
 ```
 
 are both legitimate, and neither renames `rpm`. If you change the window,
@@ -1076,7 +1076,7 @@ try:
     result = await hardened.extract(text, Extraction)
 except CircuitOpen as refused:
     if refused.retry_after > deadline_remaining:
-        await park_for_later(document)     # no point waiting
+        await park_for_later(document)  # no point waiting
     else:
         await asyncio.sleep(refused.retry_after)
         result = await hardened.extract(text, Extraction)
@@ -1236,9 +1236,7 @@ set once and never renewed.
 threshold:
 
 ```python
-failures = await self._cache.increment(
-    self._key("failures"), ttl_seconds=self.recovery_timeout
-)
+failures = await self._cache.increment(self._key("failures"), ttl_seconds=self.recovery_timeout)
 ```
 
 and the `Cache` port is explicit that `ttl_seconds` is applied when the key is

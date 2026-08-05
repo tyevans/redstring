@@ -1013,9 +1013,9 @@ from redstring.extraction.domains.loader import SchemaLoadError
 try:
     schema = load_schema_from_file("/srv/schemas/field_reports.yaml")
 except SchemaLoadError as exc:
-    print(exc)              # the full message, source name first
-    print(exc.file_path)    # Path to the source, or None
-    print(exc.cause)        # the underlying YAMLError / ValidationError, or None
+    print(exc)  # the full message, source name first
+    print(exc.file_path)  # Path to the source, or None
+    print(exc.cause)  # the underlying YAMLError / ValidationError, or None
 ```
 
 `SchemaLoadError` is **not** part of the exported surface: `redstring.__all__`
@@ -1120,8 +1120,8 @@ appear together.
 argument and nothing else:
 
 ```python
-prompt = domain_system_prompt("news_journalism")   # bundled id: registry lookup
-prompt = domain_system_prompt(schema)              # your object: used directly
+prompt = domain_system_prompt("news_journalism")  # bundled id: registry lookup
+prompt = domain_system_prompt(schema)  # your object: used directly
 ```
 
 The object form is why there is no registration step. A schema you loaded

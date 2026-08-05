@@ -423,8 +423,8 @@ await store.ensure_schema()
 try:
     ...
 finally:
-    await store.close()   # the pool is still yours, and still open
-    await pool.close()    # you created it, so you close it
+    await store.close()  # the pool is still yours, and still open
+    await pool.close()  # you created it, so you close it
 ```
 
 Both `store.dimension` and `store.table` are readable back off the store, which
@@ -657,7 +657,7 @@ replica — no "have I migrated yet?" flag, no first-run branch:
 ```python
 async def build_store(dsn: str) -> VectorStore:
     store = await PgVectorStore.connect(dsn, dimension=768)
-    await store.ensure_schema()   # every start, not just the first
+    await store.ensure_schema()  # every start, not just the first
     return store
 ```
 
@@ -853,12 +853,12 @@ from redstring import TenantId, EntityId, VectorRecord
 
 await store.upsert(
     entity_id,
-    embedding,                       # len(embedding) == store.dimension
+    embedding,  # len(embedding) == store.dimension
     tenant_id,
     metadata={"entity_type": "person", "name": "Ada Lovelace"},
 )
 
-record = await store.get(entity_id, tenant_id)     # None if this tenant has no such id
+record = await store.get(entity_id, tenant_id)  # None if this tenant has no such id
 matches = await store.search(query_vector, tenant_id, k=5, entity_types=["person"])
 ```
 

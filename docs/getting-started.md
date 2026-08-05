@@ -124,8 +124,9 @@ it is langchain's step rather than this library's. Needs the `llm` extra — see
 and shapes the prompt around it:
 
 ```python
-report = await build_graph(document, provider=provider, store=store,
-                           tenant_id=tenant_id, domain="literature_fiction")
+report = await build_graph(
+    document, provider=provider, store=store, tenant_id=tenant_id, domain="literature_fiction"
+)
 ```
 
 Or let a classifier choose, at the cost of one extra model call:

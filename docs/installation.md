@@ -47,7 +47,7 @@ from redstring.llm.adapters.langchain import LangChainLlmProvider
 chat_model = ChatOpenAI(
     model="qwen3-30b",
     base_url="http://localhost:8080/v1",
-    api_key="-",          # most local servers ignore it, but the client requires one
+    api_key="-",  # most local servers ignore it, but the client requires one
 )
 provider = LangChainLlmProvider(chat_model)
 ```
@@ -84,6 +84,7 @@ that library is pre-1.0 and its entire API changed between 0.5 and 0.9.
 
 ```python
 import redstring
+
 print(redstring.__version__)
 ```
 

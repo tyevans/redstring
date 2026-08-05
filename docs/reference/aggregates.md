@@ -292,7 +292,7 @@ The two keys do not share a namespace. An extraction under `"shared-name"`
 does not suppress an embedding run under `"shared-name"`:
 
 ```python
-document.record_extraction(..., model_version="shared-name")   # emits
+document.record_extraction(..., model_version="shared-name")  # emits
 document.record_embeddings(..., embedding_model="shared-name")  # also emits
 ```
 
@@ -790,11 +790,11 @@ is nothing to reverse either way, and separating them would invite handling
 only one:
 
 ```python
-log.undo_merge(tenant_id=t, merge_event_id=uuid4())   # never happened
+log.undo_merge(tenant_id=t, merge_event_id=uuid4())  # never happened
 log.merge(tenant_id=t, canonical_entity_id=a, merged_entity_ids=[b])
 mid = log.uncommitted_events[0].event_id
-log.undo_merge(tenant_id=t, merge_event_id=mid)       # emits
-log.undo_merge(tenant_id=t, merge_event_id=mid)       # already undone
+log.undo_merge(tenant_id=t, merge_event_id=mid)  # emits
+log.undo_merge(tenant_id=t, merge_event_id=mid)  # already undone
 ```
 
 The first and last calls both raise `UnknownMergeError`. A log replayed from

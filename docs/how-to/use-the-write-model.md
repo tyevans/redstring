@@ -294,9 +294,9 @@ stream (through a snapshot where one is configured), and raises
 
 ```python
 async with tenant_scope(tenant_id):
-    document = repo.create_new(document_id)      # first write to this stream
+    document = repo.create_new(document_id)  # first write to this stream
     ...
-    reloaded = await repo.load(document_id)      # every write after that
+    reloaded = await repo.load(document_id)  # every write after that
 ```
 
 `create_new` is not a "create" in the persistence sense — no stream is
@@ -355,9 +355,9 @@ await repo.save(document)  # OptimisticLockError
 
 # Right: the reload is what makes the second call return None.
 document = await repo.load(document_id)
-assert document.record_extraction(
-    tenant_id=tenant_id, source_id="doc-1", model_version=MODEL
-) is None
+assert (
+    document.record_extraction(tenant_id=tenant_id, source_id="doc-1", model_version=MODEL) is None
+)
 ```
 
 The wrong version does not corrupt anything — `save` refuses it — but the
@@ -430,7 +430,7 @@ Only `save` enforces the context. `load`, `load_or_create`, `exists` and
 `create_new` all work outside a scope:
 
 ```python
-document = await repo.load(document_id)   # no scope needed
+document = await repo.load(document_id)  # no scope needed
 ```
 
 The asymmetry is a decision, not an oversight. `TenantAwareRepository` takes
@@ -477,8 +477,8 @@ from eventsource.domain.exceptions import TenantMismatchError
 try:
     await repo.save(document)
 except TenantMismatchError as exc:
-    exc.expected   # the tenant in scope
-    exc.actual     # the first foreign tenant found
+    exc.expected  # the tenant in scope
+    exc.actual  # the first foreign tenant found
     exc.event_ids  # every uncommitted event that disagreed
 ```
 
@@ -497,9 +497,7 @@ from the scope rather than from a separate variable. `tenant_scope` yields it:
 
 ```python
 async with tenant_scope(tenant_id) as scoped_tenant:
-    document.record_extraction(
-        tenant_id=scoped_tenant, source_id="doc-1", model_version=MODEL
-    )
+    document.record_extraction(tenant_id=scoped_tenant, source_id="doc-1", model_version=MODEL)
     await repo.save(document)
 ```
 
@@ -523,7 +521,7 @@ reached and regardless of any scope:
 
 ```python
 document.record_extraction(...)  # ValueError: entities carries tenants the event
-                                 # does not belong to: [...] != ...
+# does not belong to: [...] != ...
 ```
 
 Two different tenant checks, then, at two different moments: a `ValueError`
@@ -709,9 +707,7 @@ the aggregate — `DocumentState.extraction_model_versions` and
 does not suppress an embedding run under that same name:
 
 ```python
-document.record_extraction(
-    tenant_id=scoped_tenant, source_id="doc-1", model_version="shared-name"
-)
+document.record_extraction(tenant_id=scoped_tenant, source_id="doc-1", model_version="shared-name")
 document.record_embeddings(
     tenant_id=scoped_tenant, source_id="doc-1", embedding_model="shared-name"
 )  # an EntitiesEmbedded, not None
@@ -744,12 +740,17 @@ one go, one `save` carries both:
 async with tenant_scope(tenant_id) as scoped_tenant:
     document = await documents.load_or_create(document_id)
     document.record_extraction(
-        tenant_id=scoped_tenant, source_id="doc-1", model_version=MODEL,
-        entities=entities, relationships=relationships,
+        tenant_id=scoped_tenant,
+        source_id="doc-1",
+        model_version=MODEL,
+        entities=entities,
+        relationships=relationships,
     )
     document.record_embeddings(
-        tenant_id=scoped_tenant, source_id="doc-1",
-        embedding_model=EMBEDDING_MODEL, embeddings=vectors,
+        tenant_id=scoped_tenant,
+        source_id="doc-1",
+        embedding_model=EMBEDDING_MODEL,
+        embeddings=vectors,
     )
     await documents.save(document)
 ```
@@ -879,7 +880,9 @@ immediately; the invariants do not wait for the append.
 ```python
 from redstring.domain.consolidation import RelationshipRedirection
 
-RelationshipRedirection(before=edge, after=edge.model_copy(update={"source_entity_id": canonical.id}))
+RelationshipRedirection(
+    before=edge, after=edge.model_copy(update={"source_entity_id": canonical.id})
+)
 RelationshipRedirection(before=edge)  # after defaults to None: the merge dropped it
 ```
 
@@ -939,7 +942,7 @@ from redstring.domain.exceptions import MergeIntoAliasError
 try:
     log.merge(tenant_id=scoped_tenant, canonical_entity_id=b, merged_entity_ids=[c])
 except MergeIntoAliasError as exc:
-    exc.alias_entity_id      # b — the target you asked to merge into
+    exc.alias_entity_id  # b — the target you asked to merge into
     exc.canonical_entity_id  # a — what b was itself merged into
 ```
 
@@ -1007,7 +1010,7 @@ from redstring.domain.exceptions import DoubleMergeError
 try:
     log.merge(tenant_id=scoped_tenant, canonical_entity_id=c, merged_entity_ids=[x, b, y])
 except DoubleMergeError as exc:
-    exc.entity_id            # b — the one already absorbed
+    exc.entity_id  # b — the one already absorbed
     exc.canonical_entity_id  # a — what absorbed it
 ```
 

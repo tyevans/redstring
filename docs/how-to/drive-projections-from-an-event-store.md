@@ -985,7 +985,7 @@ defaults that are right for a first run:
 report = await project(
     event_store,
     projections,
-    from_position=None,           # from the very beginning of the log
+    from_position=None,  # from the very beginning of the log
     max_events=MAX_EVENTS_PER_REPLAY,
 )
 ```
@@ -1251,7 +1251,7 @@ cursor: Position | None = None
 while True:
     report = await project(event_store, projections, from_position=cursor)
     if report.last_position is None:
-        break                      # caught up: nothing new in the feed
+        break  # caught up: nothing new in the feed
     cursor = report.last_position
 ```
 
@@ -1341,8 +1341,8 @@ If you are driving the loop yourself and the process may die, the position is
 serialisable and that is how you carry it:
 
 ```python
-raw = report.last_position.to_str()      # store this
-cursor = Position.from_str(raw)          # ...and read it back later
+raw = report.last_position.to_str()  # store this
+cursor = Position.from_str(raw)  # ...and read it back later
 ```
 
 Two properties constrain where that value is valid. It is **opaque** — the
@@ -1471,9 +1471,9 @@ The DLQ is not a graveyard. Once whatever the event needed exists, replaying
 the whole log applies it with no special handling and no DLQ replay API:
 
 ```python
-report = await project(event_store, projections)          # failed == 1
-...                                                        # the missing document arrives
-report = await project(event_store, projections)          # failed == 0
+report = await project(event_store, projections)  # failed == 1
+...  # the missing document arrives
+report = await project(event_store, projections)  # failed == 0
 ```
 
 `test_a_rerun_after_the_missing_entity_arrives_applies_it` does this end to
@@ -1616,13 +1616,13 @@ long-running follower; see
 Three steps, in this order, and the third is not optional:
 
 ```python
-for tenant_id in tenant_ids:                       # 1. wipe, per tenant
+for tenant_id in tenant_ids:  # 1. wipe, per tenant
     await graph_store.delete_by_tenant(tenant_id)
     await vector_store.delete_by_tenant(tenant_id)
 
-report = await project(event_store, projections)   # 2. replay from zero
+report = await project(event_store, projections)  # 2. replay from zero
 
-assert report.failed == 0                          # 3. verify — see below
+assert report.failed == 0  # 3. verify — see below
 ```
 
 That is the whole procedure. Everything below is why each step is shaped the
@@ -1644,7 +1644,7 @@ records, or from a pass over the log reading `event.tenant_id`.
 The obvious alternative does not exist:
 
 ```python
-await projection.reset()      # NotImplementedError
+await projection.reset()  # NotImplementedError
 ```
 
 Both projections override `_truncate_read_models` to raise, naming
