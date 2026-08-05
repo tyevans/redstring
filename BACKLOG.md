@@ -1355,16 +1355,25 @@ item genuinely cheaper before a release than after — `dependencies` is part
 of the published metadata for 0.1.0 and narrowing it later is a breaking
 change for anyone who installed under the wider set. A CHANGELOG is B22.
 
-### B61. Four of the nine core dependencies do not belong there, and two are unused
+### B61. Two of the remaining seven core dependencies belong behind extras
 
-**Measured in slice 11 by building the wheel, installing it into a throwaway
-venv, uninstalling each candidate, and importing** — not by grep alone, because
-grep cannot see a runtime import.
+**The dead half is done.** `numpy` and `httpx` are out of `dependencies`:
+`numpy` deleted outright (nothing anywhere imports it) and `httpx` moved to
+the `dev` extra, where its one real user lives —
+`tests/integration/llm/test_live_endpoint.py` probes a model server with it
+before the suite talks to it.
+
+Measured rather than grepped, to the standard this entry set for itself: a
+wheel built, installed into a venv where neither package is present, and then
+asked to build a graph, run a vector search and render a bundled schema. All
+three work. `numpy` was pulling 2.5.1 — a compiled dependency larger than
+redstring itself — for no importer at all.
+
+**What remains** are the two that are used, function-locally, by one adapter
+each:
 
 | Dependency | First-party importers in `src/` | Verdict |
 |---|---|---|
-| `numpy>=1.26.0` | **none** | Dead. Nothing in `src/` or `tests/` mentions it |
-| `httpx>=0.25.0` | **none** | Dead. Every occurrence is inside a docstring example |
 | `asyncpg>=0.31.0` | `vector/adapters/pgvector.py`, function-local | Belongs behind a `pgvector` extra |
 | `redis[hiredis]>=5.3,<6` | `llm/cache/redis.py`, function-local | Belongs behind a `redis` extra |
 
@@ -1394,11 +1403,13 @@ Use `uv remove` and `uv add --optional`, never a hand edit — and re-sync with
 `--all-extras` afterwards, because `uv remove` re-resolves and will silently
 narrow the venv (B45).
 
-The two dead entries are the cheap half and can go on their own. Note that
-`httpx`'s only trace was a module docstring describing "Ollama extraction"
-and importing `redstring.extraction.retry`, a path that moved to
-`redstring.llm.retry` in slice 6; that docstring was rewritten in slice 11,
-which is how the dependency was noticed at all.
+The dead half went on its own, as this entry suggested. It surfaced a second
+time through Dependabot, which opened a PR raising `httpx`'s floor — a bump to
+a dependency with no importer, which is what prompted actually checking rather
+than deferring again. Note that `httpx`'s only trace in `src/` had been a
+module docstring describing "Ollama extraction" and importing
+`redstring.extraction.retry`, a path that moved to `redstring.llm.retry` in
+slice 6.
 
 ### B38. There is no `eventsourcing` extra any more, and the `redis` pin is why `[all]` cannot come back
 
