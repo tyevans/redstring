@@ -111,7 +111,7 @@ often:
   |---|---|---|
   | `tests/compliance/graph_store.py` (`GraphStoreCompliance`) | `GraphStore` | `tests/unit/graph/test_memory_store.py`, `tests/integration/graph/test_neo4j_store.py` |
   | `tests/compliance/vector_store.py` (`VectorStoreCompliance`) | `VectorStore` | `tests/unit/vector/test_memory_store.py`, `tests/integration/vector/test_pgvector_store.py` |
-  | `tests/compliance/cache.py` (`CacheCompliance`) | `Cache` | `tests/unit/llm/test_memory_cache.py` — `RedisCache` does not yet run it; see `BACKLOG.md` B41 |
+  | `tests/compliance/cache.py` (`CacheCompliance`) | `Cache` | `tests/unit/llm/test_memory_cache.py`, `tests/integration/llm/test_redis_cache.py` |
 
   An adapter opts in by subclassing and supplying one hook (`new_store` for
   the store suites, a `cache` fixture for `CacheCompliance`); the suite is
@@ -224,8 +224,10 @@ what makes one *done*.
    mutation-isolation test (`test_<method>_returns_copies`) and a
    tenant-isolation test (`test_<method>_never_crosses_tenants`) on the
    compliance class. Follow the naming convention and neither gate module
-   needs touching. `Cache` has no such gate, and `RedisCache` does not yet run
-   `CacheCompliance` at all — `BACKLOG.md` B41.
+   needs touching. `Cache` has no such introspective gate — every `Cache`
+   adapter runs `CacheCompliance`, but nothing fails when a *new* method is
+   added to the port without isolation cases, so that one is still a habit
+   rather than a mechanism.
 
    Note that the two store compliance suites must be run in **separate pytest
    invocations** (`BACKLOG.md` B10m).

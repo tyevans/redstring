@@ -23,7 +23,7 @@ which are.
 
 Run the integration suite when you have touched an adapter
 ([Neo4j](../reference/neo4j-graph-store.md),
-[pgvector](use-the-pgvector-store.md)), when you have
+[pgvector](use-the-pgvector-store.md), `RedisCache`), when you have
 [implemented a store adapter](implement-a-store-adapter.md) of your own, or
 before a release. Run a mutation suite when you want evidence that a module's
 tests are worth something; the standards for reading the result are in
@@ -41,9 +41,9 @@ uv sync --all-extras
 Do this first, every time, in whatever checkout you are about to run in —
 including a fresh `git worktree` made for a cosmic-ray run.
 
-`--all-extras`, not `--extra dev`. `dev` holds only the tooling; `neo4j` and
-`llm` are separate extras (`[project.optional-dependencies]` in
-`pyproject.toml`), and both suites below need them:
+`--all-extras`, not `--extra dev`. `dev` holds only the tooling; every backend
+is its own extra (`[project.optional-dependencies]` in `pyproject.toml`) —
+`neo4j`, `pgvector`, `redis`, `llm` — and the suites below need them:
 
 - `tests/integration/graph/test_neo4j_store.py` imports `neo4j`. Its `_probe`
   helper treats a missing driver the same way it treats an unreachable server —
@@ -85,17 +85,20 @@ That is also the whole install for a fresh clone; see the
 Two things `--all-extras` does *not* give you, so that a skip later is not a
 surprise:
 
-- **Containers.** `asyncpg` is a hard dependency, so the pgvector suite always
-  imports; it skips because nothing is listening on the DSN. Part 1 brings the
-  containers up.
+- **Containers.** An extra installs a *driver*, never a server. With
+  `--all-extras` the Neo4j, pgvector and Redis suites all import cleanly and
+  then skip, because nothing is listening. Part 1 brings the containers up.
 - **A model server.** The `llm` extra installs the LangChain transport, not an
-  endpoint. `tests/integration/llm/` probes `KG_LLM_BASE_URL` with a real
-  completion and skips when no model answers.
+  endpoint. `test_live_endpoint.py` and `test_live_pipeline.py` probe
+  `KG_LLM_BASE_URL` with a real completion and skip when no model answers.
+  Those two are the only tests in `tests/integration/llm/` that need a model —
+  `test_redis_cache.py` sits in the same directory because `RedisCache` lives
+  under `llm/`, and needs the container rather than the endpoint.
 
 Verify the sync took before running anything expensive:
 
 ```
-uv run python -c "import neo4j, asyncpg, langchain_openai; print('extras ok')"
+uv run python -c "import neo4j, asyncpg, redis, langchain_openai; print('extras ok')"
 ```
 
 If that line raises, every result you read afterwards is about your virtualenv
@@ -156,21 +159,27 @@ optional politeness — it is the only thing that executes the Cypher.
 ### Step 1: bring up `docker-compose.test.yml` and wait for the healthchecks
 
 ```
-docker compose -f docker-compose.test.yml up -d neo4j postgres
+docker compose -f docker-compose.test.yml up -d neo4j postgres redis
 ```
 
 **Name the services.** `up -d` with no arguments works today, because the file
-declares exactly these two — `neo4j` (`neo4j:5-community`) and `postgres`
-(`pgvector/pgvector:pg16`) — but the two suites skip independently, and naming
-what you started is what makes a later skip legible: "I never started Postgres"
-and "Postgres is up and the adapter is broken" produce very different next
-steps, and only one of them is about the code.
+declares exactly these three — `neo4j` (`neo4j:5-community`), `postgres`
+(`pgvector/pgvector:pg16`) and `redis` (`redis:7`) — but the three suites skip
+independently, and naming what you started is what makes a later skip legible:
+"I never started Postgres" and "Postgres is up and the adapter is broken"
+produce very different next steps, and only one of them is about the code.
 
 The ports are deliberately off the defaults — Neo4j on **7688** (plus 7475 for
-the browser), Postgres on **5434** — so nothing collides with a local install
-or with another project's containers. That is also why the defaults baked into
-the tests are `bolt://localhost:7688` and port 5434 rather than 7687/5432; see
+the browser), Postgres on **5434**, Redis on **6381** — so nothing collides
+with a local install or with another project's containers. That is also why the
+defaults baked into the tests are `bolt://localhost:7688`, port 5434 and
+`redis://localhost:6381/0` rather than 7687/5432/6379; see
 [Step 2](#step-2-point-the-suite-at-the-containers).
+
+Redis earns the non-default port twice over, because **its suite calls
+`flushdb` between tests**. On 6379 that is a compliance run reaching whatever
+Redis happens to be on the machine and erasing it. The other two only wipe a
+database they created; this one wipes whatever it is pointed at.
 
 There is no `apoc`, and that is a design commitment rather than an omission:
 the [Neo4j store](../reference/neo4j-graph-store.md) is plain Cypher — entity
@@ -185,7 +194,7 @@ is *running*, not when the server can *serve*:
 docker compose -f docker-compose.test.yml ps
 ```
 
-Require `(healthy)` in the STATUS column, not `Up`. Both services declare a
+Require `(healthy)` in the STATUS column, not `Up`. Every service declares a
 check that probes the server rather than the process, on a 5 s interval with 30
 retries — so allow up to about two and a half minutes on a cold image pull, and
 treat anything longer as a real failure rather than slowness:
@@ -196,11 +205,20 @@ treat anything longer as a real failure rather than slowness:
   named on purpose. Bare `pg_isready` succeeds against the bootstrap server
   before `POSTGRES_DB` has been created, which is precisely the window you are
   trying to wait out.
+- Redis runs `redis-cli ping | grep -q PONG`, matching the reply rather than
+  trusting the exit status — `redis-cli` exits 0 for a server that answers with
+  `LOADING` while it reads an RDB file back in.
+
+The Redis *suite* goes further than its healthcheck, and for a reason worth
+copying: its `_probe` writes a key and reads it back rather than pinging,
+because the suite is about what values come back. A server that accepts
+connections but rejects writes — a replica, an instance at `maxmemory` — would
+otherwise fail every test instead of skipping.
 
 To block rather than poll by eye:
 
 ```
-docker compose -f docker-compose.test.yml up -d --wait neo4j postgres
+docker compose -f docker-compose.test.yml up -d --wait neo4j postgres redis
 ```
 
 Strictly, you do not have to wait — the suites probe and skip rather than
@@ -222,10 +240,17 @@ so Step 1 is the whole of the setup:
 | `KG_TEST_NEO4J_USER` | `neo4j` | same |
 | `KG_TEST_NEO4J_PASSWORD` | `redstring` | same |
 | `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:redstring@localhost:5434/redstring_test` | `tests/integration/vector/test_pgvector_store.py` |
+| `KG_TEST_REDIS_URL` | `redis://localhost:6381/0` | `tests/integration/llm/test_redis_cache.py` |
 
 The two Neo4j credential variables are separate rather than folded into the
 URI because the driver takes an `auth` tuple; the Postgres side is one DSN
-because `asyncpg.create_pool` takes one. There is no variable for the pgvector
+because `asyncpg.create_pool` takes one, and Redis is one URL because
+`redis.asyncio.from_url` takes one.
+
+**Point `KG_TEST_REDIS_URL` only at a Redis you are willing to lose.** The
+fixture calls `flushdb` before each test, so the database in that URL is
+emptied — including database `0` of a shared instance, which is what a bare
+`redis://host` means. There is no variable for the pgvector
 table name or the vector dimension — the table is derived
 (`kg_vectors_test_<worker>`, see below) and the dimension comes from
 `VectorStoreCompliance.DIMENSION`, which both adapters' compliance suites
@@ -244,6 +269,11 @@ uv run pytest -m integration tests/integration/graph
 ```
 KG_TEST_POSTGRES_DSN=postgresql://kg:...@pg.internal:5432/redstring_test \
 uv run pytest -m integration tests/integration/vector
+```
+
+```
+KG_TEST_REDIS_URL=redis://redis.internal:6379/9 \
+uv run pytest -m integration tests/integration/llm/test_redis_cache.py
 ```
 
 **Each is read once, at module import**, into a module-level constant
@@ -274,11 +304,20 @@ container; on a managed Postgres, have someone create it once and the
 [use the pgvector store](use-the-pgvector-store.md) for what the schema
 contains.
 
-**A wrong value skips rather than fails.** Both suites probe first and
+**The Redis suite is the bluntest of the three**: it calls `flushdb`, so it
+owns the whole database rather than a table or a tenant. There is deliberately
+no key-prefix scheme — the suite asserts on counters and TTLs under keys it
+chooses itself, and threading a prefix through would mean editing the shared
+compliance body to accommodate one adapter, which is the defect rather than the
+fix. See [implement a store adapter](implement-a-store-adapter.md) for why a
+compliance suite is run unchanged or not at all.
+
+**A wrong value skips rather than fails.** All three suites probe first and
 `pytest.skip` when the probe cannot be answered — Neo4j must return `1` from
-`RETURN 1`, Postgres must round-trip a real `vector` through a temp table — and
-the probe swallows every exception, so a typo'd host, a bad password and a
-stopped container are indistinguishable from each other and all read as green.
+`RETURN 1`, Postgres must round-trip a real `vector` through a temp table,
+Redis must round-trip a value — and the probe swallows every exception, so a
+typo'd host, a bad password and a stopped container are indistinguishable from
+each other and all read as green.
 The skip message names the URI or DSN actually used; read it, and confirm it is
 the backend you meant. This is the `0 passed, N skipped` shape discussed under
 [reading the result](#reading-the-result-skipped-is-honest-failed-means-the-backend-is-reachable-but-wrong).
@@ -401,7 +440,7 @@ state cannot leak, not an argument that it probably will not (see
 property tests per subclass in `__init_subclass__` is correct and is a
 considerable amount of machinery for a problem only the CI target has.
 
-The constraint is not specific to these two suites: it applies to any port
+The constraint is not specific to the store suites: it applies to any port
 whose compliance suite grows a second implementation, so
 [implementing a store adapter](implement-a-store-adapter.md) of your own means
 your adapter's tests join the `integration` invocation, not the unit one.
@@ -777,7 +816,7 @@ which is a zero-survivor run manufactured on purpose.
 
 ```
 uv sync --all-extras
-uv run python -c "import neo4j, asyncpg, langchain_openai; print('extras ok')"
+uv run python -c "import neo4j, asyncpg, redis, langchain_openai; print('extras ok')"
 uv run pytest -x -q --no-header -p no:randomly tests/unit
 ```
 

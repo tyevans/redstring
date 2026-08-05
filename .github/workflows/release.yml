@@ -68,6 +68,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
       publish_target: ${{ steps.version.outputs.publish_target }}
+      dist_name: ${{ steps.version.outputs.dist_name }}
+      install_cmd: ${{ steps.version.outputs.install_cmd }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,15 +84,46 @@ jobs:
 
           # Order matters: `rc` must be tested before the `(a|b)` pattern,
           # which would otherwise never be reached for a tag containing both.
+          # `dist_name` is the name on the index, which is **not** `redstring`
+          # on TestPyPI: that name is taken there by an unrelated project
+          # (`RedString 0.0.1`, a different account). TestPyPI authorises an
+          # upload against the project name in the distribution's metadata, so
+          # publishing a `redstring` artifact there is a 403 no matter which
+          # publisher is registered.
+          #
+          # The two indexes are separate namespaces and TestPyPI is a sandbox
+          # anyone may squat, so this is a normal thing to hit rather than a
+          # sign of trouble. The *import* name is unaffected: hatchling packages
+          # `src/redstring`, so `redstring-test` installs and `import redstring`
+          # works. Only the distribution name differs, which is exactly the
+          # amount of divergence the rehearsal can tolerate -- see the rename
+          # step in `build`.
+          # Every output is set in exactly one branch. An earlier draft derived
+          # `install_cmd` from a second `if` repeating the `(a|b)` test, which
+          # is two places deciding one thing: the next tag scheme added here
+          # would have had to be remembered twice, and a release note pointing
+          # at the wrong index is not a failure anyone notices in CI.
+          #
+          # A release note whose install line does not work is worse than one
+          # with no install line -- `pip install redstring-test==0.1.0a1`
+          # resolves against PyPI, where that project does not exist, and the
+          # error names the package rather than the missing index.
+          TESTPYPI_INDEXES="--index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/"
           if [[ "$TAG" =~ rc[0-9]+$ ]]; then
-            echo "is_prerelease=true"     >> "$GITHUB_OUTPUT"
-            echo "publish_target=pypi"    >> "$GITHUB_OUTPUT"
+            echo "is_prerelease=true"       >> "$GITHUB_OUTPUT"
+            echo "publish_target=pypi"      >> "$GITHUB_OUTPUT"
+            echo "dist_name=redstring"      >> "$GITHUB_OUTPUT"
+            echo "install_cmd=pip install redstring==$TAG" >> "$GITHUB_OUTPUT"
           elif [[ "$TAG" =~ (a|b)[0-9]+$ ]]; then
-            echo "is_prerelease=true"     >> "$GITHUB_OUTPUT"
-            echo "publish_target=testpypi" >> "$GITHUB_OUTPUT"
+            echo "is_prerelease=true"       >> "$GITHUB_OUTPUT"
+            echo "publish_target=testpypi"  >> "$GITHUB_OUTPUT"
+            echo "dist_name=redstring-test" >> "$GITHUB_OUTPUT"
+            echo "install_cmd=pip install $TESTPYPI_INDEXES redstring-test==$TAG" >> "$GITHUB_OUTPUT"
           else
-            echo "is_prerelease=false"    >> "$GITHUB_OUTPUT"
-            echo "publish_target=pypi"     >> "$GITHUB_OUTPUT"
+            echo "is_prerelease=false"      >> "$GITHUB_OUTPUT"
+            echo "publish_target=pypi"      >> "$GITHUB_OUTPUT"
+            echo "dist_name=redstring"      >> "$GITHUB_OUTPUT"
+            echo "install_cmd=pip install redstring==$TAG" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -121,7 +154,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   build:
-    needs: ci
+    needs: [validate, ci]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -131,6 +164,36 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: '3.13'
+
+      # Only ever renames *away* from `redstring`, and only for TestPyPI.
+      # The artifact that reaches PyPI is built from an unmodified tree.
+      #
+      # `exit 1` when the substitution changes nothing: a rename that silently
+      # no-ops would produce a `redstring` artifact, fail at upload with a 403,
+      # and send whoever reads it looking at publisher configuration instead of
+      # at this step. An edit whose whole purpose is to change a file must fail
+      # when the file does not change -- the same reasoning as an exemption list
+      # that matches nothing.
+      - name: Name the distribution for its index
+        env:
+          DIST_NAME: ${{ needs.validate.outputs.dist_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$DIST_NAME" == "redstring" ]]; then
+            echo "Building as redstring; no rename."
+            exit 0
+          fi
+          python - <<EOF
+          import pathlib, sys
+          name = "$DIST_NAME"
+          p = pathlib.Path("pyproject.toml")
+          before = p.read_text()
+          after = before.replace('name = "redstring"', f'name = "{name}"', 1)
+          if after == before:
+              sys.exit("::error::could not rewrite the project name in pyproject.toml")
+          p.write_text(after)
+          print(f"Building as {name}.")
+          EOF
 
       - run: uv build
 
@@ -254,7 +317,7 @@ jobs:
             ## Install
 
             ```bash
-            pip install redstring==${{ needs.validate.outputs.version }}
+            ${{ needs.validate.outputs.install_cmd }}
             ```
 
             [Documentation](https://tyevans.github.io/redstring) ·
@@ -285,6 +348,7 @@ jobs:
         env:
           TARGET: ${{ needs.validate.outputs.publish_target }}
           VERSION: ${{ needs.validate.outputs.version }}
+          DIST_NAME: ${{ needs.validate.outputs.dist_name }}
         run: |
           set -euo pipefail
           uv venv /tmp/verify
@@ -318,8 +382,14 @@ jobs:
             INDEX_ARGS=()
           fi
 
+          # Installed by distribution name, imported as `redstring` below --
+          # which is the point of doing it this way round. On the TestPyPI path
+          # those two strings differ, so this step proves the wheel's import
+          # package is independent of what the index calls it. A rehearsal that
+          # installed `redstring` would not be testing the artifact that was
+          # actually published.
           uv pip install --python /tmp/verify/bin/python \
-            "${INDEX_ARGS[@]}" "redstring==${VERSION}"
+            "${INDEX_ARGS[@]}" "${DIST_NAME}==${VERSION}"
 
           /tmp/verify/bin/python - <<'EOF'
           import asyncio
