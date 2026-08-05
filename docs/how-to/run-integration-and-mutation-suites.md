@@ -481,7 +481,7 @@ container. Work out which you have before reading a skip count:
 | `tests/integration/graph/` | the `neo4j` container **and** the `neo4j` extra | `RETURN 1` is not answered with `1` |
 | `tests/integration/vector/` | the `postgres` container (`asyncpg` is a hard dependency, so no extra) | the DSN does not answer, or a real `vector` will not round-trip |
 | `tests/integration/llm/` | a live OpenAI-compatible endpoint and the `llm` extra — **no Docker** | no model returns a real completion |
-| `tests/integration/test_wheel_ships_the_domain_schemas.py` | `uv`, a few seconds, and the network only if a build backend is uncached | **never** — it builds and installs a wheel |
+| `tests/integration/test_wheel_contents.py` | `uv`, a few seconds, and the network only if a build backend is uncached | **never** — it builds and installs a wheel |
 
 **Every probe here proves the backend can *serve*, not that a port answered**,
 and all three are that strict for one recorded reason: the accuracy suite once
@@ -549,7 +549,7 @@ changes between versions, and it is the accuracy suite's problem.
 result in this suite with no environmental reading at all:
 
 ```
-uv run pytest -m integration tests/integration/test_wheel_ships_the_domain_schemas.py
+uv run pytest -m integration tests/integration/test_wheel_contents.py
 ```
 
 It builds a wheel with `uv build --wheel`, installs it into a throwaway
@@ -646,7 +646,7 @@ Two more results that are neither, and both mean something:
   marker, so the summary block `tests/conftest.py` prints at the end of every
   default run (`197 'integration' tests -- uv run pytest -m integration`) is
   the confirmation that they exist and did not run.
-- **The wheel test failing** — `tests/integration/test_wheel_ships_the_domain_schemas.py`
+- **The wheel test failing** — `tests/integration/test_wheel_contents.py`
   never skips, so it is the one result in this suite with no environmental
   reading at all. It builds and installs a wheel; a failure means the bundled
   domain schemas are not packaged, which is silent and total for installed

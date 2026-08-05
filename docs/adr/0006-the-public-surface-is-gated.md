@@ -66,7 +66,7 @@ which obliges `DatePrecision`.
 - The gate constrains *shape*, not taste. It cannot tell you an export is a bad
   idea — only that it is complete.
 - `packaging` is proven rather than inferred alongside this:
-  `tests/integration/test_wheel_ships_the_domain_schemas.py` builds a wheel,
+  `tests/integration/test_wheel_contents.py` builds a wheel,
   installs it into a throwaway venv, renders all six domain schemas, and
   asserts the import resolved to `site-packages`, so a shadowing checkout
   cannot pass it. It was verified non-vacuous by excluding the YAML and

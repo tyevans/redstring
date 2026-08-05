@@ -1331,6 +1331,56 @@ suites run, not whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
+### B64. The interval property suite fails the commit gate on a loaded machine
+
+**Observed once, during the packaging commit.**
+`tests/unit/domain/test_interval.py::TestProperties::test_before_and_after_are_the_only_disjoint_relations`
+failed the gate with:
+
+```
+hypothesis.errors.FlakyFailure: ... produces unreliable results:
+Failed on the first call but did not on a subsequent one
+Unreliable test timings! On an initial run, this test took 276.11ms, which
+exceeded the deadline of 200.00ms, but on a subsequent run it took 1.28 ms
+```
+
+Two orders of magnitude between the two calls, on the same input, is the
+signature of first-call cost — import, JIT of the strategy, page faults —
+landing on a machine that happened to be busy. Nothing about the interval
+code is slow: 1.28 ms is the real number. It reproduced while a wheel build
+and a throwaway venv install were running in the same session, and did not
+reproduce on a quiet tree.
+
+Why it is filed rather than shrugged at: **hypothesis reports this as a test
+failure naming the function**, so the first reading is "the interval
+properties broke", and the second reading is "flaky, retry" — the response
+`.claude/rules/testing.md` warns against, because both are wrong. The gate
+is `pre-commit`, so a developer meets it as a blocked commit with no obvious
+cause, and the loaded machine that triggers it is *the developer's own*,
+running whatever else they had going.
+
+Three candidate fixes, and choosing between them needs one decision rather
+than a patch:
+
+- `deadline=None` on this test's `@settings`. Cheapest. It gives up a real
+  signal — this is the one suite in the repo where an accidentally
+  quadratic `relate` would show as a timing regression rather than a wrong
+  answer.
+- `deadline=None` on the whole class, or a hypothesis profile for the gate
+  with deadlines off and a `ci` profile with them on. Keeps the signal where
+  it can be measured and removes it where it cannot.
+- Leave it and accept a rare blocked commit.
+
+The second is probably right, and it is the same shape as
+`KG_COMPLIANCE_MAX_EXAMPLES`: a per-run lever, not a per-test constant. Note
+that an explicit `settings(deadline=...)` on the test **outranks every
+profile**, so fixing this by editing the decorator forecloses the profile
+answer — the same trap documented for `max_examples` in
+`.claude/rules/testing.md`.
+
+Until it is decided: a `FlakyFailure` naming a *deadline* is this entry. A
+`FlakyFailure` naming anything else is a real bug and must not be retried.
+
 ### B63. Six `# nosec` markers, and nothing fails when one stops applying
 
 **Found by the rename sweep, which is the only reason it was found at all.**
@@ -1368,28 +1418,29 @@ guards in ADR 0014. Until then, CI running `bandit -r src/` over the whole
 tree (added with the release workflow) is what stops this recurring; the
 per-file hook alone demonstrably does not.
 
-### B60. Packaging metadata beyond the licence
+### B60. Packaging metadata beyond the licence — closed except for B61
 
-**The licence is done** — MIT, `LICENSE` at the repo root, `license = "MIT"`
-and `license-files = ["LICENSE"]` in `[project]`, and `authors`. Verified in
-the built artifact rather than the config: the wheel carries
-`License-Expression: MIT` and ships the file at
+**Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
+Changelog), `keywords`, `maintainers`, and eleven trove `classifiers`
+including `Typing :: Typed` and `Development Status :: 4 - Beta`. The licence
+half was already done and is verified in the built artifact rather than the
+config: the wheel carries `License-Expression: MIT` and ships the file at
 `dist-info/licenses/LICENSE`.
 
-What is still absent, all conventional for a first publish and none of it a
-blocker:
+`Typing :: Typed` was a **false claim when it was written**, which is why it
+came with `src/redstring/py.typed` and a test. PEP 561 says a type checker
+ignores a dependency's annotations entirely unless the installed package
+carries that marker, so `mypy --strict` over the whole package bought
+downstream callers nothing: `redstring` resolved as `Any` for all of them.
+Nothing in this repo could notice, because every test imports from `src/`
+where annotations are read directly. `tests/integration/test_wheel_contents.py`
+now asserts the marker is present in an installed wheel, and was proved red
+by removing it.
 
-- `[project.urls]` — no repository or issues link, so an installed package
-  gives a user nowhere to go.
-- `classifiers`, including `Programming Language :: Python :: 3.13` and a
-  development-status trove classifier. `requires-python = ">=3.13"` already
-  gates installation correctly, so these are discoverability rather than
-  correctness.
-- `maintainers`.
-- A CHANGELOG (B22).
-
-Do these with B61's dependency narrowing, which is the one item that is
-genuinely cheaper before a release than after.
+What remains is **B61's dependency narrowing**, which is the one packaging
+item genuinely cheaper before a release than after — `dependencies` is part
+of the published metadata for 0.1.0 and narrowing it later is a breaking
+change for anyone who installed under the wider set. A CHANGELOG is B22.
 
 ### B61. Four of the nine core dependencies do not belong there, and two are unused
 

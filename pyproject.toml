@@ -6,7 +6,42 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Ty Evans", email = "tyler@poorlythoughtout.com" }]
+maintainers = [{ name = "Ty Evans", email = "tyler@poorlythoughtout.com" }]
 requires-python = ">=3.13"
+keywords = [
+    "knowledge-graph",
+    "entity-extraction",
+    "entity-resolution",
+    "event-sourcing",
+    "graph-database",
+    "llm",
+    "neo4j",
+    "pgvector",
+]
+# Trove classifiers are discoverability, not correctness: `requires-python`
+# is what actually gates installation, and PyPI rejects an unknown string
+# rather than ignoring it, so this list is deliberately short and every entry
+# is one PyPI recognises.
+#
+# `Development Status :: 4 - Beta` rather than `3 - Alpha`: the API is gated
+# by `__all__` and three tests (ADR 0006), the ports have compliance suites,
+# and the whole surface is type-checked under `--strict`. It is not `5 -
+# Production/Stable` because nothing has run this in production yet and the
+# 0.x version says so.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.12,<3",
     "asyncpg>=0.31.0",
@@ -41,6 +76,14 @@ llm = [
 all = [
     "redstring[neo4j,llm]",
 ]
+# Only `mkdocs build --strict` needs these, and only in CI. Kept out of `dev`
+# so a contributor running the commit gate does not install a doc toolchain
+# to change one line of Python.
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "pymdown-extensions>=10.0",
+]
 dev = [
     "bandit[toml]>=1.9.4",
     "cosmic-ray>=8.4.6",
@@ -60,6 +103,13 @@ dev = [
     "types-python-dateutil>=2.9.0.20260716",
     "types-pyyaml>=6.0.12.20260724",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tyevans/redstring"
+Documentation = "https://tyevans.github.io/redstring"
+Repository = "https://github.com/tyevans/redstring"
+Issues = "https://github.com/tyevans/redstring/issues"
+Changelog = "https://github.com/tyevans/redstring/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

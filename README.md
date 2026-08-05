@@ -274,7 +274,7 @@ running the whole marker is a legitimate thing to do.
 | `tests/integration/graph/test_neo4j_store.py` | the `neo4j` service only | skips |
 | `tests/integration/vector/test_pgvector_store.py` | the `postgres` service only | skips |
 | `tests/integration/llm/test_live_endpoint.py`, `tests/integration/llm/test_live_pipeline.py` | a live OpenAI-compatible server — **the only two that do** | skips |
-| `tests/integration/test_wheel_ships_the_domain_schemas.py` | neither — it builds a wheel and installs it into a throwaway venv | always runs |
+| `tests/integration/test_wheel_contents.py` | neither — it builds a wheel and installs it into a throwaway venv | always runs |
 
 The two store files skip on a **probe that does real work**, not on a connection: Neo4j is
 asked for `RETURN 1` and Postgres is made to create the `vector` extension and store a row,

@@ -1662,7 +1662,7 @@ them as a module-level `pytestmark` covering the whole file:
 - `tests/integration/vector/test_pgvector_store.py`
 - `tests/integration/llm/test_live_endpoint.py`
 - `tests/integration/llm/test_live_pipeline.py`
-- `tests/integration/test_wheel_ships_the_domain_schemas.py` — a single
+- `tests/integration/test_wheel_contents.py` — a single
   function-level `@pytest.mark.integration`, not a file-wide one
 
 The first two need the backends in `docker-compose.test.yml`; the two `llm`
@@ -1778,7 +1778,7 @@ tearing down, reading a skip — are in
 | Neo4j `GraphStore` | `uv run pytest -m integration tests/integration/graph` | `docker compose -f docker-compose.test.yml up -d neo4j` |
 | pgvector `VectorStore` | `uv run pytest -m integration tests/integration/vector` | `… up -d postgres` |
 | live LLM | `uv run pytest -m integration tests/integration/llm` | an OpenAI-compatible endpoint |
-| wheel packaging | `uv run pytest -m integration tests/integration/test_wheel_ships_the_domain_schemas.py` | `uv`, a build backend, seconds |
+| wheel packaging | `uv run pytest -m integration tests/integration/test_wheel_contents.py` | `uv`, a build backend, seconds |
 | accuracy | `uv run pytest -m accuracy tests/accuracy/` | a live LLM — and selects **zero tests** today |
 
 ### `-m` replaces the configured expression, it does not intersect
@@ -1870,7 +1870,7 @@ fine: `addopts` deselects `integration` before xdist sees a test.
 
 ### The wheel test needs no backend
 
-`tests/integration/test_wheel_ships_the_domain_schemas.py` carries a
+`tests/integration/test_wheel_contents.py` carries a
 function-level `@pytest.mark.integration` rather than a file-wide
 `pytestmark`, and it is marked for cost rather than for infrastructure: it
 builds a wheel, installs it into a throwaway environment, and asks the
