@@ -68,10 +68,13 @@ could not be caught without a dotted import.
   `ExtractionPipeline` (`PipelineResult`, `DEFAULT_SYSTEM_PROMPT`),
   `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`, `project`,
   `ReplayReport`, and `Document` with `document_stream` to address it.
+  `project(strict=True)` raises `ReplayFailedError` rather than counting a
+  rejection, for the caller who would rather have no rebuild than a partial
+  one.
 - **Errors.** `RedstringError` and everything under it that a caller can
   reach: `LlmProviderError` and its three shapes, `MissingEntityError`,
-  `AliasCycleError`, `DimensionMismatchError`, `PartialExtractionError`, and
-  the chunking three.
+  `AliasCycleError`, `DimensionMismatchError`, `PartialExtractionError`,
+  `ReplayFailedError`, and the chunking three.
 
 `project`'s signature is the one place the surface deliberately names another
 package's types: `GlobalEventFeed`, `EventSubscriber` and `Position` all come
@@ -138,6 +141,7 @@ from redstring.domain.exceptions import (
     MissingEntityError,
     RedstringError,
     RefusedCompletionError,
+    ReplayFailedError,
     UnknownDomainError,
     UnknownMergeError,
 )
@@ -256,6 +260,7 @@ __all__ = [
     "RelationshipRedirection",
     "RelationshipStore",
     "RelationshipTypeSchema",
+    "ReplayFailedError",
     "ReplayReport",
     "Response",
     "ScoredCandidate",

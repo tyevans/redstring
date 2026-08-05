@@ -16,6 +16,7 @@ from eventsource.domain.tenant_context import tenant_scope
 from eventsource.ports.positions import ExpectedVersion
 
 from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.exceptions import MissingEntityError, ReplayFailedError
 from redstring.domain.relationship import Relationship
 from redstring.events import DocumentExtracted
 from redstring.events.streams import document_stream
@@ -109,10 +110,17 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
 
     async def test_the_poisoned_event_left_no_partial_state(self, poisoned_log):
         """The handler writes entities and then relationships, so the failing
-        event's *entities* did land. That is a deliberate consequence of the
-        port's `upsert_relationships` not being atomic, and it is safe only
-        because a replay of the fixed event is idempotent -- worth pinning so
-        the day it stops being true, this says so.
+        event's *entities* did land.
+
+        This is a property of the fold making **two calls**, not of either
+        one being partial: `upsert_relationships` is atomic (ADR 0018), so the
+        relationship half wrote nothing at all rather than a prefix. Making
+        that batch atomic therefore did not change this assertion, which is
+        worth saying because the docstring here used to cite the old
+        non-atomic contract as the cause and would now be quietly wrong.
+
+        It is safe only because a replay of the fixed event is idempotent --
+        pinned so the day that stops being true, this says so.
         """
         rig, entities = poisoned_log
         await project(rig.event_store, rig.projections)
@@ -145,6 +153,78 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
         assert report.failed == 0
         shape = await rig.shape([TENANT_ID])
         assert str(edge.id) in shape[str(TENANT_ID)]["edges"]
+
+
+class TestStrictStopsInsteadOfCounting:
+    """`strict=True` for the caller who would rather have no rebuild than a
+    partial one -- a test, or a first deployment. Reported downstream as
+    BACKLOG B69: without it a replay that dropped *every* event still returns
+    a report and exits successfully.
+    """
+
+    async def test_it_raises_on_the_first_rejection(self, poisoned_log):
+        rig, _ = poisoned_log
+
+        with pytest.raises(ReplayFailedError):
+            await project(rig.event_store, rig.projections, strict=True)
+
+    async def test_the_error_names_the_event_rather_than_counting_it(self, poisoned_log):
+        """The entry's actual requirement. An exception reading "replay
+        failed" with a count is the same silent-partial-rebuild problem in a
+        louder voice: an operator needs to know *which* record to go and look
+        at, and the position is what makes it findable in the log."""
+        rig, entities = poisoned_log
+
+        with pytest.raises(ReplayFailedError) as caught:
+            await project(rig.event_store, rig.projections, strict=True)
+
+        assert caught.value.event.source_id == "doc-2"
+        assert entities[1].id in {e.id for e in caught.value.event.entities}
+        assert caught.value.position is not None
+        assert "DocumentExtracted" in str(caught.value)
+
+    async def test_the_rejecting_exception_is_the_cause(self, poisoned_log):
+        """Chained rather than replaced. Knowing an event was refused without
+        knowing why sends the reader back to the DLQ to find out something the
+        traceback could have told them."""
+        rig, _ = poisoned_log
+
+        with pytest.raises(ReplayFailedError) as caught:
+            await project(rig.event_store, rig.projections, strict=True)
+
+        assert isinstance(caught.value.__cause__, MissingEntityError)
+
+    async def test_it_stops_rather_than_finishing_the_log(self, poisoned_log):
+        """The point of stopping. `doc-3` is *after* the poison, so a strict
+        run that carried on and raised at the end would leave it applied and
+        be indistinguishable from the tolerant mode plus an exception."""
+        rig, entities = poisoned_log
+
+        with pytest.raises(ReplayFailedError):
+            await project(rig.event_store, rig.projections, strict=True)
+
+        shape = await rig.shape([TENANT_ID])
+        assert str(entities[2].id) not in shape[str(TENANT_ID)]["entity_ids"]
+
+    async def test_a_clean_log_is_unaffected_by_strict(self, rig):
+        """Otherwise the flag could be raising on something other than a
+        rejection and every test above would still pass."""
+        good = _entity("doc-1", "Ada")
+        await _append(rig.event_store, "doc-1", [good], [])
+
+        report = await project(rig.event_store, rig.projections, strict=True)
+
+        assert (report.applied, report.failed) == (1, 0)
+
+    async def test_the_default_is_still_tolerant(self, poisoned_log):
+        """Stated as its own test rather than left implicit in the class
+        above: flipping the default would be a breaking change for the rebuild
+        case this module was written for, and nothing else here would fail."""
+        rig, _ = poisoned_log
+
+        report = await project(rig.event_store, rig.projections)
+
+        assert report.failed == 1
 
 
 class TestResetIsRefusedRatherThanSilentlyDoingNothing:

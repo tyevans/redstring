@@ -1492,18 +1492,6 @@ Whether this is redstring's to fix depends on what `eventsource-py` exposes —
 check before designing, because a scoped subscription in the library that
 filters client-side is the same cost with more code.
 
-### B69. `ReplayReport.failed` counts poison events instead of raising
-
-Reported downstream. There is no supported strict mode, so a replay that drops
-every event still returns a report and exits successfully. That is a reasonable
-default for a rebuild over a long log and a bad one for a test or a first
-deployment, which is exactly when a silent partial rebuild is most costly and
-least visible.
-
-A `strict=True` that raises on the first failure is the obvious shape. The
-thing to get right is that the failure has to name the event — an exception
-saying "replay failed" with a count is the same problem in a louder voice.
-
 ### B70. `eventsource-py` floor was too low, and the library was published with it
 
 **Fixed, and recorded here because the shipped `0.1.0` carries the wrong

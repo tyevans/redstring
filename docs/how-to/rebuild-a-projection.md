@@ -576,6 +576,41 @@ if you are unsure where a dead run stopped, resume from an *earlier* position
 rather than a later one. Re-delivering events costs time; skipping them costs
 correctness.
 
+## Stopping on the first failure with `strict=True`
+
+Everything above assumes you would rather have most of the log than none of
+it, which is the right trade for a rebuild over a long log: one poison event
+must not deny the projection every event after it.
+
+It is the wrong trade in two places, and they are the two where a silently
+partial rebuild costs most and shows least — **a test**, and **a first
+deployment**. In both, a run that dropped every event still returns a report
+and exits successfully, and `failed` is a number nobody read.
+
+```python
+report = await project(event_store, projections, strict=True)
+# redstring.ReplayFailedError: GraphProjection rejected DocumentExtracted
+# at position <Position>; replay stopped because strict=True
+```
+
+Three things about the error, each deliberate:
+
+- **It names the event, not a count.** "Replay failed, 1 event rejected" is
+  the same problem in a louder voice — you still have to go and find out
+  which one. `error.event`, `error.position` and `error.projection` are
+  attributes, and the position is what makes the record findable in the log.
+- **The rejecting exception is the `__cause__`.** The traceback says *why*,
+  so you are not sent to the DLQ to look up something it could have told you.
+- **It stops where it failed.** Events after the poison are not applied, so a
+  strict run is not "the tolerant run plus an exception at the end".
+
+The DLQ entry is written either way — the projection records it before
+re-raising — so a strict run that stops still leaves the same evidence a
+tolerant one would, for the events it reached.
+
+Use it in tests and on a first deployment; leave it off for the operational
+rebuild this page is otherwise about.
+
 ## Bounding the run with `max_events`
 
 `project` reads at most `max_events` events and raises when the feed keeps
