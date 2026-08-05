@@ -612,6 +612,15 @@ wrong entities. The suite that would decide it is B12, which does not exist:
 `uv run pytest -m accuracy tests/accuracy/` collects zero tests. B57 is one of
 two entries B12 names as blocked on it.
 
+> **Amendment.** B12 has since been built, so the paragraph above is a record
+> of the state at the time of the decision rather than a description of the
+> tree. `tests/accuracy/` now measures precision, recall and F1 over a graded
+> corpus under `-m accuracy`. It does **not** settle the question this ADR is
+> about: the corpus is five hand-graded documents and its floors are set where
+> a regression trips them, so it can show that off-schema extraction got worse
+> and cannot show that constraining would be better. The decision stands
+> unchanged; what changed is that the argument is now falsifiable in principle.
+
 One correction for anyone following the trail: B57's own text says the deleted
 function is "recoverable from `e063faa`". It is not — that commit deletes the
 settings object and never touches `prompt_generator.py`. The pre-deletion

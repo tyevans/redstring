@@ -271,62 +271,46 @@ first needs to rebuild a single tenant in anger.
 Code that may well be correct, with nothing that would tell us if it were not.
 These are the entries most likely to become section 1 without warning.
 
-### B12. There is no accuracy suite, and it is the only thing that could say whether extraction is any *good*
+### B12. The accuracy suite — built, and what it still cannot tell you
 
-Slice 6 deleted `tests/accuracy/test_extraction_accuracy.py`, the only file
-carrying the `accuracy` marker. It measured `OllamaExtractionService`, which no
-longer exists. `tests/accuracy/` is now an empty package and the marker is
-declared in `pyproject.toml` with nothing using it. `uv run pytest -m accuracy
-tests/accuracy/` collects **zero tests** — verified in slice 11.
+**Closed by building it rather than by deleting the marker**, which was the
+choice the entry framed. `tests/accuracy/` now holds a scorer, a graded corpus
+and a live-model test module, and `-m accuracy` collects four tests where it
+collected zero.
 
-Everything else in this repo checks that the library is *correct*. Nothing
-checks that it is *accurate*, and those are different properties: extraction
-can satisfy every invariant, round-trip through every adapter, and still find
-the wrong entities.
+The design decision worth keeping is the split. "Measure extraction accuracy"
+reads as one job needing a model, a corpus and a metric at once, and that
+reading is why the entry stayed open for eleven slices. It is two jobs:
+deciding whether a predicted entity *is* an expected one, which needs nothing
+and is where a wrong answer is silent, and getting predictions, which needs
+everything. The scorer and corpus are pure and run in the commit gate through
+`tests/unit/accuracy/`; only `test_extraction_accuracy.py` needs an endpoint.
 
-The environmental blocker this entry used to describe is **resolved**: the
-reference endpoint moved to `http://192.168.1.14:8080/v1` (llama-swap), and
-`qwen3.6-27b-mtp` serves real completions. `tests/integration/llm/` talks to it
-and is green. What is missing is the graded corpus.
+That split is also what makes a live number believable. An accuracy suite fails
+silently in two directions and both look like results — measuring nothing gives
+F1 = 0.0 and reads as a bad model, comparing the corpus against itself gives
+1.0 and reads as a good one. `test_harness.py` pins an exactly-right answer, an
+empty answer and a *wrong* answer against `FakeLlmProvider`. The third is the
+load-bearing one: a self-comparison cannot produce a false positive whatever
+the model says.
 
-**What it would take, precisely, so this stops being a wish.** Four pieces, in
-dependency order:
+**What it still cannot do**, which is the part to carry forward:
 
-1. **A graded corpus.** 20-50 documents with hand-annotated entities and
-   relationships, in-repo as fixtures rather than downloaded, because a
-   corpus that moves makes every number incomparable to the last. Budget this
-   honestly: annotation is the expensive part and there is no way around it.
-   Cover the six bundled domains, and include at least one document that
-   *should* yield nothing — a suite that only sees positive cases cannot
-   measure precision.
-2. **A matcher, which is the hard design problem.** Extraction produces
-   `uuid5`-derived ids, so "did it find Ada Lovelace" cannot be an id
-   comparison. It has to be a name match through `normalize_name` plus a
-   decision about partial credit: is "Lovelace" a hit, a miss, or a half?
-   Whatever is chosen must be stated in the suite, because it silently sets
-   every number the suite reports.
-3. **Metrics with a tolerance band, not equality.** Precision and recall per
-   document and in aggregate, asserted against a floor
-   (`recall >= 0.7`), never an exact value. `tests/integration/llm/test_live_pipeline.py`
-   is the model for what *not* to pin: it deliberately asserts that Ada
-   Lovelace is extracted and deliberately does **not** assert which
-   `entity_type` the model assigns her, because that changes between model
-   versions and a suite that pins it fails on every upgrade for no reason.
-4. **A probe that fails rather than skips.** The integration probe asks for one
-   completion and *skips* when the model is absent. An accuracy run must
-   **fail** loudly instead — a skipped accuracy suite reports "no data" as
-   silence, and silence is indistinguishable from success.
-
-Non-determinism is the part to plan for rather than discover: the same model on
-the same document does not return the same entities twice. Either fix the seed
-and temperature and accept that the number is about one sampling path, or run
-each document `n` times and assert on the mean, which multiplies the runtime by
-`n`. Decide before writing, because it changes the fixture shape.
-
-Two entries are waiting on this and cannot be settled without it: **B57**
-(whether constrained decoding extracts better) and **B52** (whether dropping
-the model's date-normalisation fields hurt temporal recall). Both are currently
-arguments. This suite is what would make them measurements.
+- **Five documents is not a benchmark.** It catches a regression; it cannot
+  rank two models, and an F1 quoted from it is not a figure anyone should
+  publish. Growing the corpus is the obvious next step and needs a second
+  grader more than it needs more documents — the grading rule that a second
+  person gets wrong is stated at the top of `corpus.yaml`.
+- **The floors are regression floors.** Set where a real fall trips them, not
+  where the current endpoint sits. Raising them to track a good model turns
+  the suite into a test of that model.
+- **One negative document carries the whole hallucination check.**
+  `empty-negative` grades nothing, so recall is vacuous and precision is the
+  only movable metric. Every other document rewards finding things. If that
+  document ever acquires a graded entity, the only test of its kind is retired
+  silently — `test_the_negative_document_grades_nothing` exists to stop that.
+- **It does not settle ADR 0011.** It can show that off-schema extraction got
+  worse; it cannot show that constraining to the schema would be better.
 
 ### B53. `Entity.temporal` round-trips through Neo4j but no shared test says so
 
