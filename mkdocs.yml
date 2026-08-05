@@ -151,4 +151,5 @@ nav:
       - "0015 · Consolidation gets a composed entry point": adr/0015-consolidation-gets-a-composed-entry-point.md
       - "0016 · GraphStore is five capabilities": adr/0016-graph-store-is-five-capabilities.md
       - "0017 · The embedding provider port": adr/0017-the-embedding-provider-port.md
+      - "0018 · A replay report carries its failures": adr/0018-a-replay-report-carries-its-failures.md
   - Contributing: contributing.md

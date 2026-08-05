@@ -5,85 +5,18 @@ endpoint this tenant does not have. `GraphStore` refuses dangling edges, and a
 document that references an entity from a document the projection has not
 folded yet produces exactly this. Injecting a synthetic exception would test
 the library's retry wrapper; this tests the fold.
+
+The log itself is `poisoned_log` in `conftest.py` -- it is shared with
+`test_replay_failures.py`, which asserts what the report says about it.
 """
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 import pytest
-from eventsource.domain.tenant_context import tenant_scope
-from eventsource.ports.positions import ExpectedVersion
 
-from redstring.domain.entity import Entity, ExtractionMethod
-from redstring.domain.relationship import Relationship
-from redstring.events import DocumentExtracted
-from redstring.events.streams import document_stream
 from redstring.projections import project
 
-TENANT_ID = uuid4()
-MODEL = "ollama/qwen3.6-27b"
-
-
-def _entity(source_id, name):
-    return Entity(
-        id=uuid4(),
-        tenant_id=TENANT_ID,
-        name=name,
-        normalized_name=name.lower(),
-        entity_type="thing",
-        source_id=source_id,
-        extraction_method=ExtractionMethod.PATTERN,
-        confidence=0.5,
-    )
-
-
-async def _append(event_store, source_id, entities, relationships):
-    stream = document_stream(tenant_id=TENANT_ID, source_id=source_id)
-    async with tenant_scope(TENANT_ID):
-        await event_store.append(
-            stream,
-            [
-                DocumentExtracted(
-                    aggregate_id=stream.aggregate_id,
-                    tenant_id=TENANT_ID,
-                    source_id=source_id,
-                    model_version=MODEL,
-                    entities=entities,
-                    relationships=relationships,
-                )
-            ],
-            ExpectedVersion.no_stream(),
-        )
-
-
-@pytest.fixture
-async def poisoned_log(rig):
-    """Three documents: good, poison, good. The poison is in the middle so a
-    projection that stopped on it would visibly drop the third."""
-    first = _entity("doc-1", "Ada")
-    await _append(rig.event_store, "doc-1", [first], [])
-
-    dangling = _entity("doc-2", "Grace")
-    await _append(
-        rig.event_store,
-        "doc-2",
-        [dangling],
-        [
-            Relationship(
-                id=uuid4(),
-                tenant_id=TENANT_ID,
-                source_entity_id=dangling.id,
-                target_entity_id=uuid4(),  # never extracted by any document
-                relationship_type="knows",
-                confidence=0.5,
-            )
-        ],
-    )
-
-    last = _entity("doc-3", "Barbara")
-    await _append(rig.event_store, "doc-3", [last], [])
-    return rig, [first, dangling, last]
+from .conftest import POISON_TENANT_ID, append_document, poison_entity
 
 
 class TestAPoisonEventDoesNotWedgeTheProjection:
@@ -94,8 +27,8 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
         assert report.applied == 2
         assert report.failed == 1
 
-        shape = await rig.shape([TENANT_ID])
-        assert entities[2].id.__str__() in shape[str(TENANT_ID)]["entity_ids"]
+        shape = await rig.shape([POISON_TENANT_ID])
+        assert entities[2].id.__str__() in shape[str(POISON_TENANT_ID)]["entity_ids"]
 
     async def test_the_failure_is_recorded_rather_than_swallowed(self, poisoned_log):
         """`failed` counting up is not enough on its own. An operator needs the
@@ -117,9 +50,9 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
         rig, entities = poisoned_log
         await project(rig.event_store, rig.projections)
 
-        shape = await rig.shape([TENANT_ID])
-        assert str(entities[1].id) in shape[str(TENANT_ID)]["entity_ids"]
-        assert shape[str(TENANT_ID)]["edges"] == {}
+        shape = await rig.shape([POISON_TENANT_ID])
+        assert str(entities[1].id) in shape[str(POISON_TENANT_ID)]["entity_ids"]
+        assert shape[str(POISON_TENANT_ID)]["edges"] == {}
 
     async def test_a_rerun_after_the_missing_entity_arrives_applies_it(self, poisoned_log):
         """The DLQ is not a graveyard. Once the endpoint exists -- because the
@@ -135,16 +68,16 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
                 edge = envelope.event.relationships[0]
         assert edge is not None
 
-        await _append(rig.event_store, "doc-4", [_entity("doc-4", "Missing")], [])
+        await append_document(rig.event_store, "doc-4", [poison_entity("doc-4", "Missing")], [])
         # The missing endpoint, added under the id the edge points at.
         await rig.graph_store.upsert_entity(
-            _entity("doc-4", "Missing").model_copy(update={"id": edge.target_entity_id})
+            poison_entity("doc-4", "Missing").model_copy(update={"id": edge.target_entity_id})
         )
 
         report = await project(rig.event_store, rig.projections)
         assert report.failed == 0
-        shape = await rig.shape([TENANT_ID])
-        assert str(edge.id) in shape[str(TENANT_ID)]["edges"]
+        shape = await rig.shape([POISON_TENANT_ID])
+        assert str(edge.id) in shape[str(POISON_TENANT_ID)]["edges"]
 
 
 class TestResetIsRefusedRatherThanSilentlyDoingNothing:
