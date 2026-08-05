@@ -262,24 +262,65 @@ jobs:
 
   # Publishing can report success while the index serves something unusable.
   # Install the *published* artifact from the *real* index and use it.
+  #
+  # Runs for **both** targets. Verifying only the PyPI path would be exactly
+  # backwards: the TestPyPI tag exists to rehearse this pipeline on a version
+  # nobody minds burning, and a rehearsal that skips the last step proves less
+  # than the performance it is rehearsing for.
   verify:
-    needs: [validate, publish-pypi]
-    if: needs.publish-pypi.result == 'success'
+    needs: [validate, publish-pypi, publish-testpypi]
+    if: >-
+      always()
+      && (needs.publish-pypi.result == 'success' || needs.publish-testpypi.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: '3.13'
 
-      - name: Wait for PyPI to propagate
+      - name: Wait for the index to propagate
         run: sleep 60
 
-      - name: Install from PyPI and use it
+      - name: Install from the index it was published to, and use it
+        env:
+          TARGET: ${{ needs.validate.outputs.publish_target }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
           uv venv /tmp/verify
+
+          # TestPyPI does not mirror PyPI, so it needs the real index as well
+          # or the install fails resolving `pydantic` -- telling you nothing
+          # about this package.
+          #
+          # `unsafe-best-match` is load-bearing and its name is alarming, so:
+          # uv's default is `first-index`, meaning the first index that has a
+          # package at all wins outright. TestPyPI carries stale copies of
+          # plenty of real packages, so the default would resolve
+          # dependencies against whatever ancient `pydantic` happens to sit
+          # there and verify redstring against a dependency set no user will
+          # ever have. `unsafe-best-match` considers every index and takes the
+          # best version, which is what makes this a rehearsal rather than a
+          # different experiment.
+          #
+          # It is "unsafe" because across two indexes it opens the door to
+          # dependency confusion -- an attacker publishing a higher version of
+          # a private name on a public index. That is not a risk here: every
+          # name involved is public, and `redstring` itself is pinned to an
+          # exact version that exists on exactly one of the two indexes.
+          if [[ "$TARGET" == "testpypi" ]]; then
+            INDEX_ARGS=(
+              --index-url https://test.pypi.org/simple/
+              --extra-index-url https://pypi.org/simple/
+              --index-strategy unsafe-best-match
+            )
+          else
+            INDEX_ARGS=()
+          fi
+
           uv pip install --python /tmp/verify/bin/python \
-            "redstring==${{ needs.validate.outputs.version }}"
+            "${INDEX_ARGS[@]}" "redstring==${VERSION}"
+
           /tmp/verify/bin/python - <<'EOF'
           import asyncio
           from uuid import uuid4

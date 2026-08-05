@@ -126,12 +126,26 @@ Then install it the way a user would, from a clean environment:
 uv venv /tmp/t && uv pip install --python /tmp/t/bin/python \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
+  --index-strategy unsafe-best-match \
   redstring==0.1.0a1
 ```
 
-The extra index is not optional: TestPyPI does not mirror the real one, so
-without it the install fails resolving `pydantic` rather than telling you
-anything about your package.
+Both extra flags are load-bearing. **The extra index** is needed because
+TestPyPI does not mirror the real one, so without it the install fails
+resolving `pydantic` rather than telling you anything about your package.
+**`--index-strategy unsafe-best-match`** is needed because uv's default is
+`first-index` — the first index carrying a package at all wins outright — and
+TestPyPI holds stale copies of plenty of real packages, so the default would
+resolve your dependencies against an ancient `pydantic` and test a
+combination no user will ever have.
+
+"Unsafe" refers to dependency confusion across two indexes, which is not a
+risk here: every name involved is public, and `redstring` is pinned to an
+exact version that exists on exactly one of them.
+
+The release workflow runs this same install automatically in its `verify`
+job, for the TestPyPI path as well as the PyPI one — verifying only the real
+release would mean the rehearsal proved less than the performance.
 
 ## Provenance and attestations
 
