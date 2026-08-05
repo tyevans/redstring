@@ -23,22 +23,25 @@ what each was and where its reasoning lives now — so those pointers resolve.
 
 ## State of the tree
 
-The default gate collects **1761 tests**, plus **197 `integration` tests** —
-against a real Neo4j (slices 4, 7), real pgvector (slice 5), a live
-`qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`), and a built wheel (slice 10).
-The first two need `docker-compose.test.yml`. The integration suite is
-deselected by default (B10a); a run prints what it deselected and how to run
-it. There is **no `accuracy` suite** — see B12.
+The default gate collects **1995 tests**, plus **245 `integration` tests** and
+**4 `accuracy` tests** — against a real Neo4j (slices 4, 7), real pgvector
+(slice 5), a live `qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`), and a built
+wheel (slice 10). The first two need `docker-compose.test.yml`. Both extra
+suites are deselected by default (B10a); a run prints what it deselected and
+how to run it. What the accuracy suite can and cannot tell you is B12.
 
-**The gate is not reliably green.** Slice 11's verification run under the
-gate's own conditions (`-n auto --cov`) gave **1760 passed, 1 failed** — a
-hypothesis deadline flake that passes in isolation. It is **B59**, and it can
-block a commit. Do not read "the suite passes" here as more than "it usually
-passes".
+**The gate is green.** Verified under its own conditions
+(`uv run python scripts/coverage_ratchet.py`, which is `pytest -q -n auto
+--cov`): **1995 passed**, no failures. The hypothesis deadline flake that made
+this paragraph say otherwise was fixed at the class level rather than the
+instance — `tests/conftest.py` now registers a suite-wide `deadline=None`
+profile, and `tests/unit/test_hypothesis_deadline_policy.py` fails if a
+`deadline=` reappears in a `settings()` decorator and makes the profile inert
+for that test.
 
-Coverage is **93.69%** (`.coverage-baseline`); slice 11 re-measured it at
-**94%** on a run with one failure. Do not read that as a quality trend; see
-B14 for why the number moved for reasons that were not test quality.
+Coverage is **94.05%** (`.coverage-baseline`), held exactly by the run above.
+Do not read the movement from 93.69% as a quality trend; see B14 for why the
+number moves for reasons that are not test quality.
 
 **Note that the two compliance suites must be run in separate pytest
 invocations** — see B10m.
@@ -814,77 +817,6 @@ import and have each subclass select it — or give the suite a class-level hook
 `settings` callable) that still leaves `--hypothesis-profile` outranking it.
 Either is a change to slice 3's suite, which is why slice 4 did not make it
 unilaterally.
-
-### B59. A hypothesis property in `temporal/` exceeds its deadline under the gate's own conditions
-
-**Found in slice 11, in the run that verified this file's test count.**
-
-```
-FAILED tests/unit/temporal/test_inference.py::TestTheInvariantIsStructural::
-       test_the_default_set_loses_no_pair_that_relate_calls_related
-  - DeadlineExceeded('Test took 285.03ms, which exceeds the deadline of 200.00ms')
-```
-
-1 failed, 1760 passed. **The gate is not reliably green**, and this is a
-commit-blocking flake rather than a theoretical one: `scripts/coverage_ratchet.py`
-runs `pytest -q -n auto --cov`, which is precisely the condition that produced
-it — sixteen xdist workers competing while a coverage tracer is attached.
-
-Measured, not assumed: the class passes in isolation three runs out of three,
-around 10.6s each. The property draws two lists of up to five integers and runs
-`infer_relations` at `max_examples=300`, so it is doing real interval
-arithmetic 300 times per example set with a tracer on every line.
-
-**This is the third occurrence of the shape B50 describes, and B50 predicted
-it almost exactly** — "the third occurrence will be in a file whose author has
-no idea `dateparser` is involved." The prediction was right about the file and
-possibly wrong about the cause: nothing in this test path goes through
-`map_extraction`, so `dateparser` is probably innocent here and the cause is
-simply instrumented arithmetic under contention. Both produce the same
-symptom, which is the point — **the 200ms default deadline is not survivable
-under this gate's own parallelism for any property that does non-trivial work
-per example.**
-
-**Deliberately not fixed here**, for B51's reason: a green-run-dependent edit
-made under time pressure is how one flake becomes two. And the fix is a
-judgement, not a keystroke. Three options, and the reflex is the worst one:
-
-- `deadline=None`, which is what the previous nine sites did (B50). It works,
-  it takes ten seconds, and it is why this keeps recurring — each drop makes
-  the next one easier and removes the only signal that would notice a genuine
-  performance regression in `infer_relations`.
-- **Lower `max_examples` for this property.** 300 is a lot for a search space
-  of two five-element integer lists, and the per-example cost is what exceeds
-  the deadline, not the example count. This is probably the right answer.
-- **Set a project-wide hypothesis profile with a realistic deadline**, selected
-  by the gate. This is the only option that fixes the class rather than the
-  instance, and it is the one to take if a fourth site appears. Note that it
-  interacts with B10h: an explicit `settings()` outranks a profile, so the nine
-  existing `deadline=None` sites would keep their behaviour and the profile
-  would only govern everything else.
-
-Whichever is chosen, **do not verify it by running the file alone.** It passes
-alone. Verify under `-n auto --cov` over the whole suite, several times.
-
-### B51. `test_delay_between_retries` asserts on wall-clock time under xdist
-
-`tests/unit/llm/test_retry.py::TestRetryTiming::test_delay_between_retries`
-asserts `0.15 <= second_delay <= 0.25` for a 0.2s backoff. It failed once
-during slice 8 with `second_delay == 0.298` -- not a regression in the retry
-policy, which slept the amount it was asked to, but `pytest-xdist` scheduling
-the coroutine's resumption late on a loaded machine.
-
-An upper bound on how long `asyncio.sleep` takes to return is not a property of
-this code and cannot be made one; the machine can always be busier. What the
-test is really for is that the delay *grows*, so the fix is to assert the shape
-(`second_delay > first_delay`, and each at least its nominal value) and drop
-the ceilings. Left alone in slice 8 because that slice touched nothing in
-`llm/` and a green-run-dependent edit is how a flake becomes two flakes. There
-is no such excuse now; this is a small, safe fix waiting for someone.
-
-Note the failure mode this has in common with B45: a timing assertion that
-fails intermittently in CI reads as infrastructure trouble and gets retried
-rather than investigated.
 
 ### B10j. `_schema_ready` is module-level mutable test state
 

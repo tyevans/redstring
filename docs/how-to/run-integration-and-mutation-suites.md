@@ -675,10 +675,13 @@ Three exceptions, all with a name and a cause:
   ([B10m](#step-4-do-not-combine-it-with-the-unit-suite-in-one-invocation)).
 - **A single `DeadlineExceeded` that passes on its own** — hypothesis's 200 ms
   default deadline is not survivable under contention for a property doing real
-  work (**B59**). It has been seen in the *unit* suite under the gate's
-  `-n auto --cov`, not in this one, but the shape has recurred three times and
-  a serial integration run is not immune. Re-run the single test in isolation
-  before believing it; if it passes there, it is the deadline, not the backend.
+  work, and the shape recurred three times before it was fixed at the class
+  level. `tests/conftest.py` now registers a suite-wide `deadline=None`
+  profile, so this can only reach you two ways: you passed
+  `--hypothesis-profile=strict`, which opts back in deliberately, or someone
+  put `deadline=` back into a `settings()` decorator, which outranks the
+  profile — `tests/unit/test_hypothesis_deadline_policy.py` exists to fail
+  when they do. Neither is a finding about the backend.
 
 Everything else that fails, failed for a reason in the code. Re-run one test
 with `-x` and read it.
