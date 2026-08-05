@@ -14,7 +14,7 @@ under **Removed** or **Changed**. See
 
 ## [Unreleased]
 
-## [0.1.0a1] - 2026-08-05
+## [0.1.0a1] - 2026-08-04
 
 **A rehearsal of the release pipeline, published to TestPyPI as
 `redstring-test`. Not a release, and not on PyPI.**
@@ -74,8 +74,8 @@ First release.
   is exported or recorded, and the end-to-end example imports nothing but
   `redstring`.
 - `py.typed`, so downstream type checkers see the annotations.
-- Documentation at <https://tyevans.github.io/redstring>, including fourteen
-  ADRs.
+- Documentation at <https://tyevans.github.io/redstring>, including the
+  architecture decision records.
 
 ### Notes
 
@@ -97,3 +97,4 @@ First release.
 
 [Unreleased]: https://github.com/tyevans/redstring/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/tyevans/redstring/releases/tag/v0.1.0
+[0.1.0a1]: https://github.com/tyevans/redstring/releases/tag/v0.1.0a1
