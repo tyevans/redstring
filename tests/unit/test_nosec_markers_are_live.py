@@ -1,11 +1,28 @@
 """Every `# nosec` marker must sit on a line bandit would otherwise report.
 
 A suppression is an exemption list one line long, and it has the failure mode
-CLAUDE.md describes for all of them: **bandit does not report an unused
-`# nosec`.** Move the code, rewrite the statement, delete the risky call
-entirely -- the marker stays, silently suppressing whatever lands on that line
-next. A marker that has outlived its cause is worse than no marker, because it
-reads in review as a considered decision.
+CLAUDE.md describes for all of them: nothing fails when it stops applying.
+Move the code, rewrite the statement, delete the risky call entirely -- the
+marker stays, silently suppressing whatever lands on that line next. A marker
+that has outlived its cause is worse than no marker, because it reads in
+review as a considered decision.
+
+**Bandit has a warning for this and it cannot be used.** It prints
+`nosec encountered (B608), but no failed test on file ...:365`, which sounds
+exactly like the check this module performs. Measured, it is not:
+
+- It **does not affect the exit code.** A run with a genuinely stale marker
+  exits 0 unless something *else* fails, so CI stays green.
+- It **fires constantly for correct markers.** Bandit attributes a `nosec` to
+  the whole statement range, so a suppression on a multi-line call warns for
+  every line in that call with no finding on it. The five sound `B608`
+  markers in `pgvector.py` produce warnings naming lines 359 and 365, which
+  hold no marker at all.
+
+So the signal is both non-blocking and mostly false, which is the worst
+combination: too noisy to read, too quiet to gate. This module answers the
+question directly instead, by comparing marker lines to findings from a run
+with suppression handling switched off.
 
 There are six, and they were added together after a rename touched every file
 in `src/` and surfaced eight pre-existing findings that the per-file
