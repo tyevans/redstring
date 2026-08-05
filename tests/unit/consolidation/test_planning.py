@@ -9,7 +9,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kg_builder.consolidation.planning import duplicate_preference, plan_redirections
+from redstring.consolidation.planning import duplicate_preference, plan_redirections
 
 from .conftest import edge
 
@@ -374,7 +374,7 @@ class TestTheMergeEventAcceptsThePlan:
         """`EntitiesMerged` rejects redirections carrying a foreign tenant, and
         `RelationshipRedirection` rejects an `after` that is a different edge.
         A plan must satisfy both without the caller adjusting it."""
-        from kg_builder.events.merge import EntitiesMerged
+        from redstring.events.merge import EntitiesMerged
 
         tenant, canonical, outsider = uuid4(), uuid4(), uuid4()
         first, second = uuid4(), uuid4()

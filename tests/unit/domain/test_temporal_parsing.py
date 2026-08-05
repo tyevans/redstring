@@ -9,8 +9,8 @@ import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
-from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-from kg_builder.domain.temporal_parsing import (
+from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from redstring.domain.temporal_parsing import (
     AmbiguousReferenceDateError,
     parse_temporal,
     render_temporal,

@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING, Any
 from hypothesis import assume
 from hypothesis import strategies as st
 
-from kg_builder.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.relationship import Relationship
-from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-from kg_builder.domain.vector import _reject_nul
+from redstring.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.relationship import Relationship
+from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from redstring.domain.vector import _reject_nul
 
 if TYPE_CHECKING:
     from uuid import UUID

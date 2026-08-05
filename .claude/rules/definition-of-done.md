@@ -32,13 +32,13 @@ No work is complete if the decisions it made or changed are not documented:
    means: changes to the layered import contract in `pyproject.toml`; the
    entity/graph data model; consolidation and merge semantics; anything that
    changes a public contract or a persistence format; and **the shape of the
-   `LlmProvider` port in `src/kg_builder/ports/llm_provider.py` or of the
-   plug-in protocols in `src/kg_builder/extraction/protocols.py`**. That last
+   `LlmProvider` port in `src/redstring/ports/llm_provider.py` or of the
+   plug-in protocols in `src/redstring/extraction/protocols.py`**. That last
    one is what "extraction strategy selection" now means: there is no
    selectable backend to choose between. Extraction calls one narrow port —
    `LlmProvider.extract(text, schema, *, system_prompt)` — and everything a
    chat API makes you think about stops at the adapter in
-   `kg_builder/llm/adapters/`. The only shape extraction itself plugs in is
+   `redstring/llm/adapters/`. The only shape extraction itself plugs in is
    `Chunker`; `Preprocessor` and `EntityMerger` were both removed, with the
    reasoning recorded in that module. So widening the port, adding a second
    protocol beside `Chunker`, or bringing a removed one back is an
@@ -50,10 +50,17 @@ No work is complete if the decisions it made or changed are not documented:
    `.claude/rules/recurring-defects.md` §5.
 5. **ADR numbers are allocated at merge, not at drafting.** Draft under a
    provisional name; re-check `docs/adr/` on current `main` before merging.
-   ADRs `0001` through `0006` exist, so the next number is allocated against
+   ADRs `0001` through `0014` exist, so the next number is allocated against
    the highest already on `main` at the moment the work merges — not against
    the highest you saw when you started drafting. Parallel branches routinely
    draft the same next number; the one that merges second renumbers.
+
+   **Renumbering means the title and every inbound citation, not the
+   filename.** The eight-way `0007` collision was resolved by renaming files
+   to `0008`–`0014` and stopping there: seven H1s still read `# ADR 0007:`,
+   and every inbound `](../adr/0007-<slug>.md)` link pointed at a path that no
+   longer existed. Nothing failed, because nothing checks. `mkdocs build
+   --strict` checks now, which is the mechanism this rule had been missing.
 
 **The ADRs a spec has to be run against.** Item 1 is only actionable if you
 know what is already decided, so here is the set, by what each one settles:
@@ -66,17 +73,24 @@ know what is already decided, so here is the set, by what each one settles:
 | [`0004` consolidation emits events](../../docs/adr/0004-consolidation-emits-events.md) | Consolidation decides and emits; a projection writes. Records what collapsing the two back together would cost in auditability. |
 | [`0005` temporal inference on read](../../docs/adr/0005-temporal-inference-on-read.md) | Inferred temporal edges are computed on read, never emitted into `DocumentExtracted`. |
 | [`0006` the public surface is gated](../../docs/adr/0006-the-public-surface-is-gated.md) | `__all__` is the whole promise, held by three tests each blind to what the other two catch. |
+| [`0007` composition is the only top layer](../../docs/adr/0007-composition-is-the-only-top-layer.md) | Why one module occupies the top layer, and why `build_graph` writes without a log. |
+| [`0008` the two non-store ports](../../docs/adr/0008-the-two-non-store-ports.md) | `Cache` and `LlmProvider`: what each promises, and what an adapter must absorb. |
+| [`0009` the extraction fold resolves through aliases](../../docs/adr/0009-the-extraction-fold-resolves-through-aliases.md) | The fold's half of `0002`'s contract — resolve-before-write, and why a collapsed edge is deleted rather than upserted. |
+| [`0010` one total order for preference](../../docs/adr/0010-one-total-order-for-preference.md) | Which mapping of a thing survives, decided by one total order in `domain.preference`. |
+| [`0011` domain schemas prompt but do not constrain](../../docs/adr/0011-domain-schemas-prompt-but-do-not-constrain.md) | A schema shapes the prompt; it is not a validator, and an off-schema entity is not an error. |
+| [`0012` no ANN index in a multi-tenant vector store](../../docs/adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) | Why pgvector carries no `hnsw`/`ivfflat` index, and what an index does to `tenant_id`. |
+| [`0013` resilience behind the cache port](../../docs/adr/0013-resilience-behind-the-cache-port.md) | Retry, rate limiting and circuit breaking live in `llm/` over `Cache`, not in the pipeline. |
+| [`0014` exemption lists are empty and must stay falsifiable](../../docs/adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md) | An exemption list needs a test that its entries still match something; an emptied *exclusion* is deleted rather than kept. |
 
 Anything touching an event payload, a store port, consolidation, temporal
 relations, or `__all__` has a related ADR by construction — say for each one
 whether it **stands**, is **amended**, or is **superseded**, rather than
 leaving the reader to infer it from silence.
 
-`docs/adr/` also holds several drafts still numbered `0007`, which is item 5
-in action rather than a numbering bug: they are provisional until one of them
-merges. Run a spec against their content the same way — a draft that is about
-to become `0007` constrains you as much as an accepted one — but do not cite a
-`0007` number as though it were allocated.
+The eight-way `0007` collision this section used to describe is **resolved**:
+those drafts are `0007` through `0014`, each with a unique number, a matching
+H1, and inbound citations that resolve. See `recurring-defects.md` §6 for how
+it happened and what the half-finished renumber cost.
 
 ## Recurring defect check (applies to ALL work)
 
@@ -140,7 +154,7 @@ deferral: it goes in `BACKLOG.md` with why ignoring it was correct.
 
 ## New feature
 
-1. Implementation under `src/kg_builder/`, in the correct layer — the
+1. Implementation under `src/redstring/`, in the correct layer — the
    `lint-imports` contract in `pyproject.toml` is the authority, and a
    cross-layer import means either the code is in the wrong layer or the
    contract needs an explicit, argued change (which is an ADR).
@@ -179,11 +193,11 @@ deferral: it goes in `BACKLOG.md` with why ignoring it was correct.
 
 There are no extraction "backends" to subclass any more. A new implementation
 is an **adapter behind a port**: `GraphStore`, `VectorStore`, `Cache` or
-`LlmProvider`, each a Protocol in `src/kg_builder/ports/`. See
+`LlmProvider`, each a Protocol in `src/redstring/ports/`. See
 `docs/how-to/implement-a-store-adapter.md` for the walkthrough; this list is
 what makes one *done*.
 
-1. **Implements the relevant Protocol in `src/kg_builder/ports/`**, and lives
+1. **Implements the relevant Protocol in `src/redstring/ports/`**, and lives
    under that port's sibling package (`graph/`, `vector/`, `llm/`) — not under
    `extraction/`. The Protocol is the contract; nothing else is. Widening the
    port to fit an adapter is an architectural decision and needs an ADR (see

@@ -14,7 +14,7 @@ writing a third.
 The adapter needs the `neo4j` extra:
 
 ```
-uv add "kg-builder[neo4j]"
+uv add "redstring[neo4j]"
 ```
 
 which installs `neo4j>=5.27,<6` (the async driver).
@@ -36,13 +36,13 @@ integration suite runs against.
 ## Import path
 
 ```python
-from kg_builder.graph.adapters.neo4j import Neo4jGraphStore
+from redstring.graph.adapters.neo4j import Neo4jGraphStore
 ```
 
-`kg_builder.graph` re-exports **nothing**, on purpose, and its `__init__`
+`redstring.graph` re-exports **nothing**, on purpose, and its `__init__`
 docstring says why: a package-level re-export would make
-`import kg_builder.graph` pull in the `neo4j` driver, and that driver is an
-optional extra. The same package holds `kg_builder.graph.adapters.memory`,
+`import redstring.graph` pull in the `neo4j` driver, and that driver is an
+optional extra. The same package holds `redstring.graph.adapters.memory`,
 which needs no extra at all — one re-export would make the cheap adapter's
 package unimportable without the expensive one's dependency.
 
@@ -53,23 +53,23 @@ slice 9. Cypher now lives only in the adapter, and
 Cypher keywords to keep it there.)
 
 So importing a Neo4j-backed store is a deliberate act at a composition root,
-by its full dotted path. It is *not* reachable as `kg_builder.Neo4jGraphStore`:
-`Neo4jGraphStore` is absent from `kg_builder.__all__` precisely because the
+by its full dotted path. It is *not* reachable as `redstring.Neo4jGraphStore`:
+`Neo4jGraphStore` is absent from `redstring.__all__` precisely because the
 top-level package must import cleanly without the extra installed.
 
 `InMemoryGraphStore` **is** exported at the top level —
-`from kg_builder import InMemoryGraphStore` — since it has no optional
+`from redstring import InMemoryGraphStore` — since it has no optional
 dependency behind it. That asymmetry is the whole rule in one line: the public
 surface carries the adapters that cost nothing to import, and the rest are
 reached by path.
 
 Everything else about the adapter — the `GraphStore` port, the domain types it
-returns — *is* in `kg_builder.__all__`, so a composition root normally imports
+returns — *is* in `redstring.__all__`, so a composition root normally imports
 one dotted path and takes the rest from the package root:
 
 ```python
-from kg_builder import GraphStore, TenantId
-from kg_builder.graph.adapters.neo4j import Neo4jGraphStore
+from redstring import GraphStore, TenantId
+from redstring.graph.adapters.neo4j import Neo4jGraphStore
 ```
 
 Because it is not exported, the adapter is outside the public-surface gates
@@ -85,7 +85,7 @@ Wraps an **injected** `neo4j.AsyncDriver`. The store does not own it, and
 
 ```python
 from neo4j import AsyncGraphDatabase
-from kg_builder.graph.adapters.neo4j import Neo4jGraphStore
+from redstring.graph.adapters.neo4j import Neo4jGraphStore
 
 driver = AsyncGraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "secret"))
 store = Neo4jGraphStore(driver)
@@ -1311,7 +1311,7 @@ docker compose -f docker-compose.test.yml up -d neo4j
 
 - image `neo4j:5-community`
 - ports **7688** (bolt, mapped from 7687) and **7475** (http, from 7474)
-- auth `neo4j/kgbuilder`
+- auth `neo4j/redstring`
 - a healthcheck running `cypher-shell ... 'RETURN 1'` every 5s, 30 retries
 
 **The ports are deliberately non-default** so the container cannot collide with
@@ -1327,7 +1327,7 @@ not when the server can *serve*; an immediate connect races store recovery.
 |---|---|
 | `KG_TEST_NEO4J_URI` | `bolt://localhost:7688` |
 | `KG_TEST_NEO4J_USER` | `neo4j` |
-| `KG_TEST_NEO4J_PASSWORD` | `kgbuilder` |
+| `KG_TEST_NEO4J_PASSWORD` | `redstring` |
 
 The defaults match `docker-compose.test.yml`, so the suite needs no environment
 at all against the supplied container.
@@ -1354,11 +1354,11 @@ without a backend.
 ## Wiring the adapter at a composition root
 
 ```python
-from kg_builder.graph.adapters.neo4j import Neo4jGraphStore
+from redstring.graph.adapters.neo4j import Neo4jGraphStore
 
 store = Neo4jGraphStore.connect(
     "bolt://localhost:7688",
-    auth=("neo4j", "kgbuilder"),
+    auth=("neo4j", "redstring"),
 )
 try:
     await store.ensure_schema()
@@ -1376,8 +1376,8 @@ store = Neo4jGraphStore(driver)   # close() is then a no-op
 
 ## See also
 
-- `kg_builder.ports.graph_store.GraphStore` — the port this implements
-- `kg_builder.graph.adapters.memory.InMemoryGraphStore` — the in-process
+- `redstring.ports.graph_store.GraphStore` — the port this implements
+- `redstring.graph.adapters.memory.InMemoryGraphStore` — the in-process
   adapter, exercised by the same compliance suite in the default gate
 - `tests/compliance/graph_store.py` — the shared suite both adapters must pass
 - [ADR 0002: two store ports](../adr/0002-two-store-ports.md)

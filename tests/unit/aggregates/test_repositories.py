@@ -18,13 +18,13 @@ from eventsource.domain.exceptions import (
 from eventsource.domain.tenant_context import tenant_scope
 from eventsource.ports.positions import ExpectedVersion
 
-from kg_builder.aggregates.consolidation_log import ConsolidationLog
-from kg_builder.aggregates.document import Document
-from kg_builder.aggregates.repositories import (
+from redstring.aggregates.consolidation_log import ConsolidationLog
+from redstring.aggregates.document import Document
+from redstring.aggregates.repositories import (
     consolidation_repository,
     document_repository,
 )
-from kg_builder.events.streams import (
+from redstring.events.streams import (
     CONSOLIDATION_CATEGORY,
     DOCUMENT_CATEGORY,
     consolidation_stream,

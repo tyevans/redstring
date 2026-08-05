@@ -36,16 +36,16 @@ from eventsource.domain.tenant_context import tenant_scope
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from kg_builder.aggregates.repositories import document_repository
-from kg_builder.consolidation.service import ConsolidationService
-from kg_builder.domain.exceptions import (
+from redstring.aggregates.repositories import document_repository
+from redstring.consolidation.service import ConsolidationService
+from redstring.domain.exceptions import (
     DoubleMergeError,
     MergeIntoAliasError,
     UnknownMergeError,
 )
-from kg_builder.events.streams import document_stream
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
-from kg_builder.projections import GraphProjection, project
+from redstring.events.streams import document_stream
+from redstring.graph.adapters.memory import InMemoryGraphStore
+from redstring.projections import GraphProjection, project
 
 from .conftest import edge, entity
 from .oracle import snapshot

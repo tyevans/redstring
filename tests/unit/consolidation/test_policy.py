@@ -15,8 +15,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kg_builder.consolidation.candidates import ScoredCandidate
-from kg_builder.consolidation.policy import (
+from redstring.consolidation.candidates import ScoredCandidate
+from redstring.consolidation.policy import (
     ADJUDICATION_BATCH_SIZE,
     HIGH_SIMILARITY,
     LOW_SIMILARITY,
@@ -26,12 +26,12 @@ from kg_builder.consolidation.policy import (
     MergeDecision,
     decide,
 )
-from kg_builder.domain.exceptions import (
+from redstring.domain.exceptions import (
     EmptyCompletionError,
     RefusedCompletionError,
 )
-from kg_builder.domain.similarity import SimilarityFeatures
-from kg_builder.ports.llm_provider import LlmProvider
+from redstring.domain.similarity import SimilarityFeatures
+from redstring.ports.llm_provider import LlmProvider
 
 from .conftest import entity
 

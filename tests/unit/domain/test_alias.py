@@ -1,4 +1,4 @@
-"""Tests for kg_builder.domain.alias."""
+"""Tests for redstring.domain.alias."""
 
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from kg_builder.domain.alias import Alias
+from redstring.domain.alias import Alias
 
 
 def _alias(**overrides):

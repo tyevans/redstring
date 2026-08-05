@@ -68,7 +68,7 @@ Four things, and the last one is the one that silently produces no candidates:
   yourself and set the field:
 
   ```python
-  from kg_builder.domain.blocking import blocking_keys_for
+  from redstring.domain.blocking import blocking_keys_for
 
   entity = entity.model_copy(update={"blocking_keys": blocking_keys_for(entity)})
   ```
@@ -80,29 +80,29 @@ Four things, and the last one is the one that silently produces no candidates:
 
 Merging also changes what later extraction writes: once the aliases exist, the
 extraction fold resolves endpoints through them
-([ADR 0007](../adr/0007-the-extraction-fold-resolves-through-aliases.md)),
+([ADR 0009](../adr/0009-the-extraction-fold-resolves-through-aliases.md)),
 so a merge is not a one-off edit to the graph you have — it is a fact that
 keeps applying.
 
-### Why this is imported by path and not from `kg_builder` (and what that means for upgrades)
+### Why this is imported by path and not from `redstring` (and what that means for upgrades)
 
 Every class in this guide is imported by a dotted path:
 
 ```python
-from kg_builder.consolidation.candidates import CandidateFinder
-from kg_builder.consolidation.policy import Adjudicator
-from kg_builder.domain.similarity import FeatureWeights
-from kg_builder.consolidation.service import ConsolidationService
-from kg_builder.events.merge import EntitiesMerged, MergeUndone
-from kg_builder.domain.exceptions import (
+from redstring.consolidation.candidates import CandidateFinder
+from redstring.consolidation.policy import Adjudicator
+from redstring.domain.similarity import FeatureWeights
+from redstring.consolidation.service import ConsolidationService
+from redstring.events.merge import EntitiesMerged, MergeUndone
+from redstring.domain.exceptions import (
     DoubleMergeError,
     MergeIntoAliasError,
     UnknownMergeError,
 )
 ```
 
-None of those names are in `kg_builder.__all__`, and that is a deliberate
-statement about stability rather than an oversight. `kg_builder`'s docstring
+None of those names are in `redstring.__all__`, and that is a deliberate
+statement about stability rather than an oversight. `redstring`'s docstring
 puts it plainly: **everything named in `__all__` is supported and nothing
 else**, and anything reached through a dotted path may change without notice,
 including in a patch release. Consolidation is on the "deliberately not here"
@@ -111,23 +111,23 @@ these classes would publish an API whose shape is still being decided by
 callers it does not have.
 
 The surface is *closed*, not merely documented: every exported name's
-signature mentions only exported types, and every `KgBuilderError` subclass is
+signature mentions only exported types, and every `RedstringError` subclass is
 either exported or recorded against the capability whose export would bring it
 ([ADR 0006](../adr/0006-the-public-surface-is-gated.md)).
 `MergeIntoAliasError`, `DoubleMergeError` and `UnknownMergeError` are recorded
-there today with the reason "`kg_builder.consolidation` is not exported yet",
+there today with the reason "`redstring.consolidation` is not exported yet",
 which is the same decision seen from the exception side.
 
 What that means when you upgrade:
 
 - **Pin an exact version, and read the changelog rather than trusting
   semver.** Signatures, keyword names, and module locations under
-  `kg_builder.consolidation` may all move in a patch release. The stability
+  `redstring.consolidation` may all move in a patch release. The stability
   promise that covers `build_graph` does not extend to
   `ConsolidationService`.
 - **Import from the module you actually depend on, not from a re-export.**
-  `kg_builder.events` re-exports `EntitiesMerged` and `MergeUndone`, but the
-  defining module is `kg_builder.events.merge`. Either path is internal;
+  `redstring.events` re-exports `EntitiesMerged` and `MergeUndone`, but the
+  defining module is `redstring.events.merge`. Either path is internal;
   neither is guaranteed.
 - **The half of this guide that touches exported names is the stable half.**
   `GraphProjection`, `project`, `Entity`, `Alias`, `Relationship`,
@@ -156,7 +156,7 @@ merges — `ConsolidationService` does that in Step 4, with a finder you hand it
 The minimum construction takes a `GraphStore` and nothing else:
 
 ```python
-from kg_builder.consolidation.candidates import CandidateFinder
+from redstring.consolidation.candidates import CandidateFinder
 
 finder = CandidateFinder(graph_store)
 ```
@@ -235,7 +235,7 @@ That last case is the one to watch in a large tenant. The 50 is ranked over
 neighbourhood can have blocked candidates that fall outside it and are then
 scored on name and graph alone. `EMBEDDING_SEARCH_K` is a module constant, not
 a constructor argument: if you need it larger, that is a change to
-`kg_builder.consolidation.candidates`, not a knob.
+`redstring.consolidation.candidates`, not a knob.
 
 That distinction is the whole reason a deployment without embeddings still
 works. `combined_score` renormalizes over the features actually present, so a
@@ -310,7 +310,7 @@ turning it off is closest to free.
 ### Overriding `FeatureWeights`
 
 ```python
-from kg_builder.domain.similarity import FeatureWeights
+from redstring.domain.similarity import FeatureWeights
 
 finder = CandidateFinder(
     graph_store,
@@ -368,14 +368,14 @@ band rather than obviously wrong merges.
 port and nothing else:
 
 ```python
-from kg_builder.consolidation.policy import Adjudicator
+from redstring.consolidation.policy import Adjudicator
 
 adjudicator = Adjudicator(provider)
 ```
 
 `provider` is whatever you already use for extraction — the port is one
 method, `extract(text, schema, *, system_prompt)`, and the shipped adapter is
-`kg_builder.llm.adapters.langchain.LangChainLlmProvider(chat, model=...)`. The
+`redstring.llm.adapters.langchain.LangChainLlmProvider(chat, model=...)`. The
 adjudicator holds no prompt of yours, no model name, and no configuration: it
 sends its own system prompt and asks for an `AdjudicationBatch` back.
 
@@ -420,7 +420,7 @@ adjudicator = Adjudicator(provider, batch_size=4)
 ```
 
 The default is `ADJUDICATION_BATCH_SIZE = 10`, a module constant in
-`kg_builder.consolidation.policy`. `adjudicate` walks the candidates in
+`redstring.consolidation.policy`. `adjudicate` walks the candidates in
 consecutive slices of that size and makes **one `LlmProvider.extract` call per
 slice**, so `batch_size` is directly the number of model calls a band of *n*
 pairs costs: `ceil(n / batch_size)`. The returned list is still one verdict
@@ -530,7 +530,7 @@ merge, and leaves every merge undoable by its `event_id` (Step 7) either way.
 Three stores, all keyword-only, and nothing else:
 
 ```python
-from kg_builder.consolidation.service import ConsolidationService
+from redstring.consolidation.service import ConsolidationService
 
 service = ConsolidationService(
     event_store=event_store,
@@ -572,7 +572,7 @@ conveniences:
   parameter is one nobody passes, and the omission would surface as slow
   merges long after the code that omitted it was written. The repository
   snapshots every `CONSOLIDATION_SNAPSHOT_EVERY = 100` events
-  (`kg_builder.aggregates.repositories`), which is not a constructor argument
+  (`redstring.aggregates.repositories`), which is not a constructor argument
   here.
 - **The stream is the tenant.** `consolidation_stream` uses the tenant id
   itself as the aggregate id: there is exactly one consolidation log per
@@ -591,9 +591,9 @@ A worked construction against the in-memory adapters, which is what the tests
 use and the shortest way to see the whole thing run:
 
 ```python
-from kg_builder.consolidation.candidates import CandidateFinder
-from kg_builder.consolidation.service import ConsolidationService
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
+from redstring.consolidation.candidates import CandidateFinder
+from redstring.consolidation.service import ConsolidationService
+from redstring.graph.adapters.memory import InMemoryGraphStore
 
 graph_store = InMemoryGraphStore()
 service = ConsolidationService(
@@ -829,11 +829,11 @@ numbers have to be re-chosen.
 
 ### The defaults (`HIGH_SIMILARITY = 0.92`, `LOW_SIMILARITY = 0.75`) and what each band does
 
-Both live in `kg_builder.consolidation.policy` and are exposed by `decide`,
+Both live in `redstring.consolidation.policy` and are exposed by `decide`,
 which is the whole of the banding logic:
 
 ```python
-from kg_builder.consolidation.policy import (
+from redstring.consolidation.policy import (
     HIGH_SIMILARITY,
     LOW_SIMILARITY,
     MergeDecision,
@@ -915,13 +915,13 @@ The two moves fail in opposite directions, and only one of them is loud:
   happened (Step 4).
 
 `HIGH_SIMILARITY` and `LOW_SIMILARITY` are named constants in
-`kg_builder.consolidation.policy` rather than literals buried in a condition
+`redstring.consolidation.policy` rather than literals buried in a condition
 for exactly this reason — the module says so in as many words. If you mean to
 move one, import the other and pass it explicitly, so the band you chose is
 visible in the call rather than inferred from a default:
 
 ```python
-from kg_builder.consolidation.policy import HIGH_SIMILARITY
+from redstring.consolidation.policy import HIGH_SIMILARITY
 
 await service.resolve(
     subject, finder=finder, adjudicator=adjudicator, high=HIGH_SIMILARITY, low=0.90
@@ -955,7 +955,7 @@ The check is in `decide`, so you get the same refusal calling the policy
 directly:
 
 ```python
-from kg_builder.consolidation.policy import decide
+from redstring.consolidation.policy import decide
 
 decide(0.5, high=0.2, low=0.8)   # ValueError
 decide(0.5, high=0.5, low=0.5)   # MergeDecision.MERGE — legal, band is empty
@@ -1093,7 +1093,7 @@ absorbed entity to itself. The merge becomes real when the event is folded
 through `GraphProjection`:
 
 ```python
-from kg_builder import GraphProjection
+from redstring import GraphProjection
 
 projection = GraphProjection(graph_store)
 await projection.handle(event)
@@ -1114,7 +1114,7 @@ appending to the tenant's `ConsolidationLog`
 This is deliberate and it is the rule the whole library is built on:
 extraction and consolidation *emit events*, and projections do the writing
 ([ADR 0004](../adr/0004-consolidation-emits-events.md), and the same split in
-[README](../../README.md)). Two things fall out of it that matter to you here:
+[README](https://github.com/tyevans/redstring/blob/main/README.md)). Two things fall out of it that matter to you here:
 
 - **The merge is durable before it is visible.** Once `resolve` returns, the
   decision is in the log with an `event_id` (Step 7's handle). A crash between
@@ -1172,7 +1172,7 @@ alias is not (Step 7's `MergeIntoAliasError`).
 
 The alias table is not only for this merge. Every later `DocumentExtracted`
 fold resolves its edge endpoints through it
-([ADR 0007](../adr/0007-the-extraction-fold-resolves-through-aliases.md)), so
+([ADR 0009](../adr/0009-the-extraction-fold-resolves-through-aliases.md)), so
 re-extracting a document after a merge writes the edges onto the canonical
 entity instead of quietly undoing the merge. Skipping the fold therefore costs
 more than one merge: it leaves the resolution table that protects every future
@@ -1198,7 +1198,7 @@ yourself.
 log anyway:
 
 ```python
-from kg_builder import GraphProjection, project
+from redstring import GraphProjection, project
 
 projection = GraphProjection(
     graph_store, checkpoint_repo=checkpoints, dlq_repo=dlq

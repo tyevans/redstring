@@ -14,8 +14,8 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.llm.cache.memory import MemoryCache
-from kg_builder.llm.rate_limiter import RateLimiter, RateLimitExceeded
+from redstring.llm.cache.memory import MemoryCache
+from redstring.llm.rate_limiter import RateLimiter, RateLimitExceeded
 
 
 @pytest.fixture

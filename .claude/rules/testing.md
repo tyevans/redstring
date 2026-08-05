@@ -59,7 +59,7 @@ the compliance module first, then specialise if an adapter genuinely differs.
 
 ### `tests/unit/`
 
-Mirrors the package layout under `src/kg_builder/` one directory per package —
+Mirrors the package layout under `src/redstring/` one directory per package —
 `aggregates/`, `consolidation/`, `domain/`, `events/`, `extraction/`,
 `graph/`, `llm/`, `projections/`, `temporal/`, `vector/` — with the
 cross-cutting surface gates (`test_composition.py`,
@@ -154,7 +154,7 @@ Keep time out of it. `CacheCompliance` takes caller-supplied epoch floats so
 that "an event 90 seconds ago" is a number rather than a 90-second test.
 
 `tests/integration/` splits by port — `graph/` (Neo4j), `vector/` (pgvector),
-`llm/` — alongside `test_wheel_ships_the_domain_schemas.py`, which is a
+`llm/` — alongside `test_wheel_contents.py`, which is a
 packaging check rather than a backend one. Only the `llm/` subset needs a live
 model; the rest needs containers.
 
@@ -176,7 +176,7 @@ about a backend at all:
 | `vector/test_pgvector_store.py` | `TestPgVectorStore(VectorStoreCompliance)`, `TestPgVectorSpecifics` | Postgres + pgvector from `docker-compose.test.yml` |
 | `llm/test_live_endpoint.py` | the LangChain adapter against a real OpenAI-compatible server | a **live model** |
 | `llm/test_live_pipeline.py` | chunk → extract → merge → emit against that model | a **live model** |
-| `test_wheel_ships_the_domain_schemas.py` | `uv build` → throwaway venv → render all six bundled domains | `uv`, no backend |
+| `test_wheel_contents.py` | `uv build` → throwaway venv → render all six bundled domains | `uv`, no backend |
 
 Every module carries `pytestmark = pytest.mark.integration`, and `addopts`
 excludes that marker, so none of this runs on commit. Start the backends
@@ -207,7 +207,7 @@ KG_LLM_BASE_URL=http://host:8080/v1 uv run pytest -m integration tests/integrati
 ```
 
 The two store subdirectories need only containers, and
-`test_wheel_ships_the_domain_schemas.py` needs neither. It is marked
+`test_wheel_contents.py` needs neither. It is marked
 `integration` for cost, not infrastructure: it builds a wheel and creates a
 virtualenv, seconds rather than milliseconds. It exists because
 `domain_system_prompt(...)` reads YAML off disk, so in a source checkout every
@@ -489,12 +489,12 @@ Three things follow that are easy to get wrong:
 - **Marking a module `integration` is what excludes it, not putting it in
   `tests/integration/`.** Path has no effect on selection. Every module in
   that tree carries `pytestmark = pytest.mark.integration` at module level
-  (`test_wheel_ships_the_domain_schemas.py` marks its single test function
+  (`test_wheel_contents.py` marks its single test function
   instead). A new integration module without the mark runs on commit and
   fails on the developer's machine, or worse, passes there because a
   container happens to be up.
 - **The mark is about *cost and prerequisites*, not about touching a
-  database.** `test_wheel_ships_the_domain_schemas.py` needs no backend at
+  database.** `test_wheel_contents.py` needs no backend at
   all; it is marked because building a wheel and creating a virtualenv takes
   seconds rather than milliseconds. If a test would make the commit gate a
   noticeably worse experience, mark it.

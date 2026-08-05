@@ -47,9 +47,9 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.domain.exceptions import DimensionMismatchError
-from kg_builder.domain.vector import VectorRecord
-from kg_builder.vector.adapters.pgvector import PgVectorStore
+from redstring.domain.exceptions import DimensionMismatchError
+from redstring.domain.vector import VectorRecord
+from redstring.vector.adapters.pgvector import PgVectorStore
 from tests.compliance.vector_store import VectorStoreCompliance
 
 if TYPE_CHECKING:
@@ -57,12 +57,12 @@ if TYPE_CHECKING:
 
     import asyncpg
 
-    from kg_builder.ports.vector_store import VectorStore
+    from redstring.ports.vector_store import VectorStore
 
 pytestmark = pytest.mark.integration
 
 DSN = os.environ.get(
-    "KG_TEST_POSTGRES_DSN", "postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test"
+    "KG_TEST_POSTGRES_DSN", "postgresql://postgres:redstring@localhost:5434/redstring_test"
 )
 
 #: One table per xdist worker; see the module docstring. `gw0` and friends are

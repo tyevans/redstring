@@ -2,7 +2,7 @@
 
 **Status:** accepted, slice 10 of the ring migration.
 
-**Why this is an ADR:** three decisions in `src/kg_builder/composition.py` look
+**Why this is an ADR:** three decisions in `src/redstring/composition.py` look
 like conveniences and are not. A layer holding one module reads like
 over-engineering until you notice that the layer below it is deliberately split
 in half; `build_graph` folding an event straight into a `GraphStore` reads like
@@ -31,13 +31,13 @@ The decisions are:
    naming a type a caller cannot reach.
 
 What the domain prompt does once chosen is a separate decision, recorded in
-[ADR: domain schemas prompt but do not constrain](0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR: domain schemas prompt but do not constrain](0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 The same reasoning appears in three other places, because each is read by
 someone who will not read this file: the module docstring of
-`src/kg_builder/composition.py`, the inline comments on the `layers` list in
+`src/redstring/composition.py`, the inline comments on the `layers` list in
 `pyproject.toml`, and the "How it fits together" section of
-[README.md](../../README.md). This ADR is the canonical copy; the last section
+[README.md](https://github.com/tyevans/redstring/blob/main/README.md). This ADR is the canonical copy; the last section
 below says what each of the others is allowed to say.
 
 ## Context
@@ -51,7 +51,7 @@ SourceDocument -> ExtractionPipeline -> Document.record_extraction
                -> DocumentExtracted -> GraphProjection -> GraphStore
 ```
 
-Nothing called them in sequence. `kg_builder.__init__` exported a version
+Nothing called them in sequence. `redstring.__init__` exported a version
 string and nothing else, so the library had a write model, a read model, two
 store ports, and no answer to "how do I turn a document into a graph?".
 
@@ -78,7 +78,7 @@ Three further questions had to be answered at the same time, because the joining
 module is where each of them first becomes visible:
 
 - **Does the composed path go through an event store?** The write model already
-  emits `DocumentExtracted`, and `kg_builder.projections.project` already folds a
+  emits `DocumentExtracted`, and `redstring.projections.project` already folds a
   feed of events into a store — the mechanism described in
   [Drive projections from an event store](../how-to/drive-projections-from-an-event-store.md),
   over a log whose shape is argued in
@@ -108,7 +108,7 @@ and what was bought.
 `composition` is the highest layer in the `lint-imports` contract in
 `pyproject.toml`, above the sibling band
 (`extraction : consolidation : temporal : graph : vector : llm`), and it holds
-exactly one module: `src/kg_builder/composition.py`, whose only public entry
+exactly one module: `src/redstring/composition.py`, whose only public entry
 point is `build_graph`.
 
 A layer with one module in it looks like ceremony. It is not, and the reason is
@@ -140,8 +140,8 @@ commit: `composition` may import both halves, and nothing may import
 Two properties of the contract do the work here, and both are settings rather
 than conventions:
 
-- **`exhaustive = true` with `containers = ["kg_builder"]`.** A new top-level
-  package under `kg_builder` fails the contract until someone places it on a
+- **`exhaustive = true` with `containers = ["redstring"]`.** A new top-level
+  package under `redstring` fails the contract until someone places it on a
   layer on purpose. `composition` could not have been added by accident, and a
   second top-level package cannot be either. That option is not decorative —
   slice 9 proved it bites by adding a throwaway package, watching the contract
@@ -175,8 +175,8 @@ covers all of it.
 - **`lint-imports`, on every commit.** The layered contract in
   `pyproject.toml` puts `extraction` and `projections` on different layers,
   and sibling layers on the extraction line may not import each other. An
-  `import kg_builder.projections` appearing anywhere under
-  `src/kg_builder/extraction/` fails the pre-commit hook. This is the check
+  `import redstring.projections` appearing anywhere under
+  `src/redstring/extraction/` fails the pre-commit hook. This is the check
   that catches the honest version of the mistake: someone who reaches for the
   projection because the pipeline is where they happen to be standing.
 - **`tests/unit/extraction/test_pipeline.py::TestNoStoreReachesExtraction`.**
@@ -195,8 +195,8 @@ covers all of it.
   extraction writes "just the entities" and leaves the rest to a projection.
 - **`tests/unit/test_end_to_end_example.py`.** It executes
   `docs/examples/build_a_graph.py` and parses it, failing on any import that is
-  neither `kg_builder` nor standard library. That is what stops the composed
-  path being demonstrated by reaching into `kg_builder.graph.adapters.memory`
+  neither `redstring` nor standard library. That is what stops the composed
+  path being demonstrated by reaching into `redstring.graph.adapters.memory`
   — an example that does so proves the internals work and says nothing about
   whether the join is reachable from outside.
 
@@ -218,7 +218,7 @@ a gate, and the next subsection is the test a reviewer applies by hand.
 
 ### The admission test for a second module
 
-Nothing in the repository fails when `composition` grows a second module. `lint-imports` checks *direction*, not population: a new file under `kg_builder/composition/` would inherit the top layer's permissions — import both halves, be imported by nothing — and pass. `exhaustive = true` catches a new top-level *package*, which is the opposite mistake. So the constraint that keeps this layer one module wide is a review habit, and both surviving copies of the reasoning end on the same sentence: *if a second module wants in here, ask what it composes.* This subsection says what a good answer looks like, because "ask what it composes" is only useful if the wrong answers are recognisable.
+Nothing in the repository fails when `composition` grows a second module. `lint-imports` checks *direction*, not population: a new file under `redstring/composition/` would inherit the top layer's permissions — import both halves, be imported by nothing — and pass. `exhaustive = true` catches a new top-level *package*, which is the opposite mistake. So the constraint that keeps this layer one module wide is a review habit, and both surviving copies of the reasoning end on the same sentence: *if a second module wants in here, ask what it composes.* This subsection says what a good answer looks like, because "ask what it composes" is only useful if the wrong answers are recognisable.
 
 The test has one question in it, and it is about the *pair*: **which two layers, forbidden from importing each other, does this module join?** `composition.py` has an answer that can be written as an import list — it imports `ExtractionPipeline` from `extraction` and `GraphProjection` from `projections`, and no other module in the package may do both. A candidate that cannot name such a pair is not composing anything; it is a piece of one of the halves that has been placed above them for convenience.
 
@@ -232,7 +232,7 @@ The accepting answer looks like the one already here, and the shape is worth sta
 
 One clarification, since the rule is about modules rather than symbols: `composition.py` exports four public names — `build_graph`, `GraphBuildReport`, `AUTO` and `AutoDomain` — and that is not a violation waiting to be split up. `GraphBuildReport` is `build_graph`'s return type, and `AutoDomain` is public only because the signature names it, which [ADR 0006](0006-the-public-surface-is-gated.md) requires. Splitting them into their own modules would satisfy nothing and lose the docstring that explains why `AUTO` is an object rather than the string `"auto"`. The unit that matters is the composition, not the file count.
 
-The remaining risk is the one no test covers and no rule prevents: this layer is visibly disproportionate, one file above six siblings, and the tidying instinct will keep arriving. Both the module docstring of `src/kg_builder/composition.py` and the inline comment on the `layers` list exist to meet that instinct at the point of the edit, since neither a reviewer nor an author reliably reads an ADR before adding a file. Keep all three copies saying the same thing — the final section of this document says exactly how much each is allowed to say.
+The remaining risk is the one no test covers and no rule prevents: this layer is visibly disproportionate, one file above six siblings, and the tidying instinct will keep arriving. Both the module docstring of `src/redstring/composition.py` and the inline comment on the `layers` list exist to meet that instinct at the point of the edit, since neither a reviewer nor an author reliably reads an ADR before adding a file. Keep all three copies saying the same thing — the final section of this document says exactly how much each is allowed to say.
 
 ## Decision 2: `build_graph` folds the event straight into the store
 
@@ -255,7 +255,7 @@ into the `GraphStore` by the same `GraphProjection` a replay would use — but
 nothing appends it anywhere, and once `build_graph` returns, the only record
 that the extraction happened is the graph itself.
 
-The alternative was available and is not hypothetical: `kg_builder.projections`
+The alternative was available and is not hypothetical: `redstring.projections`
 already exports `project`, which drives a projection over a `GlobalEventFeed`,
 and [Drive projections from an event store](../how-to/drive-projections-from-an-event-store.md)
 is the how-to for exactly that path. Making `build_graph` take an `EventStore`,
@@ -263,7 +263,7 @@ append to it, and let a projection catch up would have been the architecturally
 tidy shape — the write model writes events, the read model derives from them,
 and the library's entry point demonstrates its own claim.
 
-It was rejected because of who has to supply the store. `kg_builder` provides
+It was rejected because of who has to supply the store. `redstring` provides
 neither an `EventStore` implementation nor a feed; both are ports, satisfied by
 `eventsource` adapters the caller wires up. Requiring one would make "extract
 one document into a graph" — the single question the library had no answer to
@@ -354,7 +354,7 @@ the caller:
   idempotency `build_graph` gives up. `build_graph` is a convenience over that
   path, not a replacement for it.
 - **Drive the projection from the log.** Append `report.event` and let
-  `kg_builder.projections.project` catch up — see
+  `redstring.projections.project` catch up — see
   [Drive projections from an event store](../how-to/drive-projections-from-an-event-store.md)
   and [ADR 0001](0001-event-log-schema-and-granularity.md) for the log's shape.
   This is the same escape hatch the next cost needs, and the section below
@@ -368,7 +368,7 @@ refused; passing it twice through `build_graph` is charged for.
 
 ### Cost 2: there is no log to rebuild from
 
-`kg_builder.projections` opens by stating what a read model is here: "a
+`redstring.projections` opens by stating what a read model is here: "a
 `GraphStore` and a `VectorStore` are projections of it — derived, disposable,
 and rebuildable by replay." That is not a slogan the package leaves unproven.
 `tests/unit/projections/test_replay_equivalence.py` asserts a wiped store
@@ -441,7 +441,7 @@ escape hatch [Cost 1](#cost-1-idempotency-is-per-call-not-per-document) needs.
 ### The escape hatch: `report.event` and `projections.project`
 
 Both costs above have the same remedy, and it is deliberately small: **the
-event `build_graph` produced is returned, and `kg_builder.projections` already
+event `build_graph` produced is returned, and `redstring.projections` already
 exports the function that folds a feed of such events into a store.** Nothing
 else had to be built for the logged path, and nothing about `build_graph`
 needs to change to take it.
@@ -539,7 +539,7 @@ The sentinel also makes the request checkable by type rather than by value. `_re
 
 The bill is bounded, and the bound is the property worth protecting: **the classifier is called once per document, not once per chunk.** It sees the head of the text (truncated to `MAX_CONTENT_FOR_CLASSIFICATION`), not every window, so `AUTO` adds exactly one call regardless of document length. `tests/unit/test_composition.py::test_auto_costs_exactly_one_extra_call_for_the_classifier` asserts `len(provider.calls) == 2` against a one-chunk document, with a comment saying why the number is the point — a per-chunk classifier would multiply the bill by the chunk count while producing the same answer each time. That test is a cost gate wearing the clothes of a behavioural test; a refactor that moved classification inside the chunk loop would keep every other test in the file green.
 
-**`AUTO` never fails, which is why `report.domain_confidence` exists.** `ContentClassifier` falls back to `encyclopedia_wiki` with confidence `0.0` on three separate paths: content under `MIN_CONTENT_LENGTH` (100 characters), which is never sent to the model at all; an answer below `confidence_threshold`; and any `LlmProviderError`. Falling back is the right behaviour *there* — a misclassified document is extracted with a worse schema, whereas raising would hand the domain decision straight back to the caller who used `AUTO` precisely to avoid making it, an argument [ADR: domain schemas prompt but do not constrain](0007-domain-schemas-prompt-but-do-not-constrain.md) develops in full.
+**`AUTO` never fails, which is why `report.domain_confidence` exists.** `ContentClassifier` falls back to `encyclopedia_wiki` with confidence `0.0` on three separate paths: content under `MIN_CONTENT_LENGTH` (100 characters), which is never sent to the model at all; an answer below `confidence_threshold`; and any `LlmProviderError`. Falling back is the right behaviour *there* — a misclassified document is extracted with a worse schema, whereas raising would hand the domain decision straight back to the caller who used `AUTO` precisely to avoid making it, an argument [ADR: domain schemas prompt but do not constrain](0011-domain-schemas-prompt-but-do-not-constrain.md) develops in full.
 
 But a fallback that returns the same shape as a choice is a plausible answer nobody investigates. So the confidence is carried out of the classifier rather than logged and dropped, and the report distinguishes three states rather than two:
 
@@ -563,9 +563,9 @@ The alternatives that were not taken, and what each gives up:
 
 ## Related: `AutoDomain` is public because the signature names it
 
-`AutoDomain` is exported from `kg_builder.__init__` and listed in `__all__`. It is a class with one method — `__repr__`, returning `"AUTO"` — a docstring telling the reader not to construct one, and no other content. On any ordinary reading of "public API" it does not belong there: nobody calls it, nobody subclasses it, and the only instance anyone should ever hold is the module-level `AUTO`. It is public for one reason, and the reason is mechanical rather than aesthetic.
+`AutoDomain` is exported from `redstring.__init__` and listed in `__all__`. It is a class with one method — `__repr__`, returning `"AUTO"` — a docstring telling the reader not to construct one, and no other content. On any ordinary reading of "public API" it does not belong there: nobody calls it, nobody subclasses it, and the only instance anyone should ever hold is the module-level `AUTO`. It is public for one reason, and the reason is mechanical rather than aesthetic.
 
-`build_graph`'s `domain` parameter is annotated `str | DomainSchema | AutoDomain | None`. [ADR 0006](0006-the-public-surface-is-gated.md) records the rule that follows from that: **every identifier in an exported signature must itself be exported, or be a foreign type recorded with its import path.** `tests/unit/test_public_surface_is_self_contained.py::test_exported_name_mentions_only_reachable_types` parses `composition.py`, pulls the identifiers out of every annotation on `build_graph` and `GraphBuildReport`, and fails on any that a caller cannot reach. A private `_Auto` would leave the union naming a type the caller is told about and cannot import — the annotation advertises it, `from kg_builder import _Auto` does not work, and the signature has become a description of something unavailable.
+`build_graph`'s `domain` parameter is annotated `str | DomainSchema | AutoDomain | None`. [ADR 0006](0006-the-public-surface-is-gated.md) records the rule that follows from that: **every identifier in an exported signature must itself be exported, or be a foreign type recorded with its import path.** `tests/unit/test_public_surface_is_self_contained.py::test_exported_name_mentions_only_reachable_types` parses `composition.py`, pulls the identifiers out of every annotation on `build_graph` and `GraphBuildReport`, and fails on any that a caller cannot reach. A private `_Auto` would leave the union naming a type the caller is told about and cannot import — the annotation advertises it, `from redstring import _Auto` does not work, and the signature has become a description of something unavailable.
 
 That failure mode is not hypothetical here. It is one of the four findings that caused the gate to be written at all, and slice 10's review found it on this very parameter: `domain` accepted and advertised a `DomainSchema` that had no public constructor. `DomainSchema` was exported in response, and so were `load_schema_from_file` and `load_schema_from_string` — because a type in a signature has to be *constructible*, not merely importable. `AutoDomain` is the same finding on the same parameter, resolved the same way. The union has four members and every one of them is reachable: `str`, `DomainSchema`, `AutoDomain`, `None`.
 
@@ -576,7 +576,7 @@ The class's own docstring says this in the place a reader meets it first:
 Two alternatives would have kept the class private, and both cost more than the export does.
 
 - **Widen the annotation** to `str | DomainSchema | object | None`, or drop it to `Any`. This passes the gate by telling the caller nothing: the type checker stops rejecting `domain=3`, and the sentinel's second benefit — that `_resolve_prompt` dispatches on `isinstance(domain, AutoDomain)` before the `str` branch, so no input can confuse the cases — is no longer visible to anyone reading the signature. Trading a precise annotation for a smaller `__all__` is trading the thing callers use for the thing maintainers count.
-- **Add `AutoDomain` to `DOCUMENTED_FOREIGN_TYPES`.** It would not fit and should not be made to. That list is for types belonging to *other packages* — the `eventsource` types in `project`'s signature — where re-exporting under our own name would be worse than depending on them openly. `AutoDomain` is defined in `kg_builder/composition.py`. Putting it there would turn a list that records an answer into a list that silences a check, which is the distinction the list's own comment draws.
+- **Add `AutoDomain` to `DOCUMENTED_FOREIGN_TYPES`.** It would not fit and should not be made to. That list is for types belonging to *other packages* — the `eventsource` types in `project`'s signature — where re-exporting under our own name would be worse than depending on them openly. `AutoDomain` is defined in `redstring/composition.py`. Putting it there would turn a list that records an answer into a list that silences a check, which is the distinction the list's own comment draws.
 
 The export is cheap because the surface is gated rather than curated, and that distinction is the point of the cross-reference. `__all__` is not a hand-picked highlight reel where an odd-looking member is a blemish; it is the closure of what the exported signatures name. `Entity` obliging `TemporalExtent` obliging `DatePrecision` is the same mechanism producing a longer chain. `AutoDomain` is a one-link chain, and it looks strange only if you expect `__all__` to have been curated for elegance.
 
@@ -590,7 +590,7 @@ For the same reason, `AUTO` itself is exported but is *not* checked by this gate
 
 ## Where this reasoning is duplicated, and which copy is canonical
 
-The argument above is written down in five places. That is not accidental duplication to be cleaned up, and it is not a licence to let the copies drift: each one is read by somebody who will not read the others, at the moment they are about to make the mistake it prevents. A reviewer looking at a new file under `kg_builder/composition/` is reading a diff, not an ADR. Somebody adding a layer name is looking at `pyproject.toml`. Somebody deciding whether to call `build_graph` at all is reading the module docstring or the README.
+The argument above is written down in five places. That is not accidental duplication to be cleaned up, and it is not a licence to let the copies drift: each one is read by somebody who will not read the others, at the moment they are about to make the mistake it prevents. A reviewer looking at a new file under `redstring/composition/` is reading a diff, not an ADR. Somebody adding a layer name is looking at `pyproject.toml`. Somebody deciding whether to call `build_graph` at all is reading the module docstring or the README.
 
 **This ADR is canonical.** When two copies disagree, this file is right and the other is stale. When the decision itself changes, it changes here first and the other four are updated in the same commit.
 
@@ -599,9 +599,9 @@ What each copy is allowed to say:
 | Copy | Scope | Must not |
 |---|---|---|
 | `docs/adr/0007-composition-is-the-only-top-layer.md` (this file) | Everything: the alternatives, the costs, the admission test, the escape hatch, what each check catches and what it is blind to. | — |
-| `src/kg_builder/composition.py` module docstring | The two costs of Decision 2 in the words a caller needs before calling (`report.event` is the way out), that this is a layer of its own and why, and that `AUTO` costs one call per document rather than per chunk. | Re-argue the alternatives. A reader here has already chosen to use the module. |
+| `src/redstring/composition.py` module docstring | The two costs of Decision 2 in the words a caller needs before calling (`report.event` is the way out), that this is a layer of its own and why, and that `AUTO` costs one call per document rather than per chunk. | Re-argue the alternatives. A reader here has already chosen to use the module. |
 | The comment on `layers` in `pyproject.toml` | Why `composition` exists at all — `extraction` may not import `projections`, and something must hold both — and the admission question. | Say anything about `build_graph`'s behaviour. Nothing in the import contract depends on whether an event store is involved. |
-| "How it fits together" in [README.md](../../README.md) | That there are two producers, one projection, and that `build_graph` does the whole thing in one call while a caller with an event store appends `report.event` and drives `project` instead. | Enumerate the costs. The README's job is to make the fork visible, not to price it. |
+| "How it fits together" in [README.md](https://github.com/tyevans/redstring/blob/main/README.md) | That there are two producers, one projection, and that `build_graph` does the whole thing in one call while a caller with an event store appends `report.event` and drives `project` instead. | Enumerate the costs. The README's job is to make the fork visible, not to price it. |
 | The architecture-contract block in `CLAUDE.md` | The one-line rule an author needs mid-edit: `composition` is the top layer, holds one module, and a second module has to say what it composes. | Duplicate the ADR's reasoning. `CLAUDE.md` is binding instructions, and a long argument there is an argument nobody finishes reading. |
 
 The common thread is that **each copy carries only what its reader can act on at that spot**, and every copy ends on the same sentence rather than a paraphrase of it: *if a second module wants in here, ask what it composes.* That sentence is the one thing all five share verbatim, which makes a drifted copy findable by grep.
@@ -614,7 +614,7 @@ Two hazards specific to this arrangement, both instances of rules recorded elsew
 
 ## Consequences
 
-**The library has an entry point, and it is one call.** `build_graph(document, provider=..., store=..., tenant_id=...)` answers the question `kg_builder` had no answer to through nine slices. Everything after the first argument is keyword-only — `tests/unit/test_composition.py::test_everything_after_the_document_must_be_passed_by_name` pins that — so a caller cannot get `provider` and `store` the wrong way round, and adding a parameter later cannot silently shift the meaning of an existing positional one.
+**The library has an entry point, and it is one call.** `build_graph(document, provider=..., store=..., tenant_id=...)` answers the question `redstring` had no answer to through nine slices. Everything after the first argument is keyword-only — `tests/unit/test_composition.py::test_everything_after_the_document_must_be_passed_by_name` pins that — so a caller cannot get `provider` and `store` the wrong way round, and adding a parameter later cannot silently shift the meaning of an existing positional one.
 
 **`extraction` still cannot see a store, and now there is nowhere for one to be smuggled in.** Before the top layer existed, the pressure to add `graph_store=` to `ExtractionPipeline.__init__` had no legal outlet; the checks would have refused it and the caller would still have needed a join. Now the answer to "where does the store go?" is a module that already exists, which is the point: a rule that forbids something without providing the alternative is a rule that eventually loses.
 
@@ -630,4 +630,4 @@ Two hazards specific to this arrangement, both instances of rules recorded elsew
 
 **Five copies of this reasoning now have to be kept in step, with nothing to tell you when they are not.** The table above is the checklist. The failure mode worth fearing is the one `CLAUDE.md` already names for the layer diagram — an author trusts a stale copy and writes against a package that does not exist — and `services`, `models`, `db`, `schemas`, `cache`, `config` and `context` are the evidence that it happens here.
 
-**What would reopen this ADR.** Decision 1 changes if a second module can name a pair of layers whose separation is itself defended by a failing check. Decision 2 changes if `kg_builder` ever ships an `EventStore` adapter of its own, since the argument against the logged default is entirely that the caller must supply infrastructure the library does not provide. Decision 3 changes if `domain` stops being one parameter carrying four mutually exclusive values — and only then, because every alternative considered was rejected for what it does *inside that parameter*.
+**What would reopen this ADR.** Decision 1 changes if a second module can name a pair of layers whose separation is itself defended by a failing check. Decision 2 changes if `redstring` ever ships an `EventStore` adapter of its own, since the argument against the logged default is entirely that the caller must supply infrastructure the library does not provide. Decision 3 changes if `domain` stops being one parameter carrying four mutually exclusive values — and only then, because every alternative considered was rejected for what it does *inside that parameter*.

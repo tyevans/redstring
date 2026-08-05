@@ -1,4 +1,4 @@
-"""Tests for kg_builder.domain.entity."""
+"""Tests for redstring.domain.entity."""
 
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -8,8 +8,8 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.temporal import TemporalExtent
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.temporal import TemporalExtent
 
 
 def _entity(**overrides):

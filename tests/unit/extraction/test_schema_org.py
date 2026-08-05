@@ -1,7 +1,7 @@
 """Schema.org and Open Graph extraction, and the decision that entity type is a string.
 
 This module had **no tests at all** before slice 9, while being exported from
-`kg_builder.extraction.__all__`. It is tested here because slice 9 changes it:
+`redstring.extraction.__all__`. It is tested here because slice 9 changes it:
 it used to map Schema.org types onto `models.extracted_entity.EntityType`, an
 enum that dies with the relational layer.
 
@@ -28,8 +28,8 @@ from uuid import UUID
 
 import pytest
 
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.extraction.schema_org import (
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.extraction.schema_org import (
     SCHEMA_TYPE_MAP,
     _map_og_type,
     extract_entities_from_open_graph,

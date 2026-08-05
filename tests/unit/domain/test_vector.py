@@ -9,7 +9,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kg_builder.domain.vector import VectorMatch, VectorRecord, cosine_score, is_zero_vector
+from redstring.domain.vector import VectorMatch, VectorRecord, cosine_score, is_zero_vector
 
 _components = st.floats(
     min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, allow_subnormal=False

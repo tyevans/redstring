@@ -1,12 +1,47 @@
 [project]
-name = "kg-builder"
+name = "redstring"
 version = "0.1.0"
 description = "Knowledge graph construction: entity extraction, consolidation, and pluggable graph and vector storage."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Ty Evans", email = "tyler@poorlythoughtout.com" }]
+maintainers = [{ name = "Ty Evans", email = "tyler@poorlythoughtout.com" }]
 requires-python = ">=3.13"
+keywords = [
+    "knowledge-graph",
+    "entity-extraction",
+    "entity-resolution",
+    "event-sourcing",
+    "graph-database",
+    "llm",
+    "neo4j",
+    "pgvector",
+]
+# Trove classifiers are discoverability, not correctness: `requires-python`
+# is what actually gates installation, and PyPI rejects an unknown string
+# rather than ignoring it, so this list is deliberately short and every entry
+# is one PyPI recognises.
+#
+# `Development Status :: 4 - Beta` rather than `3 - Alpha`: the API is gated
+# by `__all__` and three tests (ADR 0006), the ports have compliance suites,
+# and the whole surface is type-checked under `--strict`. It is not `5 -
+# Production/Stable` because nothing has run this in production yet and the
+# 0.x version says so.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.12,<3",
     "asyncpg>=0.31.0",
@@ -17,9 +52,9 @@ dependencies = [
     "pyyaml>=6.0",
     "redis[hiredis]>=5.3,<6",
     "jellyfish>=1.0.0",
-    # Not an extra any more, as of slice 10. `kg_builder/__init__.py` exports
+    # Not an extra any more, as of slice 10. `redstring/__init__.py` exports
     # `build_graph`, `Document`, `DocumentExtracted` and the two projections,
-    # and every one of those needs eventsource -- so `import kg_builder`
+    # and every one of those needs eventsource -- so `import redstring`
     # needed it, and a public API that fails to import without an extra is not
     # a public API. The events are the write model, not an optional backend.
     # The `<0.11` cap stays deliberate: this is a pre-1.0 library whose entire
@@ -39,7 +74,15 @@ llm = [
     "langchain-openai>=0.2,<2",
 ]
 all = [
-    "kg-builder[neo4j,llm]",
+    "redstring[neo4j,llm]",
+]
+# Only `mkdocs build --strict` needs these, and only in CI. Kept out of `dev`
+# so a contributor running the commit gate does not install a doc toolchain
+# to change one line of Python.
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "pymdown-extensions>=10.0",
 ]
 dev = [
     "bandit[toml]>=1.9.4",
@@ -49,6 +92,7 @@ dev = [
     "import-linter>=2.13",
     "mutmut>=3.7.0",
     "mypy>=2.3.0",
+    "pip-audit>=2.10.1",
     "pre-commit>=4.6.1",
     "pytest>=9.0",
     "pytest-asyncio==1.3.0",
@@ -61,12 +105,19 @@ dev = [
     "types-pyyaml>=6.0.12.20260724",
 ]
 
+[project.urls]
+Homepage = "https://github.com/tyevans/redstring"
+Documentation = "https://tyevans.github.io/redstring"
+Repository = "https://github.com/tyevans/redstring"
+Issues = "https://github.com/tyevans/redstring/issues"
+Changelog = "https://github.com/tyevans/redstring/blob/main/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kg_builder"]
+packages = ["src/redstring"]
 
 [tool.ruff]
 target-version = "py313"
@@ -121,7 +172,7 @@ ignore = [
 # `graph/queries.py`; `events/**` went next (its ANN half exempted nothing at
 # all and its TC half was covering for the `runtime-evaluated-base-classes`
 # misconfiguration below). Slice 10 took the last one,
-# `src/kg_builder/extraction/**` = ["ANN", "TC", "RET", "ERA"], together with
+# `src/redstring/extraction/**` = ["ANN", "TC", "RET", "ERA"], together with
 # its test-side twin.
 #
 # Measured with the entry deleted rather than through it, as CLAUDE.md
@@ -130,7 +181,7 @@ ignore = [
 # BACKLOG B15, closed.
 
 [tool.ruff.lint.isort]
-known-first-party = ["kg_builder"]
+known-first-party = ["redstring"]
 
 # datetime.utcnow() returns a NAIVE datetime and is deprecated from 3.12.
 # DTZ003 catches the call form but not a bare reference such as
@@ -155,7 +206,7 @@ runtime-evaluated-base-classes = [
     # Those are the dangerous kind of false positive: the suggested fix
     # compiles, imports, and breaks at model *use*. Measured -- moving
     # `from uuid import UUID` into a type-checking block in `events/merge.py`
-    # (a fix ruff offers) leaves `import kg_builder.events.merge` succeeding
+    # (a fix ruff offers) leaves `import redstring.events.merge` succeeding
     # and then fails 23 tests with `PydanticUserError: MergeUndone is not
     # fully defined`, because `merge_event_id: UUID` is a field and pydantic
     # resolves field annotations when it builds the schema.
@@ -166,7 +217,7 @@ runtime-evaluated-base-classes = [
 python_version = "3.13"
 # Strict only where the new architecture lives. Legacy packages are excluded
 # rather than weakened, and each exclusion dies with its package.
-files = ["src/kg_builder"]
+files = ["src/redstring"]
 # No `exclude`. There was one, and slice 10 emptied it by fixing the last
 # fourteen findings in `extraction/` rather than by deleting the package.
 # CLAUDE.md's rule applies: an exclusion over an empty set excludes nothing
@@ -185,7 +236,7 @@ plugins = ["pydantic.mypy"]
 
 # asyncpg ships no `py.typed`, so mypy cannot see its types at all. The
 # alternative is a stub package, which would have to track asyncpg's releases
-# for the sake of one adapter; `kg_builder.vector.adapters.pgvector` is the
+# for the sake of one adapter; `redstring.vector.adapters.pgvector` is the
 # only module that imports it, and its own signatures are fully annotated.
 [[tool.mypy.overrides]]
 module = ["asyncpg.*"]
@@ -221,7 +272,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/kg_builder"]
+source = ["src/redstring"]
 branch = true
 parallel = true
 omit = [
@@ -234,7 +285,7 @@ omit = [
 ]
 
 [tool.coverage.paths]
-source = ["src/kg_builder", "*/src/kg_builder"]
+source = ["src/redstring", "*/src/redstring"]
 
 [tool.coverage.report]
 show_missing = true
@@ -251,7 +302,7 @@ exclude_also = [
 #   uv run mutmut run
 #   uv run mutmut results
 [tool.mutmut]
-paths_to_mutate = ["src/kg_builder/"]
+paths_to_mutate = ["src/redstring/"]
 tests_dir = ["tests/unit/"]
 runner = "uv run pytest -x -q --no-header -p no:randomly"
 also_copy = ["pyproject.toml", "tests/conftest.py"]
@@ -260,7 +311,7 @@ also_copy = ["pyproject.toml", "tests/conftest.py"]
 exclude_dirs = ["tests", ".venv", "build", "dist"]
 
 [tool.importlinter]
-root_packages = ["kg_builder"]
+root_packages = ["redstring"]
 include_external_packages = false
 
 [[tool.importlinter.contracts]]
@@ -268,9 +319,9 @@ name = "Layered architecture"
 type = "layers"
 # `containers` + `exhaustive` (below) are what make this contract complete
 # rather than merely correct: with them, a new top-level package under
-# `kg_builder` fails the gate until it is placed on a layer. Layer names are
+# `redstring` fails the gate until it is placed on a layer. Layer names are
 # relative to the container, which is why they are bare here.
-containers = ["kg_builder"]
+containers = ["redstring"]
 layers = [
     # `composition` is the top layer and the only module in it. It exists
     # because `extraction` may not import `projections` -- that separation is

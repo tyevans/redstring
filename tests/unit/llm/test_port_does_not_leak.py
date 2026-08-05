@@ -17,7 +17,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SOURCE_ROOT = Path(__file__).resolve().parents[3] / "src" / "kg_builder"
+SOURCE_ROOT = Path(__file__).resolve().parents[3] / "src" / "redstring"
 
 #: The one directory permitted to know LangChain exists.
 ADAPTERS = SOURCE_ROOT / "llm" / "adapters"
@@ -80,6 +80,6 @@ def test_no_module_outside_the_adapters_imports_langchain():
     offenders = {path: names for path, names in leaks.items() if names}
 
     assert offenders == {}, (
-        "LangChain must not be imported outside kg_builder/llm/adapters/; "
-        f"found {offenders}. Put the dependency behind kg_builder.ports.llm_provider."
+        "LangChain must not be imported outside redstring/llm/adapters/; "
+        f"found {offenders}. Put the dependency behind redstring.ports.llm_provider."
     )

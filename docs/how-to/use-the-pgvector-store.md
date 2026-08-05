@@ -21,7 +21,7 @@ change an answer it already gets.
 It will not speed one up either. This adapter deliberately builds **no ANN
 index**, so a search scans the querying tenant's rows and costs time linear in
 that tenant's data — the same asymptotics as scoring every vector in memory,
-with a network hop added. [ADR 0007](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md)
+with a network hop added. [ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md)
 records why (an ANN index over a multi-tenant table takes the globally nearest
 `k` and *then* drops other tenants' rows, which violates the port's
 filter-before-`k` rule while still looking plausible), and BACKLOG B10k lists
@@ -41,15 +41,15 @@ never created it cannot store a single vector; `ensure_schema()` runs the
 `CREATE EXTENSION IF NOT EXISTS` for you, which is why the privilege matters.
 
 **There is no extra to install.** `asyncpg` is a base dependency of
-`kg-builder`, not an optional one — unlike the Neo4j adapter, which needs
-`kg-builder[neo4j]`. The adapter drives asyncpg directly; there is no ORM and
+`redstring`, not an optional one — unlike the Neo4j adapter, which needs
+`redstring[neo4j]`. The adapter drives asyncpg directly; there is no ORM and
 no SQLAlchemy import anywhere in this library.
 
-**Reachability today.** `PgVectorStore` is *not* in `kg_builder.__all__`, so
+**Reachability today.** `PgVectorStore` is *not* in `redstring.__all__`, so
 it is reached by a dotted path:
 
 ```python
-from kg_builder.vector.adapters.pgvector import PgVectorStore
+from redstring.vector.adapters.pgvector import PgVectorStore
 ```
 
 Per [ADR 0006](../adr/0006-the-public-surface-is-gated.md), a dotted path is
@@ -81,12 +81,12 @@ migrations of your own.
 
 ### No extra to install: `asyncpg` is a base dependency, not an optional one
 
-`asyncpg` sits in `[project.dependencies]`, so `uv add kg-builder` is the whole
-install — there is no `kg-builder[pgvector]` to remember, and asking for one is
+`asyncpg` sits in `[project.dependencies]`, so `uv add redstring` is the whole
+install — there is no `redstring[pgvector]` to remember, and asking for one is
 an error rather than a no-op. The optional extras are `neo4j`, `llm`, and `all`
 (which is just the other two); the vector adapter is in none of them. This is
 deliberately unlike the Neo4j `GraphStore`, which does need
-`kg-builder[neo4j]`.
+`redstring[neo4j]`.
 
 The adapter drives asyncpg directly. There is no ORM, no first-party
 SQLAlchemy import anywhere under `src/`, and no SQLAlchemy dependency declared
@@ -96,25 +96,25 @@ SQL an ORM makes harder to write.
 
 Be precise about that last claim, because the stronger version is false:
 **SQLAlchemy is still importable in your environment.** `eventsource-py` is a
-base dependency of `kg-builder` and requires SQLAlchemy in *its* base
+base dependency of `redstring` and requires SQLAlchemy in *its* base
 dependencies, so it is in the lockfile of every install. The distinction that
 matters is "nothing here imports it and nothing here asks for it", not "it is
 absent" — a reader who assumes the latter will be surprised by `uv.lock`.
 
 Practically: the only thing that gates this adapter is a reachable server, not
-a package. If `from kg_builder.vector.adapters.pgvector import PgVectorStore`
+a package. If `from redstring.vector.adapters.pgvector import PgVectorStore`
 raises `ImportError`, the install is broken; it is never a missing extra.
 
-### Reachability today: `PgVectorStore` is not in `kg_builder.__all__`
+### Reachability today: `PgVectorStore` is not in `redstring.__all__`
 
 `InMemoryVectorStore` is exported. `PgVectorStore` is not, so today you reach
 it by a dotted path:
 
 ```python
-from kg_builder.vector.adapters.pgvector import PgVectorStore
+from redstring.vector.adapters.pgvector import PgVectorStore
 ```
 
-Per [ADR 0006](../adr/0006-the-public-surface-is-gated.md), `kg_builder.__all__`
+Per [ADR 0006](../adr/0006-the-public-surface-is-gated.md), `redstring.__all__`
 *is* the promise, and anything reached by a dotted path is internal: it may
 move, be renamed, or change signature without notice, including in a patch
 release. That is a statement about the import line, not about the adapter's
@@ -128,7 +128,7 @@ unexported name cheap to absorb:
   `PgVectorStore`;
 - the values crossing it — `VectorRecord`, `VectorMatch`, `EntityId`,
   `TenantId` (see [domain value types](../reference/domain-value-types.md));
-- the errors it raises — `DimensionMismatchError`, and `KgBuilderError` as the
+- the errors it raises — `DimensionMismatchError`, and `RedstringError` as the
   base of every deliberate error here. So the `except` clauses of step 4 need
   no internal import either.
 
@@ -136,8 +136,8 @@ Confine the dotted import to one composition site and the exposure is a single
 line:
 
 ```python
-from kg_builder import VectorStore
-from kg_builder.vector.adapters.pgvector import PgVectorStore  # the one line
+from redstring import VectorStore
+from redstring.vector.adapters.pgvector import PgVectorStore  # the one line
 
 
 async def build_store(dsn: str) -> VectorStore:
@@ -181,10 +181,10 @@ first-boot initialisation accepts TCP connections seconds before it will answer
 a query — so an immediate `connect()` races, and the failure surfaces as a
 connection error that reads like a bad DSN rather than a timing problem. The
 service declares a healthcheck for this (`pg_isready -U postgres -d
-kgbuilder_test`, every 5s, up to 30 retries), and `--wait` is what makes Docker
+redstring_test`, every 5s, up to 30 retries), and `--wait` is what makes Docker
 block on it instead of you.
 
-The `-d kgbuilder_test` inside that healthcheck is load-bearing, and worth
+The `-d redstring_test` inside that healthcheck is load-bearing, and worth
 copying if you ever write your own: a bare `pg_isready` succeeds against the
 bootstrap server *before* `POSTGRES_DB` has been created, so it reports healthy
 while the database you are about to connect to does not exist yet.
@@ -201,16 +201,16 @@ privilege question from the prerequisites outright: `ensure_schema()` can
 create the extension itself on first call, and you need run nothing by hand.
 
 Password and database name are fixed in the compose file
-(`POSTGRES_PASSWORD: kgbuilder`, `POSTGRES_DB: kgbuilder_test`), so the DSN is
+(`POSTGRES_PASSWORD: redstring`, `POSTGRES_DB: redstring_test`), so the DSN is
 fully determined:
 
 ```
-postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test
+postgresql://postgres:redstring@localhost:5434/redstring_test
 ```
 
 ```python
 store = await PgVectorStore.connect(
-    "postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test",
+    "postgresql://postgres:redstring@localhost:5434/redstring_test",
     dimension=768,
 )
 await store.ensure_schema()
@@ -268,7 +268,7 @@ runs, and it issues `CREATE TABLE IF NOT EXISTS` plus one
 `CREATE INDEX IF NOT EXISTS` beside the extension. There is no migration tool
 to install and no plugin to load. There is also no ANN index to build, and
 that is deliberate rather than an omission: see
-[ADR 0007](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md).
+[ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md).
 
 Two choices are yours rather than the server's, and both are covered in
 step 2. Give the store a `table` name of its own if the database is shared —
@@ -294,10 +294,10 @@ pool** — which is the same thing as deciding what `close()` does.
 ### `PgVectorStore.connect(dsn, dimension=..., table=...)` — the store owns and closes the pool
 
 ```python
-from kg_builder.vector.adapters.pgvector import PgVectorStore
+from redstring.vector.adapters.pgvector import PgVectorStore
 
 store = await PgVectorStore.connect(
-    "postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test",
+    "postgresql://postgres:redstring@localhost:5434/redstring_test",
     dimension=768,
     table="kg_vectors",
 )
@@ -325,8 +325,8 @@ also the shape to use inside a composition function, because the caller then
 has one object to shut down rather than two:
 
 ```python
-from kg_builder import VectorStore
-from kg_builder.vector.adapters.pgvector import PgVectorStore
+from redstring import VectorStore
+from redstring.vector.adapters.pgvector import PgVectorStore
 
 
 async def build_store(dsn: str) -> VectorStore:
@@ -342,7 +342,7 @@ restate asyncpg's signature; narrowing it here would mean maintaining a copy
 that goes stale against the driver. Two consequences follow from *not*
 restating it: asyncpg's own defaults apply (a pool of 10 connections unless you
 say otherwise), and a misspelled option is asyncpg's `TypeError`, not a
-`kg-builder` error.
+`redstring` error.
 
 ```python
 store = await PgVectorStore.connect(dsn, dimension=768, min_size=1, max_size=4)
@@ -365,7 +365,7 @@ is a one-line change and never an edit to your teardown.
 ```python
 import asyncpg
 
-from kg_builder.vector.adapters.pgvector import PgVectorStore
+from redstring.vector.adapters.pgvector import PgVectorStore
 
 pool = await asyncpg.create_pool(dsn)
 store = PgVectorStore(pool, dimension=768, table="kg_vectors")
@@ -632,7 +632,7 @@ Two things `ensure_schema()` deliberately does **not** create:
 - **No index on `embedding`.** No `hnsw`, no `ivfflat`. An integration test
   asserts every index on the table uses the `btree` access method, so adding
   one is a decision someone has to come and argue for rather than a drive-by
-  optimisation. [ADR 0007](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md)
+  optimisation. [ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md)
   is that argument; BACKLOG B10k holds the three ways out.
 - **No third index on `tenant_id` alone.** Either of the two above already
   serves a tenant-only lookup from its leading column.
@@ -686,11 +686,11 @@ Two limits on what "idempotent" promises here:
 
 ## Step 4: Handle a dimension mismatch on an existing table
 
-`DimensionMismatchError` is exported from `kg_builder`, so catching it needs no
+`DimensionMismatchError` is exported from `redstring`, so catching it needs no
 internal import:
 
 ```python
-from kg_builder import DimensionMismatchError
+from redstring import DimensionMismatchError
 ```
 
 It is raised from two different places for two different reasons, and telling
@@ -731,7 +731,7 @@ different dimension.** Your store is pointed at another model's data.
 ```python
 store = PgVectorStore(pool, dimension=768, table="kg_vectors")
 await store.ensure_schema()
-# kg_builder.domain.exceptions.DimensionMismatchError:
+# redstring.domain.exceptions.DimensionMismatchError:
 #     expected a vector of dimension 1024, got 768
 ```
 
@@ -849,7 +849,7 @@ Write with `upsert` or `upsert_many`, read one record back with `get`, and rank
 with `search`:
 
 ```python
-from kg_builder import TenantId, EntityId, VectorRecord
+from redstring import TenantId, EntityId, VectorRecord
 
 await store.upsert(
     entity_id,
@@ -982,7 +982,7 @@ of `ORDER BY` and `LIMIT` — and it is only free because there is no ANN index.
 A store that took the `k` nearest and then filtered would return fewer than `k`
 results while matching records sat further down the ranking: correct-looking,
 wrong, and indistinguishable from a tenant with little data. That is the
-reasoning behind [ADR 0007](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md),
+reasoning behind [ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md),
 and the reason searches here are **exact** rather than approximate — this
 adapter passes the compliance suite's exact tier for the same reason the
 in-memory one does.
@@ -999,7 +999,7 @@ identical direction, `0.5` for orthogonal, `0.0` for opposite. In SQL that is
 strictly below it; note `min_score=0.0` is **not** a no-op, and getting the
 scale backwards is a silent inversion that returns the worst matches first
 while still looking like a ranking. The compliance suite pins the numbers
-against `kg_builder.domain.vector.cosine_score`, not merely their order.
+against `redstring.domain.vector.cosine_score`, not merely their order.
 
 Ties break on ascending `entity_id` as its canonical lowercase hyphenated
 string, so the ordering is total and `k` cuts through a tie the same way on

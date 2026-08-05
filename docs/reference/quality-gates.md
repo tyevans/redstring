@@ -1,6 +1,6 @@
 # Quality gates
 
-Reference for every automated check kg-builder enforces, and for the
+Reference for every automated check redstring enforces, and for the
 configuration each one reads.
 
 The gates are not a suite of independent tools that happen to be installed.
@@ -43,11 +43,11 @@ than restated here:
 
 - Why the ruff and mypy exemption lists are empty, and why an exemption list
   needs a test that its entries still match a real file:
-  [ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
 - What makes a test able to fail, and the catalogue of failure shapes this
-  project has actually shipped: [`.claude/rules/testing.md`](../../.claude/rules/testing.md).
+  project has actually shipped: [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md).
 
-[`README.md`](../../README.md) has the short version — first-time setup and
+[`README.md`](https://github.com/tyevans/redstring/blob/main/README.md) has the short version — first-time setup and
 the handful of commands most sessions need.
 
 Throughout, "the gate" means the default `git commit` run: `pytest` with
@@ -131,15 +131,15 @@ to.
 
 | Extra | Contents | What needs it |
 | --- | --- | --- |
-| `neo4j` | `neo4j>=5.27,<6` | `kg_builder.graph.adapters.neo4j` |
-| `llm` | `langchain-core>=0.3,<2`, `langchain-openai>=0.2,<2` | `kg_builder.llm.adapters.langchain` |
-| `all` | `kg-builder[neo4j,llm]` | a deployment wanting both backends |
+| `neo4j` | `neo4j>=5.27,<6` | `redstring.graph.adapters.neo4j` |
+| `llm` | `langchain-core>=0.3,<2`, `langchain-openai>=0.2,<2` | `redstring.llm.adapters.langchain` |
+| `all` | `redstring[neo4j,llm]` | a deployment wanting both backends |
 | `dev` | the toolchain (below) | running the gates |
 
 Everything else is a hard runtime dependency in `[project] dependencies` —
 pydantic, asyncpg, httpx, numpy, python-dateutil, dateparser, pyyaml,
 `redis[hiredis]`, jellyfish, and `eventsource-py>=0.9.1,<0.11`.
-`eventsource-py` is deliberately *not* an extra: `kg_builder.__init__`
+`eventsource-py` is deliberately *not* an extra: `redstring.__init__`
 exports `build_graph`, `Document`, `DocumentExtracted` and the two
 projections, all of which need it, and a public API that fails to import
 without an extra is not a public API.
@@ -150,17 +150,17 @@ Both extras exist because their adapter is one implementation of a port, and
 the port is what the rest of the library depends on. Neither package is
 imported outside its adapter module:
 
-- `kg_builder.graph` re-exports nothing on purpose, so `import
-  kg_builder.graph` does not pull the driver in — reaching an adapter is a
+- `redstring.graph` re-exports nothing on purpose, so `import
+  redstring.graph` does not pull the driver in — reaching an adapter is a
   deliberate act at the composition root.
-- `langchain*` may be imported only under `kg_builder/llm/adapters/`, and
+- `langchain*` may be imported only under `redstring/llm/adapters/`, and
   `tests/unit/llm/test_port_does_not_leak.py` parses every module under
   `src/` to enforce that. `lint-imports` cannot see it: the contract only
   reasons about first-party imports.
 
 `LangChainLlmProvider.openai_compatible` defers its `langchain_openai` import
 to call time and re-raises a missing one as
-`ImportError: … install kg-builder[llm]`, so an absent extra names itself
+`ImportError: … install redstring[llm]`, so an absent extra names itself
 rather than surfacing as a `ModuleNotFoundError` three frames down. That is
 the exception. In general a missing extra is **not** a graceful skip: the
 adapter module imports its package at module scope, and pytest fails
@@ -194,9 +194,9 @@ side effect and can narrow the installed set back to `dev`, so re-run
 
 ### `all` exists for consumers, not for this repo
 
-`all = ["kg-builder[neo4j,llm]"]` is a self-referential extra: it installs the
+`all = ["redstring[neo4j,llm]"]` is a self-referential extra: it installs the
 package's own `neo4j` and `llm` extras and nothing else. It is the handle a
-downstream project uses (`pip install kg-builder[all]`); a clone of this
+downstream project uses (`pip install redstring[all]`); a clone of this
 repository wants `--all-extras`, which is a superset — it adds `dev`.
 
 ## Pre-commit configuration
@@ -357,7 +357,7 @@ those breaks every later hook with an error that does not name the cause.
   `breakpoint()` is valid Python, passes ruff and mypy, and in the suite hangs
   the run under `pytest-xdist` rather than failing it. A hang reads as
   infrastructure trouble and gets retried instead of investigated — the same
-  failure mode [`.claude/rules/testing.md`](../../.claude/rules/testing.md)
+  failure mode [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)
   warns about for unbounded loops.
 - **`check-docstring-first`** — fails when a module has code before its
   docstring, which silently demotes the intended docstring to a bare string
@@ -419,7 +419,7 @@ its own `exclude` configuration — which would let a path ruff is configured to
 skip get linted anyway, purely because it happened to be staged.
 `--force-exclude` makes the configured exclusions win over the argument list,
 so the hook and a bare `uv run ruff check` answer the same question. This is
-the same hazard [ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+the same hazard [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
 describes from the other direction: a command that bypasses the configured
 scope is measuring something other than the gate.
 
@@ -436,7 +436,7 @@ behaviour, same reason for `--force-exclude`.
 ### `mypy`
 
 `pass_filenames: false`. The hook invokes `uv run mypy` with **no arguments**,
-so mypy resolves its own scope from `[tool.mypy] files = ["src/kg_builder"]`
+so mypy resolves its own scope from `[tool.mypy] files = ["src/redstring"]`
 and checks the whole package on every run rather than the staged subset. Two
 reasons that is the right shape:
 
@@ -445,7 +445,8 @@ reasons that is the right shape:
 - Naming files on the command line **bypasses `exclude`**, so a
   filename-passing hook would silently answer a different question than the
   configured run does. There is no `exclude` in this project any more (see
-  ADR 0007), which makes the point moot today and makes it worth keeping
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
+  which makes the point moot today and makes it worth keeping
   correct for the day someone re-adds one.
 
 The configuration is `strict = true` plus `warn_unreachable`,
@@ -572,7 +573,7 @@ There is a second reason for mypy specifically: **naming files on the command
 line bypasses `exclude`.** A filename-passing mypy hook would answer a
 different question than the configured run. This project currently has no
 `exclude` (see
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
 which makes it moot today and worth keeping correct.
 
 The trade is cost. These three run in full whenever their filter matches, so a
@@ -596,9 +597,9 @@ exempt.
 
 The general shape — an invocation that names files explicitly is not always
 asking the configured question — is the lint-side spelling of the rule in
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md).
-It applies to hand-run diagnosis too: `uv run ruff check src/kg_builder/foo.py`
-is not the gate, and `uv run mypy src/kg_builder/foo.py` is a different check
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+It applies to hand-run diagnosis too: `uv run ruff check src/redstring/foo.py`
+is not the gate, and `uv run mypy src/redstring/foo.py` is a different check
 from the one that runs on commit.
 
 ### Filters decide when, not whether, a check is authoritative
@@ -655,8 +656,8 @@ in a comment, or a `# noqa`-bearing line.
 
 Tells the isort rules (`I`) where first-party code lives, so imports resolve
 to the right section. It works with `[tool.ruff.lint.isort]
-known-first-party = ["kg_builder"]`: `src` covers the layout, the explicit
-name covers the package. Without both, `import kg_builder` in a test can be
+known-first-party = ["redstring"]`: `src` covers the layout, the explicit
+name covers the package. Without both, `import redstring` in a test can be
 sorted as third-party, and the resulting churn shows up as a formatting
 diff nobody asked for.
 
@@ -732,7 +733,7 @@ Two things follow from that framing:
   applies to a new enum written today, for the same reason.
 - **It is the only entry.** The legacy per-file exemption lists are empty and
   the mypy `exclude` key is deleted (see
-  [ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
   so `UP042` is the whole of what this project declines to enforce on `src/`.
   A second entry appearing here is a visible decision in review rather than an
   edit to an existing list.
@@ -760,12 +761,12 @@ There is exactly one pattern, and it is `tests/**`:
 Nothing under `src/` is exempted from anything. The legacy per-package
 exemption list is empty — every entry was deleted in the commit that repaired
 or removed its package, and the reasoning is in
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
 The block is kept empty rather than deleted so that adding a `src/` exemption
 is a visible decision in review.
 
 **`ANN`** — flake8-annotations, off for tests only. Under
-`[tool.mypy] files = ["src/kg_builder"]` the type checker never looks at
+`[tool.mypy] files = ["src/redstring"]` the type checker never looks at
 `tests/`, so an annotated test function is checked by nothing; requiring
 `-> None` on every one of them produces thousands of findings and no signal.
 The rule stays on for `src/`, where it is the fast front end to mypy
@@ -863,12 +864,12 @@ So an annotation-only import moved into a `TYPE_CHECKING` block leaves the
 module importable and the model broken:
 
 ```
->>> import kg_builder.events.merge     # succeeds
+>>> import redstring.events.merge     # succeeds
 >>> MergeUndone(...)                   # PydanticUserError: not fully defined
 ```
 
 That is the measured outcome, not a hypothesis. Moving `from uuid import UUID`
-into a type-checking block in `src/kg_builder/events/merge.py` — a fix ruff
+into a type-checking block in `src/redstring/events/merge.py` — a fix ruff
 offers — kept the import working and failed **23 tests** with
 `PydanticUserError: MergeUndone is not fully defined`, because
 `merge_event_id: UUID` is a field.
@@ -881,7 +882,7 @@ passes; only using the model catches it.** A verification step that stops at
 
 `pydantic.BaseModel` alone is not enough, because **ruff matches the base class
 as written in the file, not through the MRO.** The events in
-`src/kg_builder/events/` declare `TenantDomainEvent`:
+`src/redstring/events/` declare `TenantDomainEvent`:
 
 ```python
 @register_event
@@ -914,10 +915,10 @@ rule — which is why it lives here and not in `per-file-ignores`, whose only
 entry is `tests/**`.
 
 It is also the origin story for
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
 The `events/` package had a `per-file-ignores` entry of exactly
 `["ANN", "TC"]`, and measuring what it hid was misleading in the way the ADR
-describes: `ruff check --select ANN,TC src/kg_builder/events/` printed
+describes: `ruff check --select ANN,TC src/redstring/events/` printed
 `All checks passed!` **unconditionally**, since `per-file-ignores` applies on
 top of `--select`. Deleting the entry and running the configured gate surfaced
 ten findings, nine of which were this misconfiguration rather than debt.
@@ -936,7 +937,7 @@ the same command.
 ```toml
 [tool.mypy]
 python_version = "3.13"
-files = ["src/kg_builder"]
+files = ["src/redstring"]
 strict = true
 warn_unreachable = true
 warn_return_any = true
@@ -944,7 +945,7 @@ disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 ```
 
-### `files = ["src/kg_builder"]`
+### `files = ["src/redstring"]`
 
 The package, and only the package. `tests/` is not type-checked at all, which
 is what makes ruff's `ANN` per-file ignore for `tests/**` coherent rather than
@@ -972,7 +973,8 @@ Turns on the whole strict family in one key — `disallow_any_generics`,
 interact with the rest of this page:
 
 - **`warn_unused_ignores`** makes a `# type: ignore` that no longer suppresses
-  anything a *failure*. It is the same instinct as ADR 0007's rule about
+  anything a *failure*. It is the same instinct as
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)'s rule about
   exemption lists — a suppression that has outlived its cause must say so
   rather than sit there passing.
 - **`strict_equality`** rejects a comparison between types that can never be
@@ -1049,7 +1051,7 @@ ignore_missing_imports = true
 `asyncpg` ships no `py.typed` marker, so mypy cannot see its types at all and
 `--strict` fails on the import rather than on any use. The alternative is a
 stub package that would have to track asyncpg's releases; the scope that buys
-is one module — `kg_builder.vector.adapters.pgvector` is the only importer in
+is one module — `redstring.vector.adapters.pgvector` is the only importer in
 `src/` — and that module's own signatures are fully annotated, so the
 untyped surface stops at the adapter boundary.
 
@@ -1068,21 +1070,22 @@ the override list has one entry rather than several.
 The key is **deleted**, not empty. Slice 10 emptied it by fixing the last
 fourteen findings in `extraction/` rather than by deleting the package, and
 the empty key was then removed on the reasoning in
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md):
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md):
 an exclusion over an empty set excludes nothing, and a staleness guard written
 over it would pass vacuously. `--strict` therefore covers every module under
-`src/kg_builder`, and re-adding an exclusion is a visible decision in review
+`src/redstring`, and re-adding an exclusion is a visible decision in review
 rather than an edit to an existing list.
 
 This asymmetry with ruff is deliberate. ruff's `per-file-ignores` is *kept*
 with its one `tests/**` entry, because it is a live mechanism with a current
 member; mypy's `exclude` had no members left. Empty-and-kept versus deleted is
-the choice ADR 0007 asks you to make explicitly, and the two files show the
+the choice [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+asks you to make explicitly, and the two files show the
 two answers.
 
 One consequence for hand-run diagnosis, and it is the mypy spelling of the
 `--force-exclude` hazard above: **naming files on the command line bypasses
-`exclude`.** `uv run mypy src/kg_builder/foo.py` is a different check from the
+`exclude`.** `uv run mypy src/redstring/foo.py` is a different check from the
 configured run, and it would remain different if an exclusion were ever added
 back. The measurement that means anything is the configured invocation —
 `uv run mypy`, no arguments, exactly as the hook issues it.
@@ -1153,17 +1156,17 @@ always red, which is a gate nobody reads.
 A recursive scan with the configuration bypassed reports four kinds of finding
 across the package:
 
-- **B101** ×2 in `src/kg_builder/llm/adapters/fake.py` — internal invariants in
+- **B101** ×2 in `src/redstring/llm/adapters/fake.py` — internal invariants in
   a test double that happens to live under `src/`.
-- **B311** ×1 in `src/kg_builder/llm/retry.py` — `random` for retry jitter,
+- **B311** ×1 in `src/redstring/llm/retry.py` — `random` for retry jitter,
   which is not a cryptographic use.
-- **B608** ×5 in `src/kg_builder/vector/adapters/pgvector.py` — SQL built by
+- **B608** ×5 in `src/redstring/vector/adapters/pgvector.py` — SQL built by
   string composition, flagged on shape rather than on a proven injection path.
 
 All are Low severity. None is currently reported by the gate, for the reason
 below.
 
-### `exclude_dirs` is substring matching, and `"build"` matches `kg_builder`
+### `exclude_dirs` is substring matching, and `"build"` matches `redstring`
 
 **As configured, the bandit hook scans nothing.** This is not a claim about
 scope; it is measurable:
@@ -1191,15 +1194,15 @@ if not _matches_glob_list(path, excluded_path_strings) and not any(
 ):
 ```
 
-`"build"` is a substring of `kg_builder`. Every path under
-`src/kg_builder/` therefore contains an entry of `exclude_dirs` and is
+`"build"` is a substring of `redstring`. Every path under
+`src/redstring/` therefore contains an entry of `exclude_dirs` and is
 excluded, whether the path is given relative or absolute, in the main checkout
 or in a worktree. Removing the single entry `"build"` from `exclude_dirs`
 restores the scan; removing `".venv"` or `"dist"` changes nothing.
 
 Two things this is worth reading as:
 
-- **It is exactly the failure shape [ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+- **It is exactly the failure shape [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
   is about**, arriving from a new direction. There the hazard was an exemption
   list whose entries no longer matched a real file and passed silently; here it
   is an exemption entry that matches *far more* than it names, and also passes
@@ -1226,13 +1229,13 @@ which only one is likely staged.
 
 ```toml
 [tool.importlinter]
-root_packages = ["kg_builder"]
+root_packages = ["redstring"]
 include_external_packages = false
 
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
 type = "layers"
-containers = ["kg_builder"]
+containers = ["redstring"]
 exhaustive = true
 ```
 
@@ -1247,15 +1250,15 @@ Contracts: 1 kept, 0 broken.
 
 ### `root_packages` and `include_external_packages`
 
-`root_packages = ["kg_builder"]` is the graph import-linter builds: the
+`root_packages = ["redstring"]` is the graph import-linter builds: the
 package, and nothing else. `include_external_packages = false` means
 third-party imports are not even nodes in that graph.
 
 That second key is a statement of what this tool can and cannot do for you.
 **`lint-imports` sees first-party imports only**, so no contract expressible
 here can catch `import langchain_openai` appearing in
-`src/kg_builder/extraction/`. The layer rules keep `extraction` off
-`kg_builder.llm.adapters`; they say nothing about the package that adapter
+`src/redstring/extraction/`. The layer rules keep `extraction` off
+`redstring.llm.adapters`; they say nothing about the package that adapter
 wraps. `tests/unit/llm/test_port_does_not_leak.py` is what covers the external
 half — it parses every module under `src/` and fails on a third-party leak
 outside the adapter package.
@@ -1266,25 +1269,25 @@ it, and the gap is silent rather than loud.
 
 ### `containers` and layer names
 
-`containers = ["kg_builder"]` makes every layer name *relative to the
+`containers = ["redstring"]` makes every layer name *relative to the
 container*, which is why the entries are bare (`domain`, not
-`kg_builder.domain`). One container, one package.
+`redstring.domain`). One container, one package.
 
 A layer may be a subpackage or a plain module — `composition` is
-`src/kg_builder/composition.py`, a single file, and sits on the top layer on
+`src/redstring/composition.py`, a single file, and sits on the top layer on
 its own.
 
 ### `exhaustive = true`
 
 Every child of the container must appear on some layer. A new top-level module
-or package under `kg_builder` is a **contract failure** until it is placed
+or package under `redstring` is a **contract failure** until it is placed
 deliberately:
 
 ```
-$ mkdir src/kg_builder/throwaway && touch src/kg_builder/throwaway/__init__.py
+$ mkdir src/redstring/throwaway && touch src/redstring/throwaway/__init__.py
 $ uv run lint-imports
 Layered architecture BROKEN
-- kg_builder.throwaway
+- redstring.throwaway
 (Since this contract is marked as 'exhaustive', every child of every container
  must be defined in the layers.)
 ```
@@ -1292,7 +1295,7 @@ Layered architecture BROKEN
 That transcript is the point of recording this section. `exhaustive` has
 caught zero real violations, and a check that has never been seen to fail is
 indistinguishable from an option that is inert — the same reasoning
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
 applies to exemption lists, and the same failure mode the
 [bandit section](#bandit-configuration) documents as a live bug. Slice 9 ran
 the experiment above by adding a throwaway package, watching the contract
@@ -1300,7 +1303,7 @@ break, and removing it; the command is cheap enough to repeat whenever the
 option's value is in doubt.
 
 There is no `exhaustive_ignore`. The twelve layer entries below name every
-child of `kg_builder` exactly once, so the set is closed and adding to it is a
+child of `redstring` exactly once, so the set is closed and adding to it is a
 visible decision in review.
 
 ### The layer order
@@ -1434,7 +1437,7 @@ The same mechanism holds for the non-test helpers that live inside test
 packages — `tests/unit/projections/log_builder.py`,
 `tests/unit/consolidation/oracle.py`. The oracle in particular is the
 *independent* expectation described in
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md); it is imported by
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md); it is imported by
 tests, never collected as one.
 
 **`python_classes = "Test*"` is load-bearing in the same way, one level down.**
@@ -1513,7 +1516,7 @@ so example 7 sees whatever examples 1–6 left behind — `function` scope is
 per-*test*, not per-example. This produced an intermittent `MissingEntityError`
 in about one run in three, and suppressing the health check that reports it is
 what hid the cause. Build the rig inside the test instead; see
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md).
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md).
 
 There is no `asyncio_default_test_loop_scope` key, so test-level scope is
 `pytest-asyncio`'s own default (`function`) as well.
@@ -1662,7 +1665,7 @@ them as a module-level `pytestmark` covering the whole file:
 - `tests/integration/vector/test_pgvector_store.py`
 - `tests/integration/llm/test_live_endpoint.py`
 - `tests/integration/llm/test_live_pipeline.py`
-- `tests/integration/test_wheel_ships_the_domain_schemas.py` — a single
+- `tests/integration/test_wheel_contents.py` — a single
   function-level `@pytest.mark.integration`, not a file-wide one
 
 The first two need the backends in `docker-compose.test.yml`; the two `llm`
@@ -1703,7 +1706,7 @@ whether it made extraction better or worse. The gap is tracked as `BACKLOG.md`
 B12.
 
 An empty marker is also the exact shape
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
 warns about, arriving from a third direction: `uv run pytest -m accuracy` exits
 green, and a green run over zero tests is indistinguishable from a green run
 over a suite. Read the collected count, not the exit code.
@@ -1778,7 +1781,7 @@ tearing down, reading a skip — are in
 | Neo4j `GraphStore` | `uv run pytest -m integration tests/integration/graph` | `docker compose -f docker-compose.test.yml up -d neo4j` |
 | pgvector `VectorStore` | `uv run pytest -m integration tests/integration/vector` | `… up -d postgres` |
 | live LLM | `uv run pytest -m integration tests/integration/llm` | an OpenAI-compatible endpoint |
-| wheel packaging | `uv run pytest -m integration tests/integration/test_wheel_ships_the_domain_schemas.py` | `uv`, a build backend, seconds |
+| wheel packaging | `uv run pytest -m integration tests/integration/test_wheel_contents.py` | `uv`, a build backend, seconds |
 | accuracy | `uv run pytest -m accuracy tests/accuracy/` | a live LLM — and selects **zero tests** today |
 
 ### `-m` replaces the configured expression, it does not intersect
@@ -1831,8 +1834,8 @@ the standard local run.
 | --- | --- | --- |
 | `KG_TEST_NEO4J_URI` | `bolt://localhost:7688` | `tests/integration/graph/test_neo4j_store.py` |
 | `KG_TEST_NEO4J_USER` | `neo4j` | same |
-| `KG_TEST_NEO4J_PASSWORD` | `kgbuilder` | same |
-| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test` | `tests/integration/vector/test_pgvector_store.py` |
+| `KG_TEST_NEO4J_PASSWORD` | `redstring` | same |
+| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:redstring@localhost:5434/redstring_test` | `tests/integration/vector/test_pgvector_store.py` |
 | `KG_LLM_BASE_URL` | `http://192.168.1.14:8080/v1` | `tests/integration/llm/test_live_endpoint.py` |
 | `KG_LLM_MODEL` | `qwen3.6-27b-mtp` | same |
 | `KG_COMPLIANCE_MAX_EXAMPLES` | `50` | `tests/compliance/graph_store.py`, `vector_store.py` |
@@ -1870,7 +1873,7 @@ fine: `addopts` deselects `integration` before xdist sees a test.
 
 ### The wheel test needs no backend
 
-`tests/integration/test_wheel_ships_the_domain_schemas.py` carries a
+`tests/integration/test_wheel_contents.py` carries a
 function-level `@pytest.mark.integration` rather than a file-wide
 `pytestmark`, and it is marked for cost rather than for infrastructure: it
 builds a wheel, installs it into a throwaway environment, and asks the
@@ -2000,7 +2003,7 @@ They live in `tests/unit/graph/test_memory_store.py` and
 both run on the commit gate. A hard-coded `max_examples` reintroduced into
 either shared suite fails there, rather than silently ignoring your
 environment — which is the same instinct as
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md):
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md):
 a knob nothing checks is indistinguishable from a knob that has stopped
 working.
 
@@ -2030,7 +2033,7 @@ Two things follow:
   docstring says so: "A boundary that matters belongs in an example, not in a
   budget." Its assertions are independent of the budget, so it kills both
   mutants at any value of the variable, including 1. The general rule is in
-  [`.claude/rules/testing.md`](../../.claude/rules/testing.md).
+  [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md).
 
 Raising it is worthwhile in the opposite situation — hunting a suspected
 ordering or filtering bug, where more draws is the only thing that widens the

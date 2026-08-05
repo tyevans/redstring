@@ -2,7 +2,7 @@
 
 **Every `VectorStore` adapter must pass this suite unchanged.** It is the
 executable definition of the port; the prose in
-`kg_builder.ports.vector_store` describes what these tests enforce.
+`redstring.ports.vector_store` describes what these tests enforce.
 
 ## Consistency contract
 
@@ -84,15 +84,15 @@ import pytest
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
-from kg_builder.domain.exceptions import DimensionMismatchError
-from kg_builder.domain.vector import VectorRecord, cosine_score
-from kg_builder.ports.vector_store import VectorStore
+from redstring.domain.exceptions import DimensionMismatchError
+from redstring.domain.vector import VectorRecord, cosine_score
+from redstring.ports.vector_store import VectorStore
 from tests.compliance import strategies as gen
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from kg_builder.domain.vector import VectorMatch
+    from redstring.domain.vector import VectorMatch
 
 #: Hypothesis examples per property test. Per *run*, via the environment --
 #: not per adapter subclass; see BACKLOG B10h for why that is not achievable

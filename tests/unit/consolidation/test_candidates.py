@@ -12,12 +12,12 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from kg_builder.consolidation.candidates import CandidateFinder
-from kg_builder.domain.alias import Alias
-from kg_builder.domain.blocking import blocking_keys_for
-from kg_builder.domain.similarity import FeatureWeights
-from kg_builder.graph.adapters.memory import InMemoryGraphStore
-from kg_builder.vector.adapters.memory import InMemoryVectorStore
+from redstring.consolidation.candidates import CandidateFinder
+from redstring.domain.alias import Alias
+from redstring.domain.blocking import blocking_keys_for
+from redstring.domain.similarity import FeatureWeights
+from redstring.graph.adapters.memory import InMemoryGraphStore
+from redstring.vector.adapters.memory import InMemoryVectorStore
 
 from .conftest import edge, entity
 

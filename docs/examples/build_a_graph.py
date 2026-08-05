@@ -1,6 +1,6 @@
 """Build a knowledge graph from one document, end to end, in one screen.
 
-Everything here comes from `kg_builder`'s public surface. `FakeLlmProvider`
+Everything here comes from `redstring`'s public surface. `FakeLlmProvider`
 and `InMemoryGraphStore` are real implementations, not mocks -- swap them for
 `LangChainLlmProvider` and `Neo4jGraphStore` and *this composition* does not
 change. The program does: both need their extra installed, and the LangChain
@@ -8,7 +8,7 @@ one needs a chat model constructed first, which is langchain's step rather
 than this library's. README.md shows it.
 
 Executed by `tests/unit/test_end_to_end_example.py`, which also asserts that
-every import in this file is from `kg_builder` itself. An example nothing runs
+every import in this file is from `redstring` itself. An example nothing runs
 is an example that rots.
 """
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
-from kg_builder import (
+from redstring import (
     FakeLlmProvider,
     InMemoryGraphStore,
     SourceDocument,

@@ -12,7 +12,7 @@ that one cannot conjure a malformed completion on demand.
 
 Doubling `BaseChatModel` rather than `LlmProvider` is deliberate. `LlmProvider`
 is ours, and Global Constraint 4 forbids mocking what we own -- the fake at
-`kg_builder.llm.adapters.fake` is the real implementation used everywhere
+`redstring.llm.adapters.fake` is the real implementation used everywhere
 else. LangChain is not ours, and the adapter exists precisely to be the one
 place that knows it.
 """
@@ -27,14 +27,14 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import BaseModel, Field
 
-from kg_builder.domain.exceptions import (
+from redstring.domain.exceptions import (
     EmptyCompletionError,
     LlmProviderError,
     MalformedCompletionError,
     RefusedCompletionError,
 )
-from kg_builder.llm.adapters.langchain import LangChainLlmProvider
-from kg_builder.ports.llm_provider import LlmProvider
+from redstring.llm.adapters.langchain import LangChainLlmProvider
+from redstring.ports.llm_provider import LlmProvider
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

@@ -1,4 +1,4 @@
-# ADR 0007: Domain schemas prompt the model, they do not constrain it
+# ADR 0011: Domain schemas prompt the model, they do not constrain it
 
 **Status:** accepted, slice 10 of the ring migration (classifier half amended in the slice 11 fix round).
 
@@ -32,7 +32,7 @@ type is machine-enforced against extraction output.
 ### What the port accepts: `LlmProvider.extract(prompt, <pydantic class>, system_prompt=...)` — a class, not a schema dict
 
 `LlmProvider.extract` — the single non-store port's single method (see
-[ADR: the two non-store ports](0007-the-two-non-store-ports.md)) — has this
+[ADR: the two non-store ports](0008-the-two-non-store-ports.md)) — has this
 signature, and the three parameters are the whole surface a domain could
 travel through:
 
@@ -90,7 +90,7 @@ document first and then does the same with the answer.
 
 `AUTO` is a sentinel object rather than the string `"auto"`, because `domain`
 also takes domain ids and a schema legitimately called `auto` would otherwise
-be unreachable. See [the README](../../README.md) for the end-to-end shape of a
+be unreachable. See [the README](https://github.com/tyevans/redstring/blob/main/README.md) for the end-to-end shape of a
 `build_graph` call.
 
 ## Decision 1: the domain reaches the model as description only
@@ -623,7 +623,7 @@ So this ADR records two things and decides only the first: that extraction is
 prompted rather than constrained today, and that the deleted function was not
 the thing that would have changed that. Re-adding a schema-dict path means
 changing `LlmProvider.extract`, which is a port change and
-[gets the scrutiny of one](0007-the-two-non-store-ports.md); building a
+[gets the scrutiny of one](0008-the-two-non-store-ports.md); building a
 per-domain pydantic class does not, and is the option to reach for first.
 
 ## Also deleted with it, and why they are not coming back
@@ -850,7 +850,7 @@ give-up observable at the boundary a caller actually reads.
 ### `UnknownDomainError` translates the registry's bare `KeyError` and lists available domains
 
 `domain_system_prompt` is public surface
-([ADR 0006](0006-the-public-surface-is-gated.md)), and `KgBuilderError` is the
+([ADR 0006](0006-the-public-surface-is-gated.md)), and `RedstringError` is the
 documented base of everything this library raises deliberately — a `KeyError`
 escaping is a leak of the registry's implementation. A typo in a domain id is
 the overwhelmingly likely cause, so the message lists the ids that do exist.

@@ -1,4 +1,4 @@
-# kg-builder
+# redstring
 
 Knowledge graph construction: entity extraction, consolidation, and the
 graph/vector stores those project into.
@@ -411,7 +411,7 @@ Before deleting an exemption you have to know what it hides, and the obvious
 way to find out is silently wrong:
 
 ```
-$ uv run ruff check --select ANN,TC src/kg_builder/events/
+$ uv run ruff check --select ANN,TC src/redstring/events/
 All checks passed!
 ```
 
@@ -444,16 +444,16 @@ removing exemptions promptly than any amount of accumulated strictness debt.
 
 ## The public API is gated, not curated
 
-`kg_builder.__all__` is the whole promise; anything reached by a dotted path is
+`redstring.__all__` is the whole promise; anything reached by a dotted path is
 internal. Three tests keep that honest, and each exists because the other two
 cannot see its failure:
 
 1. **Every exported name's signature mentions only exported types.** Ruff's
    F822 catches unresolvable `__all__` entries and is blind to this.
-2. **Every `KgBuilderError` subclass is exported or listed** against the
+2. **Every `RedstringError` subclass is exported or listed** against the
    capability whose export would bring it. A *signature* gate cannot see
    exceptions — removing `MissingEntityError` from `__all__` passes check 1.
-3. **The end-to-end example imports nothing but `kg_builder`.** Without it the
+3. **The end-to-end example imports nothing but `redstring`.** Without it the
    example can reach into an adapter module and pass while the surface is
    empty.
 
@@ -492,7 +492,7 @@ should have to say what it composes.
 `cache`, `config` and `context` left the line in slice 10 with their modules:
 a settings object, a Redis singleton and a re-export shim, none with a caller.
 
-`containers = ["kg_builder"]` with **`exhaustive = true`**: a new top-level
+`containers = ["redstring"]` with **`exhaustive = true`**: a new top-level
 package is a contract failure until it is placed deliberately. That is the
 point — decide where it sits, or argue the contract should change.
 

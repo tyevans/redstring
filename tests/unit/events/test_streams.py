@@ -1,10 +1,10 @@
-"""Tests for kg_builder.events.streams -- how a stream id is derived."""
+"""Tests for redstring.events.streams -- how a stream id is derived."""
 
 from uuid import UUID, uuid4
 
 import pytest
 
-from kg_builder.events.streams import (
+from redstring.events.streams import (
     CONSOLIDATION_CATEGORY,
     DOCUMENT_CATEGORY,
     consolidation_stream,

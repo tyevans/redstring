@@ -1,0 +1,67 @@
+# Documentation
+#
+# Deploys the mkdocs site to GitHub Pages on pushes to main.
+#
+# The *build* is not here -- `ci.yml` runs `mkdocs build --strict` on every
+# pull request, unconditionally rather than on a docs path filter. That is
+# deliberate: a link into `docs/` breaks when the target moves, so a change
+# touching no markdown at all can still break the site, and a path filter
+# would let exactly that through. This workflow only publishes what CI has
+# already proved builds.
+#
+# One-time setup: Settings -> Pages -> Source: "GitHub Actions".
+
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deployment at a time, and do not cancel one in flight -- a cancelled
+# deploy can leave Pages serving a half-published site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: '3.13'
+          enable-cache: true
+
+      - run: uv sync --all-extras
+
+      - run: uv run mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    # Scoped to this job rather than the file: `id-token: write` is what lets
+    # a job mint an OIDC identity, and it belongs only where it is used.
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

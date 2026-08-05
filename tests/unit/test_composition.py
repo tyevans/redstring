@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder import (
+from redstring import (
     AUTO,
     EMPTY,
     FakeLlmProvider,
@@ -25,8 +25,8 @@ from kg_builder import (
     build_graph,
     domain_system_prompt,
 )
-from kg_builder.domain.exceptions import LlmProviderError
-from kg_builder.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, PartialExtractionError
+from redstring.domain.exceptions import LlmProviderError
+from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, PartialExtractionError
 
 TENANT_ID = uuid4()
 

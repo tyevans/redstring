@@ -23,8 +23,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from kg_builder.domain.ids import TenantId
-    from kg_builder.ports.graph_store import GraphStore
+    from redstring.domain.ids import TenantId
+    from redstring.ports.graph_store import GraphStore
 
 #: Page size for the entity cursor. Small on purpose: the paging loop is part
 #: of what is being trusted, and a page size larger than any test's graph would

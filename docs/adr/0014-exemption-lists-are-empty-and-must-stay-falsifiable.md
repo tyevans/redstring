@@ -1,11 +1,11 @@
-# ADR 0007: Exemption lists are empty, and an emptied one is deleted rather than kept
+# ADR 0014: Exemption lists are empty, and an emptied one is deleted rather than kept
 
 Two lists in `pyproject.toml` once weakened the quality gates for named paths:
 ruff's `[tool.ruff.lint.per-file-ignores]` and mypy's `exclude`. Both are now
 empty of legacy entries — and they ended in *different* states. ruff keeps the
 key, carrying only the one deliberate `tests/**` entry; mypy carries no
 `exclude` key at all, so `--strict` covers every module under
-`src/kg_builder`.
+`src/redstring`.
 
 **Why this is an ADR:** the asymmetry looks like an oversight and is not, and
 the reasoning behind it generalises past these two lists. A per-file exemption
@@ -25,7 +25,7 @@ configured gate.
 Related: [quality gates reference](../reference/quality-gates.md) for how the
 gates run, [ADR 0001](0001-event-log-schema-and-granularity.md) for the event
 classes that the ruff false positives landed on, and
-[`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md)
+[`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md)
 for the wider "a passing check you have never seen fail is not yet evidence"
 rule this is an instance of.
 
@@ -43,9 +43,9 @@ The state this ADR records is checkable in two places rather than asserted:
   that follows the key is the removal record: slice 9 took `models`,
   `services`, `schemas`, `graph/client.py` and `graph/queries.py`, then
   `events/**`; slice 10 took the last one,
-  `src/kg_builder/extraction/**` = `["ANN", "TC", "RET", "ERA"]`, together with
+  `src/redstring/extraction/**` = `["ANN", "TC", "RET", "ERA"]`, together with
   its test-side twin.
-- `[tool.mypy]` has `files = ["src/kg_builder"]`, `strict = true`, and **no
+- `[tool.mypy]` has `files = ["src/redstring"]`, `strict = true`, and **no
   `exclude` key**. The one narrowing that remains is an
   `ignore_missing_imports` override for `asyncpg.*`, which is about a
   third-party package shipping no `py.typed` rather than about this codebase's
@@ -73,9 +73,9 @@ everywhere else.
 
 - ruff got `[tool.ruff.lint.per-file-ignores]` entries for `models`,
   `services`, `schemas`, `graph/client.py`, `graph/queries.py`, `events/**`,
-  and finally `src/kg_builder/extraction/**` = `["ANN", "TC", "RET", "ERA"]`.
-- mypy got `exclude = ["^src/kg_builder/extraction/"]`, sitting under
-  `files = ["src/kg_builder"]` and `strict = true`.
+  and finally `src/redstring/extraction/**` = `["ANN", "TC", "RET", "ERA"]`.
+- mypy got `exclude = ["^src/redstring/extraction/"]`, sitting under
+  `files = ["src/redstring"]` and `strict = true`.
 
 Both are *ratchets by intent*: each entry is supposed to shrink and then die
 with the debt it covers. The intent is not what makes a ratchet work, though.
@@ -131,7 +131,7 @@ different question than the configured run does. Both are worked through in
 below.
 
 This is the "a passing check you have never seen fail is not yet evidence" rule
-from [`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md),
+from [`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md),
 applied to a lint invocation instead of a test. Both spellings of *prove it can
 fail* are the same instruction, and here the vacuous result and the vacuously
 green ratchet reinforce each other: the list stops shrinking, and the command
@@ -140,7 +140,7 @@ nothing to do.
 
 ### What the last entry turned out to be hiding
 
-Deleting `src/kg_builder/extraction/**` for real surfaced ten ruff findings
+Deleting `src/redstring/extraction/**` for real surfaced ten ruff findings
 across eight files (its test-side twin hid a further seventeen `PTH123` and one
 `PT018`), and deleting mypy's `exclude` surfaced fourteen errors across five
 files — bare `dict`/`list` generics, a missing `types-PyYAML`, and `merging.py`
@@ -177,8 +177,8 @@ For how the gates themselves run — pre-commit, ruff, mypy, bandit,
 entry in both lists is deleted, and each one was deleted in the commit that
 deleted or repaired the package it covered — not in a later cleanup pass. The
 last two went in slice 10: ruff's
-`"src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]` and mypy's
-`exclude = ["^src/kg_builder/extraction/"]`, both removed by fixing
+`"src/redstring/extraction/**" = ["ANN", "TC", "RET", "ERA"]` and mypy's
+`exclude = ["^src/redstring/extraction/"]`, both removed by fixing
 `extraction/` rather than by deleting it.
 
 Three rules follow, and they are the decision proper:
@@ -239,7 +239,7 @@ re-measured by deletion, not assumed inert.
 
 ### mypy carries no `exclude` key at all
 
-`[tool.mypy]` has `files = ["src/kg_builder"]`, `strict = true`,
+`[tool.mypy]` has `files = ["src/redstring"]`, `strict = true`,
 `warn_unreachable`, `warn_return_any`, `disallow_untyped_defs`, and the
 `pydantic.mypy` plugin — and **no `exclude`**. Strict mode therefore covers
 every module in the package with no per-path escape hatch of any kind. The
@@ -266,7 +266,7 @@ two reasons:
   that every exclusion still matches a real path is trivially true over an
   empty list, so the mechanism this ADR exists to demand would itself become a
   check that has never been seen fail — the same failure, one level up. See
-  [`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md).
+  [`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md).
 
 This is where the asymmetry with ruff comes from, and it is a distinction
 between *kinds of list* rather than between the two tools. ruff's
@@ -283,7 +283,7 @@ The one narrowing that remains is an `[[tool.mypy.overrides]]` block setting
 by this decision. asyncpg ships no `py.typed`, so mypy cannot see its types at
 all; the alternative is a stub package tracking asyncpg's releases for the
 sake of one adapter. The override is scoped to a third-party module namespace
-rather than to a path under `src/`, `kg_builder.vector.adapters.pgvector` is
+rather than to a path under `src/`, `redstring.vector.adapters.pgvector` is
 the only module that imports asyncpg, and that adapter's own signatures are
 fully annotated — the untyped surface stops at the driver.
 
@@ -316,7 +316,7 @@ it does two things, both bad:
   still exists" is trivially true of an empty list, so the mechanism this ADR
   demands would itself become a check nobody has ever seen fail — the exact
   failure being guarded against, reproduced one level up in the guard. See
-  [`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md).
+  [`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md).
 
 A **seam** is different. It is the single place a rule admits exceptions, and
 its emptiness is the rule's strongest possible state rather than its absence.
@@ -355,7 +355,7 @@ so the enforcement never becomes vacuous even though the exemption did.
 mypy's `exclude` has no such structure available. There is no path under `src/`
 that should permanently escape strict mode, so the list's only legitimate
 content is temporary; there is no detector alongside it that emptiness
-strengthens; and its enforcement — `files = ["src/kg_builder"]` with
+strengthens; and its enforcement — `files = ["src/redstring"]` with
 `strict = true` — is complete precisely when the key is absent. A list whose
 every possible entry is debt, once empty, has nothing left to be. Deleting it
 *is* the enforcement.
@@ -390,7 +390,7 @@ that follows is one line:
 
 This is the same instruction as *prove it can fail*, applied to a lint
 invocation instead of a test — see
-[`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md).
+[`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md).
 The failure it guards against is not that the measurement is imprecise. It is
 that the measurement is **unconditional**: it returns the same output for code
 that is clean and code that is riddled, so it carries no information at all,
@@ -416,7 +416,7 @@ The obvious way to find out what an exemption hides is to select exactly the
 codes it suppresses and point ruff at exactly the path it covers:
 
 ```
-$ uv run ruff check --select ANN,TC src/kg_builder/events/
+$ uv run ruff check --select ANN,TC src/redstring/events/
 All checks passed!
 ```
 
@@ -430,7 +430,7 @@ said — a clean run and a thousand findings are indistinguishable through it.
 The tell is available without deleting anything, and it is worth knowing
 because it costs one command: **run the same selection against a path the
 exemption does not cover.** If `--select ANN,TC` reports findings under
-`src/kg_builder/graph/` and nothing under the exempted path, the difference is
+`src/redstring/graph/` and nothing under the exempted path, the difference is
 the exemption talking, not the code. That is a positive control for a lint
 invocation — the same move as breaking an implementation on purpose to watch a
 property fail, and the only way a green scoped run becomes evidence rather than
@@ -438,7 +438,7 @@ a tautology.
 
 Deleting the entry and running the configured gate surfaced ten findings across
 eight files. The same shape held for the last entry:
-`"src/kg_builder/extraction/**" = ["ANN", "TC", "RET", "ERA"]` measured through
+`"src/redstring/extraction/**" = ["ANN", "TC", "RET", "ERA"]` measured through
 itself reported nothing, and measured by deletion reported ten findings, plus
 seventeen `PTH123` and one `PT018` from its test-side twin.
 
@@ -464,7 +464,7 @@ mypy's version of the same mistake is more tempting, because there is no
 `--select` to get wrong and the command looks like the real one:
 
 ```
-$ uv run mypy src/kg_builder/extraction/
+$ uv run mypy src/redstring/extraction/
 ```
 
 Naming files or directories on the command line **bypasses `exclude`**.
@@ -486,14 +486,14 @@ produces plausible output either way, which is what makes it the more
 tempting of the two mistakes.
 
 The configured run takes **no path argument at all**. `[tool.mypy]` carries
-`files = ["src/kg_builder"]` with `strict = true`, and the pre-commit hook is
+`files = ["src/redstring"]` with `strict = true`, and the pre-commit hook is
 declared `pass_filenames: false` with `entry: uv run mypy` — deliberately, so
 that the hook and a bare `uv run mypy` are the same invocation over the same
 discovered set. That single line is what makes the gate reproducible by hand;
 a hook that passed filenames would have made every local run of mypy a
 differently-scoped run, and this section's mistake the default.
 
-Deleting `exclude = ["^src/kg_builder/extraction/"]` and running that
+Deleting `exclude = ["^src/redstring/extraction/"]` and running that
 configured invocation surfaced fourteen errors across five files: bare
 `dict`/`list` generics, a missing `types-PyYAML` (now a `dev` dependency
 alongside `types-dateparser` and `types-python-dateutil`), and `merging.py`
@@ -553,7 +553,7 @@ the linter itself*, indistinguishably.
 The last two removals produced one of each, which is why they are worth
 recording together:
 
-- `src/kg_builder/extraction/**` = `["ANN", "TC", "RET", "ERA"]` was hiding ten
+- `src/redstring/extraction/**` = `["ANN", "TC", "RET", "ERA"]` was hiding ten
   findings across eight files. These were ordinary debt: missing annotations,
   returns ruff wanted restructured, commented-out code. Two of them lived in
   `prompt_generator.generate_json_schema` and left with that function when it
@@ -605,7 +605,7 @@ class MergeUndone(TenantDomainEvent):
 class is therefore runtime-evaluated. Ruff cannot know that: establishing it
 means following an import out of the project, into an installed package, and
 walking that class's own bases — whole-program analysis ruff's per-file lint
-does not do. So the configured entry matched no class in `kg_builder.events`,
+does not do. So the configured entry matched no class in `redstring.events`,
 TC001/TC002/TC003 fired on field annotations across the package, and the `TC`
 half of the `events/**` exemption swallowed the lot for as long as it existed.
 
@@ -675,7 +675,7 @@ class MergeUndone(TenantDomainEvent):
     merge_event_id: UUID
 ```
 
-Applied to `events/merge.py`, that leaves `import kg_builder.events.merge`
+Applied to `events/merge.py`, that leaves `import redstring.events.merge`
 **succeeding** — and then fails the events tests with
 
 ```
@@ -717,7 +717,7 @@ the disagreement shows up. That is *prove it can fail* applied to a refactor
 instead of to a lint invocation or a test — see
 [the measurement rule](#the-measurement-rule-delete-the-entry-and-run-the-configured-gate),
 the deliberate-defect habit in
-[`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md),
+[`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md),
 and the [quality gates reference](../reference/quality-gates.md) for what the
 configured run covers.
 
@@ -741,9 +741,9 @@ can tell.
 
 ## Consequences
 
-**Strict mode now covers every module under `src/kg_builder`, with no path
+**Strict mode now covers every module under `src/redstring`, with no path
 escape hatch in either tool.** That is the headline consequence and it is
-checkable rather than asserted: `[tool.mypy]` has `files = ["src/kg_builder"]`,
+checkable rather than asserted: `[tool.mypy]` has `files = ["src/redstring"]`,
 `strict = true` and no `exclude` key, and `[tool.ruff.lint.per-file-ignores]`
 holds one `"tests/**"` glob whose codes are permanent statements about test
 code. Anything landing under `src/` from here meets the full gate on its first
@@ -854,7 +854,7 @@ of thing that runs *at model use*, not at import. The two documents meet at
 exactly that point: ADR 0001 explains why those annotations are load-bearing,
 this one explains why an exemption hid a change that would have broken them.
 
-**[`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md)
+**[`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md)
 — the general shape, and the instances that are not about lint config.** This
 ADR is a specific case of §3, *inert code and always-zero metrics*: an entry
 that matches nothing, a `--select` that cannot report a finding, a guard over
@@ -890,7 +890,7 @@ idea implemented where a configuration file cannot reach:
   lies* — and that choosing neither is the failure mode.
 
 The one rule that governs this document itself is
-[`.claude/rules/definition-of-done.md`](../../.claude/rules/definition-of-done.md):
+[`.claude/rules/definition-of-done.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/definition-of-done.md):
 an ADR is part of the work, not a follow-up, and its body is an immutable
 record. If a future slice re-admits an exemption under `src/`, that is not an
 edit to the Decision above — it supersedes it, with a new ADR saying what

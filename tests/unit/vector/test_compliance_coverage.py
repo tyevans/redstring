@@ -26,9 +26,9 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
-from kg_builder.domain.ids import EntityId, TenantId
-from kg_builder.domain.vector import VectorMatch, VectorRecord
-from kg_builder.ports.vector_store import VectorStore
+from redstring.domain.ids import EntityId, TenantId
+from redstring.domain.vector import VectorMatch, VectorRecord
+from redstring.ports.vector_store import VectorStore
 from tests.compliance import strategies
 from tests.compliance.vector_store import VectorStoreCompliance
 

@@ -1,6 +1,6 @@
 # Event reference
 
-The four events kg-builder writes to its log, the envelope they inherit, and
+The four events redstring writes to its log, the envelope they inherit, and
 the stream each one lands in.
 
 ## Scope and stability
@@ -10,7 +10,7 @@ validation rules, and the exact messages raised when validation fails. It is
 descriptive, not persuasive — the reasoning behind the shape of the log lives
 in [ADR 0001](../adr/0001-event-log-schema-and-granularity.md) and
 [ADR 0004](../adr/0004-consolidation-emits-events.md), and in the docstrings of
-`kg_builder/events/document.py` and `kg_builder/events/merge.py`.
+`redstring/events/document.py` and `redstring/events/merge.py`.
 
 Everything below is enforced by tests; see [Where each claim is
 enforced](#where-each-claim-is-enforced).
@@ -71,7 +71,7 @@ All four events subclass `TenantDomainEvent`
 (`eventsource.domain.tenant_events`), which subclasses `DomainEvent`
 (`eventsource.domain.event`). Neither is defined in this repository; the
 fields below arrive with the base classes and are on the wire for every
-kg-builder event, in addition to the per-event fields tabled later.
+redstring event, in addition to the per-event fields tabled later.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
@@ -79,19 +79,19 @@ kg-builder event, in addition to the per-event fields tabled later.
 | `event_type` | `str` | the class name | Wire name. Populated by a `mode="before"` validator from `event_type_name()`; never declared by hand here. |
 | `event_version` | `int` | `1` | `ge=1`. Redeclared explicitly on each event class — see below. |
 | `occurred_at` | `datetime` | `datetime.now(UTC)` | Timezone-aware, UTC. The only timestamp on the envelope: there is no separate recorded-at field, and the store supplies its own ordering. |
-| `aggregate_id` | `UUID` | **required** | The stream's aggregate id — for kg-builder, whatever [`document_stream`/`consolidation_stream`](#stream-categories-and-stream-id-derivation) derived. |
+| `aggregate_id` | `UUID` | **required** | The stream's aggregate id — for redstring, whatever [`document_stream`/`consolidation_stream`](#stream-categories-and-stream-id-derivation) derived. |
 | `aggregate_type` | `str` | **required on the base**, defaulted per event | Doubles as the stream category; redeclared with a default on each event class — see below. |
 | `aggregate_version` | `int` | `1` | `ge=1`. The aggregate's version *after* this event, set by the aggregate via `with_aggregate_version(version)` rather than at construction. |
 | `tenant_id` | `UUID` | **required** | `TenantDomainEvent`'s only addition: it re-declares the base's `TenantId \| None = None` as a required `UUID`. |
-| `actor_id` | `str \| None` | `None` | Who or what triggered the event. kg-builder does not set it. |
+| `actor_id` | `str \| None` | `None` | Who or what triggered the event. redstring does not set it. |
 | `correlation_id` | `UUID` | `uuid4()` | Links related events across aggregates. |
 | `causation_id` | `UUID \| None` | `None` | The event that caused this one. Set by `with_causation(causing_event)`, which also copies the causing event's `correlation_id`. |
 | `metadata` | `dict[str, Any]` | `{}` | Free-form. Set by `with_metadata(**kwargs)`. |
 
 The `UUID` aliases in `eventsource.domain.types` — `EventId`, `AggregateId`,
 `TenantId`, `CorrelationId`, `CausationId` — are all plain `UUID`; the table
-gives the underlying type. kg-builder's own `TenantId` (in
-`kg_builder.domain.ids`) is likewise `UUID`, so an event's `tenant_id` and a
+gives the underlying type. redstring's own `TenantId` (in
+`redstring.domain.ids`) is likewise `UUID`, so an event's `tenant_id` and a
 payload's compare directly, which is what the per-event tenant validators do.
 
 Three envelope fields are populated by a `with_*` method rather than at
@@ -114,7 +114,7 @@ Constructing with the ambient tenant instead of an explicit one:
 `TenantDomainEvent.with_tenant_context(**fields)` fills `tenant_id` from the
 tenant scope (`eventsource.tenant_scope`), raising `TenantContextNotSetError`
 when no scope is set. An explicit `tenant_id` in `**fields` wins over the
-scope. kg-builder's aggregates construct events explicitly, so this classmethod
+scope. redstring's aggregates construct events explicitly, so this classmethod
 matters mainly to callers driving the library from inside a request scope.
 
 ### `event_version` and `aggregate_type`
@@ -157,7 +157,7 @@ which is why a bump is a deliberate two-place edit: the class and the test's
 expectation.
 
 `aggregate_type` is redeclared because it is **required on the base**
-(`Field(...)` on `DomainEvent`) and kg-builder events do not take it from the
+(`Field(...)` on `DomainEvent`) and redstring events do not take it from the
 caller. Giving it a default per class is what makes the category a property of
 the event *type* rather than of the construction site, so two events on the
 same stream cannot disagree about which stream that is.
@@ -191,8 +191,8 @@ So: two fields you must write on a new event, one you must not.
 
 ### `KG_EVENT_TYPES`
 
-`kg_builder.events.KG_EVENT_TYPES` **is** the schema. Not a summary of it, not
-a convenience export: it is the enumeration, in `kg_builder/events/__init__.py`,
+`redstring.events.KG_EVENT_TYPES` **is** the schema. Not a summary of it, not
+a convenience export: it is the enumeration, in `redstring/events/__init__.py`,
 and everything this page claims about "every event" is a claim about the
 members of this tuple.
 
@@ -259,7 +259,7 @@ back, this is what says so.
 **Tuple-versus-registry, in both directions.** This is the one gate that
 cannot key off `KG_EVENT_TYPES`, because it is the gate on `KG_EVENT_TYPES`.
 It imports every module in the package with `pkgutil.iter_modules`, collects
-every registered class whose `__module__` starts with `kg_builder.events`, and
+every registered class whose `__module__` starts with `redstring.events`, and
 compares:
 
 - **registered but absent from the tuple** — the event exists, is written to
@@ -279,8 +279,8 @@ to skip legacy, never-emitted modules; those are gone (`events/consolidation`
 in slice 7, `events/scraping` and `events/base` in slice 9), and the list went
 with them rather than being kept empty. An exclusion over an empty set
 excludes nothing, and a guard iterating it passes vacuously — see
-[CLAUDE.md's rule on exemption lists](../../CLAUDE.md). Every module in
-`kg_builder/events/` is now live schema.
+[CLAUDE.md's rule on exemption lists](https://github.com/tyevans/redstring/blob/main/CLAUDE.md). Every module in
+`redstring/events/` is now live schema.
 
 `tests/unit/projections/test_replay_coverage.py` parametrises two more cases
 over the same tuple —
@@ -291,9 +291,9 @@ red.
 
 #### What this means if you are adding an event
 
-1. Write the class in a module under `kg_builder/events/`, decorated with
+1. Write the class in a module under `redstring/events/`, decorated with
    `@register_event`, declaring `event_version` and `aggregate_type`.
-2. Import it in `kg_builder/events/__init__.py` and add it to
+2. Import it in `redstring/events/__init__.py` and add it to
    `KG_EVENT_TYPES` and to that module's `__all__`.
 3. Run the suite. Anything you skipped in step 1 now names itself, and the
    projection-side gates will additionally demand a handler and a pinned
@@ -301,11 +301,11 @@ red.
 
 #### Scope note
 
-`KG_EVENT_TYPES` is exported from `kg_builder.events.__all__`, which is a
+`KG_EVENT_TYPES` is exported from `redstring.events.__all__`, which is a
 package-level `__all__`, not the library's public surface. The gated surface
-is `kg_builder.__all__` alone — it carries `DocumentExtracted` and
+is `redstring.__all__` alone — it carries `DocumentExtracted` and
 `EntitiesEmbedded`, and does **not** carry `KG_EVENT_TYPES`, `EntitiesMerged`
-or `MergeUndone`. Reaching them through the dotted path `kg_builder.events` is
+or `MergeUndone`. Reaching them through the dotted path `redstring.events` is
 reaching into an internal module, and per
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md) that may change without
 notice. Read the tuple to understand the log; do not import it as an API.
@@ -317,8 +317,8 @@ stream are ordered and versioned against each other, and events in different
 streams are not. So "which stream does this event land in" is the same
 question as "what is serialised against what".
 
-kg-builder has **two** categories and two derivation functions, defined in
-`kg_builder/events/streams.py` and re-exported from `kg_builder.events`:
+redstring has **two** categories and two derivation functions, defined in
+`redstring/events/streams.py` and re-exported from `redstring.events`:
 
 | Constant | Value | Aggregate | `aggregate_id` is |
 |---|---|---|---|
@@ -328,7 +328,7 @@ kg-builder has **two** categories and two derivation functions, defined in
 ### `DOCUMENT_CATEGORY` = `"Document"` and `CONSOLIDATION_CATEGORY` = `"Consolidation"`
 
 Both are plain module-level `str` constants in
-`kg_builder/events/streams.py` — not an enum, not a `Literal` type — declared
+`redstring/events/streams.py` — not an enum, not a `Literal` type — declared
 in full as:
 
 ```python
@@ -353,7 +353,7 @@ constant across all three is what keeps them aligned:
 |---|---|---|
 | `StreamId.category`, in the derivation function | `document_stream` | `consolidation_stream` |
 | `aggregate_type` default on each event class | `DocumentExtracted`, `EntitiesEmbedded` | `EntitiesMerged`, `MergeUndone` |
-| `aggregate_type` class attribute on the aggregate | `Document` (`kg_builder/aggregates/document.py`) | `ConsolidationLog` (`kg_builder/aggregates/consolidation_log.py`) |
+| `aggregate_type` class attribute on the aggregate | `Document` (`redstring/aggregates/document.py`) | `ConsolidationLog` (`redstring/aggregates/consolidation_log.py`) |
 
 That third row is the one worth noticing. The aggregate and its events name
 the same constant, so an event cannot be written with a category its
@@ -382,8 +382,8 @@ owns — no invariants enforced on its writes, no repository managing its
 version — so the aggregate has to exist first. See
 [aggregates](aggregates.md).
 
-Both constants are exported from `kg_builder.events.__all__`. Neither is in
-`kg_builder.__all__`, so neither is part of the gated public surface; a
+Both constants are exported from `redstring.events.__all__`. Neither is in
+`redstring.__all__`, so neither is part of the gated public surface; a
 consumer that needs to name a stream from outside should call
 [`document_stream`](#document_streamtenant_id-source_id), which is exported.
 
@@ -395,7 +395,7 @@ def document_stream(*, tenant_id: TenantId, source_id: SourceId) -> StreamId
 
 Returns `StreamId(aggregate_id=uuid5(tenant_id, source_id),
 category=DOCUMENT_CATEGORY)` — that is, category `"Document"`. Defined in
-`kg_builder/events/streams.py`.
+`redstring/events/streams.py`.
 
 | Parameter | Type | |
 |---|---|---|
@@ -458,7 +458,7 @@ message is exactly:
 source_id must not be blank; it identifies the document's stream
 ```
 
-It is a plain `ValueError`, not a `KgBuilderError` subclass — an argument this
+It is a plain `ValueError`, not a `RedstringError` subclass — an argument this
 malformed is a programming error at the call site, not a domain condition a
 caller catches. `SourceDocument.id` carries no validation of its own, so this
 is the last point at which a blank id can be caught. Hashed rather than
@@ -483,7 +483,7 @@ def consolidation_stream(*, tenant_id: TenantId) -> StreamId
 
 Returns `StreamId(aggregate_id=tenant_id, category=CONSOLIDATION_CATEGORY)` —
 that is, category `"Consolidation"`. Defined in
-`kg_builder/events/streams.py`, alongside
+`redstring/events/streams.py`, alongside
 [`document_stream`](#document_streamtenant_id-source_id).
 
 | Parameter | Type | |
@@ -504,7 +504,7 @@ names its argument stays correct if a second one is ever added.
 `EntitiesMerged` and `MergeUndone` are the two events that land here — see
 [`event_version` and `aggregate_type`](#event_version-and-aggregate_type) —
 and the `ConsolidationLog` aggregate
-(`kg_builder/aggregates/consolidation_log.py`) is what owns the stream.
+(`redstring/aggregates/consolidation_log.py`) is what owns the stream.
 
 One stream per tenant is a deliberate serialisation point rather than an
 oversight. Merges span documents, and two concurrent merges touching the same
@@ -520,7 +520,7 @@ is on the one stream.
 The consequence to plan for is that this stream is **unbounded**: it grows
 with a tenant's merge history rather than with anything document-sized.
 Snapshots keep rehydration bounded — `EveryNEvents` in
-`kg_builder.aggregates.repositories` — so a long log costs storage rather than
+`redstring.aggregates.repositories` — so a long log costs storage rather than
 load time. See [aggregates](aggregates.md).
 
 Pinned by `test_a_consolidation_stream_is_the_tenant_in_the_consolidation_
@@ -550,8 +550,8 @@ call site is to derive the stream and take `.aggregate_id` from it:
 aggregate = Document(document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id)
 ```
 
-That is what `build_graph` (`kg_builder/composition.py`) does for extraction,
-and what `kg_builder/consolidation/service.py` does with
+That is what `build_graph` (`redstring/composition.py`) does for extraction,
+and what `redstring/consolidation/service.py` does with
 `consolidation_stream(tenant_id=tenant_id).aggregate_id` for merge and undo.
 See [aggregates](aggregates.md) for what each one then enforces, and [drive
 projections from an event
@@ -560,17 +560,17 @@ streams back.
 
 ### Public surface
 
-`document_stream` **is** in `kg_builder.__all__`: a caller needs it to name a
+`document_stream` **is** in `redstring.__all__`: a caller needs it to name a
 document's stream when resuming or rebuilding a projection.
 `consolidation_stream`, `DOCUMENT_CATEGORY` and `CONSOLIDATION_CATEGORY` are
-exported from `kg_builder.events.__all__` only, which is a package-level
+exported from `redstring.events.__all__` only, which is a package-level
 `__all__` and not the gated surface — reaching them through the dotted path is
 reaching into an internal module.
 
 ## `DocumentExtracted`
 
 Everything one extraction run found in one document. Defined in
-`kg_builder/events/document.py`; category `Document`, so it lands on
+`redstring/events/document.py`; category `Document`, so it lands on
 [`document_stream(tenant_id=…, source_id=…)`](#document_streamtenant_id-source_id)
 alongside `EntitiesEmbedded`.
 
@@ -683,7 +683,7 @@ There is deliberately **no** rule 4 for relationships and `source_id`:
 #### 1 and 2 — the tenant checks
 
 Both are one call to the module-level helper `_reject_foreign_tenants(event,
-payloads, field)` in `kg_builder/events/document.py`, which is also what
+payloads, field)` in `redstring/events/document.py`, which is also what
 `EntitiesEmbedded` uses. It collects the *set* of offending tenants and raises
 when it is non-empty:
 
@@ -799,7 +799,7 @@ both mutants fail deterministically.
 ## `EntitiesEmbedded`
 
 Embeddings computed for entities of one document. Defined in
-`kg_builder/events/document.py` beside `DocumentExtracted`; category
+`redstring/events/document.py` beside `DocumentExtracted`; category
 `Document`, so it lands on the same
 [`document_stream(tenant_id=…, source_id=…)`](#document_streamtenant_id-source_id)
 as that document's extraction, ordered against it.
@@ -888,7 +888,7 @@ Field-level detail on `VectorRecord` — including the `metadata` NUL rejection
 and why `vector` is a mutable `list[float]` — is in [domain value
 types](domain-value-types.md).
 
-`EntitiesEmbedded` **is** in `kg_builder.__all__`, unlike the two
+`EntitiesEmbedded` **is** in `redstring.__all__`, unlike the two
 consolidation events; a caller reading the log for embeddings can import it
 directly.
 
@@ -988,7 +988,7 @@ tenant and the payload's tenant are ever compared.
 ## `EntitiesMerged`
 
 One or more entities absorbed into a canonical entity. Defined in
-`kg_builder/events/merge.py`; category `Consolidation`, so it lands on
+`redstring/events/merge.py`; category `Consolidation`, so it lands on
 [`consolidation_stream(tenant_id=…)`](#consolidation_streamtenant_id) — the
 one stream per tenant — alongside `MergeUndone`.
 
@@ -1038,7 +1038,7 @@ joined with `"; "` when one merge mixes both. A caller invoking `merge`
 directly may pass anything or nothing.
 
 Do not parse it. The format is a formatting decision inside
-`kg_builder/consolidation/service.py`, not a wire contract, and a batch merge
+`redstring/consolidation/service.py`, not a wire contract, and a batch merge
 concatenates one reason per absorbed entity **without saying which reason goes
 with which id**. It is an audit trail for a human reading the log, and it is
 the difference between a recorded judgement call and an unexplained one. The
@@ -1087,8 +1087,8 @@ with no edges changes no edges. Nothing cross-checks the list against
 `merged_entity_ids` — a redirection is not required to touch an absorbed
 entity, and an absorbed entity is not required to have one.
 
-`EntitiesMerged` is **not** in `kg_builder.__all__`. It is exported from
-`kg_builder.events.__all__` only, which is a package-level `__all__` and not
+`EntitiesMerged` is **not** in `redstring.__all__`. It is exported from
+`redstring.events.__all__` only, which is a package-level `__all__` and not
 the gated public surface; reaching it through the dotted path is reaching into
 an internal module (see [ADR 0006](../adr/0006-the-public-surface-is-gated.md)).
 Field-level detail on `Relationship` and `RelationshipRedirection` is in
@@ -1099,7 +1099,7 @@ emits this event rather than writing the graph itself.
 ### Validator `_the_merge_is_coherent`
 
 A `@model_validator(mode="after")` on `EntitiesMerged`, in
-`kg_builder/events/merge.py`. It runs on a fully constructed,
+`redstring/events/merge.py`. It runs on a fully constructed,
 field-validated event and enforces **three** rules in a fixed order, raising
 on the first one violated. Each raises `ValueError`, which pydantic wraps: the
 exception a caller sees is `pydantic.ValidationError`, with the text below
@@ -1174,7 +1174,7 @@ appear in a test returns *the same int object* both times and the two
 spellings agree. The check would have inverted only above the cache boundary —
 i.e. only in production, on a real batch. Counting the offenders has no int
 comparison in it to mutate, which is the general form of the fix (see
-[CLAUDE.md](../../CLAUDE.md) on preferring a spelling with no `len()`
+[CLAUDE.md](https://github.com/tyevans/redstring/blob/main/CLAUDE.md) on preferring a spelling with no `len()`
 comparison in it at all).
 
 **Naming the ids is not politeness.** A length comparison can say *that*
@@ -1274,7 +1274,7 @@ reject good payloads in production only.
 
 ## `MergeUndone`
 
-A merge reversed. Defined in `kg_builder/events/merge.py` beside
+A merge reversed. Defined in `redstring/events/merge.py` beside
 `EntitiesMerged`; category `Consolidation`, so it lands on
 [`consolidation_stream(tenant_id=…)`](#consolidation_streamtenant_id) — the
 one stream per tenant — after the `EntitiesMerged` it compensates.
@@ -1382,8 +1382,8 @@ event it compensates — the round-trip test in
 `tests/unit/consolidation/test_merge_undo_round_trip.py` asserts exactly that —
 and an undo preserving intervening edits would reproduce something else.
 
-`MergeUndone` is **not** in `kg_builder.__all__`. Like `EntitiesMerged` it is
-exported from `kg_builder.events.__all__` only, which is a package-level
+`MergeUndone` is **not** in `redstring.__all__`. Like `EntitiesMerged` it is
+exported from `redstring.events.__all__` only, which is a package-level
 `__all__` and not the gated public surface; reaching it through the dotted
 path is reaching into an internal module (see [ADR
 0006](../adr/0006-the-public-surface-is-gated.md)). Field-level detail on
@@ -1396,7 +1396,7 @@ contains one.
 ### Validator `_restorations_belong_to_this_tenant`
 
 A `@model_validator(mode="after")` on `MergeUndone`, in
-`kg_builder/events/merge.py`, and the event's **only** validation beyond its
+`redstring/events/merge.py`, and the event's **only** validation beyond its
 field declarations. In full:
 
 ```python
@@ -1450,7 +1450,7 @@ inferring:
   hard-codes it, so there is one call site and one spelling.
 
 Note also that this validator does **not** use `_reject_foreign_tenants`,
-despite being the same rule: that helper lives in `kg_builder/events/document.py`
+despite being the same rule: that helper lives in `redstring/events/document.py`
 and is not imported here. The set comprehension is written out. The check is
 identical in effect — `r.tenant_id != self.tenant_id` on the payload's own
 `tenant_id` field, by value.
@@ -1526,28 +1526,28 @@ identity comparison would reject good payloads in production only.
 
 The four events declare only the fields tabled above, and every non-scalar one
 of those is a **domain** type. Nothing on the wire is defined in
-`kg_builder/events/`: the package imports its payloads from
-`kg_builder.domain` and adds no types of its own.
+`redstring/events/`: the package imports its payloads from
+`redstring.domain` and adds no types of its own.
 
 | Type | Defined in | Carried by |
 |---|---|---|
-| `Entity` | `kg_builder/domain/entity.py` | `DocumentExtracted.entities` |
-| `Relationship` | `kg_builder/domain/relationship.py` | `DocumentExtracted.relationships`, `MergeUndone.restored_relationships`, and both halves of a `RelationshipRedirection` |
-| `VectorRecord` | `kg_builder/domain/vector.py` | `EntitiesEmbedded.embeddings` |
-| `RelationshipRedirection` | `kg_builder/domain/consolidation.py` | `EntitiesMerged.redirections` |
-| `EntityId` = `UUID` | `kg_builder/domain/ids.py` | `EntitiesMerged.canonical_entity_id` / `.merged_entity_ids`, `MergeUndone.canonical_entity_id` / `.unmerged_entity_ids` |
-| `SourceId` = `str` | `kg_builder/domain/ids.py` | `DocumentExtracted.source_id`, `EntitiesEmbedded.source_id` |
-| `TenantId` = `UUID` | `kg_builder/domain/ids.py` | not a field of any event — the envelope's `tenant_id`, and the field on every payload the validators compare it against |
+| `Entity` | `redstring/domain/entity.py` | `DocumentExtracted.entities` |
+| `Relationship` | `redstring/domain/relationship.py` | `DocumentExtracted.relationships`, `MergeUndone.restored_relationships`, and both halves of a `RelationshipRedirection` |
+| `VectorRecord` | `redstring/domain/vector.py` | `EntitiesEmbedded.embeddings` |
+| `RelationshipRedirection` | `redstring/domain/consolidation.py` | `EntitiesMerged.redirections` |
+| `EntityId` = `UUID` | `redstring/domain/ids.py` | `EntitiesMerged.canonical_entity_id` / `.merged_entity_ids`, `MergeUndone.canonical_entity_id` / `.unmerged_entity_ids` |
+| `SourceId` = `str` | `redstring/domain/ids.py` | `DocumentExtracted.source_id`, `EntitiesEmbedded.source_id` |
+| `TenantId` = `UUID` | `redstring/domain/ids.py` | not a field of any event — the envelope's `tenant_id`, and the field on every payload the validators compare it against |
 
 That the payloads live in `domain` and not in `events` is the layering: the
-[architecture contract](../../CLAUDE.md) puts `domain` at the bottom and
+[architecture contract](https://github.com/tyevans/redstring/blob/main/CLAUDE.md) puts `domain` at the bottom and
 `events` directly above it, so an event may name a domain type and a domain
 type can never name an event. A payload is therefore usable — and testable —
 without an event around it.
 
 ### The three id aliases
 
-`kg_builder/domain/ids.py` is nine lines and declares four aliases, three of
+`redstring/domain/ids.py` is nine lines and declares four aliases, three of
 which appear in the schema:
 
 ```python
@@ -1576,7 +1576,7 @@ nothing more. Two consequences on the wire:
 it is the type of `Relationship.id`, which is how a redirection identifies the
 edge it moves.
 
-All four are exported from `kg_builder.__all__`, so a consumer may annotate
+All four are exported from `redstring.__all__`, so a consumer may annotate
 against them without reaching into a dotted path.
 
 ### `Entity`
@@ -1677,16 +1677,16 @@ compares only `before.tenant_id` to the event's tenant. It does not need to
 check `after`, because this validator has already pinned `after.tenant_id` to
 `before.tenant_id`.
 
-`RelationshipRedirection` is **not** exported from `kg_builder.__all__`, nor
-from `kg_builder.events.__all__`; it is reachable only as
-`kg_builder.domain.consolidation.RelationshipRedirection`, which is an
+`RelationshipRedirection` is **not** exported from `redstring.__all__`, nor
+from `redstring.events.__all__`; it is reachable only as
+`redstring.domain.consolidation.RelationshipRedirection`, which is an
 internal dotted path (see [ADR
 0006](../adr/0006-the-public-surface-is-gated.md)). That is consistent with
 `EntitiesMerged` itself being un-exported.
 
 ### Which of these are public
 
-| Type | In `kg_builder.__all__` |
+| Type | In `redstring.__all__` |
 |---|---|
 | `Entity`, `Relationship`, `VectorRecord` | yes |
 | `EntityId`, `RelationshipId`, `SourceId`, `TenantId` | yes |

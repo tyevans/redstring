@@ -14,14 +14,14 @@ events that fail to apply are recoverable rather than merely counted.
 Everything you need is exported from the package root:
 
 ```python
-from kg_builder import GraphProjection, ReplayReport, VectorProjection, project
+from redstring import GraphProjection, ReplayReport, VectorProjection, project
 ```
 
 Everything else is `eventsource`'s, not this package's. `project`'s signature
 names those types directly — `GlobalEventFeed` (the `feed` argument),
 `EventSubscriber` (what a projection is, as far as `project` is concerned) and
 `Position` — as do the projection constructors, with `ProjectionCheckpoints`
-and `DLQRepository`. Import them from `eventsource`: `kg_builder.__all__` is
+and `DLQRepository`. Import them from `eventsource`: `redstring.__all__` is
 the whole promise this package makes, and it deliberately does not re-export
 another library's ports.
 
@@ -690,7 +690,7 @@ entity are a last-write-wins the log's order settles.
 The graph fold is the one with structure: relationships need their endpoints,
 and every endpoint is resolved through the alias table before the upsert, so a
 graph rebuild is where `MissingEntityError` and merge ordering show up
-(Step 5, and [ADR 0007](../adr/0007-the-extraction-fold-resolves-through-aliases.md)).
+(Step 5, and [ADR 0009](../adr/0009-the-extraction-fold-resolves-through-aliases.md)).
 A `DimensionMismatchError`, by contrast, is only ever the vector fold.
 
 Rebuilding one projection is also the shape of standing up a *new* adapter — a
@@ -779,7 +779,7 @@ Two things about the partial state it leaves:
 - **Self-loops are already gone.** Endpoints are resolved through the alias
   table first, and an edge whose two endpoints collapse onto one entity is
   deleted rather than written (see
-  [ADR 0007](../adr/0007-the-extraction-fold-resolves-through-aliases.md)). An
+  [ADR 0009](../adr/0009-the-extraction-fold-resolves-through-aliases.md)). An
   edge missing after a rebuild is not necessarily a failure — check the DLQ
   before assuming it is.
 
@@ -886,7 +886,7 @@ copy. Three details in it are load-bearing rather than incidental:
   in the read model, and an edge whose endpoints resolve to the same entity is
   *deleted* rather than written. Expect that edge to be absent after a
   rebuild; it is not a dropped write. See
-  [ADR 0007](../adr/0007-the-extraction-fold-resolves-through-aliases.md).
+  [ADR 0009](../adr/0009-the-extraction-fold-resolves-through-aliases.md).
 
 ### What the suite already holds
 
@@ -933,7 +933,7 @@ onwards would run against what example 1 left behind.
   `GraphStore` and `VectorStore` are separate, why neither has a cross-tenant
   delete, and why `delete_by_tenant` is the only wipe there is. Read it if
   Step 1's refusal looks like an oversight.
-- [ADR 0007: the extraction fold resolves through aliases](../adr/0007-the-extraction-fold-resolves-through-aliases.md)
+- [ADR 0009: the extraction fold resolves through aliases](../adr/0009-the-extraction-fold-resolves-through-aliases.md)
   — why a replay reproduces merges exactly, why alias ids are derived rather
   than generated, and why an edge whose endpoints collapse onto one entity is
   deleted rather than written. The reasoning behind most of "Verifying the

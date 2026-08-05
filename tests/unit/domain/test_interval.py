@@ -8,7 +8,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from kg_builder.domain.interval import (
+from redstring.domain.interval import (
     INSTANT,
     Bounds,
     TemporalRelation,
@@ -16,7 +16,7 @@ from kg_builder.domain.interval import (
     relate,
     relate_bounds,
 )
-from kg_builder.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 
 
 def utc(*args: int) -> datetime:

@@ -27,7 +27,7 @@ Run the integration suite when you have touched an adapter
 [implemented a store adapter](implement-a-store-adapter.md) of your own, or
 before a release. Run a mutation suite when you want evidence that a module's
 tests are worth something; the standards for reading the result are in
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md) and `CLAUDE.md`,
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md) and `CLAUDE.md`,
 and the short version is that **a count is never the answer** — every survivor
 has to be understood, and a run reporting zero survivors is almost always a
 broken harness rather than a perfect suite.
@@ -79,7 +79,7 @@ uv sync --all-extras && uv run pre-commit install
 ```
 
 That is also the whole install for a fresh clone; see the
-[README](../../README.md) and
+[README](https://github.com/tyevans/redstring/blob/main/README.md) and
 [quality gates](../reference/quality-gates.md).
 
 Two things `--all-extras` does *not* give you, so that a skip later is not a
@@ -112,7 +112,7 @@ does run. That is a deliberate trade, and it has a cost this project has
 already paid once.
 
 An interrupted cosmic-ray run left a mutant in
-`src/kg_builder/graph/adapters/neo4j.py`:
+`src/redstring/graph/adapters/neo4j.py`:
 
 ```
 -    if limit is not None and limit < 0:
@@ -190,9 +190,9 @@ check that probes the server rather than the process, on a 5 s interval with 30
 retries — so allow up to about two and a half minutes on a cold image pull, and
 treat anything longer as a real failure rather than slowness:
 
-- Neo4j runs `cypher-shell -u neo4j -p kgbuilder 'RETURN 1'`. Authenticating is
+- Neo4j runs `cypher-shell -u neo4j -p redstring 'RETURN 1'`. Authenticating is
   not enough; a server still recovering its store files accepts a connection.
-- Postgres runs `pg_isready -U postgres -d kgbuilder_test`, with the database
+- Postgres runs `pg_isready -U postgres -d redstring_test`, with the database
   named on purpose. Bare `pg_isready` succeeds against the bootstrap server
   before `POSTGRES_DB` has been created, which is precisely the window you are
   trying to wait out.
@@ -206,7 +206,7 @@ docker compose -f docker-compose.test.yml up -d --wait neo4j postgres
 Strictly, you do not have to wait — the suites probe and skip rather than
 fail. That is the reason to wait anyway: a run started too early **skips
 silently and reads as a pass**. The credentials the containers come up with
-(`neo4j/kgbuilder`, `postgres/kgbuilder`, database `kgbuilder_test`) are the
+(`neo4j/redstring`, `postgres/redstring`, database `redstring_test`) are the
 defaults the tests already assume, so if the healthchecks are green there is
 nothing further to configure.
 
@@ -220,8 +220,8 @@ so Step 1 is the whole of the setup:
 |---|---|---|
 | `KG_TEST_NEO4J_URI` | `bolt://localhost:7688` | `tests/integration/graph/test_neo4j_store.py` |
 | `KG_TEST_NEO4J_USER` | `neo4j` | same |
-| `KG_TEST_NEO4J_PASSWORD` | `kgbuilder` | same |
-| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:kgbuilder@localhost:5434/kgbuilder_test` | `tests/integration/vector/test_pgvector_store.py` |
+| `KG_TEST_NEO4J_PASSWORD` | `redstring` | same |
+| `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:redstring@localhost:5434/redstring_test` | `tests/integration/vector/test_pgvector_store.py` |
 
 The two Neo4j credential variables are separate rather than folded into the
 URI because the driver takes an `auth` tuple; the Postgres side is one DSN
@@ -242,7 +242,7 @@ uv run pytest -m integration tests/integration/graph
 ```
 
 ```
-KG_TEST_POSTGRES_DSN=postgresql://kg:...@pg.internal:5432/kgbuilder_test \
+KG_TEST_POSTGRES_DSN=postgresql://kg:...@pg.internal:5432/redstring_test \
 uv run pytest -m integration tests/integration/vector
 ```
 
@@ -397,7 +397,7 @@ Two other fixes exist and neither is in place, deliberately. Adding
 catch a real class of bug everywhere else in the suite — and this project's
 standing rule is that suppressing a hypothesis health check needs proof the
 state cannot leak, not an argument that it probably will not (see
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md)). Generating the
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)). Generating the
 property tests per subclass in `__init_subclass__` is correct and is a
 considerable amount of machinery for a problem only the CI target has.
 
@@ -469,7 +469,7 @@ misreading of a survivor that used to die is "something changed in the source."
 See
 [a survivor that died on the previous run](#a-survivor-that-died-on-the-previous-run-non-deterministic-boundary-coverage-under-a-lowered-max_examples),
 and pin boundaries as `@example`s rather than trusting the sampler
-([`.claude/rules/testing.md`](../../.claude/rules/testing.md)).
+([`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)).
 
 ### What each subdirectory needs; the `llm` subset needs `KG_LLM_BASE_URL`, not Docker
 
@@ -481,7 +481,7 @@ container. Work out which you have before reading a skip count:
 | `tests/integration/graph/` | the `neo4j` container **and** the `neo4j` extra | `RETURN 1` is not answered with `1` |
 | `tests/integration/vector/` | the `postgres` container (`asyncpg` is a hard dependency, so no extra) | the DSN does not answer, or a real `vector` will not round-trip |
 | `tests/integration/llm/` | a live OpenAI-compatible endpoint and the `llm` extra — **no Docker** | no model returns a real completion |
-| `tests/integration/test_wheel_ships_the_domain_schemas.py` | `uv`, a few seconds, and the network only if a build backend is uncached | **never** — it builds and installs a wheel |
+| `tests/integration/test_wheel_contents.py` | `uv`, a few seconds, and the network only if a build backend is uncached | **never** — it builds and installs a wheel |
 
 **Every probe here proves the backend can *serve*, not that a port answered**,
 and all three are that strict for one recorded reason: the accuracy suite once
@@ -549,7 +549,7 @@ changes between versions, and it is the accuracy suite's problem.
 result in this suite with no environmental reading at all:
 
 ```
-uv run pytest -m integration tests/integration/test_wheel_ships_the_domain_schemas.py
+uv run pytest -m integration tests/integration/test_wheel_contents.py
 ```
 
 It builds a wheel with `uv build --wheel`, installs it into a throwaway
@@ -558,9 +558,9 @@ environment, and asks that installed copy for all six bundled domains —
 `literature_fiction`, `news_journalism`, `technical_documentation`. All six on
 purpose: a packaging rule that caught five and missed the sixth is exactly the
 partial failure a single-domain check would report as success. The probe script
-asserts `"site-packages" in kg_builder.__file__`, so a wheel shadowed by the
+asserts `"site-packages" in redstring.__file__`, so a wheel shadowed by the
 source tree fails rather than passing for the wrong reason, and it imports only
-`kg_builder`'s public surface — which also catches a dependency the wheel's
+`redstring`'s public surface — which also catches a dependency the wheel's
 metadata does not pull in.
 
 It is marked `integration` for cost, not for infrastructure, and it is the one
@@ -646,7 +646,7 @@ Two more results that are neither, and both mean something:
   marker, so the summary block `tests/conftest.py` prints at the end of every
   default run (`197 'integration' tests -- uv run pytest -m integration`) is
   the confirmation that they exist and did not run.
-- **The wheel test failing** — `tests/integration/test_wheel_ships_the_domain_schemas.py`
+- **The wheel test failing** — `tests/integration/test_wheel_contents.py`
   never skips, so it is the one result in this suite with no environmental
   reading at all. It builds and installs a wheel; a failure means the bundled
   domain schemas are not packaged, which is silent and total for installed
@@ -705,9 +705,9 @@ so its `ensure_schema` tests
 volume already holds, and only a run started from a genuinely fresh volume
 proves the five DDL statements did the creating. Do a `down -v` before the run
 you intend to believe on that point — before a release, and after touching
-`SCHEMA_STATEMENTS` in `src/kg_builder/graph/adapters/neo4j.py`. It is the
+`SCHEMA_STATEMENTS` in `src/redstring/graph/adapters/neo4j.py`. It is the
 "at least one test per stateful setup path must start from nothing" rule from
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md), enforced by hand
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md), enforced by hand
 for the one adapter that cannot enforce it itself.
 
 Two subsets are unaffected by any of this: `tests/integration/llm/` needs a
@@ -745,8 +745,8 @@ same thing:
 
 | | Runner | Configured in | Tests it runs |
 |---|---|---|---|
-| mutmut | `paths_to_mutate = ["src/kg_builder/"]` | `[tool.mutmut]` in `pyproject.toml` | `uv run pytest -x -q --no-header -p no:randomly` over `tests/unit/` |
-| cosmic-ray | `module-path = "src/kg_builder"` | `cosmic-ray.toml` | `uv run pytest -x -q --no-header -p no:randomly tests/unit` |
+| mutmut | `paths_to_mutate = ["src/redstring/"]` | `[tool.mutmut]` in `pyproject.toml` | `uv run pytest -x -q --no-header -p no:randomly` over `tests/unit/` |
+| cosmic-ray | `module-path = "src/redstring"` | `cosmic-ray.toml` | `uv run pytest -x -q --no-header -p no:randomly tests/unit` |
 
 Three flags are common to both commands and each earns its place:
 
@@ -754,14 +754,14 @@ Three flags are common to both commands and each earns its place:
   suite tells you nothing and costs everything.
 - **`-p no:randomly`** — `pytest-randomly` reorders every run, and a mutation
   session compares thousands of runs against each other. Order-dependence is a
-  bug in the test ([`.claude/rules/testing.md`](../../.claude/rules/testing.md)),
+  bug in the test ([`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)),
   but a session is not where you want to discover one.
 - **`tests/unit`** — the path, not a marker. `addopts` still applies, so
   `integration` and `accuracy` are deselected; the unit suite is what runs.
 
 That last choice has a consequence worth stating plainly: **mutants in
 integration-only code are unkillable by the default configuration.** The Cypher
-bodies in `src/kg_builder/graph/adapters/neo4j.py` execute only with Docker up
+bodies in `src/redstring/graph/adapters/neo4j.py` execute only with Docker up
 (**B10a**), so a session over that module needs an integration `test-command`
 instead — the one recorded under **B10e**:
 
@@ -825,7 +825,7 @@ command in your shell cannot drift apart.
 
 ```toml
 [tool.mutmut]
-paths_to_mutate = ["src/kg_builder/"]
+paths_to_mutate = ["src/redstring/"]
 tests_dir = ["tests/unit/"]
 runner = "uv run pytest -x -q --no-header -p no:randomly"
 also_copy = ["pyproject.toml", "tests/conftest.py"]
@@ -837,7 +837,7 @@ result.
 **`tests_dir` is `tests/unit/`, so integration-only code cannot be measured
 here.** Combined with `addopts`, the suite mutmut runs is exactly the commit
 gate's, which is the same scoping cosmic-ray uses and the same limitation:
-mutants in the Cypher bodies of `src/kg_builder/graph/adapters/neo4j.py` are
+mutants in the Cypher bodies of `src/redstring/graph/adapters/neo4j.py` are
 unkillable by this configuration because no unit test executes them (**B10a**).
 Retargeting mutmut at the integration suite means editing `tests_dir` and
 `runner` together, and then
@@ -866,7 +866,7 @@ both runners pay one suite execution per mutant. Narrow `paths_to_mutate` to
 the module you changed, or name it on the command line:
 
 ```
-uv run mutmut run src/kg_builder/domain/preference.py
+uv run mutmut run src/redstring/domain/preference.py
 ```
 
 Read the results with:
@@ -908,8 +908,8 @@ considers yours. Run it from a `git worktree` or a fresh clone, never from the
 checkout you are editing:
 
 ```
-git worktree add ../kg-builder-mutation
-cd ../kg-builder-mutation
+git worktree add ../redstring-mutation
+cd ../redstring-mutation
 uv sync --all-extras
 uv run pytest -x -q --no-header -p no:randomly tests/unit   # Step 1, here
 ```
@@ -939,7 +939,7 @@ The config it reads is four lines and each is worth knowing:
 
 ```toml
 [cosmic-ray]
-module-path = "src/kg_builder"
+module-path = "src/redstring"
 timeout = 60.0
 test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit"
 excluded-modules = []
@@ -1049,7 +1049,7 @@ sheet ([Step 2](#step-2-run-mutmut)). Check the same three things.
 session is a legitimate result — `exec` is resumable and `cr-report` reads a
 half-finished database quite happily — but the number that matters is the one
 it did not cover. The B10e session over
-`src/kg_builder/graph/adapters/neo4j.py` completed **16 of 289 mutants
+`src/redstring/graph/adapters/neo4j.py` completed **16 of 289 mutants
 (5.5%)**: 11 killed, 5 survived, and all 5 survivors were
 `ReplaceBinaryOperator_BitOr_*` — the `|` in `X | None` annotations. So nothing
 of concern was found and also nothing much was looked at, which is why the
@@ -1147,7 +1147,7 @@ testing and essentially nothing else does. Real examples from this repo:
   and not a clamp deleted.
 
 The full catalogue of input shapes that make two implementations agree is the
-table in [`.claude/rules/testing.md`](../../.claude/rules/testing.md) and
+table in [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md) and
 `CLAUDE.md`. Read a survivor against it before concluding anything: the
 question is always **what other implementation would also pass this test?**
 
@@ -1172,7 +1172,7 @@ loaded rather than reading the file again:
 
 ```python
 import dis
-from kg_builder.domain.entity import Entity
+from redstring.domain.entity import Entity
 dis.dis(Entity.__init__)
 ```
 

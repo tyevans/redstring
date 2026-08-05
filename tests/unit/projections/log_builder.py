@@ -20,16 +20,16 @@ from uuid import NAMESPACE_URL, uuid5
 from eventsource.domain.tenant_context import tenant_scope
 from hypothesis import strategies as st
 
-from kg_builder.aggregates.repositories import (
+from redstring.aggregates.repositories import (
     consolidation_repository,
     document_repository,
 )
-from kg_builder.domain.consolidation import RelationshipRedirection
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.exceptions import ConsolidationInvariantError
-from kg_builder.domain.relationship import Relationship
-from kg_builder.domain.vector import VectorRecord
-from kg_builder.events.streams import consolidation_stream, document_stream
+from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.exceptions import ConsolidationInvariantError
+from redstring.domain.relationship import Relationship
+from redstring.domain.vector import VectorRecord
+from redstring.events.streams import consolidation_stream, document_stream
 
 from .conftest import DIMENSION
 
@@ -43,7 +43,7 @@ MAX_ENTITIES_PER_DOCUMENT = 4
 
 def _uuid(what: str):
     """A stable id, so hypothesis shrinks toward the same log twice."""
-    return uuid5(NAMESPACE_URL, f"https://kg-builder.test/{what}")
+    return uuid5(NAMESPACE_URL, f"https://redstring.test/{what}")
 
 
 @dataclass(frozen=True)

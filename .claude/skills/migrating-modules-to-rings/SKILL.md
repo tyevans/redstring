@@ -1,13 +1,13 @@
 ---
 name: migrating-modules-to-rings
-description: Use when moving a top-level module or package under src/kg_builder/ onto the layered architecture (composition; the extraction/consolidation/temporal/graph/vector/llm sibling band; projections; aggregates; events; ports; domain), retiring a legacy import path, or planning such a migration. Also use when a sweep, an import-linter contract change, or a `kg_builder.__all__` public-API question comes up mid-migration.
+description: Use when moving a top-level module or package under src/redstring/ onto the layered architecture (composition; the extraction/consolidation/temporal/graph/vector/llm sibling band; projections; aggregates; events; ports; domain), retiring a legacy import path, or planning such a migration. Also use when a sweep, an import-linter contract change, or a `redstring.__all__` public-API question comes up mid-migration.
 ---
 
 # Migrating Modules to Rings
 
 ## Overview
 
-This skill covers one job: dissolving a top-level `src/kg_builder/<pkg>/` (or
+This skill covers one job: dissolving a top-level `src/redstring/<pkg>/` (or
 `<mod>.py`) onto the layered architecture enforced by `lint-imports`, and
 retiring the old import path.
 
@@ -34,9 +34,9 @@ Four properties hold for every migration here:
 
 - **Clean break, no shims.** The old path stops existing; it does not
   re-export. There is no deprecation window and no compatibility module. The
-  supported surface is `kg_builder.__all__` (ADR
+  supported surface is `redstring.__all__` (ADR
   `docs/adr/0006-the-public-surface-is-gated.md`), so any importer of
-  `kg_builder.<pkg>.thing` was reaching into an internal dotted path that the
+  `redstring.<pkg>.thing` was reaching into an internal dotted path that the
   package docstring already says may change in a patch release. A shim would
   preserve a promise that was never made, and it would keep the old path alive
   in exactly the greps the sweep depends on.
@@ -44,11 +44,11 @@ Four properties hold for every migration here:
   `git status` reports `R` (rename) rather than a delete plus an add. Rewriting
   a file's contents in the same commit as the move defeats rename detection and
   costs `git log --follow`; split content changes into a following commit.
-- **`kg_builder.__all__` is the gated public surface**, and moving a module can
+- **`redstring.__all__` is the gated public surface**, and moving a module can
   change it. Three tests keep the surface honest — exported signatures may name
-  only exported types (walking the MRO), every `KgBuilderError` subclass is
+  only exported types (walking the MRO), every `RedstringError` subclass is
   exported or listed against a capability, and `docs/examples/build_a_graph.py`
-  imports nothing but `kg_builder`. A move that changes what a public signature
+  imports nothing but `redstring`. A move that changes what a public signature
   names, or that reparents an exception, is a public-API change and is gated as
   one.
 - **Placement is an argument, not a preference.** The sibling band's memberships
@@ -75,7 +75,7 @@ Do this before writing a plan. Two of the three checks take a `ls` and a
 `grep`, and each of them has sent someone down a wrong path.
 
 **1. There is no `application` layer and no `adapters` ring.** The layer names
-are exactly the twelve in the `layers` list above; `ls src/kg_builder/` returns
+are exactly the twelve in the `layers` list above; `ls src/redstring/` returns
 `aggregates composition.py consolidation domain events extraction graph llm
 ports projections temporal vector` and nothing else. "Adapters" here is a
 *package inside a layer* — `graph/adapters/`, not a ring — which is why the
@@ -186,7 +186,7 @@ layer — it is usually the misclassification described above.
 Two rules cut across the band:
 
 - **Exceptions merge into `domain/exceptions.py`,** rooted on
-  `KgBuilderError`. Prefer an existing intermediate root over a new direct
+  `RedstringError`. Prefer an existing intermediate root over a new direct
   subclass when one fits — `LlmProviderError` and `ConsolidationInvariantError`
   each already carry a family, and callers catch the family. Verify every
   `except` site before rebasing a root: widening or narrowing what a handler
@@ -373,7 +373,7 @@ the same slice.
 ### Where an exception lives
 
 **The root and the shared families live in `domain/exceptions.py`.**
-`KgBuilderError` is defined there, along with every error a caller of the
+`RedstringError` is defined there, along with every error a caller of the
 public surface can reach: `MissingEntityError`, `DimensionMismatchError`,
 `AliasCycleError`, `UnknownDomainError`, the `LlmProviderError` family
 (`EmptyCompletionError`, `RefusedCompletionError`,
@@ -388,7 +388,7 @@ usual reason a migration is holding an exception in the wrong place.
 `extraction/errors.py` holds `ChunkingError`/`ChunkerError`/`ChunkSizeError`,
 `extraction/pipeline.py` holds `PartialExtractionError`, and
 `llm/rate_limiter.py` and `llm/circuit_breaker.py` hold `RateLimitExceeded`
-and `CircuitOpen`. All four subclass `KgBuilderError` from `domain`, which is
+and `CircuitOpen`. All four subclass `RedstringError` from `domain`, which is
 a *downward* import and therefore legal. The rule that follows: an exception
 raised by exactly one layer, and meaningful only in that layer's vocabulary,
 may stay beside its raiser. An exception two layers raise, or that a caller
@@ -396,15 +396,15 @@ catches without knowing which layer produced it, moves down to
 `domain/exceptions.py`. Do not move an exception down merely because it is an
 exception.
 
-### Merging onto `KgBuilderError`
+### Merging onto `RedstringError`
 
 When a migration brings in an exception hierarchy of its own, merge it rather
 than parking it:
 
-1. **Reparent the root onto `KgBuilderError`** — or, better, onto an existing
+1. **Reparent the root onto `RedstringError`** — or, better, onto an existing
    intermediate root when one already carries the family. `LlmProviderError`
    and `ConsolidationInvariantError` exist for exactly this: callers catch the
-   family, and adding a fifth direct subclass of `KgBuilderError` where a
+   family, and adding a fifth direct subclass of `RedstringError` where a
    family fits makes every caller's `except` clause longer for nothing.
 2. **Check every `except` site before rebasing a root.** Widening or narrowing
    what a handler catches is a behaviour change, and no import gate, lint rule
@@ -427,26 +427,26 @@ than parking it:
 ### The `__all__` export/list gate a new exception must satisfy
 
 `tests/unit/test_public_surface_is_self_contained.py` enforces that
-`KgBuilderError` is the base of every deliberate error *and that the promise
+`RedstringError` is the base of every deliberate error *and that the promise
 is actionable*. It discovers subclasses by importing every module under
-`kg_builder` with `pkgutil.walk_packages` and then walking `__subclasses__`
+`redstring` with `pkgutil.walk_packages` and then walking `__subclasses__`
 recursively — so a new exception is picked up the moment it exists, whether or
-not `kg_builder/__init__.py` reaches its module. There is no way to add one
+not `redstring/__init__.py` reaches its module. There is no way to add one
 quietly.
 
-Every discovered subclass must be **either** in `kg_builder.__all__` **or** in
+Every discovered subclass must be **either** in `redstring.__all__` **or** in
 `UNEXPORTED_BECAUSE_THEIR_RAISER_IS`, a dict in that test file mapping the
 exception name to the capability whose export would bring it (today: the four
 consolidation errors, plus `CircuitOpen` and `RateLimitExceeded`, which are
 middleware). So when a move introduces or relocates an exception, do one of
 two things in the same commit:
 
-- **Export it.** Add the import to `kg_builder/__init__.py`, add the name to
+- **Export it.** Add the import to `redstring/__init__.py`, add the name to
   `__all__`, and add it to the "Errors" bullet in the module docstring — the
   docstring is the reference documentation for the surface, and a name in
   `__all__` that it does not mention is a hole a test will not catch.
 - **List it,** with the *capability* reason rather than a description of the
-  error. The entry is a pair: "`kg_builder.consolidation` is not exported yet"
+  error. The entry is a pair: "`redstring.consolidation` is not exported yet"
   is what tells the next person that exporting consolidation obliges exporting
   its errors too. "Internal" or "not needed" throws that away.
 
@@ -455,7 +455,7 @@ false starts:
 
 | Test | What it stops |
 |---|---|
-| `test_every_error_is_catchable_from_the_public_surface` | A new `KgBuilderError` subclass that is neither exported nor listed. |
+| `test_every_error_is_catchable_from_the_public_surface` | A new `RedstringError` subclass that is neither exported nor listed. |
 | `test_no_unexported_error_reason_is_stale` | A listed name that no longer exists — delete the entry when you delete or rename the exception. |
 | `test_an_exported_error_is_not_also_listed_as_unexported` | Exporting an error while leaving its entry in place, which would leave the only record of *why* it was unexported standing as a false statement. |
 
@@ -478,11 +478,11 @@ Two things this gate deliberately does not do, so do not expect them:
   module. Four such names failed the first run of this test, which is a
   missing gate rather than four mistakes.
 
-Errors that are not `KgBuilderError` subclasses at all are outside this
+Errors that are not `RedstringError` subclasses at all are outside this
 gate and outside the promise. If a migration brings in a bare
 `ValueError`/`KeyError` raised deliberately, rebase it — `UnknownDomainError`
 is the precedent: it exists because `domain_system_prompt` is public and the
-registry's `KeyError` was not something `KgBuilderError` covered.
+registry's `KeyError` was not something `RedstringError` covered.
 
 ## Public API consequences of a move
 
@@ -492,12 +492,12 @@ effect* of relocating a type, and nobody set out to change it. Three tests
 guard it, none of which can see the other two's failures. Run them before you
 believe a move is done, and expect at least one of them to have an opinion
 whenever the moved module contributed a type to an exported signature or a
-subclass of `KgBuilderError`.
+subclass of `RedstringError`.
 
 ### Gate 1 — an exported name's signature may name only exported types
 
 `tests/unit/test_public_surface_is_self_contained.py::test_exported_name_mentions_only_reachable_types`
-parametrises over every name in `kg_builder.__all__` that has a signature at
+parametrises over every name in `redstring.__all__` that has a signature at
 all, and fails if any annotation refers to an identifier that is neither
 exported nor recorded in `DOCUMENTED_FOREIGN_TYPES`. That dict is *not* an
 exemption list — it names types belonging to other packages (`GlobalEventFeed`
@@ -510,7 +510,7 @@ Two properties of this gate decide how a move interacts with it:
 
 - **It walks the MRO, and that is load-bearing.** `_surface_of` iterates
   `inspect.getmro(obj)` and takes the annotations of every base defined under
-  `kg_builder`. `GraphProjection` declares no `__init__`; the constructor a
+  `redstring`. `GraphProjection` declares no `__init__`; the constructor a
   caller actually calls is `StoreProjection.__init__`, which is not exported
   and takes five `eventsource` types. A body-only check reported it clean.
   So when a move changes a **base class** — reparenting, splitting a mixin
@@ -533,7 +533,7 @@ which is why `document_stream` is exported on an argument rather than on a
 measurement. If a move puts an exported type under a foreign base, reachability
 there has to be reasoned about by hand.
 
-### Gate 2 — every `KgBuilderError` subclass is exported or listed
+### Gate 2 — every `RedstringError` subclass is exported or listed
 
 Covered in full under "Exceptions" above; the migration-relevant summary is
 that the check discovers subclasses by `pkgutil.walk_packages` over the whole
@@ -544,19 +544,19 @@ would bring it. This gate exists because gate 1 is blind to exceptions: they
 appear in a `raise`, never in a signature, so removing `MissingEntityError`
 from `__all__` passes gate 1 cleanly.
 
-### Gate 3 — the end-to-end example imports nothing but `kg_builder`
+### Gate 3 — the end-to-end example imports nothing but `redstring`
 
 `tests/unit/test_end_to_end_example.py` loads `docs/examples/build_a_graph.py`
 from its path, **runs it**, and asserts the graph answers the questions it
 asks. It also parses the example's imports and fails on any root outside
-`kg_builder` and `ALLOWED_NON_KG_ROOTS` (`asyncio`, `uuid`, `__future__`).
+`redstring` and `ALLOWED_NON_KG_ROOTS` (`asyncio`, `uuid`, `__future__`).
 
 That second assertion is the one a migration must not lose. Without it the
-example could reach into `kg_builder.graph.adapters.memory` and pass while the
+example could reach into `redstring.graph.adapters.memory` and pass while the
 top-level surface was empty — the gate is what makes the example evidence
 about the *public API* rather than about the internals. So a move that
 relocates anything the example touches is finished only when the example still
-imports `kg_builder` alone; "fix the example's import" is the wrong repair if
+imports `redstring` alone; "fix the example's import" is the wrong repair if
 the fix is a deeper dotted path. There is a third assertion with teeth too
 (`test_it_fits_in_a_screen`, under 80 lines from the first import): a
 migration that makes the composition longer to express is telling you
@@ -580,7 +580,7 @@ Two consequences when planning slices:
   its entries in `UNEXPORTED_BECAUSE_THEIR_RAISER_IS` must be deleted, because
   `test_an_exported_error_is_not_also_listed_as_unexported` fails on the
   overlap. Consolidation is the live case: four errors are listed against
-  "`kg_builder.consolidation` is not exported yet", and whoever exports it
+  "`redstring.consolidation` is not exported yet", and whoever exports it
   inherits all four.
 
 The gate makes the closure visible at the moment it happens, which is the
@@ -603,9 +603,9 @@ writes them.** Not at review, not at merge.
 
 | Seam | Why every migration touches it | Cheapest coordination |
 |---|---|---|
-| `src/kg_builder/__init__.py` | The gated public surface. A move that exports, un-exports, or re-spells a name edits the import block, `__all__`, and the module docstring's reference list — three places in one file, all near each other. | Agree who owns `__all__` for the duration. The other branch stages its export as a diff and applies it after the merge. |
-| `src/kg_builder/ports/` | The remedy for a cross-layer import is a narrow Protocol, so two migrations independently reaching for one land in the same four files. | Agree the *port* and its method names up front. Two ports over the same store is the failure to avoid; a second method on an existing Protocol is cheap. |
-| `src/kg_builder/domain/exceptions.py` | Exceptions merge onto `KgBuilderError`, and both branches add to or reparent within the same family blocks. | Agree the family (`LlmProviderError`, `ConsolidationInvariantError`, or a direct subclass) before either writes it. Reparenting decided twice is a behaviour change decided twice. |
+| `src/redstring/__init__.py` | The gated public surface. A move that exports, un-exports, or re-spells a name edits the import block, `__all__`, and the module docstring's reference list — three places in one file, all near each other. | Agree who owns `__all__` for the duration. The other branch stages its export as a diff and applies it after the merge. |
+| `src/redstring/ports/` | The remedy for a cross-layer import is a narrow Protocol, so two migrations independently reaching for one land in the same four files. | Agree the *port* and its method names up front. Two ports over the same store is the failure to avoid; a second method on an existing Protocol is cheap. |
+| `src/redstring/domain/exceptions.py` | Exceptions merge onto `RedstringError`, and both branches add to or reparent within the same family blocks. | Agree the family (`LlmProviderError`, `ConsolidationInvariantError`, or a direct subclass) before either writes it. Reparenting decided twice is a behaviour change decided twice. |
 | `pyproject.toml` | The `layers` list, its inline reasoning, `[tool.mutmut] only_mutate`, `cosmic-ray.toml`'s module list, and the pytest selection args. | Only one branch may edit the `layers` list. If both must, one lands first and the other rebases onto it — a conflicted `layers` list resolved by hand is how a layer silently loses its comment. |
 
 Two of these have a second-order property worth naming. `__init__.py` and
@@ -778,10 +778,10 @@ slice that follows it, and exists so that the intervening commits are each
 individually green. If a foundation slice's re-export is still there two slices
 later, it has become a shim and the plan has drifted.
 
-Concretely, in the old `src/kg_builder/<pkg>/thing.py`:
+Concretely, in the old `src/redstring/<pkg>/thing.py`:
 
 ```python
-from kg_builder.domain.thing import Thing, normalize_thing
+from redstring.domain.thing import Thing, normalize_thing
 
 __all__ = ["Thing", "normalize_thing"]
 ```
@@ -807,8 +807,8 @@ Three properties to hold to while writing it:
 
 ```python
 def test_domain_thing_is_the_one_the_old_path_exports() -> None:
-    from kg_builder.domain.thing import Thing as new_thing
-    from kg_builder.oldpkg.thing import Thing as old_thing
+    from redstring.domain.thing import Thing as new_thing
+    from redstring.oldpkg.thing import Thing as old_thing
 
     assert new_thing is old_thing
 ```
@@ -829,7 +829,7 @@ Two things these tests do that nothing else does:
   something compares types.
 - **They are the artifact you retarget on the move**, and that retargeting is
   the point. When step 3 deletes the old path, each identity test either
-  becomes a test that the *new* path is what `kg_builder.__all__` exports, or
+  becomes a test that the *new* path is what `redstring.__all__` exports, or
   it is deleted alongside the module it guarded. Do not let them rot into
   imports of a path that no longer exists — the `ModuleNotFoundError` guard in
   step 3 will catch that, loudly, which is the intended interaction between the
@@ -852,7 +852,7 @@ changed in the same commit as its move is recorded as a delete plus an add and
 **Move whole files with `git mv`, then check `git status`.**
 
 ```
-git mv src/kg_builder/oldpkg/thing.py src/kg_builder/domain/thing.py
+git mv src/redstring/oldpkg/thing.py src/redstring/domain/thing.py
 git mv tests/unit/oldpkg/test_thing.py tests/unit/domain/test_thing.py
 git status --short
 ```
@@ -860,7 +860,7 @@ git status --short
 Every moved file must show `R` (rename), not a `D`/`A` pair:
 
 ```
-R  src/kg_builder/oldpkg/thing.py -> src/kg_builder/domain/thing.py
+R  src/redstring/oldpkg/thing.py -> src/redstring/domain/thing.py
 ```
 
 `R` is not automatic and it is not guaranteed by `git mv`. Rename detection is
@@ -868,14 +868,14 @@ a similarity computation done at diff time, so a move plus enough edits to drop
 below the threshold is recorded as delete+add however the file got there. If a
 row shows `D`/`A`, revert the edits out of this commit and land them in the
 next one. Do the import-rewriting pass **after** the move commit for the same
-reason — the moved module's own `from kg_builder.oldpkg...` lines, and every
+reason — the moved module's own `from redstring.oldpkg...` lines, and every
 importer's, are content changes.
 
 Two mechanical traps, both of which have shipped:
 
 - **`git mv` leaves the old directory behind**, and a leftover directory —
   even one containing nothing but `__pycache__` — is a valid namespace package
-  under PEP 420. `import kg_builder.oldpkg` then succeeds, the
+  under PEP 420. `import redstring.oldpkg` then succeeds, the
   `ModuleNotFoundError` guard below fails, and if you skipped the guard the
   retired path silently still resolves. `rmdir` the old package directory and
   its test mirror, and let the sweep's `test -d` check confirm it
@@ -883,7 +883,7 @@ Two mechanical traps, both of which have shipped:
 - **`git mv` does not stage the deletion of an untracked sibling.** Anything in
   the old package that was never committed — scratch files, a `.pyc`, a
   notebook — stays where it is and keeps the directory alive. `git clean -nd
-  src/kg_builder/oldpkg/` before the `rmdir`.
+  src/redstring/oldpkg/` before the `rmdir`.
 
 **Mirror `tests/unit/<layer>/`.** The unit tree mirrors the source tree
 package for package (`tests/unit/domain/`, `tests/unit/ports/`,
@@ -920,20 +920,20 @@ import pytest
 
 @pytest.mark.unit
 def test_the_retired_path_is_gone() -> None:
-    """`kg_builder.oldpkg` moved to `kg_builder.domain` in <slice>.
+    """`redstring.oldpkg` moved to `redstring.domain` in <slice>.
 
     A leftover directory — `__pycache__` alone is enough — makes the old
     path resolve again as a PEP 420 namespace package, and nothing else in
     the suite notices.
     """
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("kg_builder.oldpkg")
+        importlib.import_module("redstring.oldpkg")
 ```
 
 Two details are load-bearing:
 
 - **Use `importlib.import_module("...")` with the path as a string**, never a
-  literal `import kg_builder.oldpkg` inside the `raises` block. The string form
+  literal `import redstring.oldpkg` inside the `raises` block. The string form
   is what keeps the guard out of the sweep's import-shaped grep — a guard
   written with a real `import` statement is itself a fatal sweep finding, and
   the usual "fix" is to add the guard's file to an exclusion list, which is how
@@ -1135,19 +1135,19 @@ only argument:
 .claude/skills/migrating-modules-to-rings/sweep.sh timeline
 ```
 
-It greps for `kg_builder.<pkg>` across the whole tree and exits nonzero on a
+It greps for `redstring.<pkg>` across the whole tree and exits nonzero on a
 fatal finding. Run it in the move slice (step 3), again in the docs/meta slice
 (step 4), and once more after every sibling merge — a sibling branch can
 reintroduce a reference to a path you retired, and neither branch's CI sees it.
 
 ### The two fatal checks
 
-1. **Import-shaped references** — `from kg_builder.<pkg> …` or
-   `import kg_builder.<pkg>` — anywhere outside the by-design exclusions
+1. **Import-shaped references** — `from redstring.<pkg> …` or
+   `import redstring.<pkg>` — anywhere outside the by-design exclusions
    below. These are the ones that break at runtime.
-2. **Leftover directories** at `src/kg_builder/<pkg>` or `tests/unit/<pkg>`.
+2. **Leftover directories** at `src/redstring/<pkg>` or `tests/unit/<pkg>`.
    A directory containing nothing but `__pycache__` is still a valid PEP 420
-   namespace package, so `import kg_builder.<pkg>` keeps resolving and the
+   namespace package, so `import redstring.<pkg>` keeps resolving and the
    `ModuleNotFoundError` guard from step 3 is the only other thing that would
    notice. `git mv` does not remove the source directory; `rmdir` it, and
    `git clean -nd` it first for untracked debris.
@@ -1173,7 +1173,7 @@ rotted every time they have been tried, because the list is written once and
 the repository keeps growing: a stale import survives in whatever directory
 was added after the list. In this tree the places an allowlist would have
 missed are `README.md` (which carries a layer-by-layer table naming
-`kg_builder.domain`, `kg_builder.ports` and the rest),
+`redstring.domain`, `redstring.ports` and the rest),
 `docs/reference/domain-value-types.md`, `docs/how-to/`, and
 `docs/examples/build_a_graph.py` — that last one is *executed* by
 `tests/unit/test_end_to_end_example.py`, so a stale import in it fails the
@@ -1190,7 +1190,7 @@ Four locations, and each earns it differently:
 
 | Excluded | Why references there are correct |
 |---|---|
-| `docs/adr/` | ADR bodies are immutable. An ADR that decided something about `kg_builder.<pkg>` still names it after the package is gone; the amendment goes in a *new* record's Status line, never by editing the old body (`.claude/rules/definition-of-done.md` item 2). |
+| `docs/adr/` | ADR bodies are immutable. An ADR that decided something about `redstring.<pkg>` still names it after the package is gone; the amendment goes in a *new* record's Status line, never by editing the old body (`.claude/rules/definition-of-done.md` item 2). |
 | `docs/plans/` | Live plan artifacts. A migration plan's move list is *made of* old paths — that is its job (step 1). |
 | `docs/history/` | Archived plans, kept unchanged. `docs/history/2026-08-ring-migration-plan.md` is the account of the campaign that retired most of these paths. |
 | The public-surface guard tests | `tests/unit/test_public_surface_is_self_contained.py` and `tests/unit/test_end_to_end_example.py` walk the whole package and name module paths as *data*. |
@@ -1210,10 +1210,10 @@ that invariant by eye (step 4).
 
 ### Guard tests must not trip the sweep
 
-A `ModuleNotFoundError` guard written with a literal `import kg_builder.oldpkg`
+A `ModuleNotFoundError` guard written with a literal `import redstring.oldpkg`
 inside `pytest.raises` is itself an import-shaped reference, and the sweep will
 call it fatal. The repair is *not* an exclusion — it is
-`importlib.import_module("kg_builder.oldpkg")`, where the path is a string the
+`importlib.import_module("redstring.oldpkg")`, where the path is a string the
 grep cannot see. Adding the guard's file to `GREP_EXCLUDES` is exactly how a
 denylist starts becoming an allowlist: one file at a time, each with a
 plausible reason.
@@ -1237,7 +1237,7 @@ docs/meta slice.
 
 The good news, and the reason this is a short checklist rather than a chore:
 **every one of them is currently written at directory granularity, so a move
-*within* `src/kg_builder/` touches none of them.** That is deliberate, and
+*within* `src/redstring/` touches none of them.** That is deliberate, and
 keeping it that way is the real instruction. What follows is what to check,
 and what would make each one start needing maintenance.
 
@@ -1245,17 +1245,17 @@ and what would make each one start needing maintenance.
 
 ```toml
 [tool.importlinter]
-root_packages = ["kg_builder"]
+root_packages = ["redstring"]
 
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
 type = "layers"
-containers = ["kg_builder"]
+containers = ["redstring"]
 layers = [ ... ]
 exhaustive = true
 ```
 
-- **Layer names are bare** (`"projections"`, not `"kg_builder.projections"`)
+- **Layer names are bare** (`"projections"`, not `"redstring.projections"`)
   because they are relative to the container. A migration that spells a new
   layer with the package prefix gets a contract that resolves to nothing.
 - **Dissolving a top-level package means deleting its line from `layers`** —
@@ -1279,7 +1279,7 @@ exhaustive = true
 
 ```toml
 [tool.mutmut]
-paths_to_mutate = ["src/kg_builder/"]
+paths_to_mutate = ["src/redstring/"]
 tests_dir = ["tests/unit/"]
 runner = "uv run pytest -x -q --no-header -p no:randomly"
 also_copy = ["pyproject.toml", "tests/conftest.py"]
@@ -1306,7 +1306,7 @@ migration can still break:
 
 ```toml
 [cosmic-ray]
-module-path = "src/kg_builder"
+module-path = "src/redstring"
 timeout = 60.0
 test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit"
 excluded-modules = []
@@ -1364,7 +1364,7 @@ Three smaller traps:
 The rule that governs this whole section is the one from `CLAUDE.md` about
 measuring an exemption: **the command that measures a configured constraint
 must be subject to that constraint.** `uv run ruff check --select ANN,TC
-src/kg_builder/events/` printed "All checks passed!" unconditionally, because
+src/redstring/events/` printed "All checks passed!" unconditionally, because
 `per-file-ignores` applied on top of `--select`; naming files explicitly on a
 mypy command line likewise bypasses `exclude` and answers a different question
 than the configured run. So after editing any of the four spots above, run the

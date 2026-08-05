@@ -1,14 +1,14 @@
 # Domain schema YAML reference
 
 A *domain schema* is a YAML file describing the entity types, relationship types
-and prompt template that kg-builder uses when extracting a knowledge graph from
+and prompt template that redstring uses when extracting a knowledge graph from
 one kind of content. Six are bundled with the package, under
-`src/kg_builder/extraction/domains/schemas/`; you can also load your own from
+`src/redstring/extraction/domains/schemas/`; you can also load your own from
 any directory.
 
 Every file is parsed with `yaml.safe_load` and then validated against the
 `DomainSchema` pydantic model in
-`src/kg_builder/extraction/domains/models.py`. That model is the authority for
+`src/redstring/extraction/domains/models.py`. That model is the authority for
 everything on this page: field names, defaults, bounds, and the rules that
 reject a file. Each model in the hierarchy sets `extra="forbid"` and
 `str_strip_whitespace=True`, so an unrecognised key is an error and surrounding
@@ -29,7 +29,7 @@ A schema **prompts the extractor; it does not constrain it.** Entity and
 relationship types the LLM returns outside the declared set are not discarded —
 `custom` is always an acceptable entity type and `related_to` is always an
 acceptable relationship type. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md) for the
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) for the
 reasoning, and note the consequence throughout this reference: most fields here
 shape what the model is asked for, and only a few are enforced at load time.
 
@@ -37,7 +37,7 @@ This page describes what each field means and what will be rejected. For a
 step-by-step walk through writing a new schema, see
 [Author a domain schema](../how-to/author-a-domain-schema.md). For where
 domains fit in the extraction call, see the
-[README](../../README.md).
+[README](https://github.com/tyevans/redstring/blob/main/README.md).
 
 ## Scope and audience
 
@@ -71,20 +71,20 @@ Out of scope:
   `domain_system_prompt` and handing it to extraction.
 - **Why schemas prompt rather than constrain.** That is a design decision,
   argued in
-  [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md). It is
+  [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md). It is
   restated here only where it changes what a field does.
 - **Extraction, chunking, merging and the graph projection.** A schema's only
   contact with them is the prompt text it produces; see the
-  [README](../../README.md) for the pipeline as a whole.
+  [README](https://github.com/tyevans/redstring/blob/main/README.md) for the pipeline as a whole.
 - **Domain classification.** `AUTO` and the classifier that picks a domain for
   you are a caller-side concern. This page describes `ClassificationResult`
   only as a value a schema author will see, never authors.
 
 Two entry points are part of the public surface — `load_schema_from_file` and
-`load_schema_from_string` are exported from `kg_builder`, alongside
+`load_schema_from_string` are exported from `redstring`, alongside
 `DomainSchema` itself. Everything else named here (the registry,
 `load_all_schemas`, `validate_schema_file`, `SchemaLoadError`) is reached by a
-dotted path into `kg_builder.extraction.domains`, which makes it internal by
+dotted path into `redstring.extraction.domains`, which makes it internal by
 the rule in
 [ADR 0006](../adr/0006-the-public-surface-is-gated.md): documented so you can
 use it knowingly, not promised.
@@ -94,7 +94,7 @@ use it knowingly, not promised.
 ### The bundled directory
 
 The six schemas that ship with the package live in
-`src/kg_builder/extraction/domains/schemas/`, one file per domain:
+`src/redstring/extraction/domains/schemas/`, one file per domain:
 
 ```
 academic_research.yaml
@@ -182,8 +182,8 @@ loaded by exactly the calls you would make:
 ```python
 from pathlib import Path
 
-from kg_builder.extraction.domains import load_all_schemas
-from kg_builder.extraction.domains.registry import DomainSchemaRegistry
+from redstring.extraction.domains import load_all_schemas
+from redstring.extraction.domains.registry import DomainSchemaRegistry
 
 # One-shot: a plain dict of domain_id -> DomainSchema
 schemas = load_all_schemas(Path("./my-schemas"))
@@ -250,7 +250,7 @@ Loading it:
 ```python
 from pathlib import Path
 
-from kg_builder import load_schema_from_file
+from redstring import load_schema_from_file
 
 schema = load_schema_from_file(Path("recipes.yaml"))
 ```
@@ -351,13 +351,13 @@ and YAML will read a bare `1.2` as a float, so **quote it**.
   extractor is free to return an `ingredient` as the source of something you
   restricted to `dish`, and to return entity types you never declared —
   `custom` and `related_to` are always accepted. See
-  [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md). Use
+  [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md). Use
   `DomainSchema.validate_relationship` if you want to check a relationship
   against the declared constraints yourself.
 
 A schema is easiest to get right by starting from a bundled one rather than
 from this minimum —
-`src/kg_builder/extraction/domains/schemas/technical_documentation.yaml` is the
+`src/redstring/extraction/domains/schemas/technical_documentation.yaml` is the
 most fully populated of the six. For the writing process rather than the
 format, see [Author a domain schema](../how-to/author-a-domain-schema.md).
 
@@ -422,7 +422,7 @@ checked and are not:
   `related_to`, and neither is consulted at all during extraction — nothing
   filters the LLM's output down to what you declared. The fields above shape
   what the model is asked for. That is the whole of
-  [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md), and
+  [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md), and
   it is the reason `entity_types` is bounded below (a prompt needs something to
   say) and not above.
 
@@ -828,7 +828,7 @@ order the model reads:
 Three things about that rendering are worth knowing while authoring the list:
 
 - **Only the first 3 examples of each type appear.** `MAX_EXAMPLES_PER_TYPE` in
-  `src/kg_builder/extraction/prompt_generator.py` is 3, while the model permits
+  `src/redstring/extraction/prompt_generator.py` is 3, while the model permits
   10. Examples 4 through 10 are stored on the schema and never shown to the
   extractor; put the most disambiguating ones first.
 - **Every property is listed, with its description in parentheses** when it has
@@ -845,7 +845,7 @@ The extractor is not restricted to what you declare. `is_valid_entity_type`
 accepts `custom` for any schema, and nothing in the pipeline filters an
 extracted entity against `get_entity_type_ids()` — an entity type you never
 wrote is not discarded. That is the design in
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md), and it
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md), and it
 is why this field is bounded below and not above: the list exists so the prompt
 has something to say.
 
@@ -1000,7 +1000,7 @@ the same way: an extractor is free to return `loves` between two `location`s.
 `validate_relationship(relationship_type, source_entity_type, target_entity_type)`
 exists so a caller can perform that check deliberately, and returns
 `(is_valid, error_message)` rather than raising. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md) and
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) and
 [Runtime helpers a schema author should
 know](#runtime-helpers-a-schema-author-should-know).
 
@@ -1060,7 +1060,7 @@ anywhere in the package, and no template engine of any kind parses it.
 #### Substitution is two literal `str.replace` calls
 
 `domain_system_prompt` in
-`src/kg_builder/extraction/prompt_generator.py` does exactly this:
+`src/redstring/extraction/prompt_generator.py` does exactly this:
 
 ```python
 schema.extraction_prompt_template.replace(
@@ -1205,7 +1205,7 @@ error, not seventy percent.
 This is the field's most important property and the easiest to get wrong.
 Grep the package and `confidence_thresholds` appears in exactly three places:
 its definition in `models.py`, the re-exports in
-`kg_builder/__init__.py` and `extraction/domains/__init__.py`, and the tests.
+`redstring/__init__.py` and `extraction/domains/__init__.py`, and the tests.
 **No extraction, merging, mapping or projection code consults it.** Setting
 `entity_extraction: 1.0` does not cause a single entity to be dropped, and
 setting `0.0` does not admit one that would otherwise have been filtered.
@@ -1229,7 +1229,7 @@ kept = [e for e in result.entities if e.confidence >= threshold]
 ```
 
 This fits the design in
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md) — a
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) — a
 schema describes a domain and prompts for it; it does not police the output —
 but note the difference in kind from the other fields. `entity_types` and
 `extraction_prompt_template` at least reach the model as prompt text. These two
@@ -1376,7 +1376,7 @@ All six bundled schemas are at `1.0.0` and have never moved.
   is a minor; fixing a typo in a description is a patch.
 - **Bump the major when you rename or remove a declared id.** Downstream code
   and stored graphs may key on entity and relationship type ids, so removing
-  one is the schema's breaking change even though nothing in kg-builder will
+  one is the schema's breaking change even though nothing in redstring will
   say so.
 - **Do not encode anything but three integers.** The pattern rejects `-rc1` and
   build metadata, so a release process that appends either produces a schema
@@ -1441,7 +1441,7 @@ for what a duplicate does (it loads, and `get_entity_type` returns the first).
 
 ### The whole type in one line of prompt
 
-`_entity_descriptions` in `src/kg_builder/extraction/prompt_generator.py`
+`_entity_descriptions` in `src/redstring/extraction/prompt_generator.py`
 renders each entity type as one bullet, plus a second indented line when it has
 properties:
 
@@ -1471,7 +1471,7 @@ declares. Nothing in the extraction pipeline calls it, so an entity type the
 model invents is neither rejected nor recorded as invalid — the helper is there
 for a caller who wants to ask. See [Special identifiers with built-in
 meaning](#special-identifiers-with-built-in-meaning) and
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 The other direction is enforced: the ids declared here are the closed set that
 `valid_source_types` and `valid_target_types` are checked against at load time.
@@ -1523,7 +1523,7 @@ field in the format that is **rewritten** rather than merely checked.
 #### The normalization, exactly
 
 `EntityTypeSchema.validate_entity_type_id` in
-`src/kg_builder/extraction/domains/models.py` runs four steps in this order:
+`src/redstring/extraction/domains/models.py` runs four steps in this order:
 
 1. `v.lower().strip()` — lowercase, then trim surrounding whitespace
 2. `.replace(" ", "_").replace("-", "_")` — spaces and hyphens become
@@ -1551,7 +1551,7 @@ The last two are the surprises. `str.isidentifier()` is the whole test, and it
 accepts any Unicode identifier character, so `café` and `entité` load. It also
 accepts Python keywords, because `keyword.iskeyword` is not consulted — an
 entity type called `class`, `import` or `None` is legal here. Nothing in
-kg-builder `eval`s or `exec`s an id, so neither is a hazard; they are just not
+redstring `eval`s or `exec`s an id, so neither is a hazard; they are just not
 rejected.
 
 Note also what is *not* rewritten: only the space and the hyphen become
@@ -1616,7 +1616,7 @@ extracted entity against it: `is_valid_entity_type` accepts `custom` for any
 schema and is not called during extraction at all. The id's only enforced role
 is as the target of the relationship endpoint check — entity types validate
 relationships, and nothing validates entity types. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 #### Conventions worth following
 
@@ -1629,7 +1629,7 @@ relationships, and nothing validates entity types. See
   `isidentifier()` grants them, not because anything wants them.
 - **Treat it as permanent.** Stored graphs and downstream code key on entity
   type ids, so renaming one is the schema's breaking change — bump the major
-  `version`, and expect nothing in kg-builder to warn you.
+  `version`, and expect nothing in redstring to warn you.
 - **Check for a normalization collision after editing.** Two ids that differ
   only in case, spacing or hyphenation load as duplicates in silence for your
   schemas; the bundled files are protected by
@@ -1673,7 +1673,7 @@ while this one reaches extraction and never reaches the classifier.
 
 #### Exactly where it goes
 
-`_entity_line` in `src/kg_builder/extraction/prompt_generator.py` is the whole
+`_entity_line` in `src/redstring/extraction/prompt_generator.py` is the whole
 of its use:
 
 ```python
@@ -1723,7 +1723,7 @@ Nothing reads this field except the prompt builder. It does not appear in
 `validate_relationship`, and no extracted entity is checked against it. Its
 entire effect is on what the model is asked to look for, which is the design
 recorded in
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md): the
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md): the
 schema prompts and does not constrain. The practical reading is that editing a
 description is a *behavioural* change to extraction with no test in the
 library that can see it — which is what the `version` field exists to record.
@@ -1781,7 +1781,7 @@ documented under [Property fields
 
 #### What a property reaches the model as
 
-`_property_hints` in `src/kg_builder/extraction/prompt_generator.py` is the
+`_property_hints` in `src/redstring/extraction/prompt_generator.py` is the
 whole of the list's use:
 
 ```python
@@ -1826,7 +1826,7 @@ schema, and its keys are not constrained to the names you declare. Nothing in
 or type coercion.
 
 So all four consequences hold at once, and none of them is an oversight —
-they are [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)
+they are [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)
 applied at property granularity:
 
 - a property you declared may be **absent** from an extracted entity, even
@@ -1940,7 +1940,7 @@ the prompt builder, and at a much lower number.
 #### Only the first three reach the model
 
 `MAX_EXAMPLES_PER_TYPE` in
-`src/kg_builder/extraction/prompt_generator.py` is **3**, and `_entity_line`
+`src/redstring/extraction/prompt_generator.py` is **3**, and `_entity_line`
 slices with it:
 
 ```python
@@ -2000,7 +2000,7 @@ Nothing reads `examples` outside the prompt builder. It does not appear in
 checked against it. An extractor is free to return entities that resemble none
 of them, and returning exactly one of them is not treated as a stronger result.
 The list biases what the model looks for; it constrains nothing, per
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 That has a review consequence worth stating: editing this list changes
 extraction behaviour with no test in the library able to see the change, which
@@ -2079,7 +2079,7 @@ legal and renders as a bare name.
 
 ### Only two of the four fields reach the model
 
-`_property_hints` in `src/kg_builder/extraction/prompt_generator.py` is the
+`_property_hints` in `src/redstring/extraction/prompt_generator.py` is the
 entire consumer of this model:
 
 ```python
@@ -2118,7 +2118,7 @@ names, no renaming, no defaulting, no coercion. So:
 - a property declared `type: number` may arrive as a string
 - nothing raises, warns, or records the mismatch
 
-This is [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)
+This is [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)
 at property granularity. `required` is currently the weakest field in the
 format: it does not validate, and it does not even reach the prompt, so it is a
 note to a human reader. If you need any of this enforced, read

@@ -23,13 +23,13 @@ from uuid import UUID
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from kg_builder.extraction.mapping import (
+from redstring.extraction.mapping import (
     map_extraction,
     preference,
     relationship_preference,
 )
-from kg_builder.extraction.merging import merge_extractions
-from kg_builder.extraction.schema import (
+from redstring.extraction.merging import merge_extractions
+from redstring.extraction.schema import (
     DEFAULT_CONFIDENCE,
     ExtractedEntity,
     ExtractedRelationship,

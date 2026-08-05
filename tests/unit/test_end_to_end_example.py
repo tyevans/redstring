@@ -10,10 +10,10 @@ the world that had quietly become false.
 Two things are asserted, and the second is the less obvious one:
 
 1. The example runs and the graph it built answers the questions it asks.
-2. **Every import in the example is from `kg_builder` itself.** That is what
+2. **Every import in the example is from `redstring` itself.** That is what
    makes it evidence about the *public API* rather than about the library's
    internals. Without it the example could reach into
-   `kg_builder.graph.adapters.memory` and still pass, and the top-level
+   `redstring.graph.adapters.memory` and still pass, and the top-level
    surface could be empty while this test stayed green.
 
 Loaded from its path rather than imported as a package, because `docs/` is
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "examples" / "build_a_graph.py"
 
-#: Modules the example may import besides `kg_builder`. The standard library
+#: Modules the example may import besides `redstring`. The standard library
 #: is not the subject here -- `asyncio` and `uuid` say nothing about whether
 #: this library's public API is usable.
 ALLOWED_NON_KG_ROOTS = frozenset({"asyncio", "uuid", "__future__"})
@@ -43,7 +43,7 @@ ALLOWED_NON_KG_ROOTS = frozenset({"asyncio", "uuid", "__future__"})
 
 @pytest.fixture(scope="module")
 def example() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("kg_builder_docs_example", EXAMPLE)
+    spec = importlib.util.spec_from_file_location("redstring_docs_example", EXAMPLE)
     assert spec is not None, f"cannot load {EXAMPLE}"
     assert spec.loader is not None, f"no loader for {EXAMPLE}"
     module = importlib.util.module_from_spec(spec)
@@ -55,7 +55,7 @@ def example() -> ModuleType:
 
 
 class TestTheExampleIsAboutThePublicApi:
-    def test_it_imports_kg_builder_and_nothing_deeper(self) -> None:
+    def test_it_imports_redstring_and_nothing_deeper(self) -> None:
         tree = ast.parse(EXAMPLE.read_text(encoding="utf-8"), filename=str(EXAMPLE))
         imported: list[str] = []
         for node in ast.walk(tree):
@@ -68,11 +68,11 @@ class TestTheExampleIsAboutThePublicApi:
         offenders = [
             module
             for module in imported
-            if module.split(".")[0] not in ALLOWED_NON_KG_ROOTS and module != "kg_builder"
+            if module.split(".")[0] not in ALLOWED_NON_KG_ROOTS and module != "redstring"
         ]
         assert not offenders, (
             f"the example reaches past the public API into {offenders}. Either export "
-            f"what it needs from `kg_builder/__init__.py` or the example is not "
+            f"what it needs from `redstring/__init__.py` or the example is not "
             f"evidence that the public API is usable."
         )
 

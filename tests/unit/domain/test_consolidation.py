@@ -1,12 +1,12 @@
-"""Tests for kg_builder.domain.consolidation."""
+"""Tests for redstring.domain.consolidation."""
 
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from kg_builder.domain.consolidation import RelationshipRedirection
-from kg_builder.domain.relationship import Relationship
+from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.relationship import Relationship
 
 
 def _relationship(**overrides):

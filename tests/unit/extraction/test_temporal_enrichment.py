@@ -11,11 +11,11 @@ from uuid import uuid4
 
 import pytest
 
-from kg_builder.domain.entity import ExtractionMethod
-from kg_builder.domain.temporal import DatePrecision, UncertaintyMarker
-from kg_builder.extraction.mapping import map_extraction
-from kg_builder.extraction.merging import merge_extractions
-from kg_builder.extraction.schema import ExtractedEntity, Extraction
+from redstring.domain.entity import ExtractionMethod
+from redstring.domain.temporal import DatePrecision, UncertaintyMarker
+from redstring.extraction.mapping import map_extraction
+from redstring.extraction.merging import merge_extractions
+from redstring.extraction.schema import ExtractedEntity, Extraction
 
 TENANT = uuid4()
 SOURCE = "doc-1"
@@ -212,7 +212,7 @@ class TestNoSecondEvent:
         """The ADR's granularity decision is permanent: temporal data rides
         inside `DocumentExtracted`. A re-extraction under a new model version
         is how an entity's dates improve."""
-        import kg_builder.events.document as document_events
+        import redstring.events.document as document_events
 
         assert not [
             name

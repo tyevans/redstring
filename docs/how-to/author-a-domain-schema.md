@@ -5,10 +5,10 @@ into a system prompt, and hand that prompt to extraction.
 
 A domain schema is a YAML file describing the entity types and relationship
 types you expect in a body of text, plus the prompt template that presents
-them to the model. `kg_builder` bundles six of them —
+them to the model. `redstring` bundles six of them —
 `literature_fiction`, `news_journalism`, `academic_research`,
 `technical_documentation`, `business_corporate`, and `encyclopedia_wiki` —
-under `src/kg_builder/extraction/domains/schemas/`. You write your own when
+under `src/redstring/extraction/domains/schemas/`. You write your own when
 none of those describes the material you are extracting from.
 
 By the end you will have:
@@ -26,7 +26,7 @@ One thing to hold onto before you start, because it governs what a schema can
 and cannot do for you: **the schema shapes the prompt, it does not enforce the
 wire format.** Declaring an entity type tells the model what you are looking
 for; nothing rejects an extraction that invents a type you never declared. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md) for why,
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) for why,
 and [What this guide deliberately does not cover](#what-this-guide-deliberately-does-not-cover)
 for what that means in practice.
 
@@ -50,7 +50,7 @@ the six bundled domains already covers your material.
 | `business_corporate` | Business & Corporate | Annual reports, business news, financial content |
 | `encyclopedia_wiki` | Encyclopedia & Wiki | Encyclopedic articles, wiki content, reference material |
 
-Each is a YAML file under `src/kg_builder/extraction/domains/schemas/`, written
+Each is a YAML file under `src/redstring/extraction/domains/schemas/`, written
 against exactly the rules this guide describes. Reading the one closest to your
 material is the fastest way to see a complete, valid schema — start there
 rather than from a blank file.
@@ -58,7 +58,7 @@ rather than from a blank file.
 Using one takes an id and nothing else:
 
 ```python
-from kg_builder import domain_system_prompt
+from redstring import domain_system_prompt
 
 prompt = domain_system_prompt("news_journalism")
 ```
@@ -72,7 +72,7 @@ reasonable answer for mixed or unclassifiable text.
 - **Your material is one of the six kinds above**, even if the vocabulary is
   not a perfect fit. The schema shapes the prompt; it does not constrain what
   the model may return, so a type you did not declare is not rejected — see
-  [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md). An
+  [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md). An
   approximate domain still steers extraction in the right direction.
 - **You have not yet measured that extraction is going wrong.** Start with
   `domain=None` (the general prompt) or a bundled id, look at what comes out,
@@ -110,10 +110,10 @@ the supported way to "extend" one.
 
 ### What you need in place
 
-- `kg_builder` installed, and the four names this guide uses —
+- `redstring` installed, and the four names this guide uses —
   `load_schema_from_file`, `load_schema_from_string`, `DomainSchema` and
   `domain_system_prompt` — are all importable from the top-level package.
-  Nothing here needs a dotted import into `kg_builder.extraction`.
+  Nothing here needs a dotted import into `redstring.extraction`.
 - An `LlmProvider` if you intend to run the prompt at the end. `build_graph`
   and `ExtractionPipeline` both need one; writing and validating a schema does
   not.
@@ -278,7 +278,7 @@ Only `name` and `description` reach the prompt, as the `Properties:` hint line
 above — a property with no description contributes its bare name. **`type` and
 `required` are declarations, not enforcement**: nothing checks the model's
 output against them, and a `required` property that comes back missing is not
-an error ([ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)).
+an error ([ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)).
 Declare them for your own downstream code, and write a `description` for
 anything you actually want the model to look for.
 
@@ -399,7 +399,7 @@ returns `(True, None)` or `(False, message)` against the declarations above,
 and `RelationshipTypeSchema.is_valid_source` / `is_valid_target` do one end
 each. Nothing in the extraction pipeline calls any of them — they are there for
 you to call over extraction output if you want that filter. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 One sharp edge if you do call it: these helpers only lowercase and strip the
 type you pass, so hand them ids in normalized form (`access_road`, not
@@ -545,7 +545,7 @@ code consults either value. Setting `entity_extraction: 0.95` does not drop
 low-confidence entities; it records that your domain considers 0.95 the usable
 bar. This is the same division as `valid_source_types` and `required` on a
 property: the schema states what the domain expects, and enforcement is yours
-([ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)).
+([ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)).
 
 Nor do they reach the prompt. `domain_system_prompt` renders only the two type
 lists into your template, so a threshold is invisible to the model.
@@ -557,7 +557,7 @@ threshold = schema.confidence_thresholds.entity_extraction
 kept = [e for e in result.entities if e.confidence >= threshold]
 ```
 
-`ConfidenceThresholds` is exported from `kg_builder`, so you can construct or
+`ConfidenceThresholds` is exported from `redstring`, so you can construct or
 type-annotate one without a dotted import.
 
 #### Choosing values
@@ -839,7 +839,7 @@ generated prompt, and an argument to `DomainSchema.validate_relationship` if
 you choose to call it. Nothing in the pipeline calls it, and nothing rejects an
 extracted triple that ignores the constraint — so this rule buys you a correct
 prompt and a checkable declaration, not enforcement
-([ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)).
+([ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)).
 
 With the rules known, load the file and see which of them you hit.
 
@@ -849,7 +849,7 @@ Two functions turn YAML into a `DomainSchema`, and both are exported from the
 top-level package:
 
 ```python
-from kg_builder import load_schema_from_file, load_schema_from_string
+from redstring import load_schema_from_file, load_schema_from_string
 ```
 
 They share all their validation: `load_schema_from_file` reads the file and
@@ -867,7 +867,7 @@ exception.
 ```python
 from pathlib import Path
 
-from kg_builder import load_schema_from_file
+from redstring import load_schema_from_file
 
 schema = load_schema_from_file(Path("/srv/schemas/field_reports.yaml"))
 print(schema.domain_id, schema.version)  # field_reports 1.0.0
@@ -919,7 +919,7 @@ an object store, a database column, an HTTP response, a config map, or a test
 fixture:
 
 ```python
-from kg_builder import load_schema_from_string
+from redstring import load_schema_from_string
 
 yaml_text = fetch_schema_body("field_reports", version=3)
 schema = load_schema_from_string(yaml_text, source_name="field_reports@v3")
@@ -1007,8 +1007,8 @@ missing, unreadable, and every validation rule in Step 2 — raises the single
 type `SchemaLoadError`:
 
 ```python
-from kg_builder import load_schema_from_file
-from kg_builder.extraction.domains.loader import SchemaLoadError
+from redstring import load_schema_from_file
+from redstring.extraction.domains.loader import SchemaLoadError
 
 try:
     schema = load_schema_from_file("/srv/schemas/field_reports.yaml")
@@ -1018,13 +1018,13 @@ except SchemaLoadError as exc:
     print(exc.cause)        # the underlying YAMLError / ValidationError, or None
 ```
 
-`SchemaLoadError` is **not** part of the exported surface: `kg_builder.__all__`
+`SchemaLoadError` is **not** part of the exported surface: `redstring.__all__`
 carries the two loader functions and `DomainSchema`, but not the exception, so
 catching it needs the dotted import above. That import reaches into an internal
 module and is not covered by the public-API promise — if you would rather not
 depend on it, catch `Exception` at the boundary and treat any failure as "this
 schema does not load", which is the only distinction the type gives you anyway.
-It derives from `Exception`, not from `KgBuilderError`, so a handler written
+It derives from `Exception`, not from `RedstringError`, so a handler written
 for the library's own error hierarchy will not catch it.
 
 The two attributes are less useful than they look. `cause` is `None` for the
@@ -1062,7 +1062,7 @@ cross-check stops at the first bad entry.
 `(True, None)` or `(False, message)`:
 
 ```python
-from kg_builder.extraction.domains.loader import validate_schema_file
+from redstring.extraction.domains.loader import validate_schema_file
 
 for path in sorted(Path("/srv/schemas").glob("*.yaml")):
     ok, message = validate_schema_file(path)
@@ -1074,7 +1074,7 @@ It is convenient for a checker that reports on several files without stopping
 at the first, and it costs nothing over the loader — it *is* the loader, and
 the schema it built is discarded. Its docstring says it validates "without
 fully loading"; it does not, so do not reach for it expecting a cheaper check.
-Like `SchemaLoadError`, it is not exported from `kg_builder`, and it collapses
+Like `SchemaLoadError`, it is not exported from `redstring`, and it collapses
 `cause` and `file_path` into a string. When you want the schema anyway, call
 the loader.
 
@@ -1100,7 +1100,7 @@ One function turns a schema into the string a model is told before it sees a
 chunk:
 
 ```python
-from kg_builder import domain_system_prompt
+from redstring import domain_system_prompt
 
 prompt = domain_system_prompt(schema)
 ```
@@ -1142,7 +1142,7 @@ Two consequences of the branch being on *type*:
 
 Ids are matched case-insensitively with surrounding whitespace stripped, so
 `"News_Journalism"` and `" news_journalism "` both resolve. An unknown one
-raises `UnknownDomainError`, which is a `KgBuilderError` and lists the ids that
+raises `UnknownDomainError`, which is a `RedstringError` and lists the ids that
 do exist — see
 [Troubleshooting](#unknowndomainerror--you-passed-an-id-not-a-schema-or-misspelled-a-bundled-id).
 
@@ -1151,7 +1151,7 @@ one loaded from YAML — useful in tests, where constructing a two-type
 `DomainSchema` directly is quicker than a fixture file:
 
 ```python
-from kg_builder import DomainSchema
+from redstring import DomainSchema
 
 prompt = domain_system_prompt(
     DomainSchema(
@@ -1230,6 +1230,6 @@ Those are schema metadata for your code to read; only the two type lists and
 your own prose ever reach the model. And nothing here constrains the model's
 output — the prompt asks, the wire format is `Extraction`, and an entity typed
 with something you never declared comes back intact
-([ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)).
+([ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)).
 
 With a prompt in hand, hand it to extraction.

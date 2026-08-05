@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from eventsource.adapters.memory import InMemorySnapshotStore
 
-from kg_builder.projections import project
+from redstring.projections import project
 
 from .conftest import fresh_rig
 from .log_builder import build_log

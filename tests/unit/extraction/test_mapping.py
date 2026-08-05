@@ -16,11 +16,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kg_builder.domain.blocking import blocking_keys_for
-from kg_builder.domain.entity import ExtractionMethod
-from kg_builder.domain.normalization import normalize_name
-from kg_builder.extraction.mapping import MappedExtraction, entity_id_for, map_extraction
-from kg_builder.extraction.schema import (
+from redstring.domain.blocking import blocking_keys_for
+from redstring.domain.entity import ExtractionMethod
+from redstring.domain.normalization import normalize_name
+from redstring.extraction.mapping import MappedExtraction, entity_id_for, map_extraction
+from redstring.extraction.schema import (
     DEFAULT_CONFIDENCE,
     ExtractedEntity,
     ExtractedRelationship,
@@ -653,7 +653,7 @@ class TestBlockingKeys:
         that never import each other, so nothing but a test spanning both can
         tell that they agree about what a key is.
         """
-        from kg_builder.graph.adapters.memory import InMemoryGraphStore
+        from redstring.graph.adapters.memory import InMemoryGraphStore
 
         [built] = mapped(Extraction(entities=[entity("Ada Lovelace")])).entities
         store = InMemoryGraphStore()

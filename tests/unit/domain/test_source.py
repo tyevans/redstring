@@ -1,11 +1,11 @@
-"""Tests for kg_builder.domain.source."""
+"""Tests for redstring.domain.source."""
 
 from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
-from kg_builder.domain.source import SourceDocument
+from redstring.domain.source import SourceDocument
 
 
 def _source(**overrides):

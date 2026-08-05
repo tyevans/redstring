@@ -30,15 +30,15 @@ import pytest
 from eventsource.adapters.memory import InMemorySnapshotStore
 from eventsource.domain.tenant_context import tenant_scope
 
-from kg_builder.aggregates.repositories import (
+from redstring.aggregates.repositories import (
     consolidation_repository,
     document_repository,
 )
-from kg_builder.domain.consolidation import RelationshipRedirection
-from kg_builder.domain.entity import Entity, ExtractionMethod
-from kg_builder.domain.relationship import Relationship
-from kg_builder.events.streams import consolidation_stream, document_stream
-from kg_builder.projections import project
+from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.relationship import Relationship
+from redstring.events.streams import consolidation_stream, document_stream
+from redstring.projections import project
 
 from .conftest import fresh_rig
 

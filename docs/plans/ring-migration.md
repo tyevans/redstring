@@ -1,7 +1,7 @@
 # The ring migration
 
 Between commit `94b9ae1` and `341be8d`, the head of
-`rearchitect/graph-vector-ports` as it was merged, kg-builder was rebuilt from
+`rearchitect/graph-vector-ports` as it was merged, redstring was rebuilt from
 a service-and-ORM application into a library with pluggable storage. 171
 commits, **33912 insertions and 62029 deletions across 362 files**, `src/`
 going from 123 Python files to 81.
@@ -35,7 +35,7 @@ one.
 > each tag message says what it holds and which `BACKLOG` entry discusses it.
 >
 > Recover a deleted file with `git show recovery/<name>:<path>`, e.g.
-> `git show recovery/strategy-router:src/kg_builder/extraction/strategy_router.py`.
+> `git show recovery/strategy-router:src/redstring/extraction/strategy_router.py`.
 >
 > **Eleven of the twelve mark a deletion. One does not.**
 > `recovery/schema-org-preport` marks a *port*: `extraction/schema_org.py` is
@@ -45,7 +45,7 @@ one.
 > the tag names the port commit rather than the state before it:
 >
 > ```
-> git show recovery/schema-org-preport~1:src/kg_builder/extraction/schema_org.py
+> git show recovery/schema-org-preport~1:src/redstring/extraction/schema_org.py
 > ```
 >
 > The tag itself (`1b915f8`) already has the ported file; `~1` is the pre-port
@@ -93,19 +93,19 @@ written.
 
 | Capability | Path | Ref | Replaced by |
 |---|---|---|---|
-| Document sourcing, scraping | `src/kg_builder/scraping/` | `94b9ae1`<br>`recovery/sourcing` | Nothing — out of scope, by decision |
-| Vendor extractors, inference providers | `src/kg_builder/inference/` | `a75015a`<br>`recovery/vendor-extractors` | `LlmProvider` port + `llm/adapters/` |
-| Preprocessing, chunkers, mergers | `src/kg_builder/preprocessing/` | `bd40882`<br>`recovery/preprocessing` | `extraction/chunking.py`, `extraction/merging.py` |
-| Fuzzy merging (`SimpleMerger`, `LLMMerger`) | `src/kg_builder/services/consolidation/` | `ff36ec7`<br>`recovery/fuzzy-merging` | `consolidation/` on the `ConsolidationLog` aggregate |
-| Temporal parser service | `src/kg_builder/services/temporal_parser.py` | `d49f56b`<br>`recovery/temporal-services` | `domain/temporal_parsing.py::parse_temporal` |
-| Timeline query / export / cache | `src/kg_builder/services/` | `d49f56b`<br>`recovery/temporal-services` | `temporal/` (query); export is a genuine loss, see `BACKLOG` B47 |
-| Strategy router | `src/kg_builder/extraction/strategy_router.py` | `66f589d`<br>`recovery/strategy-router` | Nothing — 826-line test file supplied every input as a `MagicMock` |
-| Neo4j client (443 lines, zero callers) | `src/kg_builder/graph/client.py` | `3502900`<br>`recovery/neo4j-client` | `graph/adapters/neo4j.py` |
-| The whole service layer | `src/kg_builder/services/` | `c3c88ad`<br>`recovery/service-layer` | `aggregates` + `events` + `projections` |
-| ORM models, schemas, `db.py` | `src/kg_builder/models/`, `schemas/`, `db.py` | `1b9f9f3`<br>`recovery/orm-layer` | The two ports. The library owns no schema |
-| Settings object, Redis singleton | `src/kg_builder/config.py`, `cache.py` | `6a473ff`<br>`recovery/settings` | Explicit constructor arguments |
-| Prompt library, JSON-schema generator | `src/kg_builder/extraction/prompts.py` | `e063faa`<br>`recovery/prompts-encryption` | `extraction/domains/` + `prompt_generator.domain_system_prompt` |
-| Encryption at rest | `src/kg_builder/encryption.py` | `e063faa`<br>`recovery/prompts-encryption` | Nothing — see `BACKLOG` B58 |
+| Document sourcing, scraping | `src/redstring/scraping/` | `94b9ae1`<br>`recovery/sourcing` | Nothing — out of scope, by decision |
+| Vendor extractors, inference providers | `src/redstring/inference/` | `a75015a`<br>`recovery/vendor-extractors` | `LlmProvider` port + `llm/adapters/` |
+| Preprocessing, chunkers, mergers | `src/redstring/preprocessing/` | `bd40882`<br>`recovery/preprocessing` | `extraction/chunking.py`, `extraction/merging.py` |
+| Fuzzy merging (`SimpleMerger`, `LLMMerger`) | `src/redstring/services/consolidation/` | `ff36ec7`<br>`recovery/fuzzy-merging` | `consolidation/` on the `ConsolidationLog` aggregate |
+| Temporal parser service | `src/redstring/services/temporal_parser.py` | `d49f56b`<br>`recovery/temporal-services` | `domain/temporal_parsing.py::parse_temporal` |
+| Timeline query / export / cache | `src/redstring/services/` | `d49f56b`<br>`recovery/temporal-services` | `temporal/` (query); export is a genuine loss, see `BACKLOG` B47 |
+| Strategy router | `src/redstring/extraction/strategy_router.py` | `66f589d`<br>`recovery/strategy-router` | Nothing — 826-line test file supplied every input as a `MagicMock` |
+| Neo4j client (443 lines, zero callers) | `src/redstring/graph/client.py` | `3502900`<br>`recovery/neo4j-client` | `graph/adapters/neo4j.py` |
+| The whole service layer | `src/redstring/services/` | `c3c88ad`<br>`recovery/service-layer` | `aggregates` + `events` + `projections` |
+| ORM models, schemas, `db.py` | `src/redstring/models/`, `schemas/`, `db.py` | `1b9f9f3`<br>`recovery/orm-layer` | The two ports. The library owns no schema |
+| Settings object, Redis singleton | `src/redstring/config.py`, `cache.py` | `6a473ff`<br>`recovery/settings` | Explicit constructor arguments |
+| Prompt library, JSON-schema generator | `src/redstring/extraction/prompts.py` | `e063faa`<br>`recovery/prompts-encryption` | `extraction/domains/` + `prompt_generator.domain_system_prompt` |
+| Encryption at rest | `src/redstring/encryption.py` | `e063faa`<br>`recovery/prompts-encryption` | Nothing — see `BACKLOG` B58 |
 
 That is thirteen rows against eleven tags, because `recovery/prompts-encryption`
 covers two of them: `prompts.py` and `encryption.py` went in the same commit.
@@ -116,13 +116,13 @@ One tag is not a deletion, and reading it as one sends you to the wrong commit.
 
 | What it preserves | Path | Ref | Superseded by |
 |---|---|---|---|
-| `schema_org.py` before it moved off the ORM enum | `src/kg_builder/extraction/schema_org.py` | `1b915f8`<br>`recovery/schema-org-preport`<br>(pre-port state is at `~1`) | Free-string `entity_type`; `ExtractionMethod` from `domain/entity.py` |
+| `schema_org.py` before it moved off the ORM enum | `src/redstring/extraction/schema_org.py` | `1b915f8`<br>`recovery/schema-org-preport`<br>(pre-port state is at `~1`) | Free-string `entity_type`; `ExtractionMethod` from `domain/entity.py` |
 
 The path still exists in the tree today. What the tag holds is the *before*
 side of a port: at `recovery/schema-org-preport~1` the module opens with
 
 ```python
-from kg_builder.models.extracted_entity import EntityType, ExtractionMethod
+from redstring.models.extracted_entity import EntityType, ExtractionMethod
 ```
 
 and `SCHEMA_TYPE_MAP` maps `"Person"` onto `EntityType.PERSON` rather than onto
@@ -168,14 +168,14 @@ never by `0007` — the number is not yet a fact about it:
 
 | Draft | Decision |
 |---|---|
-| [`no-ann-index-in-a-multi-tenant-vector-store`](adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md) | pgvector carries no ANN index, and the reason is not performance |
-| [`resilience-behind-the-cache-port`](adr/0007-resilience-behind-the-cache-port.md) | Retry, rate limiting and circuit breaking live in `llm/`, over the `Cache` port |
-| [`the-extraction-fold-resolves-through-aliases`](adr/0007-the-extraction-fold-resolves-through-aliases.md) | The extraction fold resolves endpoints through the alias table |
-| [`one-total-order-for-preference`](adr/0007-one-total-order-for-preference.md) | One total order decides which mapping of a thing survives |
-| [`the-two-non-store-ports`](adr/0007-the-two-non-store-ports.md) | Why `Cache` and `LlmProvider` are ports, which 0002 does not cover |
+| [`no-ann-index-in-a-multi-tenant-vector-store`](adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) | pgvector carries no ANN index, and the reason is not performance |
+| [`resilience-behind-the-cache-port`](adr/0013-resilience-behind-the-cache-port.md) | Retry, rate limiting and circuit breaking live in `llm/`, over the `Cache` port |
+| [`the-extraction-fold-resolves-through-aliases`](adr/0009-the-extraction-fold-resolves-through-aliases.md) | The extraction fold resolves endpoints through the alias table |
+| [`one-total-order-for-preference`](adr/0010-one-total-order-for-preference.md) | One total order decides which mapping of a thing survives |
+| [`the-two-non-store-ports`](adr/0008-the-two-non-store-ports.md) | Why `Cache` and `LlmProvider` are ports, which 0002 does not cover |
 | [`composition-is-the-only-top-layer`](adr/0007-composition-is-the-only-top-layer.md) | `composition` is the only top layer, and `build_graph` writes without a log |
-| [`domain-schemas-prompt-but-do-not-constrain`](adr/0007-domain-schemas-prompt-but-do-not-constrain.md) | Domain schemas prompt the model; they do not constrain it |
-| [`exemption-lists-are-empty-and-must-stay-falsifiable`](adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md) | Both exemption lists are empty, and an emptied one is deleted rather than kept |
+| [`domain-schemas-prompt-but-do-not-constrain`](adr/0011-domain-schemas-prompt-but-do-not-constrain.md) | Domain schemas prompt the model; they do not constrain it |
+| [`exemption-lists-are-empty-and-must-stay-falsifiable`](adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md) | Both exemption lists are empty, and an emptied one is deleted rather than kept |
 
 A draft constrains a new spec exactly as much as an accepted ADR does, so run
 against the content and ignore the number. The two tables together are the
@@ -216,13 +216,13 @@ removed, so nothing is left to point at it.
 | Id | What it was | Closed by | Where the reasoning lives now |
 |---|---|---|---|
 | B10b | Blocking-key lookup scanned the tenant | Slice 7 | [ADR 0003](adr/0003-blocking-keys-as-nodes.md) |
-| B10d | `retry.py` read a process-wide settings object, so its tests inserted a `MagicMock` at `sys.modules["kg_builder.config"]` and poisoned every test that ran after them | Slice 6, by replacing the read with a plain default | `llm/retry.py`, `tests/unit/llm/test_retry.py` — both docstrings state it |
+| B10d | `retry.py` read a process-wide settings object, so its tests inserted a `MagicMock` at `sys.modules["redstring.config"]` and poisoned every test that ran after them | Slice 6, by replacing the read with a plain default | `llm/retry.py`, `tests/unit/llm/test_retry.py` — both docstrings state it |
 | B26 | `DatePrecision`/`UncertaintyMarker` duplicated between `domain/` and the ORM models | Slice 9, by deleting the ORM | Nothing left to say; `domain/temporal.py` is the only definition |
 | B33 | A `LEGACY_EVENT_MODULES` exclusion list in the event-schema gate | Slice 9, with the last legacy module (`events/scraping.py`) | `tests/unit/events/test_schema.py` — an exclusion over an empty set excludes nothing, so it was deleted rather than emptied |
 | B34 | A `DocumentExtracted` folded after an `EntitiesMerged` silently reverted the merge | Slice 7 | `ports/graph_store.py`, `projections/graph.py`; [ADR 0001](adr/0001-event-log-schema-and-granularity.md) |
 | B40 | Fuzzy merging deleted rather than ported | Slice 7 | `consolidation/policy.py`; [ADR 0004](adr/0004-consolidation-emits-events.md) |
 | B55 | Domain schemas had no caller | Slice 10 | `extraction/prompt_generator.py`. The residue is open as B57 |
-| B56 | `kg_builder.config` read the environment | Slice 10 | `tests/unit/test_library_reads_no_environment.py` |
+| B56 | `redstring.config` read the environment | Slice 10 | `tests/unit/test_library_reads_no_environment.py` |
 
 Entries B2, B3, B5, B6, B7, B11, B13, B19, B24, B25 are cited only by the
 archived plan and were resolved by the deletions above. B24 — "no migration

@@ -169,7 +169,7 @@ The fix is not free, which is why it is deferred rather than applied: a
 `WHERE NOT EXISTS { (k)<-[:BLOCKED_BY]-() } DELETE k` pass would be a third
 statement on every batch upsert, against a write path this ADR measured at
 2.45x and defended on the grounds that it is *two* extra statements rather
-than two per entity. See **B62** in [`BACKLOG.md`](../../BACKLOG.md) for the
+than two per entity. See **B62** in [`BACKLOG.md`](https://github.com/tyevans/redstring/blob/main/BACKLOG.md) for the
 open item and the reasoning; the leak's size is unmeasured, and the decision
 was to measure it before paying for it.
 
@@ -240,7 +240,7 @@ seek. Any plan assertion taken without it is measuring the population race.
   ([Run the integration and mutation suites](../how-to/run-integration-and-mutation-suites.md))
   or be labelled unverified.** The plan assertions meet that bar; the orphan
   claim does not, and is labelled and carried as **B62** in
-  [`BACKLOG.md`](../../BACKLOG.md). An earlier revision of this ADR asserted
+  [`BACKLOG.md`](https://github.com/tyevans/redstring/blob/main/BACKLOG.md). An earlier revision of this ADR asserted
   cleanup that the adapter never performed and stood for three slices —
   precisely because no test could contradict it, and nobody had written down
   that no test could.

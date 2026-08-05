@@ -1,0 +1,36 @@
+# Pinning actions to a commit SHA is only half of the practice. The other half
+# is something that raises the pin, or the workflows quietly run a year-old
+# action with a year of unpatched bugs -- a pinned-and-abandoned dependency is
+# not more secure than an unpinned one, it just fails differently.
+#
+# Dependabot rewrites both the SHA and the trailing `# vX.Y.Z` comment, so the
+# comments stay honest without anyone maintaining them.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One PR for the routine bumps. The publishing action is deliberately
+      # left out of the group: it is the one with `id-token: write` in reach,
+      # and it deserves its own PR and its own read of the diff rather than
+      # being approved alongside four checkout bumps.
+      actions:
+        patterns:
+          - '*'
+        exclude-patterns:
+          - 'pypa/gh-action-pypi-publish'
+    commit-message:
+      prefix: 'Bump'
+
+  # Python dependencies. `uv.lock` is not committed, so this only sees the
+  # declared ranges in `pyproject.toml` -- it will open a PR when a floor is
+  # genuinely out of date, not on every upstream release.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'Bump'

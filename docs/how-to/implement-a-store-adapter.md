@@ -1,19 +1,19 @@
 # Implement a store adapter
 
-This guide walks through adding a new backend behind one of `kg_builder`'s
+This guide walks through adding a new backend behind one of `redstring`'s
 four ports — `GraphStore`, `VectorStore`, `Cache`, or `LlmProvider` — and
 proving it correct against the shared compliance suites in `tests/compliance/`.
 
 Follow it when you want to store the graph in something other than the two
-adapters that ship (`kg_builder.graph.adapters.memory` and
-`kg_builder.graph.adapters.neo4j`), keep vectors somewhere other than
-`kg_builder.vector.adapters.memory` or `.pgvector`, coordinate the LLM
+adapters that ship (`redstring.graph.adapters.memory` and
+`redstring.graph.adapters.neo4j`), keep vectors somewhere other than
+`redstring.vector.adapters.memory` or `.pgvector`, coordinate the LLM
 transport through something other than the default in-process cache, or speak
 to a model without going through the LangChain adapter.
 
 The work is the same shape every time:
 
-1. Write the class against the `Protocol` in `src/kg_builder/ports/`.
+1. Write the class against the `Protocol` in `src/redstring/ports/`.
 2. Subclass the compliance suite for that port and give it a way to build a
    fresh, empty instance.
 3. Add the read-method isolation and tenant tests the coverage gates require.
@@ -50,7 +50,7 @@ suite at all.
 
 ### What the compliance suites are (and why the port docstring is not the contract)
 
-The ports in `src/kg_builder/ports/` are `runtime_checkable` `Protocol`s. That
+The ports in `src/redstring/ports/` are `runtime_checkable` `Protocol`s. That
 buys structural conformance and nothing more: `mypy --strict` will confirm your
 `get_entity` has the right signature and cannot confirm it scopes by tenant,
 returns a copy, or sees a write that has already returned.
@@ -58,7 +58,7 @@ returns a copy, or sees a write that has already returned.
 The executable definition lives in `tests/compliance/`, and each suite's own
 docstring says so — "**Every `GraphStore` adapter must pass this suite
 unchanged.** It is the executable definition of the port; the prose in
-`kg_builder.ports.graph_store` describes what these tests enforce." Read the
+`redstring.ports.graph_store` describes what these tests enforce." Read the
 port docstring for intent and the suite for the requirement. Where they appear
 to disagree, the suite wins and the docstring is a bug.
 
@@ -104,8 +104,8 @@ an index; see [ADR 0003](../adr/0003-blocking-keys-as-nodes.md).
 `delete_by_tenant`, and a `dimension` property fixed at construction. Its
 suite states the exactness contract in two tiers — exact behaviour on tens of
 vectors, recall-only on the larger dataset — and offers no `is_approximate`
-opt-out. [ADR 0007: no ANN index in a multi-tenant vector
-store](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md) is the
+opt-out. [ADR 0012: no ANN index in a multi-tenant vector
+store](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) is the
 reasoning behind the shape; [Use the pgvector
 store](use-the-pgvector-store.md) is the worked backend.
 
@@ -117,8 +117,8 @@ test asserting "an event 90 seconds ago" is a number rather than a 90-second
 sleep. Two things its suite pins that a reference implementation would let you
 miss: `get` returns `str`, not `bytes` (a Redis client at its defaults returns
 bytes and would match no string literal in production), and a missing key is
-`None`, not an error. See [ADR 0007: resilience behind the cache
-port](../adr/0007-resilience-behind-the-cache-port.md) and [Harden model
+`None`, not an error. See [ADR 0013: resilience behind the cache
+port](../adr/0013-resilience-behind-the-cache-port.md) and [Harden model
 calls](harden-model-calls.md).
 
 **`LlmProvider`** is one property and one method: `model`, and
@@ -126,13 +126,13 @@ calls](harden-model-calls.md).
 because there is nothing to store and nothing to read back. What stands in for
 one is covered in step 2 — the no-leak gate, and the rule that empty output
 raises (`EmptyCompletionError`, `MalformedCompletionError`) rather than
-returning an empty result. [ADR 0007: the two non-store
-ports](../adr/0007-the-two-non-store-ports.md) explains why `Cache` and
+returning an empty result. [ADR 0008: the two non-store
+ports](../adr/0008-the-two-non-store-ports.md) explains why `Cache` and
 `LlmProvider` are as small as they are; [ADR
 0002](../adr/0002-two-store-ports.md) explains why the two stores are separate
 ports rather than one.
 
-## Step 1: Write the adapter against the Protocol in `src/kg_builder/ports/`
+## Step 1: Write the adapter against the Protocol in `src/redstring/ports/`
 
 Open the port module and write a plain class with the same methods. There is
 nothing to inherit — `GraphStore`, `VectorStore`, `Cache` and `LlmProvider` are
@@ -226,7 +226,7 @@ plausible:
   every backend.
 
 Do not write your own reading of the `entity_type` metadata convention. Call
-`kg_builder.ports.vector_store.entity_type_of`, which lives with the port
+`redstring.ports.vector_store.entity_type_of`, which lives with the port
 because the two adapters wrote their own and diverged: pgvector nulled every
 non-string (its column is `text`) while the in-memory store compared the raw
 value against a `set` and raised `TypeError: unhashable type: 'list'` on a
@@ -252,7 +252,7 @@ your own, and **raise rather than return an empty result** —
 `EmptyCompletionError` for no usable content, `MalformedCompletionError` for
 content that does not validate. Only a successfully parsed schema instance
 holding nothing means "this document had no entities". Keep every
-`langchain*` import inside `kg_builder/llm/adapters/`; the gate in step 2
+`langchain*` import inside `redstring/llm/adapters/`; the gate in step 2
 parses `src/` and fails on a leak.
 
 When the class is written, `isinstance(store, YourPort)` is a cheap smoke check
@@ -520,7 +520,8 @@ the failure is telling you one of three things:
   rather than before, a distance passed through where a `(1 + cosine) / 2`
   score was expected, or a missing `entity_id` tie-break. All three produce
   results that look right and rank wrong; see step 1.
-- **You forced an index into the query path.** This is the case ADR 0007 is
+- **You forced an index into the query path.** This is the case
+  [ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) is
   about. Adding an `hnsw` or `ivfflat` index does not give the planner a
   faster way to run the existing statement — it offers a *different* one,
   where ordering and truncation happen inside the index scan before the
@@ -536,8 +537,8 @@ the failure is telling you one of three things:
   and that strengthens tier 2 first, per the previous subsection — or accept
   that this backend does not sit behind this port.
 
-[ADR 0007: no ANN index in a multi-tenant vector
-store](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md) has the
+[ADR 0012: no ANN index in a multi-tenant vector
+store](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) has the
 full argument for why the shipped stores are exact, and [Use the pgvector
 store](use-the-pgvector-store.md) covers what that means operationally.
 
@@ -765,7 +766,7 @@ finding, and not an `lint-imports` violation, because that contract is over
 first-party packages only. So this file is the whole enforcement.
 
 `test_no_module_outside_the_adapters_imports_langchain` walks every `.py`
-under `src/kg_builder/` except those beneath `src/kg_builder/llm/adapters/`,
+under `src/redstring/` except those beneath `src/redstring/llm/adapters/`,
 parses each with `ast`, and collects every imported module name whose name
 starts with `langchain`. It asserts the resulting mapping is `{}` — reporting
 *every* offending path and the names each one imported, rather than the first
@@ -853,7 +854,7 @@ type exists; add your adapter's new failure mode to that family rather than
 beside it.
 
 One consequence for testing anything *downstream* of a provider: use
-`FakeLlmProvider` from `kg_builder.llm.adapters.fake`, not an `AsyncMock`. It
+`FakeLlmProvider` from `redstring.llm.adapters.fake`, not an `AsyncMock`. It
 takes **payload dicts** and validates them against the caller's schema through
 the same gate the real adapter uses, so a test cannot smuggle a pre-built
 schema instance past validation — which is what would let a malformed-output
@@ -864,7 +865,7 @@ for anything about chunking or merging: with a positional script, permuting
 the chunks permutes which answer each chunk receives, so an order-independence
 test would pass against a merge that is not order-independent at all.
 
-[ADR 0007: the two non-store ports](../adr/0007-the-two-non-store-ports.md)
+[ADR 0008: the two non-store ports](../adr/0008-the-two-non-store-ports.md)
 has the rest of the reasoning for why this port is one property and one
 method.
 
@@ -872,7 +873,7 @@ method.
 
 - [ADR 0002: two store ports](../adr/0002-two-store-ports.md) — why `GraphStore`
   and `VectorStore` are separate.
-- [ADR 0007: the two non-store ports](../adr/0007-the-two-non-store-ports.md) —
+- [ADR 0008: the two non-store ports](../adr/0008-the-two-non-store-ports.md) —
   why `Cache` and `LlmProvider` are as small as they are.
 - [Quality gates](../reference/quality-gates.md) — what runs on commit, and what
   you must run yourself.
