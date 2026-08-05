@@ -22,7 +22,7 @@ either in the module docstring (indexed under
 [Where the reasoning lives](#where-the-reasoning-lives)) or in an ADR:
 [ADR 0005](../adr/0005-temporal-inference-on-read.md) for why temporal edges
 are inferred on read rather than persisted, and
-[ADR 0007](../adr/0007-one-total-order-for-preference.md) for the single total
+[ADR 0010](../adr/0010-one-total-order-for-preference.md) for the single total
 order every tie-break in the library defers to.
 
 Not every type named here is importable from `redstring`. The public surface

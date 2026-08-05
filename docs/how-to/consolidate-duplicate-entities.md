@@ -80,7 +80,7 @@ Four things, and the last one is the one that silently produces no candidates:
 
 Merging also changes what later extraction writes: once the aliases exist, the
 extraction fold resolves endpoints through them
-([ADR 0007](../adr/0007-the-extraction-fold-resolves-through-aliases.md)),
+([ADR 0009](../adr/0009-the-extraction-fold-resolves-through-aliases.md)),
 so a merge is not a one-off edit to the graph you have — it is a fact that
 keeps applying.
 
@@ -1114,7 +1114,7 @@ appending to the tenant's `ConsolidationLog`
 This is deliberate and it is the rule the whole library is built on:
 extraction and consolidation *emit events*, and projections do the writing
 ([ADR 0004](../adr/0004-consolidation-emits-events.md), and the same split in
-[README](../../README.md)). Two things fall out of it that matter to you here:
+[README](https://github.com/tyevans/redstring/blob/main/README.md)). Two things fall out of it that matter to you here:
 
 - **The merge is durable before it is visible.** Once `resolve` returns, the
   decision is in the log with an `event_id` (Step 7's handle). A crash between
@@ -1172,7 +1172,7 @@ alias is not (Step 7's `MergeIntoAliasError`).
 
 The alias table is not only for this merge. Every later `DocumentExtracted`
 fold resolves its edge endpoints through it
-([ADR 0007](../adr/0007-the-extraction-fold-resolves-through-aliases.md)), so
+([ADR 0009](../adr/0009-the-extraction-fold-resolves-through-aliases.md)), so
 re-extracting a document after a merge writes the edges onto the canonical
 entity instead of quietly undoing the merge. Skipping the fold therefore costs
 more than one merge: it leaves the resolution table that protects every future

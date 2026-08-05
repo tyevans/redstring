@@ -103,7 +103,7 @@ The three exceptions and their modules are tabulated in
 this state instead of importing it, the ports are the seam:
 [Implement a store adapter](implement-a-store-adapter.md) covers writing your
 own `Cache` and proving it against the compliance suite, and
-[ADR 0007: the two non-store ports](../adr/0007-the-two-non-store-ports.md)
+[ADR 0008: the two non-store ports](../adr/0008-the-two-non-store-ports.md)
 says why `Cache` is as small as it is.
 
 ## Write a hardened provider
@@ -1452,7 +1452,7 @@ should take the circuit down.
 
 Both the limiter and the breaker keep their state behind the `Cache` port, and
 both default to `MemoryCache` when you pass no `cache=`. See
-[ADR 0007: resilience behind the cache port](../adr/0007-resilience-behind-the-cache-port.md)
+[ADR 0013: resilience behind the cache port](../adr/0013-resilience-behind-the-cache-port.md)
 for why the state went behind a port at all.
 
 ### `MemoryCache` is the default and genuinely limits
@@ -1551,12 +1551,12 @@ above.
 
 ## Related reading
 
-- [ADR 0007: resilience behind the cache port](../adr/0007-resilience-behind-the-cache-port.md)
+- [ADR 0013: resilience behind the cache port](../adr/0013-resilience-behind-the-cache-port.md)
   — why the limiter and breaker store state through `Cache`.
-- [ADR 0007: the two non-store ports](../adr/0007-the-two-non-store-ports.md) —
+- [ADR 0008: the two non-store ports](../adr/0008-the-two-non-store-ports.md) —
   why `Cache` and `LlmProvider` are as small as they are.
 - [Implement a store adapter](implement-a-store-adapter.md) — for writing your
   own `Cache` or `LlmProvider` and proving it against the compliance suite.
 - [Domain value types](../reference/domain-value-types.md) — `TenantId` and the
   rest of the id vocabulary.
-- [README](../../README.md) — the public surface these pieces sit behind.
+- [README](https://github.com/tyevans/redstring/blob/main/README.md) — the public surface these pieces sit behind.

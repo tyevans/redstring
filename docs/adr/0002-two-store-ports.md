@@ -14,7 +14,7 @@ fold (`src/redstring/projections/graph.py`), and an alias tier in
 decision, not as news arriving after it — the ADR is not settled without them,
 and B34 is closed by them. B32 remains open and is unaffected.
 
-See also ADR 0007 *The extraction fold resolves through aliases* for the fold's
+See also [ADR 0009 *The extraction fold resolves through aliases*](0009-the-extraction-fold-resolves-through-aliases.md) for the fold's
 side of the obligation, ADR 0006 *The public surface is gated* for what
 exporting `AliasCycleError` commits us to, and
 `docs/how-to/implement-a-store-adapter.md` for what an adapter must now
@@ -233,8 +233,9 @@ Two consequences follow, and they are the subsections below: the port must say
 what each method promises precisely enough that two adapters agree
 (`docs/how-to/implement-a-store-adapter.md` is the implementer's side of it),
 and resolve-before-write has to be stated as an obligation of the port rather
-than a habit of the current callers. ADR 0007 *The extraction fold resolves
-through aliases* carries the fold's half of that contract.
+than a habit of the current callers.
+[ADR 0009 *The extraction fold resolves through aliases*](0009-the-extraction-fold-resolves-through-aliases.md)
+carries the fold's half of that contract.
 
 ### The four methods
 
@@ -368,8 +369,9 @@ aspirational one. `_resolved` cannot write an edge without calling
 `resolve_entity_ids`; `resolve_entity_ids` cannot answer without the alias rows;
 an adapter that drops those rows fails the compliance tier. That chain is what
 turns "there is no `delete_entity`" from a preference into a constraint — see
-the decision above, and ADR 0007 *The extraction fold resolves endpoints through
-the alias table* for the fold's half of the contract, including why a resolver
+the decision above, and
+[ADR 0009 *The extraction fold resolves endpoints through the alias table*](0009-the-extraction-fold-resolves-through-aliases.md)
+for the fold's half of the contract, including why a resolver
 that collapses an edge's endpoints deletes it rather than upserting.
 
 `docs/how-to/implement-a-store-adapter.md` is the implementer's side: an adapter
@@ -617,8 +619,9 @@ The graph gate's equivalent is named
 `test_the_registries_do_not_outlive_the_port` because it has three lists to
 cover rather than one — `ISOLATION_COVERAGE`, `TENANT_COVERAGE` and
 `ISOLATION_EXEMPT` — and it loops over all three with the label in the failure
-message. The names differ; the property is identical, and both are ADR 0007
-*Exemption lists are empty and must stay falsifiable* applied per port.
+message. The names differ; the property is identical, and both are
+[ADR 0014 *Exemption lists are empty and must stay falsifiable*](0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+applied per port.
 
 Two details are worth keeping when this is copied to a third port. First, the
 staleness check runs **in both directions** on the graph side: the test above
@@ -715,8 +718,9 @@ entry too many, or change a method's annotation so it now mentions
 "search"}` it is a failing test that names the method.
 
 The vector port can afford the exact form because it is **small and closed**.
-`VectorStore` has two reads, and it is not expected to grow a third — ADR 0007
-*No ANN index in a multi-tenant vector store* is part of why: the port
+`VectorStore` has two reads, and it is not expected to grow a third —
+[ADR 0012 *No ANN index in a multi-tenant vector store*](0012-no-ann-index-in-a-multi-tenant-vector-store.md)
+is part of why: the port
 deliberately does not acquire index-shaped surface, so the read set is stable
 by design rather than by luck. Writing the set out costs nothing and it will
 not need editing.
@@ -805,8 +809,9 @@ key into an unrelated example and makes a failure irreproducible). Both are the
 kind of defect that makes a suite quietly weaker rather than red.
 
 See `docs/how-to/implement-a-store-adapter.md` for what these gates mean when
-you are adding an adapter rather than a method, and ADR 0007 *No ANN index in a
-multi-tenant vector store* for why the vector port's read surface is small
+you are adding an adapter rather than a method, and
+[ADR 0012 *No ANN index in a multi-tenant vector store*](0012-no-ann-index-in-a-multi-tenant-vector-store.md)
+for why the vector port's read surface is small
 enough to pin exactly.
 
 ## Consequences

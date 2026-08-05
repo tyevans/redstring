@@ -1,0 +1,135 @@
+site_name: redstring
+site_description: Build a knowledge graph from documents you already have — extraction, consolidation, and pluggable graph and vector storage.
+site_url: https://tyevans.github.io/redstring
+repo_url: https://github.com/tyevans/redstring
+repo_name: tyevans/redstring
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - content.action.edit
+  palette:
+    - scheme: default
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+plugins:
+  - search:
+      lang: en
+      separator: '[\s\-\.]+'
+
+# `docs/plans/` and `docs/history/` are the migration's own record -- written
+# for the people who did it, dense with slice numbers and commit ranges, and
+# actively misleading to a reader looking for how the library works today.
+# They stay in the repository (README and BACKLOG both cite them) and out of
+# the site.
+exclude_docs: |
+  plans/
+  history/
+
+# `--strict` turns a link to a missing page into a build failure, which is the
+# point rather than a preference: this project renumbered seven ADRs by
+# renaming the files and left 43 inbound links pointing at paths that no
+# longer existed, and nothing anywhere reported it. See
+# `.claude/rules/recurring-defects.md` §6.
+strict: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  # GitHub's slug algorithm, not python-markdown's. Every page here was
+  # written and cross-linked in a GitHub checkout, where `### \`uv sync
+  # --all-extras\`, not \`--extra dev\`` anchors as
+  # `#uv-sync---all-extras-not---extra-dev` -- python-markdown's default
+  # collapses the runs and yields `#uv-sync-all-extras-not-extra-dev`, which
+  # broke 71 in-page links at once. Matching GitHub keeps one set of anchors
+  # correct in both places, which is the only arrangement that stays true.
+  - toc:
+      permalink: true
+      # A factory, not a function -- `!!python/name:` hands mkdocs the
+      # builder itself and every heading fails with "slugify() takes 0
+      # positional arguments". `!!python/object/apply` calls it.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+      separator: "-"
+
+nav:
+  - Home:
+      - index.md
+      - Installation: installation.md
+      - Your first graph: getting-started.md
+  - How-to:
+      - how-to/index.md
+      - Build and extract:
+          - Author a domain schema: how-to/author-a-domain-schema.md
+          - Harden model calls: how-to/harden-model-calls.md
+      - Keep the graph honest:
+          - Consolidate duplicate entities: how-to/consolidate-duplicate-entities.md
+          - Query a timeline: how-to/query-a-timeline.md
+      - Storage and projections:
+          - Use the write model: how-to/use-the-write-model.md
+          - Drive projections from an event store: how-to/drive-projections-from-an-event-store.md
+          - Rebuild a projection: how-to/rebuild-a-projection.md
+          - Use the pgvector store: how-to/use-the-pgvector-store.md
+          - Implement a store adapter: how-to/implement-a-store-adapter.md
+      - Development:
+          - Run the integration and mutation suites: how-to/run-integration-and-mutation-suites.md
+  - Reference:
+      - reference/index.md
+      - Events: reference/events.md
+      - Aggregates: reference/aggregates.md
+      - Domain value types: reference/domain-value-types.md
+      - Domain schema YAML: reference/domain-schema-yaml.md
+      - Neo4j graph store: reference/neo4j-graph-store.md
+      - Quality gates: reference/quality-gates.md
+  - Decisions:
+      - adr/index.md
+      - "0001 · Event log schema and granularity": adr/0001-event-log-schema-and-granularity.md
+      - "0002 · Two store ports": adr/0002-two-store-ports.md
+      - "0003 · Blocking keys as nodes": adr/0003-blocking-keys-as-nodes.md
+      - "0004 · Consolidation emits events": adr/0004-consolidation-emits-events.md
+      - "0005 · Temporal inference on read": adr/0005-temporal-inference-on-read.md
+      - "0006 · The public surface is gated": adr/0006-the-public-surface-is-gated.md
+      - "0007 · composition is the only top layer": adr/0007-composition-is-the-only-top-layer.md
+      - "0008 · The two non-store ports": adr/0008-the-two-non-store-ports.md
+      - "0009 · The extraction fold resolves through aliases": adr/0009-the-extraction-fold-resolves-through-aliases.md
+      - "0010 · One total order for preference": adr/0010-one-total-order-for-preference.md
+      - "0011 · Domain schemas prompt but do not constrain": adr/0011-domain-schemas-prompt-but-do-not-constrain.md
+      - "0012 · No ANN index in a multi-tenant vector store": adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md
+      - "0013 · Resilience behind the cache port": adr/0013-resilience-behind-the-cache-port.md
+      - "0014 · Exemption lists are empty and must stay falsifiable": adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md
+  - Contributing: contributing.md

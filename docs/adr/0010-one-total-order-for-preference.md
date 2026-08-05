@@ -1,4 +1,4 @@
-# ADR 0007: One total order decides which mapping of a thing survives
+# ADR 0010: One total order decides which mapping of a thing survives
 
 **Status:** accepted, slice 8 of the ring migration (the `temporal` slot),
 extended in slice 10 by consolidation composing over it.

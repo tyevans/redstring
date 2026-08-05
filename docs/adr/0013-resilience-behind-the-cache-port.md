@@ -1,4 +1,4 @@
-# ADR 0007: Resilience lives in `llm/`, over the `Cache` port
+# ADR 0013: Resilience lives in `llm/`, over the `Cache` port
 
 **Status:** accepted, slice 6 of the ring migration.
 
@@ -25,11 +25,11 @@ considered and rejected here, with reasons that outlive the code they were
 written about.
 
 Related: [ADR 0002: two store ports](0002-two-store-ports.md) and
-[ADR 0007: the two non-store ports](0007-the-two-non-store-ports.md) cover the
+[ADR 0008: the two non-store ports](0008-the-two-non-store-ports.md) cover the
 other port boundaries; [Harden model calls](../how-to/harden-model-calls.md) is
 the task-shaped version of everything below;
 [Implement a store adapter](../how-to/implement-a-store-adapter.md) is the same
-exercise for the store side; the [README](../../README.md) states the
+exercise for the store side; the [README](https://github.com/tyevans/redstring/blob/main/README.md) states the
 no-infrastructure default this ADR is the argument for.
 
 ## Context

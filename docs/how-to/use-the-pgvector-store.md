@@ -21,7 +21,7 @@ change an answer it already gets.
 It will not speed one up either. This adapter deliberately builds **no ANN
 index**, so a search scans the querying tenant's rows and costs time linear in
 that tenant's data — the same asymptotics as scoring every vector in memory,
-with a network hop added. [ADR 0007](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md)
+with a network hop added. [ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md)
 records why (an ANN index over a multi-tenant table takes the globally nearest
 `k` and *then* drops other tenants' rows, which violates the port's
 filter-before-`k` rule while still looking plausible), and BACKLOG B10k lists
@@ -268,7 +268,7 @@ runs, and it issues `CREATE TABLE IF NOT EXISTS` plus one
 `CREATE INDEX IF NOT EXISTS` beside the extension. There is no migration tool
 to install and no plugin to load. There is also no ANN index to build, and
 that is deliberate rather than an omission: see
-[ADR 0007](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md).
+[ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md).
 
 Two choices are yours rather than the server's, and both are covered in
 step 2. Give the store a `table` name of its own if the database is shared —
@@ -632,7 +632,7 @@ Two things `ensure_schema()` deliberately does **not** create:
 - **No index on `embedding`.** No `hnsw`, no `ivfflat`. An integration test
   asserts every index on the table uses the `btree` access method, so adding
   one is a decision someone has to come and argue for rather than a drive-by
-  optimisation. [ADR 0007](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md)
+  optimisation. [ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md)
   is that argument; BACKLOG B10k holds the three ways out.
 - **No third index on `tenant_id` alone.** Either of the two above already
   serves a tenant-only lookup from its leading column.
@@ -982,7 +982,7 @@ of `ORDER BY` and `LIMIT` — and it is only free because there is no ANN index.
 A store that took the `k` nearest and then filtered would return fewer than `k`
 results while matching records sat further down the ranking: correct-looking,
 wrong, and indistinguishable from a tenant with little data. That is the
-reasoning behind [ADR 0007](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md),
+reasoning behind [ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md),
 and the reason searches here are **exact** rather than approximate — this
 adapter passes the compliance suite's exact tier for the same reason the
 in-memory one does.

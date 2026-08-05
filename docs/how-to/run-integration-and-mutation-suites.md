@@ -27,7 +27,7 @@ Run the integration suite when you have touched an adapter
 [implemented a store adapter](implement-a-store-adapter.md) of your own, or
 before a release. Run a mutation suite when you want evidence that a module's
 tests are worth something; the standards for reading the result are in
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md) and `CLAUDE.md`,
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md) and `CLAUDE.md`,
 and the short version is that **a count is never the answer** — every survivor
 has to be understood, and a run reporting zero survivors is almost always a
 broken harness rather than a perfect suite.
@@ -79,7 +79,7 @@ uv sync --all-extras && uv run pre-commit install
 ```
 
 That is also the whole install for a fresh clone; see the
-[README](../../README.md) and
+[README](https://github.com/tyevans/redstring/blob/main/README.md) and
 [quality gates](../reference/quality-gates.md).
 
 Two things `--all-extras` does *not* give you, so that a skip later is not a
@@ -397,7 +397,7 @@ Two other fixes exist and neither is in place, deliberately. Adding
 catch a real class of bug everywhere else in the suite — and this project's
 standing rule is that suppressing a hypothesis health check needs proof the
 state cannot leak, not an argument that it probably will not (see
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md)). Generating the
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)). Generating the
 property tests per subclass in `__init_subclass__` is correct and is a
 considerable amount of machinery for a problem only the CI target has.
 
@@ -469,7 +469,7 @@ misreading of a survivor that used to die is "something changed in the source."
 See
 [a survivor that died on the previous run](#a-survivor-that-died-on-the-previous-run-non-deterministic-boundary-coverage-under-a-lowered-max_examples),
 and pin boundaries as `@example`s rather than trusting the sampler
-([`.claude/rules/testing.md`](../../.claude/rules/testing.md)).
+([`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)).
 
 ### What each subdirectory needs; the `llm` subset needs `KG_LLM_BASE_URL`, not Docker
 
@@ -707,7 +707,7 @@ proves the five DDL statements did the creating. Do a `down -v` before the run
 you intend to believe on that point — before a release, and after touching
 `SCHEMA_STATEMENTS` in `src/redstring/graph/adapters/neo4j.py`. It is the
 "at least one test per stateful setup path must start from nothing" rule from
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md), enforced by hand
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md), enforced by hand
 for the one adapter that cannot enforce it itself.
 
 Two subsets are unaffected by any of this: `tests/integration/llm/` needs a
@@ -754,7 +754,7 @@ Three flags are common to both commands and each earns its place:
   suite tells you nothing and costs everything.
 - **`-p no:randomly`** — `pytest-randomly` reorders every run, and a mutation
   session compares thousands of runs against each other. Order-dependence is a
-  bug in the test ([`.claude/rules/testing.md`](../../.claude/rules/testing.md)),
+  bug in the test ([`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)),
   but a session is not where you want to discover one.
 - **`tests/unit`** — the path, not a marker. `addopts` still applies, so
   `integration` and `accuracy` are deselected; the unit suite is what runs.
@@ -1147,7 +1147,7 @@ testing and essentially nothing else does. Real examples from this repo:
   and not a clamp deleted.
 
 The full catalogue of input shapes that make two implementations agree is the
-table in [`.claude/rules/testing.md`](../../.claude/rules/testing.md) and
+table in [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md) and
 `CLAUDE.md`. Read a survivor against it before concluding anything: the
 question is always **what other implementation would also pass this test?**
 

@@ -31,13 +31,13 @@ The decisions are:
    naming a type a caller cannot reach.
 
 What the domain prompt does once chosen is a separate decision, recorded in
-[ADR: domain schemas prompt but do not constrain](0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR: domain schemas prompt but do not constrain](0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 The same reasoning appears in three other places, because each is read by
 someone who will not read this file: the module docstring of
 `src/redstring/composition.py`, the inline comments on the `layers` list in
 `pyproject.toml`, and the "How it fits together" section of
-[README.md](../../README.md). This ADR is the canonical copy; the last section
+[README.md](https://github.com/tyevans/redstring/blob/main/README.md). This ADR is the canonical copy; the last section
 below says what each of the others is allowed to say.
 
 ## Context
@@ -539,7 +539,7 @@ The sentinel also makes the request checkable by type rather than by value. `_re
 
 The bill is bounded, and the bound is the property worth protecting: **the classifier is called once per document, not once per chunk.** It sees the head of the text (truncated to `MAX_CONTENT_FOR_CLASSIFICATION`), not every window, so `AUTO` adds exactly one call regardless of document length. `tests/unit/test_composition.py::test_auto_costs_exactly_one_extra_call_for_the_classifier` asserts `len(provider.calls) == 2` against a one-chunk document, with a comment saying why the number is the point — a per-chunk classifier would multiply the bill by the chunk count while producing the same answer each time. That test is a cost gate wearing the clothes of a behavioural test; a refactor that moved classification inside the chunk loop would keep every other test in the file green.
 
-**`AUTO` never fails, which is why `report.domain_confidence` exists.** `ContentClassifier` falls back to `encyclopedia_wiki` with confidence `0.0` on three separate paths: content under `MIN_CONTENT_LENGTH` (100 characters), which is never sent to the model at all; an answer below `confidence_threshold`; and any `LlmProviderError`. Falling back is the right behaviour *there* — a misclassified document is extracted with a worse schema, whereas raising would hand the domain decision straight back to the caller who used `AUTO` precisely to avoid making it, an argument [ADR: domain schemas prompt but do not constrain](0007-domain-schemas-prompt-but-do-not-constrain.md) develops in full.
+**`AUTO` never fails, which is why `report.domain_confidence` exists.** `ContentClassifier` falls back to `encyclopedia_wiki` with confidence `0.0` on three separate paths: content under `MIN_CONTENT_LENGTH` (100 characters), which is never sent to the model at all; an answer below `confidence_threshold`; and any `LlmProviderError`. Falling back is the right behaviour *there* — a misclassified document is extracted with a worse schema, whereas raising would hand the domain decision straight back to the caller who used `AUTO` precisely to avoid making it, an argument [ADR: domain schemas prompt but do not constrain](0011-domain-schemas-prompt-but-do-not-constrain.md) develops in full.
 
 But a fallback that returns the same shape as a choice is a plausible answer nobody investigates. So the confidence is carried out of the classifier rather than logged and dropped, and the report distinguishes three states rather than two:
 
@@ -601,7 +601,7 @@ What each copy is allowed to say:
 | `docs/adr/0007-composition-is-the-only-top-layer.md` (this file) | Everything: the alternatives, the costs, the admission test, the escape hatch, what each check catches and what it is blind to. | — |
 | `src/redstring/composition.py` module docstring | The two costs of Decision 2 in the words a caller needs before calling (`report.event` is the way out), that this is a layer of its own and why, and that `AUTO` costs one call per document rather than per chunk. | Re-argue the alternatives. A reader here has already chosen to use the module. |
 | The comment on `layers` in `pyproject.toml` | Why `composition` exists at all — `extraction` may not import `projections`, and something must hold both — and the admission question. | Say anything about `build_graph`'s behaviour. Nothing in the import contract depends on whether an event store is involved. |
-| "How it fits together" in [README.md](../../README.md) | That there are two producers, one projection, and that `build_graph` does the whole thing in one call while a caller with an event store appends `report.event` and drives `project` instead. | Enumerate the costs. The README's job is to make the fork visible, not to price it. |
+| "How it fits together" in [README.md](https://github.com/tyevans/redstring/blob/main/README.md) | That there are two producers, one projection, and that `build_graph` does the whole thing in one call while a caller with an event store appends `report.event` and drives `project` instead. | Enumerate the costs. The README's job is to make the fork visible, not to price it. |
 | The architecture-contract block in `CLAUDE.md` | The one-line rule an author needs mid-edit: `composition` is the top layer, holds one module, and a second module has to say what it composes. | Duplicate the ADR's reasoning. `CLAUDE.md` is binding instructions, and a long argument there is an argument nobody finishes reading. |
 
 The common thread is that **each copy carries only what its reader can act on at that spot**, and every copy ends on the same sentence rather than a paraphrase of it: *if a second module wants in here, ask what it composes.* That sentence is the one thing all five share verbatim, which makes a drifted copy findable by grep.

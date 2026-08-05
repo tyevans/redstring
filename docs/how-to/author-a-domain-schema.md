@@ -26,7 +26,7 @@ One thing to hold onto before you start, because it governs what a schema can
 and cannot do for you: **the schema shapes the prompt, it does not enforce the
 wire format.** Declaring an entity type tells the model what you are looking
 for; nothing rejects an extraction that invents a type you never declared. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md) for why,
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) for why,
 and [What this guide deliberately does not cover](#what-this-guide-deliberately-does-not-cover)
 for what that means in practice.
 
@@ -72,7 +72,7 @@ reasonable answer for mixed or unclassifiable text.
 - **Your material is one of the six kinds above**, even if the vocabulary is
   not a perfect fit. The schema shapes the prompt; it does not constrain what
   the model may return, so a type you did not declare is not rejected — see
-  [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md). An
+  [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md). An
   approximate domain still steers extraction in the right direction.
 - **You have not yet measured that extraction is going wrong.** Start with
   `domain=None` (the general prompt) or a bundled id, look at what comes out,
@@ -278,7 +278,7 @@ Only `name` and `description` reach the prompt, as the `Properties:` hint line
 above — a property with no description contributes its bare name. **`type` and
 `required` are declarations, not enforcement**: nothing checks the model's
 output against them, and a `required` property that comes back missing is not
-an error ([ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)).
+an error ([ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)).
 Declare them for your own downstream code, and write a `description` for
 anything you actually want the model to look for.
 
@@ -399,7 +399,7 @@ returns `(True, None)` or `(False, message)` against the declarations above,
 and `RelationshipTypeSchema.is_valid_source` / `is_valid_target` do one end
 each. Nothing in the extraction pipeline calls any of them — they are there for
 you to call over extraction output if you want that filter. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 One sharp edge if you do call it: these helpers only lowercase and strip the
 type you pass, so hand them ids in normalized form (`access_road`, not
@@ -545,7 +545,7 @@ code consults either value. Setting `entity_extraction: 0.95` does not drop
 low-confidence entities; it records that your domain considers 0.95 the usable
 bar. This is the same division as `valid_source_types` and `required` on a
 property: the schema states what the domain expects, and enforcement is yours
-([ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)).
+([ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)).
 
 Nor do they reach the prompt. `domain_system_prompt` renders only the two type
 lists into your template, so a threshold is invisible to the model.
@@ -839,7 +839,7 @@ generated prompt, and an argument to `DomainSchema.validate_relationship` if
 you choose to call it. Nothing in the pipeline calls it, and nothing rejects an
 extracted triple that ignores the constraint — so this rule buys you a correct
 prompt and a checkable declaration, not enforcement
-([ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)).
+([ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)).
 
 With the rules known, load the file and see which of them you hit.
 
@@ -1230,6 +1230,6 @@ Those are schema metadata for your code to read; only the two type lists and
 your own prose ever reach the model. And nothing here constrains the model's
 output — the prompt asks, the wire format is `Extraction`, and an entity typed
 with something you never declared comes back intact
-([ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)).
+([ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)).
 
 With a prompt in hand, hand it to extraction.

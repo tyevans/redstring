@@ -1,4 +1,4 @@
-# ADR 0007: The extraction fold resolves endpoints through the alias table
+# ADR 0009: The extraction fold resolves endpoints through the alias table
 
 **Status:** accepted (slice 7 — the slice that began emitting `EntitiesMerged`).
 

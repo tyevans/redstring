@@ -1,4 +1,4 @@
-# ADR 0007: Exemption lists are empty, and an emptied one is deleted rather than kept
+# ADR 0014: Exemption lists are empty, and an emptied one is deleted rather than kept
 
 Two lists in `pyproject.toml` once weakened the quality gates for named paths:
 ruff's `[tool.ruff.lint.per-file-ignores]` and mypy's `exclude`. Both are now
@@ -25,7 +25,7 @@ configured gate.
 Related: [quality gates reference](../reference/quality-gates.md) for how the
 gates run, [ADR 0001](0001-event-log-schema-and-granularity.md) for the event
 classes that the ruff false positives landed on, and
-[`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md)
+[`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md)
 for the wider "a passing check you have never seen fail is not yet evidence"
 rule this is an instance of.
 
@@ -131,7 +131,7 @@ different question than the configured run does. Both are worked through in
 below.
 
 This is the "a passing check you have never seen fail is not yet evidence" rule
-from [`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md),
+from [`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md),
 applied to a lint invocation instead of a test. Both spellings of *prove it can
 fail* are the same instruction, and here the vacuous result and the vacuously
 green ratchet reinforce each other: the list stops shrinking, and the command
@@ -266,7 +266,7 @@ two reasons:
   that every exclusion still matches a real path is trivially true over an
   empty list, so the mechanism this ADR exists to demand would itself become a
   check that has never been seen fail — the same failure, one level up. See
-  [`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md).
+  [`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md).
 
 This is where the asymmetry with ruff comes from, and it is a distinction
 between *kinds of list* rather than between the two tools. ruff's
@@ -316,7 +316,7 @@ it does two things, both bad:
   still exists" is trivially true of an empty list, so the mechanism this ADR
   demands would itself become a check nobody has ever seen fail — the exact
   failure being guarded against, reproduced one level up in the guard. See
-  [`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md).
+  [`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md).
 
 A **seam** is different. It is the single place a rule admits exceptions, and
 its emptiness is the rule's strongest possible state rather than its absence.
@@ -390,7 +390,7 @@ that follows is one line:
 
 This is the same instruction as *prove it can fail*, applied to a lint
 invocation instead of a test — see
-[`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md).
+[`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md).
 The failure it guards against is not that the measurement is imprecise. It is
 that the measurement is **unconditional**: it returns the same output for code
 that is clean and code that is riddled, so it carries no information at all,
@@ -717,7 +717,7 @@ the disagreement shows up. That is *prove it can fail* applied to a refactor
 instead of to a lint invocation or a test — see
 [the measurement rule](#the-measurement-rule-delete-the-entry-and-run-the-configured-gate),
 the deliberate-defect habit in
-[`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md),
+[`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md),
 and the [quality gates reference](../reference/quality-gates.md) for what the
 configured run covers.
 
@@ -854,7 +854,7 @@ of thing that runs *at model use*, not at import. The two documents meet at
 exactly that point: ADR 0001 explains why those annotations are load-bearing,
 this one explains why an exemption hid a change that would have broken them.
 
-**[`.claude/rules/recurring-defects.md`](../../.claude/rules/recurring-defects.md)
+**[`.claude/rules/recurring-defects.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md)
 — the general shape, and the instances that are not about lint config.** This
 ADR is a specific case of §3, *inert code and always-zero metrics*: an entry
 that matches nothing, a `--select` that cannot report a finding, a guard over
@@ -890,7 +890,7 @@ idea implemented where a configuration file cannot reach:
   lies* — and that choosing neither is the failure mode.
 
 The one rule that governs this document itself is
-[`.claude/rules/definition-of-done.md`](../../.claude/rules/definition-of-done.md):
+[`.claude/rules/definition-of-done.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/definition-of-done.md):
 an ADR is part of the work, not a follow-up, and its body is an immutable
 record. If a future slice re-admits an exemption under `src/`, that is not an
 edit to the Decision above — it supersedes it, with a new ADR saying what

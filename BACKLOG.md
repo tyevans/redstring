@@ -1676,5 +1676,6 @@ Deferred rather than fixed because it needs a Redis server in the unit tier —
 either an integration-marked subclass against the container, or `fakeredis`,
 which reintroduces the "in-memory reference more forgiving than production"
 problem the suite's docstring names. Decide that first; the subclass itself is
-about five lines once the fixture exists. ADR 0007's "For adapter authors"
+about five lines once the fixture exists.
+`docs/adr/0008-the-two-non-store-ports.md`'s "For adapter authors"
 section now states the gap, so fixing this means deleting that paragraph too.

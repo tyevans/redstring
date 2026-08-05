@@ -1,4 +1,4 @@
-# 0007. No ANN index in a multi-tenant vector store
+# ADR 0012: No ANN index in a multi-tenant vector store
 
 ## Status
 

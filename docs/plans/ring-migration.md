@@ -168,14 +168,14 @@ never by `0007` — the number is not yet a fact about it:
 
 | Draft | Decision |
 |---|---|
-| [`no-ann-index-in-a-multi-tenant-vector-store`](adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md) | pgvector carries no ANN index, and the reason is not performance |
-| [`resilience-behind-the-cache-port`](adr/0007-resilience-behind-the-cache-port.md) | Retry, rate limiting and circuit breaking live in `llm/`, over the `Cache` port |
-| [`the-extraction-fold-resolves-through-aliases`](adr/0007-the-extraction-fold-resolves-through-aliases.md) | The extraction fold resolves endpoints through the alias table |
-| [`one-total-order-for-preference`](adr/0007-one-total-order-for-preference.md) | One total order decides which mapping of a thing survives |
-| [`the-two-non-store-ports`](adr/0007-the-two-non-store-ports.md) | Why `Cache` and `LlmProvider` are ports, which 0002 does not cover |
+| [`no-ann-index-in-a-multi-tenant-vector-store`](adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) | pgvector carries no ANN index, and the reason is not performance |
+| [`resilience-behind-the-cache-port`](adr/0013-resilience-behind-the-cache-port.md) | Retry, rate limiting and circuit breaking live in `llm/`, over the `Cache` port |
+| [`the-extraction-fold-resolves-through-aliases`](adr/0009-the-extraction-fold-resolves-through-aliases.md) | The extraction fold resolves endpoints through the alias table |
+| [`one-total-order-for-preference`](adr/0010-one-total-order-for-preference.md) | One total order decides which mapping of a thing survives |
+| [`the-two-non-store-ports`](adr/0008-the-two-non-store-ports.md) | Why `Cache` and `LlmProvider` are ports, which 0002 does not cover |
 | [`composition-is-the-only-top-layer`](adr/0007-composition-is-the-only-top-layer.md) | `composition` is the only top layer, and `build_graph` writes without a log |
-| [`domain-schemas-prompt-but-do-not-constrain`](adr/0007-domain-schemas-prompt-but-do-not-constrain.md) | Domain schemas prompt the model; they do not constrain it |
-| [`exemption-lists-are-empty-and-must-stay-falsifiable`](adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md) | Both exemption lists are empty, and an emptied one is deleted rather than kept |
+| [`domain-schemas-prompt-but-do-not-constrain`](adr/0011-domain-schemas-prompt-but-do-not-constrain.md) | Domain schemas prompt the model; they do not constrain it |
+| [`exemption-lists-are-empty-and-must-stay-falsifiable`](adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md) | Both exemption lists are empty, and an emptied one is deleted rather than kept |
 
 A draft constrains a new spec exactly as much as an accepted ADR does, so run
 against the content and ignore the number. The two tables together are the

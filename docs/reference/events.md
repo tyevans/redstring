@@ -279,7 +279,7 @@ to skip legacy, never-emitted modules; those are gone (`events/consolidation`
 in slice 7, `events/scraping` and `events/base` in slice 9), and the list went
 with them rather than being kept empty. An exclusion over an empty set
 excludes nothing, and a guard iterating it passes vacuously — see
-[CLAUDE.md's rule on exemption lists](../../CLAUDE.md). Every module in
+[CLAUDE.md's rule on exemption lists](https://github.com/tyevans/redstring/blob/main/CLAUDE.md). Every module in
 `redstring/events/` is now live schema.
 
 `tests/unit/projections/test_replay_coverage.py` parametrises two more cases
@@ -1174,7 +1174,7 @@ appear in a test returns *the same int object* both times and the two
 spellings agree. The check would have inverted only above the cache boundary —
 i.e. only in production, on a real batch. Counting the offenders has no int
 comparison in it to mutate, which is the general form of the fix (see
-[CLAUDE.md](../../CLAUDE.md) on preferring a spelling with no `len()`
+[CLAUDE.md](https://github.com/tyevans/redstring/blob/main/CLAUDE.md) on preferring a spelling with no `len()`
 comparison in it at all).
 
 **Naming the ids is not politeness.** A length comparison can say *that*
@@ -1540,7 +1540,7 @@ of those is a **domain** type. Nothing on the wire is defined in
 | `TenantId` = `UUID` | `redstring/domain/ids.py` | not a field of any event — the envelope's `tenant_id`, and the field on every payload the validators compare it against |
 
 That the payloads live in `domain` and not in `events` is the layering: the
-[architecture contract](../../CLAUDE.md) puts `domain` at the bottom and
+[architecture contract](https://github.com/tyevans/redstring/blob/main/CLAUDE.md) puts `domain` at the bottom and
 `events` directly above it, so an event may name a domain type and a domain
 type can never name an event. A payload is therefore usable — and testable —
 without an event around it.

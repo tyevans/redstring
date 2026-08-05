@@ -43,11 +43,11 @@ than restated here:
 
 - Why the ruff and mypy exemption lists are empty, and why an exemption list
   needs a test that its entries still match a real file:
-  [ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
 - What makes a test able to fail, and the catalogue of failure shapes this
-  project has actually shipped: [`.claude/rules/testing.md`](../../.claude/rules/testing.md).
+  project has actually shipped: [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md).
 
-[`README.md`](../../README.md) has the short version — first-time setup and
+[`README.md`](https://github.com/tyevans/redstring/blob/main/README.md) has the short version — first-time setup and
 the handful of commands most sessions need.
 
 Throughout, "the gate" means the default `git commit` run: `pytest` with
@@ -357,7 +357,7 @@ those breaks every later hook with an error that does not name the cause.
   `breakpoint()` is valid Python, passes ruff and mypy, and in the suite hangs
   the run under `pytest-xdist` rather than failing it. A hang reads as
   infrastructure trouble and gets retried instead of investigated — the same
-  failure mode [`.claude/rules/testing.md`](../../.claude/rules/testing.md)
+  failure mode [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md)
   warns about for unbounded loops.
 - **`check-docstring-first`** — fails when a module has code before its
   docstring, which silently demotes the intended docstring to a bare string
@@ -419,7 +419,7 @@ its own `exclude` configuration — which would let a path ruff is configured to
 skip get linted anyway, purely because it happened to be staged.
 `--force-exclude` makes the configured exclusions win over the argument list,
 so the hook and a bare `uv run ruff check` answer the same question. This is
-the same hazard [ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+the same hazard [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
 describes from the other direction: a command that bypasses the configured
 scope is measuring something other than the gate.
 
@@ -445,7 +445,8 @@ reasons that is the right shape:
 - Naming files on the command line **bypasses `exclude`**, so a
   filename-passing hook would silently answer a different question than the
   configured run does. There is no `exclude` in this project any more (see
-  ADR 0007), which makes the point moot today and makes it worth keeping
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
+  which makes the point moot today and makes it worth keeping
   correct for the day someone re-adds one.
 
 The configuration is `strict = true` plus `warn_unreachable`,
@@ -572,7 +573,7 @@ There is a second reason for mypy specifically: **naming files on the command
 line bypasses `exclude`.** A filename-passing mypy hook would answer a
 different question than the configured run. This project currently has no
 `exclude` (see
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
 which makes it moot today and worth keeping correct.
 
 The trade is cost. These three run in full whenever their filter matches, so a
@@ -596,7 +597,7 @@ exempt.
 
 The general shape — an invocation that names files explicitly is not always
 asking the configured question — is the lint-side spelling of the rule in
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
 It applies to hand-run diagnosis too: `uv run ruff check src/redstring/foo.py`
 is not the gate, and `uv run mypy src/redstring/foo.py` is a different check
 from the one that runs on commit.
@@ -732,7 +733,7 @@ Two things follow from that framing:
   applies to a new enum written today, for the same reason.
 - **It is the only entry.** The legacy per-file exemption lists are empty and
   the mypy `exclude` key is deleted (see
-  [ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
   so `UP042` is the whole of what this project declines to enforce on `src/`.
   A second entry appearing here is a visible decision in review rather than an
   edit to an existing list.
@@ -760,7 +761,7 @@ There is exactly one pattern, and it is `tests/**`:
 Nothing under `src/` is exempted from anything. The legacy per-package
 exemption list is empty — every entry was deleted in the commit that repaired
 or removed its package, and the reasoning is in
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
 The block is kept empty rather than deleted so that adding a `src/` exemption
 is a visible decision in review.
 
@@ -914,7 +915,7 @@ rule — which is why it lives here and not in `per-file-ignores`, whose only
 entry is `tests/**`.
 
 It is also the origin story for
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
 The `events/` package had a `per-file-ignores` entry of exactly
 `["ANN", "TC"]`, and measuring what it hid was misleading in the way the ADR
 describes: `ruff check --select ANN,TC src/redstring/events/` printed
@@ -972,7 +973,8 @@ Turns on the whole strict family in one key — `disallow_any_generics`,
 interact with the rest of this page:
 
 - **`warn_unused_ignores`** makes a `# type: ignore` that no longer suppresses
-  anything a *failure*. It is the same instinct as ADR 0007's rule about
+  anything a *failure*. It is the same instinct as
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)'s rule about
   exemption lists — a suppression that has outlived its cause must say so
   rather than sit there passing.
 - **`strict_equality`** rejects a comparison between types that can never be
@@ -1068,7 +1070,7 @@ the override list has one entry rather than several.
 The key is **deleted**, not empty. Slice 10 emptied it by fixing the last
 fourteen findings in `extraction/` rather than by deleting the package, and
 the empty key was then removed on the reasoning in
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md):
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md):
 an exclusion over an empty set excludes nothing, and a staleness guard written
 over it would pass vacuously. `--strict` therefore covers every module under
 `src/redstring`, and re-adding an exclusion is a visible decision in review
@@ -1077,7 +1079,8 @@ rather than an edit to an existing list.
 This asymmetry with ruff is deliberate. ruff's `per-file-ignores` is *kept*
 with its one `tests/**` entry, because it is a live mechanism with a current
 member; mypy's `exclude` had no members left. Empty-and-kept versus deleted is
-the choice ADR 0007 asks you to make explicitly, and the two files show the
+the choice [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+asks you to make explicitly, and the two files show the
 two answers.
 
 One consequence for hand-run diagnosis, and it is the mypy spelling of the
@@ -1199,7 +1202,7 @@ restores the scan; removing `".venv"` or `"dist"` changes nothing.
 
 Two things this is worth reading as:
 
-- **It is exactly the failure shape [ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+- **It is exactly the failure shape [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
   is about**, arriving from a new direction. There the hazard was an exemption
   list whose entries no longer matched a real file and passed silently; here it
   is an exemption entry that matches *far more* than it names, and also passes
@@ -1292,7 +1295,7 @@ Layered architecture BROKEN
 That transcript is the point of recording this section. `exhaustive` has
 caught zero real violations, and a check that has never been seen to fail is
 indistinguishable from an option that is inert — the same reasoning
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
 applies to exemption lists, and the same failure mode the
 [bandit section](#bandit-configuration) documents as a live bug. Slice 9 ran
 the experiment above by adding a throwaway package, watching the contract
@@ -1434,7 +1437,7 @@ The same mechanism holds for the non-test helpers that live inside test
 packages — `tests/unit/projections/log_builder.py`,
 `tests/unit/consolidation/oracle.py`. The oracle in particular is the
 *independent* expectation described in
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md); it is imported by
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md); it is imported by
 tests, never collected as one.
 
 **`python_classes = "Test*"` is load-bearing in the same way, one level down.**
@@ -1513,7 +1516,7 @@ so example 7 sees whatever examples 1–6 left behind — `function` scope is
 per-*test*, not per-example. This produced an intermittent `MissingEntityError`
 in about one run in three, and suppressing the health check that reports it is
 what hid the cause. Build the rig inside the test instead; see
-[`.claude/rules/testing.md`](../../.claude/rules/testing.md).
+[`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md).
 
 There is no `asyncio_default_test_loop_scope` key, so test-level scope is
 `pytest-asyncio`'s own default (`function`) as well.
@@ -1703,7 +1706,7 @@ whether it made extraction better or worse. The gap is tracked as `BACKLOG.md`
 B12.
 
 An empty marker is also the exact shape
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md)
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)
 warns about, arriving from a third direction: `uv run pytest -m accuracy` exits
 green, and a green run over zero tests is indistinguishable from a green run
 over a suite. Read the collected count, not the exit code.
@@ -2000,7 +2003,7 @@ They live in `tests/unit/graph/test_memory_store.py` and
 both run on the commit gate. A hard-coded `max_examples` reintroduced into
 either shared suite fails there, rather than silently ignoring your
 environment — which is the same instinct as
-[ADR 0007](../adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md):
+[ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md):
 a knob nothing checks is indistinguishable from a knob that has stopped
 working.
 
@@ -2030,7 +2033,7 @@ Two things follow:
   docstring says so: "A boundary that matters belongs in an example, not in a
   budget." Its assertions are independent of the budget, so it kills both
   mutants at any value of the variable, including 1. The general rule is in
-  [`.claude/rules/testing.md`](../../.claude/rules/testing.md).
+  [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md).
 
 Raising it is worthwhile in the opposite situation — hunting a suspected
 ordering or filtering bug, where more draws is the only thing that widens the

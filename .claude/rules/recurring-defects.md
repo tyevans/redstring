@@ -107,7 +107,7 @@ afterwards means tuning it until the new adapter passes, which is not a test.
 The file says so in the tier-2 banner, and means it: **tier 2 currently passes
 trivially and its comment admits it.** Every adapter in this tree is exact
 (in-memory scans brute-force; pgvector has no ANN index on purpose — see
-`docs/adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md` and BACKLOG
+`docs/adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md` and BACKLOG
 B10k), so nothing there has ever run against a store that *can* miss a
 neighbour, and its passing is evidence about the tests rather than about
 recall. One query over one corpus is not a recall claim; a real one needs many
@@ -168,7 +168,7 @@ copying to the next port:
 - **The exemption list is empty and must carry a reason.** Both
   `ISOLATION_EXEMPT` dicts are `{}`, a test rejects a blank reason, and
   another rejects an entry for a method the port has dropped. That is
-  `docs/adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md`
+  `docs/adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md`
   applied per-port: an entry is a visible decision, an absent entry is the
   omission the module exists to catch.
 
@@ -354,12 +354,9 @@ under a provisional name (branch name or date suffix), and allocate the number
 at merge time after checking the ADR directory on current `main`. Before
 merging any branch that adds an ADR, re-check the number.
 
-The directory is **`docs/adr/`**, singular — not `docs/adrs/`. It is not
-empty: `0001` through `0006` are on `main`
-(`0001-event-log-schema-and-granularity`, `0002-two-store-ports`,
-`0003-blocking-keys-as-nodes`, `0004-consolidation-emits-events`,
-`0005-temporal-inference-on-read`, `0006-the-public-surface-is-gated`), so a
-new ADR is numbered against the highest one there:
+The directory is **`docs/adr/`**, singular — not `docs/adrs/`. It holds
+`0001` through `0014`, so a new ADR is numbered against the highest one
+there:
 
 ```
 git ls-tree --name-only main docs/adr/ | sort | tail -1
@@ -368,24 +365,38 @@ git ls-tree --name-only main docs/adr/ | sort | tail -1
 Run that at merge time, not at draft time — the answer changes while a branch
 is open, which is the entire failure mode.
 
-**The shape is live in this tree right now.** The working directory carries
-**eight** files numbered `0007-*` (`composition-is-the-only-top-layer`,
-`domain-schemas-prompt-but-do-not-constrain`,
-`exemption-lists-are-empty-and-must-stay-falsifiable`,
-`no-ann-index-in-a-multi-tenant-vector-store`, `one-total-order-for-preference`,
-`resilience-behind-the-cache-port`, `the-extraction-fold-resolves-through-aliases`,
-`the-two-non-store-ports`) — eight parallel slices each correctly taking "the
-next free number from `main`", which was `0007` for all of them. Nothing
-failed: the filenames are distinct, so no file overwrote another and no tool
-complained. That is what makes this shape worth a section rather than a
-convention — the collision is invisible until a human tries to cite "ADR 7"
-and finds eight documents, or until two of them are cross-referenced by number
-from elsewhere. Renumbering after the fact means rewriting every inbound
-reference, which is why the rule puts allocation at merge.
+**This tree ran the whole experiment, and the second half is the lesson.**
+Eight files were once numbered `0007-*` — eight parallel slices each correctly
+taking "the next free number from `main`", which was `0007` for all of them.
+Nothing failed. The filenames were distinct, so no file overwrote another and
+no tool complained; the collision was invisible right up until someone tried
+to cite "ADR 7" and found eight documents.
+
+Then it was **half fixed**, which turned out to be worse than not fixing it.
+Seven files were renamed to `0008`–`0014` and nothing else was touched:
+
+- Seven H1 titles still read `# ADR 0007:`, so the rendered documents claimed
+  a number none of them had, and seven of them claimed the *same* one.
+- Every inbound `](../adr/0007-<slug>.md)` link — 43 of them, across the
+  how-tos, the reference pages and the ADRs themselves — pointed at a path
+  that no longer existed. All were already broken. Nothing said so.
+- Both of these files, which are loaded into every session, still described
+  `0001` through `0006` as the whole set and the `0007` eight-way as live.
+
+None of that is exotic; it is §5 with an ADR number in place of a module map,
+and it survived because **a renumber has no failing test**. The fix that
+matters is not the sweep, it is the gate: `mkdocs build --strict` fails on a
+link to a missing page, so the docs site is what makes the next half-finished
+renumber impossible to land. Add the citation to the site's nav and the
+number becomes checkable rather than merely conventional.
+
+So: **renumbering means the filename, the H1, and every inbound citation, in
+one commit.** Renaming the file alone is the failure mode, not the fix.
 
 Cross-references by number decay for the same reason. Prefer linking the full
 path — `docs/adr/0002-two-store-ports.md`, as §1 does — over "see ADR 2"; the
-path is checkable by grep and survives a renumber that a bare number does not.
+path is checkable by grep, by `mkdocs --strict`, and survives a renumber that
+a bare number does not.
 
 ---
 
@@ -475,7 +486,7 @@ absorb a misconfiguration indefinitely, which is the strongest argument for
 removing exemptions early. The lasting rule — *delete the entry and run the
 configured gate, because the command measuring an exemption must not be
 subject to it* — is in CLAUDE.md and
-`docs/adr/0007-exemption-lists-are-empty-and-must-stay-falsifiable.md`; mypy's
+`docs/adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md`; mypy's
 version of the trap is naming files on the command line, which bypasses
 `exclude` and answers a different question than the configured run.
 

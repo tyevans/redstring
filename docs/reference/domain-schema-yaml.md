@@ -29,7 +29,7 @@ A schema **prompts the extractor; it does not constrain it.** Entity and
 relationship types the LLM returns outside the declared set are not discarded —
 `custom` is always an acceptable entity type and `related_to` is always an
 acceptable relationship type. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md) for the
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) for the
 reasoning, and note the consequence throughout this reference: most fields here
 shape what the model is asked for, and only a few are enforced at load time.
 
@@ -37,7 +37,7 @@ This page describes what each field means and what will be rejected. For a
 step-by-step walk through writing a new schema, see
 [Author a domain schema](../how-to/author-a-domain-schema.md). For where
 domains fit in the extraction call, see the
-[README](../../README.md).
+[README](https://github.com/tyevans/redstring/blob/main/README.md).
 
 ## Scope and audience
 
@@ -71,11 +71,11 @@ Out of scope:
   `domain_system_prompt` and handing it to extraction.
 - **Why schemas prompt rather than constrain.** That is a design decision,
   argued in
-  [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md). It is
+  [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md). It is
   restated here only where it changes what a field does.
 - **Extraction, chunking, merging and the graph projection.** A schema's only
   contact with them is the prompt text it produces; see the
-  [README](../../README.md) for the pipeline as a whole.
+  [README](https://github.com/tyevans/redstring/blob/main/README.md) for the pipeline as a whole.
 - **Domain classification.** `AUTO` and the classifier that picks a domain for
   you are a caller-side concern. This page describes `ClassificationResult`
   only as a value a schema author will see, never authors.
@@ -351,7 +351,7 @@ and YAML will read a bare `1.2` as a float, so **quote it**.
   extractor is free to return an `ingredient` as the source of something you
   restricted to `dish`, and to return entity types you never declared —
   `custom` and `related_to` are always accepted. See
-  [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md). Use
+  [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md). Use
   `DomainSchema.validate_relationship` if you want to check a relationship
   against the declared constraints yourself.
 
@@ -422,7 +422,7 @@ checked and are not:
   `related_to`, and neither is consulted at all during extraction — nothing
   filters the LLM's output down to what you declared. The fields above shape
   what the model is asked for. That is the whole of
-  [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md), and
+  [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md), and
   it is the reason `entity_types` is bounded below (a prompt needs something to
   say) and not above.
 
@@ -845,7 +845,7 @@ The extractor is not restricted to what you declare. `is_valid_entity_type`
 accepts `custom` for any schema, and nothing in the pipeline filters an
 extracted entity against `get_entity_type_ids()` — an entity type you never
 wrote is not discarded. That is the design in
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md), and it
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md), and it
 is why this field is bounded below and not above: the list exists so the prompt
 has something to say.
 
@@ -1000,7 +1000,7 @@ the same way: an extractor is free to return `loves` between two `location`s.
 `validate_relationship(relationship_type, source_entity_type, target_entity_type)`
 exists so a caller can perform that check deliberately, and returns
 `(is_valid, error_message)` rather than raising. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md) and
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) and
 [Runtime helpers a schema author should
 know](#runtime-helpers-a-schema-author-should-know).
 
@@ -1229,7 +1229,7 @@ kept = [e for e in result.entities if e.confidence >= threshold]
 ```
 
 This fits the design in
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md) — a
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md) — a
 schema describes a domain and prompts for it; it does not police the output —
 but note the difference in kind from the other fields. `entity_types` and
 `extraction_prompt_template` at least reach the model as prompt text. These two
@@ -1471,7 +1471,7 @@ declares. Nothing in the extraction pipeline calls it, so an entity type the
 model invents is neither rejected nor recorded as invalid — the helper is there
 for a caller who wants to ask. See [Special identifiers with built-in
 meaning](#special-identifiers-with-built-in-meaning) and
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 The other direction is enforced: the ids declared here are the closed set that
 `valid_source_types` and `valid_target_types` are checked against at load time.
@@ -1616,7 +1616,7 @@ extracted entity against it: `is_valid_entity_type` accepts `custom` for any
 schema and is not called during extraction at all. The id's only enforced role
 is as the target of the relationship endpoint check — entity types validate
 relationships, and nothing validates entity types. See
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 #### Conventions worth following
 
@@ -1723,7 +1723,7 @@ Nothing reads this field except the prompt builder. It does not appear in
 `validate_relationship`, and no extracted entity is checked against it. Its
 entire effect is on what the model is asked to look for, which is the design
 recorded in
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md): the
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md): the
 schema prompts and does not constrain. The practical reading is that editing a
 description is a *behavioural* change to extraction with no test in the
 library that can see it — which is what the `version` field exists to record.
@@ -1826,7 +1826,7 @@ schema, and its keys are not constrained to the names you declare. Nothing in
 or type coercion.
 
 So all four consequences hold at once, and none of them is an oversight —
-they are [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)
+they are [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)
 applied at property granularity:
 
 - a property you declared may be **absent** from an extracted entity, even
@@ -2000,7 +2000,7 @@ Nothing reads `examples` outside the prompt builder. It does not appear in
 checked against it. An extractor is free to return entities that resemble none
 of them, and returning exactly one of them is not treated as a stronger result.
 The list biases what the model looks for; it constrains nothing, per
-[ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md).
+[ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md).
 
 That has a review consequence worth stating: editing this list changes
 extraction behaviour with no test in the library able to see the change, which
@@ -2118,7 +2118,7 @@ names, no renaming, no defaulting, no coercion. So:
 - a property declared `type: number` may arrive as a string
 - nothing raises, warns, or records the mismatch
 
-This is [ADR 0007](../adr/0007-domain-schemas-prompt-but-do-not-constrain.md)
+This is [ADR 0011](../adr/0011-domain-schemas-prompt-but-do-not-constrain.md)
 at property granularity. `required` is currently the weakest field in the
 format: it does not validate, and it does not even reach the prompt, so it is a
 note to a human reader. If you need any of this enforced, read

@@ -1,4 +1,4 @@
-# ADR 0007: The two non-store ports, `Cache` and `LlmProvider`
+# ADR 0008: The two non-store ports, `Cache` and `LlmProvider`
 
 **Status:** accepted
 
@@ -641,6 +641,6 @@ reached by a dotted path is internal regardless.
 - [ADR 0006: the public surface is gated](0006-the-public-surface-is-gated.md)
   — why exporting a name pulls its closure, and why these ports export
   asymmetrically.
-- [ADR 0007: resilience behind the `Cache` port](0007-resilience-behind-the-cache-port.md)
+- [ADR 0013: resilience behind the `Cache` port](0013-resilience-behind-the-cache-port.md)
   — what `CircuitBreaker` and `RateLimiter` actually do with the two
   capabilities decided here.

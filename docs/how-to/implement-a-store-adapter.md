@@ -104,8 +104,8 @@ an index; see [ADR 0003](../adr/0003-blocking-keys-as-nodes.md).
 `delete_by_tenant`, and a `dimension` property fixed at construction. Its
 suite states the exactness contract in two tiers — exact behaviour on tens of
 vectors, recall-only on the larger dataset — and offers no `is_approximate`
-opt-out. [ADR 0007: no ANN index in a multi-tenant vector
-store](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md) is the
+opt-out. [ADR 0012: no ANN index in a multi-tenant vector
+store](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) is the
 reasoning behind the shape; [Use the pgvector
 store](use-the-pgvector-store.md) is the worked backend.
 
@@ -117,8 +117,8 @@ test asserting "an event 90 seconds ago" is a number rather than a 90-second
 sleep. Two things its suite pins that a reference implementation would let you
 miss: `get` returns `str`, not `bytes` (a Redis client at its defaults returns
 bytes and would match no string literal in production), and a missing key is
-`None`, not an error. See [ADR 0007: resilience behind the cache
-port](../adr/0007-resilience-behind-the-cache-port.md) and [Harden model
+`None`, not an error. See [ADR 0013: resilience behind the cache
+port](../adr/0013-resilience-behind-the-cache-port.md) and [Harden model
 calls](harden-model-calls.md).
 
 **`LlmProvider`** is one property and one method: `model`, and
@@ -126,8 +126,8 @@ calls](harden-model-calls.md).
 because there is nothing to store and nothing to read back. What stands in for
 one is covered in step 2 — the no-leak gate, and the rule that empty output
 raises (`EmptyCompletionError`, `MalformedCompletionError`) rather than
-returning an empty result. [ADR 0007: the two non-store
-ports](../adr/0007-the-two-non-store-ports.md) explains why `Cache` and
+returning an empty result. [ADR 0008: the two non-store
+ports](../adr/0008-the-two-non-store-ports.md) explains why `Cache` and
 `LlmProvider` are as small as they are; [ADR
 0002](../adr/0002-two-store-ports.md) explains why the two stores are separate
 ports rather than one.
@@ -520,7 +520,8 @@ the failure is telling you one of three things:
   rather than before, a distance passed through where a `(1 + cosine) / 2`
   score was expected, or a missing `entity_id` tie-break. All three produce
   results that look right and rank wrong; see step 1.
-- **You forced an index into the query path.** This is the case ADR 0007 is
+- **You forced an index into the query path.** This is the case
+  [ADR 0012](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) is
   about. Adding an `hnsw` or `ivfflat` index does not give the planner a
   faster way to run the existing statement — it offers a *different* one,
   where ordering and truncation happen inside the index scan before the
@@ -536,8 +537,8 @@ the failure is telling you one of three things:
   and that strengthens tier 2 first, per the previous subsection — or accept
   that this backend does not sit behind this port.
 
-[ADR 0007: no ANN index in a multi-tenant vector
-store](../adr/0007-no-ann-index-in-a-multi-tenant-vector-store.md) has the
+[ADR 0012: no ANN index in a multi-tenant vector
+store](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) has the
 full argument for why the shipped stores are exact, and [Use the pgvector
 store](use-the-pgvector-store.md) covers what that means operationally.
 
@@ -864,7 +865,7 @@ for anything about chunking or merging: with a positional script, permuting
 the chunks permutes which answer each chunk receives, so an order-independence
 test would pass against a merge that is not order-independent at all.
 
-[ADR 0007: the two non-store ports](../adr/0007-the-two-non-store-ports.md)
+[ADR 0008: the two non-store ports](../adr/0008-the-two-non-store-ports.md)
 has the rest of the reasoning for why this port is one property and one
 method.
 
@@ -872,7 +873,7 @@ method.
 
 - [ADR 0002: two store ports](../adr/0002-two-store-ports.md) — why `GraphStore`
   and `VectorStore` are separate.
-- [ADR 0007: the two non-store ports](../adr/0007-the-two-non-store-ports.md) —
+- [ADR 0008: the two non-store ports](../adr/0008-the-two-non-store-ports.md) —
   why `Cache` and `LlmProvider` are as small as they are.
 - [Quality gates](../reference/quality-gates.md) — what runs on commit, and what
   you must run yourself.

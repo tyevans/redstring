@@ -317,7 +317,7 @@ What that buys is a bounded rather than an unbounded consequence. Of the three
 ways staleness shows up, two are benign: a redirection for an edge that has
 since gone is idempotent on both writes, and an edge that appeared after the
 read is repaired by the extraction fold's alias resolution
-([ADR 0007](0007-the-extraction-fold-resolves-through-aliases.md)). The third
+([ADR 0009](0009-the-extraction-fold-resolves-through-aliases.md)). The third
 is not, and is filed rather than fixed: if the canonical entity already carries
 the same claim, that resolution creates a permanent parallel edge instead of
 fixing one. That is BACKLOG B43, open, pinned in
@@ -351,7 +351,7 @@ The tenant is not passed as an argument. `eventsource` carries it in a
 `ContextVar` entered by `tenant_scope`, so the ambient scope is what the
 repository validates against, and a `save` is checked against the scope the
 caller is actually in rather than against a value it repeats. That is
-[recurring defect §2](../../.claude/rules/recurring-defects.md) avoided by
+[recurring defect §2](https://github.com/tyevans/redstring/blob/main/.claude/rules/recurring-defects.md) avoided by
 construction: the tenant has one declaration site per operation, and there is
 no second one to drift from it.
 

@@ -8,6 +8,17 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # `mkdocs.yml` uses `!!python/object/apply:` to pass a slugify factory
+        # to the toc extension, and safe-load rejects the tag outright. The
+        # usual fix is `args: [--unsafe]`, which turns this hook into a
+        # syntax-only check for *every* YAML file in the repo -- paying for one
+        # file with the CI workflows and docker-compose.
+        #
+        # Excluded instead, and it loses nothing: `mkdocs build --strict` parses
+        # this file with the tags resolved and fails on far more than
+        # well-formedness, so it is the better-validated YAML here rather than
+        # the unvalidated one. That build runs in CI and is not optional.
+        exclude: ^mkdocs\.yml$
       - id: check-toml
       - id: check-json
       - id: check-merge-conflict
