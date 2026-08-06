@@ -1701,3 +1701,109 @@ place — and undoing it by upserting `before` would not remove that second
 edge, so the undo would silently be a no-op on half the change. The
 `tenant_id` check is the same argument where the leak crosses a tenant
 boundary.
+
+## Temporal parsing
+
+`temporal_parsing.py`: `parse_temporal`, `render_temporal`, `widen`, and
+`AmbiguousReferenceDateError`. This is the only module here that reads free
+text, and the only one whose answer depends on *when the text was written*.
+
+### `parse_temporal(text, *, reference_date)`
+
+Returns a `TemporalExtent`, or **`None` if the text states no date**. `None`
+is a normal outcome, not a failure: most entity mentions are not dated.
+
+`reference_date` is the vantage point relative expressions resolve against —
+`SourceDocument.published_at`, typically — and must be timezone-aware; a naive
+one raises `ValueError`.
+
+Text is rejected without parsing if it is blank or longer than
+`MAX_INPUT_LENGTH` (500 characters). A temporal expression is short; the bound
+is there so a paragraph handed to it by mistake does not become a
+`dateparser` workload.
+
+### `reference_date=None` is checked, not assumed
+
+`None` is permitted and means *"this text had better not need one"* — and that
+claim is **tested rather than trusted**. The text is parsed twice, against two
+probe dates far apart (1999 and 2035), and if the two answers differ it raises
+`AmbiguousReferenceDateError`.
+
+This is the design decision worth carrying: the failure mode it prevents is
+that "last year" silently becomes a date relative to *now*, so re-extracting
+the same document next year produces a different graph — a corruption with no
+symptom at the time it happens. The error is raised only after the ambiguity
+has been *demonstrated* on that specific text, so it never fires speculatively
+on text that happens to contain a relative-looking word.
+
+### `render_temporal(extent)`
+
+The inverse: `extent` as text this module parses back to the same extent, or
+`None`.
+
+It exists for the **round-trip property**, which is the only test shape that
+can catch a strategy quietly mangling a form an earlier strategy already
+handled. That is why it returns `None` for anything it cannot render
+*faithfully* — an approximate rendering would make the property pass by
+lowering the bar it was written to hold.
+
+So the set of extents it can render is deliberately narrow: it needs a
+`start_date` and a `precision`, refuses anything carrying a
+`sequence_position` or a `publication_date`, refuses a start that is not
+exactly on the boundary of its stated precision, and refuses month and day
+*ranges* entirely, because the range patterns it would have to parse back
+cannot express a cross-year span.
+
+### `widen(moment, precision)`
+
+**The first instant *after* the unit of `precision` containing `moment`** —
+half-open, deliberately. The alternative, the last representable instant
+inside the unit, forces every comparison to know the resolution of the
+underlying store, and `datetime`'s microseconds, Neo4j's nanoseconds and
+Postgres's microseconds do not agree on what that is.
+
+It lives here rather than in `interval.py` because it is the exact inverse of
+what the parsers do when they floor a partial date, and the two have to stay
+each other's inverse.
+
+### `AmbiguousReferenceDateError`
+
+A `ValueError` subclass carrying the offending `text`. Its message names the
+consequence rather than the rule — that parsing without a reference date would
+make a re-extraction produce a different graph — and says what to pass instead.
+
+## Error types
+
+`exceptions.py`. **`RedstringError` is the base of every error this library
+raises deliberately**, so `except RedstringError` is a complete catch for
+anything the library means to tell you.
+
+`AmbiguousReferenceDateError` is the one exception to that shape: it subclasses
+`ValueError` rather than `RedstringError`, because it is raised by a pure
+parsing function about its own argument.
+
+| Error | Raised when |
+|---|---|
+| `MissingEntityError` | writing a relationship whose endpoint the tenant does not have |
+| `DimensionMismatchError` | a vector's length is not the store's `dimension` |
+| `AliasCycleError` | resolving an entity through its aliases did not terminate |
+| `UnknownDomainError` | no bundled or registered domain schema by that id |
+| `LlmProviderError` | base for the three provider failures below |
+| `EmptyCompletionError` | the model returned no usable content |
+| `RefusedCompletionError` | the model declined, and its safety layer said so |
+| `MalformedCompletionError` | content came back and did not validate against the schema |
+| `EmbeddingProviderError` | an `EmbeddingProvider` could not produce usable vectors |
+| `ConsolidationInvariantError` | base for the merge-log invariants below |
+| `MergeIntoAliasError` | the merge target is itself already an alias |
+| `DoubleMergeError` | an entity in this merge has already been merged elsewhere |
+| `UnknownMergeError` | no merge in effect matches the event id an undo names |
+| `ReplayFailedError` | a projection rejected an event under `project(strict=True)` |
+
+Two groupings are load-bearing rather than tidy. **`RefusedCompletionError`
+must be distinguishable from `EmptyCompletionError`** — a refusal is a
+decision about the content and a retry will produce it again, while an empty
+completion is usually worth retrying — which is why all three are exported
+rather than collapsed into `LlmProviderError`. And **`UnknownMergeError`
+covers both "never happened" and "already undone"**, deliberately: from a
+caller's point of view there is no merge to reverse either way, and
+distinguishing them in the type would invite handling only one.

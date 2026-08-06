@@ -1204,54 +1204,38 @@ delete statement) adds a third statement to every batch upsert, whose write
 cost ADR 0003 measured carefully. Measure the leak before paying for it, and
 correct the ADR either way.
 
-### B65. Two reference pages document a fraction of what they link to
+### B65. `reference/domain-value-types.md` and the outline it was written against
 
-Fixing B63 surfaced this and it is the larger finding. The broken anchors were
-not renamed headings — **most pointed at sections that exist nowhere in the
-docs.** Both pages were written against an outline, and the outline is still
-visible in the links while the content was never filled in.
+**Closed for both pages.** Every section the two module-map tables promise now
+exists, written against the code rather than against the outline -- which the
+original entry warned was three slices stale and wrong at least once.
 
-`reference/domain-value-types.md` covers `Entity`, `Relationship`,
-`SourceDocument`, `Alias` and — **new** — temporal value types
-(`TemporalExtent`, `DatePrecision`, `UncertaintyMarker`) and the vector types
-(`VectorRecord`, `VectorMatch`, `cosine_score`, `has_zero_norm`, the score
-scale and the metadata rule). Still promised by its module-map table and still
-absent: **temporal parsing and the error types**. Everything else the table
-promises is written -- temporal value types, vector types, `normalize_name`,
-blocking keys, similarity, temporal intervals, merge strategies and
-`RelationshipRedirection`.
+Kept, reduced, because the *finding* outlives the work and will recur. The
+broken anchors these pages carried were not renamed headings: most pointed at
+sections that existed nowhere, because both pages were written from an outline
+whose content was never filled in. The links were the only surviving trace of
+it, and repairing them made the gap invisible again -- which is why this
+entry existed at all.
 
-Writing the temporal section produced one wrong claim that only checking
-caught — that a widened one-day extent has coincident endpoints. `widen`
-returns the first instant *after* the unit, half-open on purpose, so it does
-not. **Write these against the code and then run the code**; the section is
-otherwise a plausible paragraph about arithmetic nobody re-derived.
+**Two claims in those dead links were wrong rather than missing**, and that is
+the transferable half:
 
-`reference/domain-schema-yaml.md` **has its relationship-type section now**,
-written against the code: `id` normalization, the description bounds, the two
-endpoint lists and `bidirectional`, plus the cross-field validator and the two
-lookup helpers. Writing it turned up a real defect the page now documents and
-B72 records — the endpoint lists are normalized one way on load and another on
-lookup — which is the argument for writing these against the source rather
-than the outline, in one instance.
+- the anchor for `VectorMatch.score` encoded the mapping as `(1 - cosine) / 2`,
+  a *distance*, where `domain/vector.py` says `(1 + cosine) / 2`. The two
+  differ on every input.
+- writing the temporal section produced a fresh one -- that a widened one-day
+  extent has coincident endpoints. `widen` returns the first instant *after*
+  the unit, half-open on purpose, so it does not.
 
-Its trailing "the per-field detail follows" promise, which pointed at nothing,
-now points back at the table that holds it.
+The first survived because a link nobody can follow is a claim nobody
+re-checks. The second was caught only by running the code while writing the
+paragraph. **Write a reference section against the source, then execute the
+examples**; a plausible paragraph about arithmetic nobody re-derived is how
+both of these got in.
 
-**The dangling links are now repaired, so this is invisible again**, which is
-why it needs an entry rather than a comment. Where a real section covered the
-subject the link was repointed; where nothing did, the sentence was rewritten
-to state the fact rather than promise a section. No content was invented.
-
-One repair is worth knowing about because it was a *wrong* claim rather than a
-missing one: the dead anchor for `VectorMatch.score` encoded the mapping as
-`(1 - cosine) / 2`. `domain/vector.py` says `(1 + cosine) / 2`, and the two
-differ on every input. The prose now states the formula from the source. A
-link nobody can follow is also a claim nobody re-checks.
-
-Picking this up means writing the missing sections against the code, not
-against the old outline — the outline is three slices stale and was wrong at
-least once.
+`mkdocs build --strict` is now the gate for the first kind -- it fails on an
+anchor that resolves nowhere, and it caught two of mine while this was being
+written. Nothing gates the second kind but running the code.
 
 ### B72. `is_valid_source` normalizes differently from the loader that filled the list
 
