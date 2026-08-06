@@ -16,7 +16,13 @@
 
 [cosmic-ray]
 module-path = "src/redstring/domain/temporal_parsing.py"
-timeout = 30.0
+# 120s, not 30. cosmic-ray records a timeout as KILLED and `cr-report` does
+# not distinguish it, so a timeout that is really "the machine was busy"
+# reports as a caught mutant. At 30s against a ~7s baseline, a concurrent test
+# suite was enough to time out 132 of 159 mutants in one session and all 80 in
+# another -- both read as clean runs. `scripts/mutation.py` now refuses a
+# result whose kills are mostly timeouts; this is the other half of that fix.
+timeout = 120.0
 test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit/domain/test_temporal_parsing.py -k 'TestWiden or TestRenderDeclines or TestProperties or TestPrecision'"
 excluded-modules = []
 

@@ -99,6 +99,64 @@ def passed_count(output: str) -> int | None:
     return int(matches[-1]) if matches else None
 
 
+def timeout_verdict(session: Path) -> str | None:
+    """`None` if the run's kills are evidence, else why they are not.
+
+    **cosmic-ray records a timeout as `KILLED`**, and `cr-report` does not
+    distinguish it from a mutant a test actually caught. A run whose workers
+    all timed out therefore reports the same "0 survivors" as a run where
+    every mutant died on an assertion -- which is this repository's least
+    trustworthy result, arrived at by a third route.
+
+    The first two routes are in the baseline check above: a missing extra
+    (slice 7, 426 phantom kills) and a suite that never collected. This is the
+    third, and the baseline cannot see it, because the baseline runs *once*
+    and unloaded while the mutants run hundreds of times against whatever else
+    is on the machine. Measured here: a `widen` session reported 80 killed and
+    0 survivors, and **all 80 were timeouts** -- the config allowed 30s
+    against a command whose baseline is ~7s, and a concurrent test suite was
+    enough to push every worker past it. A `render` session in the same window
+    reported 152 kills of which 132 were timeouts, so its real coverage was 27
+    mutants out of 159.
+
+    So the bar is the same one the baseline uses, one layer out: a *positive
+    count of kills that ran tests*. A timeout is not a wrong answer -- an
+    infinite loop is a real way to catch a mutant -- but a run that is mostly
+    timeouts is measuring the machine's load, and the honest reading of those
+    mutants is unrun.
+    """
+    connection = sqlite3.connect(session)
+    outcomes = connection.execute("SELECT test_outcome, output FROM work_results").fetchall()
+    connection.close()
+    if not outcomes:
+        return "the session recorded no results at all"
+
+    timed_out = sum(1 for _, output in outcomes if (output or "").strip().endswith("timeout"))
+    killed_for_real = sum(
+        1
+        for outcome, output in outcomes
+        if outcome == "KILLED" and not (output or "").strip().endswith("timeout")
+    )
+    if timed_out == 0:
+        return None
+    share = timed_out / len(outcomes)
+    if killed_for_real == 0:
+        return (
+            f"every kill in this session was a timeout ({timed_out} of "
+            f"{len(outcomes)}), so no mutant was caught by a test -- read "
+            f"these as unrun, raise `timeout` in the config, and re-run "
+            f"without a test suite competing for the machine"
+        )
+    if share >= 0.25:
+        return (
+            f"{timed_out} of {len(outcomes)} results were timeouts rather "
+            f"than tests catching a mutant, so only {killed_for_real} kills "
+            f"are evidence -- raise `timeout` in the config and re-run those, "
+            f"and do not quote the survivor percentage as if the rest ran"
+        )
+    return None
+
+
 def baseline_verdict(returncode: int, output: str) -> str | None:
     """`None` if the baseline is trustworthy, else why it is not.
 
@@ -300,7 +358,12 @@ def main() -> int:
         exec_ = ["uv", "run", "cosmic-ray", "exec", config, session]
         if run(exec_, cwd=worktree).returncode != 0:
             return 1
-        return run(["uv", "run", "cr-report", session], cwd=worktree).returncode
+        report = run(["uv", "run", "cr-report", session], cwd=worktree).returncode
+        complaint = timeout_verdict(Path(session))
+        if complaint is not None:
+            print(f"\nTHIS RESULT IS NOT EVIDENCE: {complaint}.", file=sys.stderr)
+            return 1
+        return report
 
     return run(["uv", "run", "mutmut", "run"], cwd=worktree).returncode
 

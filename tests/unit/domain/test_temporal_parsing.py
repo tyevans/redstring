@@ -289,11 +289,28 @@ class TestRanges:
         assert parsed.end_date == utc(2023, 3, 1)
         assert parsed.precision is DatePrecision.MONTH
 
-    def test_a_century_is_a_range(self):
-        parsed = parse_temporal("19th century", reference_date=REF)
+    @pytest.mark.parametrize(
+        ("text", "first", "last"),
+        [
+            ("19th century", 1801, 1900),
+            # The 20th is here for the reason `TestCenturyPortions` gives at
+            # length, and this is the *second* place that reasoning applies:
+            # `century - 1` equals `century ^ 1` for any odd century, so at the
+            # 19th the arithmetic cannot be distinguished from several wrong
+            # spellings of itself. 20 ^ 1 is 21, which breaks it.
+            #
+            # The lesson was written into the portion test and not carried the
+            # three hundred lines up to this one -- one fix, two call sites,
+            # applied to one. CLAUDE.md says to grep for the second instance
+            # before closing; this is what not doing it looks like.
+            ("20th century", 1901, 2000),
+        ],
+    )
+    def test_a_century_is_a_range(self, text, first, last):
+        parsed = parse_temporal(text, reference_date=REF)
         assert parsed is not None
-        assert parsed.start_date == utc(1801, 1, 1)
-        assert parsed.end_date == utc(1900, 1, 1)
+        assert parsed.start_date == utc(first, 1, 1)
+        assert parsed.end_date == utc(last, 1, 1)
 
 
 class TestUnparseable:
@@ -455,17 +472,29 @@ class TestWiden:
         assert widen(moment, precision) == expected
 
     @pytest.mark.parametrize(
-        ("moment", "precision"),
+        ("moment", "precision", "expected"),
         [
-            (utc(2023, 12, 31, 23, 59, 59), DatePrecision.YEAR),
-            (utc(2024, 2, 29), DatePrecision.MONTH),
-            (utc(2023, 12, 31), DatePrecision.DAY),
+            (utc(2023, 12, 31, 23, 59, 59), DatePrecision.YEAR, utc(2024, 1, 1)),
+            (utc(2024, 2, 29), DatePrecision.MONTH, utc(2024, 3, 1)),
+            (utc(2023, 12, 31), DatePrecision.DAY, utc(2024, 1, 1)),
+            (utc(2023, 12, 31, 23), DatePrecision.HOUR, utc(2024, 1, 1)),
+            (utc(2023, 12, 31, 23, 59), DatePrecision.MINUTE, utc(2024, 1, 1)),
         ],
     )
-    def test_widen_crosses_a_boundary_rather_than_overflowing_a_field(self, moment, precision):
+    def test_widen_crosses_a_boundary_rather_than_overflowing_a_field(
+        self, moment, precision, expected
+    ):
         """December + one month is January of the next year, not month 13. A
-        `replace(month=month + 1)` implementation passes every mid-year case."""
-        assert widen(moment, precision) > moment
+        `replace(month=month + 1)` implementation passes every mid-year case.
+
+        The expected instant is written out rather than asserted as
+        `widen(...) > moment`, which is what this used to do. "Strictly
+        forward" is satisfied by every wrong step size -- two months, one year
+        -- so it distinguished the overflow bug from nothing else. The
+        property below still makes the strictly-forward claim, where it
+        belongs; an example should say the answer.
+        """
+        assert widen(moment, precision) == expected
 
     def test_widening_is_idempotent_on_a_floored_moment(self):
         assert widen(utc(2023, 1, 1), DatePrecision.YEAR) == utc(2024, 1, 1)

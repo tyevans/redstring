@@ -351,7 +351,7 @@ env KG_COMPLIANCE_MAX_EXAMPLES=5 ./.venv/bin/pytest -x -q --no-header -p no:rand
 The `-m integration` is required — `addopts` deselects it otherwise, and the
 run then silently mutates code no test executes, which is how B10a happened.
 
-### B54. `temporal_parsing.py`'s mutants: 603 run, 247 still unrun
+### B54. `temporal_parsing.py`'s mutants: 391 verified, 459 not
 
 **Progress, with the mechanism in the tree.** Slice 8 ran the precision logic.
 Four scoped sessions have since run the range and partial-date region, the
@@ -387,8 +387,8 @@ module.
 |---|---|---|---|
 | periods / centuries | 321-362 | 176 | **run** |
 | ranges | 207-273 | 161 | **run** |
-| `render_temporal` | 530-586 | 126 | **run** |
-| `widen` | 587-609 | 113 | 33 run, **80 unrun** |
+| `render_temporal` | 530-586 | 126 | 27 verified, **99 timed out** |
+| `widen` | 587-609 | 113 | 33 timed out, **80 unrun** |
 | `parse_temporal` | 462-529 | 77 | unrun |
 | partial dates | 274-320 | 71 | **run** |
 | unnamed band | 363-388 | 68 | **unrun, and never named** |
@@ -492,6 +492,54 @@ coincident-endpoint case, proved by hand-applying the mutant under
 Note what is *not* testable there: `TemporalExtent` rejects `end < start` at
 construction, so the `<` half of `<=` is unreachable and a coincident case is
 the whole of what an assertion can reach.
+
+**212 of the mutants counted as "run" above were timeouts, and are not.**
+The `render` session recorded 152 kills of which **132 were timeouts**, and
+the `widen` session recorded 80 kills of which **all 80** were. cosmic-ray
+records a timeout as `KILLED` and `cr-report` does not distinguish it, so both
+read as clean runs -- "0 survivors" out of 80 is the shape this file's whole
+mutation section is about, arrived at by a third route the baseline check
+cannot see.
+
+The cause was machine load: these ran alongside several other projects' test
+suites, at a load average of ~100 on 16 cores, and the config allowed 30s per
+mutant. A hand-applied mutant from the timed-out set fails with a `TypeError`
+in the **first second** and still would have timed out, because the rest of
+the command could not finish in 30s under that load -- so the honest reading
+is that most of the 212 were probably killed on the merits and none of them
+can be shown to have been.
+
+**Not re-run, deliberately.** A re-run on the same machine produces another
+set of results nobody can trust, and `timeout` is now 120s against a
+measurement taken under load rather than a clean one. Re-run both regions
+when the machine is quiet, and set the timeout from a measurement taken
+there:
+
+```
+uv run python scripts/mutation.py cosmic-ray \
+    --config cosmic-ray-render.toml --rows 530:599 --session render.sqlite
+uv run python scripts/mutation.py cosmic-ray \
+    --config cosmic-ray-render.toml --rows 600:609 --session widen.sqlite
+```
+
+`scripts/mutation.py` now refuses a session whose kills are mostly timeouts,
+so a repeat announces itself rather than reading as a clean sweep. The two
+sessions above are what proved that guard fires; `periods.sqlite`, run on an
+idle machine, has zero timeouts and is what proved it does not fire on a good
+run.
+
+The 7 render survivors are **not** affected -- they ran the suite and passed,
+which is what a survivor is. The classification and the fix stand; the
+coverage claim does not.
+
+**The century tail (363-369) was never mutated at all, and its test could not
+have killed anything there.** `test_a_century_is_a_range` used one input,
+"19th century" -- the exact case CLAUDE.md's bit-pattern row says cannot
+distinguish that arithmetic, in the same file where `TestCenturyPortions`
+carries twelve lines of comment explaining why. One lesson, two call sites,
+applied to one. A 20th-century case is now in, proved by hand-applying
+`(century - 1)` as `(century ^ 1)`: the 20th fails, the 19th passes. The 68
+mutants there still want a session.
 
 **What to expect from the remaining 247.** Four regions run, four findings,
 all the same shape: arithmetic or a comparison exercised at exactly one value,
