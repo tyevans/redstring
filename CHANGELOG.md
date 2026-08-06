@@ -16,6 +16,23 @@ under **Removed** or **Changed**. See
 
 ### Added
 
+- **`Relationship.source_id` says which document stated an edge.**
+  `SourceId | None`, defaulting to `None`, matching `Entity.source_id`.
+  `map_extraction` fills it from the document being extracted, so extraction
+  output carries it without a caller doing anything. Previously the endpoints
+  had provenance and the edge between them had none, which is backwards for a
+  corpus whose claims are mostly relational.
+
+  `DocumentExtracted` gained the matching rule: an edge naming a *different*
+  document is rejected, an edge naming none is accepted. The asymmetry against
+  the entity rule is deliberate — the field postdates the event, and the
+  validator runs on replay, so rejecting the absent case would make existing
+  logs unreadable.
+
+  There is no `source_text` counterpart. `ExtractedRelationship` has no span
+  field, so a value there could only be paraphrased, and a paraphrase in a
+  field named for a quotation reads as evidence.
+
 - **`project` can scope its read to one tenant.** `project(..., tenant_id=...)`
   forwards `FeedReadOptions(tenant_id=...)` to the feed, which the eventsource
   adapters push into the query. Rebuilding one tenant out of a shared store is

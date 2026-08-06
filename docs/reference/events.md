@@ -595,7 +595,8 @@ an event came from. Nothing normalises it — see
 [`document_stream`](#document_stream-tenant_id-source_id) for the whitespace
 rule that applies when it is hashed — and this field carries whatever was
 hashed. It is also the value every entity's own `source_id` is checked
-against; see the [validator](#validator-_payloads_belong_to_this_document_and_tenant).
+against, and every relationship's when it has one; see the
+[validator](#validator-_payloads_belong_to_this_document_and_tenant).
 
 **`model_version`** — which extraction model produced this payload, and the
 idempotency key. `Document.record_extraction` returns `None` and emits nothing
@@ -654,7 +655,7 @@ compares.
 ### Validator `_payloads_belong_to_this_document_and_tenant`
 
 A `@model_validator(mode="after")` on `DocumentExtracted`. It runs on a fully
-constructed, field-validated event, and enforces **three** rules in a fixed
+constructed, field-validated event, and enforces **four** rules in a fixed
 order, raising on the first one violated:
 
 ```python
@@ -676,9 +677,13 @@ fragment rather than the whole line.
 | 1 | every `Entity` carries the event's `tenant_id` | `entities` |
 | 2 | every `Relationship` carries the event's `tenant_id` | `relationships` |
 | 3 | every `Entity.source_id` equals the event's `source_id` | `entities` |
+| 4 | every `Relationship.source_id` is `None` or equals the event's `source_id` | `relationships` |
 
-There is deliberately **no** rule 4 for relationships and `source_id`:
-`Relationship` carries no `source_id` field, so there is nothing to compare.
+**Rules 3 and 4 are not the same rule.** Rule 3 rejects an absent
+`source_id`; rule 4 accepts one. The asymmetry is about history rather than
+strictness — `Relationship.source_id` was added after this event shipped, and
+this validator runs on **replay**, so every edge in an existing log has none
+and rejecting that would make already-written events unreadable.
 
 #### 1 and 2 — the tenant checks
 
@@ -751,9 +756,31 @@ default of `None`, so an entity is constructible without one — but
 `DocumentExtracted`, `Entity.source_id` is effectively required, and the
 message names `None` among the strays.
 
-Relationships are exempt, as above. So an edge in this event may connect
-entities extracted from a *different* document — see
-[the field notes](#documentextracted) — while an entity may not.
+#### 4 — relationships name it too, or name nothing
+
+```
+relationships must be attributed to the document they were extracted from; found source_id ['<other>', '<other>'] in an event for '<source_id>'
+```
+
+Formatted identically to rule 3 and computed identically but for the `None`
+case:
+
+```python
+foreign = {
+    r.source_id
+    for r in self.relationships
+    if r.source_id is not None and r.source_id != self.source_id
+}
+```
+
+`extraction/mapping.py` fills every edge's `source_id` from the document being
+extracted, so an event this library produces satisfies the stronger rule
+anyway. What the weaker rule buys is that an old event replays.
+
+Note what neither rule constrains: an edge may still connect entities
+extracted from a *different* document — see
+[the field notes](#documentextracted). `source_id` on the edge says which
+document *stated* it, not where its endpoints came from.
 
 #### What the rules do not say
 
@@ -781,7 +808,14 @@ entities extracted from a *different* document — see
   `"entities carries tenants"` / `"relationships carries tenants"` — so the
   field name in the message is pinned, not just the failure.
 - `test_entities_attributed_to_another_document_are_rejected`, matching
-  `"attributed to the document"`.
+  `"attributed to the document"`, and
+  `test_relationships_attributed_to_another_document_are_rejected`, matching
+  `"relationships must be attributed"` — the fragment includes the field name,
+  since the two messages are otherwise identical.
+- `test_a_relationship_with_no_provenance_is_still_a_legal_event`, which is
+  the asymmetry against rule 3 rather than an omission from it. It builds the
+  edge through a factory that does not pass `source_id` at all, so it is the
+  shape a replayed old event produces.
 - `test_the_document_a_carrier_names_is_the_one_it_is_appended_to`, the
   positive case.
 - `test_an_empty_extraction_is_a_legitimate_event`.

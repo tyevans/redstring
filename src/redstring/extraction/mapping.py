@@ -380,6 +380,12 @@ def _map_relationships(
             source_entity_id=start,
             target_entity_id=end,
             relationship_type=stated.relationship_type,
+            # Not part of the id. The endpoints already carry `source_id`
+            # through `entity_id_for`, so two documents stating the same edge
+            # produce different ids anyway -- putting it in the hash as well
+            # would change every existing id to express something already
+            # expressed.
+            source_id=source_id,
             properties=dict(stated.properties),
             confidence=stated.confidence,
         )

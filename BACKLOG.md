@@ -852,43 +852,37 @@ Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
 
-### B76. `Relationship` carries no provenance, and the model is never asked for any
+### B76. A relationship says which document stated it, not which sentence
 
-Reported downstream (research-team), and it is the sharper form of an entry
-this file used to carry as B20 — deleted in the slice 1 scope cut (`7083e71`)
-without being fixed, so the deferral record was lost while the gap stayed.
-Do not re-close it that way.
+**Half closed.** `Relationship.source_id` exists and `map_extraction` fills
+it, so "which document stated this edge" is answerable and the endpoints are
+no longer better provenanced than the edge between them. Reported downstream
+(research-team); it is the sharper form of an entry this file carried as B20,
+deleted in the slice 1 scope cut (`7083e71`) without being fixed. Do not
+re-close this one that way either.
 
-`Entity` has `source_id` and `source_text` (`domain/entity.py:51`).
-`Relationship` has neither (`domain/relationship.py:13`): id, tenant, two
-endpoints, type, properties, confidence. Instructional and procedural claims
-are overwhelmingly *relational*, so the half of the graph carrying the most
-content is the half with no route back to the text that stated it. A
-downstream corpus layer cannot backfill it — the span is known only at
-extraction time.
+**What is left is `source_text`, and it is not the same size of change.**
+`Entity.source_text` exists because `ExtractedEntity` asks the model for it.
+`ExtractedRelationship` (`extraction/schema.py:84`) has four fields and no
+span, so the text is not dropped in mapping — it is never requested. Adding
+it means:
 
-**It is two changes, and only the second is a design question.**
+- a field on the extraction schema, which changes every prompt's output shape
+  and costs tokens on every extraction, for every caller, whether or not they
+  want spans;
+- an accuracy run to answer the question that decides the whole thing —
+  whether the model returns a **quoted** span or a paraphrase. A paraphrase in
+  a field named for a quotation is worse than an empty field: it reads as
+  evidence and is generation. `tests/accuracy/` is where that gets measured,
+  and nothing else can answer it.
 
-- `source_id` is free. `_build_relationships` already takes `source_id`
-  (`extraction/mapping.py:329`) and uses it to derive endpoint ids; it simply
-  is not put on the edge. Adding it is a field with a value already in scope.
-- `source_text` is not free, because **nothing asks the model for it.**
-  `ExtractedRelationship` (`extraction/schema.py:84`) has four fields and no
-  span, so the text is not merely dropped in mapping — it was never
-  requested. Adding a field to the extraction schema changes every prompt's
-  output shape and costs tokens on every extraction, and the accuracy suite
-  is what would say whether the model returns a *quoted span* or a
-  paraphrase. A paraphrased "source_text" is worse than none: it reads as
-  evidence and is generation.
+If it lands, it is optional like every other field reaching the event log, and
+`DocumentExtracted`'s rule 4 shows the shape the compatibility question takes.
 
-Both fields must be optional on `Relationship` for the reason `Entity`'s are:
-they reach the event log, and an event written before the field existed
-replays without it.
-
-The order to do this in is `source_id` first — it is small, it is honest, and
-it answers "which document stated this edge", which is most of what the
-downstream ask needs. Treat the span as a separate decision with an accuracy
-run behind it.
+A cheaper alternative that was **not** taken and should be weighed first: a
+caller who wants the sentence can already store the chunk and index it by
+`source_id`. That gets a paragraph rather than a span, and it costs the
+library nothing.
 
 ### B77. `build_graph` has no progress callback, and bulk ingest is opaque
 

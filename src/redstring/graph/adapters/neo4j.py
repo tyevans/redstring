@@ -786,6 +786,7 @@ def _relationship_row(relationship: Relationship) -> dict[str, Any]:
         "source_entity_id": str(relationship.source_entity_id),
         "target_entity_id": str(relationship.target_entity_id),
         "relationship_type": relationship.relationship_type,
+        "source_id": relationship.source_id,
         "properties_json": json.dumps(relationship.properties),
         "confidence": relationship.confidence,
     }
@@ -798,6 +799,9 @@ def _relationship_from(edge: Edge) -> Relationship:
         source_entity_id=UUID(edge["source_entity_id"]),
         target_entity_id=UUID(edge["target_entity_id"]),
         relationship_type=edge["relationship_type"],
+        # `.get`, not `[]`: Neo4j drops a property written as null, and an
+        # edge written before this field existed has none either.
+        source_id=edge.get("source_id"),
         properties=json.loads(edge["properties_json"]),
         confidence=edge["confidence"],
     )

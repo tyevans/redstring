@@ -109,7 +109,7 @@ SourceId = str
 | `EntityId` | `uuid.UUID` | `Entity.id`, `Relationship.source_entity_id` / `target_entity_id`, `Alias.canonical_entity_id` / `alias_entity_id`, `VectorRecord.entity_id`, `VectorMatch.entity_id` |
 | `RelationshipId` | `uuid.UUID` | `Relationship.id` |
 | `TenantId` | `uuid.UUID` | `Entity.tenant_id`, `Relationship.tenant_id`, `Alias.tenant_id`, `VectorRecord.tenant_id` |
-| `SourceId` | `str` | `SourceDocument.id`, `Entity.source_id` (optional) |
+| `SourceId` | `str` | `SourceDocument.id`, `Entity.source_id` (optional), `Relationship.source_id` (optional) |
 
 There is no `AliasId`: `Alias.id` is annotated as a bare `uuid.UUID`.
 
@@ -603,7 +603,7 @@ property for the same reason: it carries no `TemporalExtent` at all.
 `redstring.domain.relationship` declares one name, `Relationship`, and it is
 exported from `redstring` — see [ADR 0006](../adr/0006-the-public-surface-is-gated.md).
 
-A `Relationship` is a **directed, typed edge between two entities**: seven
+A `Relationship` is a **directed, typed edge between two entities**: eight
 fields, two validators, no derived properties. It is a plain pydantic
 `BaseModel` — not frozen, no `extra="forbid"` — so unknown keyword arguments
 are ignored rather than rejected and fields are assignable after construction,
@@ -642,10 +642,11 @@ store from any of them.
 | `source_entity_id` | `EntityId` | none — required |
 | `target_entity_id` | `EntityId` | none — required |
 | `relationship_type` | `str` | none — required |
+| `source_id` | `SourceId \| None` | `None` |
 | `properties` | `dict[str, Any]` | `{}` |
 | `confidence` | `float` | none — required |
 
-Seven fields, six of them required. `Relationship` is a plain pydantic
+Eight fields, six of them required. `Relationship` is a plain pydantic
 `BaseModel` — not frozen, no `extra="forbid"` — so unknown keyword arguments
 are ignored and fields are assignable after construction, exactly as for
 `Entity`. Validation runs at construction only.
@@ -662,6 +663,15 @@ Notes on the ones whose type does not tell the whole story:
   covers only the two fields whose blankness is lossy. There is also no
   `original_relationship_type` counterpart to `Entity.original_entity_type`:
   what the source called the edge is not preserved separately.
+- **`source_id` says which document stated the edge**, and is optional
+  because it reaches the event log: an event written before the field existed
+  replays without it, so `None` means "not recorded" rather than "no
+  document". `extraction/mapping.py` fills it from the document being
+  extracted. There is deliberately **no `source_text` beside it**, unlike
+  `Entity`: `ExtractedRelationship` has no span field, so the model is never
+  asked for one, and a value here could only be reconstructed or paraphrased.
+  `DocumentExtracted` rejects an edge naming a *different* document, and
+  accepts one naming none — see [Events](events.md).
 - **`properties` defaults to an empty dict** written as a bare mutable
   literal. Pydantic deep-copies a default per instance, so two relationships
   constructed without it do not share a dict. Its values are `Any` and
@@ -679,7 +689,8 @@ than an omission:
   [ADR 0005](../adr/0005-temporal-inference-on-read.md) and
   [How to query a timeline](../how-to/query-a-timeline.md) — so a field here
   would be a second, persisted home for the same information.
-- **No `extraction_method` and no `model`.** Provenance for an edge is
+- **No `extraction_method` and no `model`.** *Which* document stated the edge
+  is on the edge, as `source_id`; *how* it was found and by which model are
   carried by the event that recorded it rather than by the edge; see
   [Events](events.md).
 - **No `blocking_keys`.** Blocking exists to find candidate duplicate
