@@ -2,8 +2,9 @@
 
 **This adapter shipped without ever running its port's contract**, which made
 it the one implementation in this repository whose agreement with its sibling
-was assumed rather than measured. `BACKLOG.md` B41 tracked that; this module
-closes it.
+was assumed rather than measured. This module closes that, and the bug it
+found on its first run is recorded as `.claude/rules/recurring-defects.md`
+(g).
 
 The gap mattered more here than it would elsewhere, because
 `tests/compliance/cache.py` was written *about this adapter*. Its docstring

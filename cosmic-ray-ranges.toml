@@ -1,0 +1,47 @@
+# A **scoped** cosmic-ray session: the range-parsing half of
+# `domain/temporal_parsing.py`.
+#
+#   uv run python scripts/mutation.py cosmic-ray \
+#       --config cosmic-ray-ranges.toml --rows 207:320 --session ranges.sqlite
+#
+# Slice 8 mutated that module's precision logic (57 mutants) and left 793
+# unrun, because against the default `test-command` a mutant costs ~70s: the
+# file carries two hypothesis properties at 300 examples and a `dateparser`
+# import, so 850 x 70s is about seventeen hours (BACKLOG B54).
+#
+# **Split by target, not by patience.** Aimed at the classes that cover range
+# and partial-date parsing, the same file runs in ~14s, and the classes it
+# drops are the ones exercising `render_temporal` and the partial-date
+# hypothesis strategies -- which this region does not reach.
+#
+# `--rows` is what narrows the *mutants* to match; without it the session
+# would run all 850 against a command that only covers some of them, and
+# every mutant outside the region would survive for no reason worth reading.
+# The wrapper reads `test-command` from this file for its baseline, so the
+# narrower command is proved green before anything is mutated.
+#
+# **Where the mutants actually are**, measured rather than assumed, because
+# the split is not the one the module's shape suggests:
+#
+#     ranges (207-273)                 160
+#     partial dates (274-320)          108
+#     periods/centuries (321-362)      207
+#     absolute/natural (389-461)        44
+#     parse_temporal (462-529)          73
+#     render_temporal (530-574)        126
+#     widen (575-599)                  113
+#     uncertainty + stripping (124-206)  3
+#
+# The last line is the surprise and is worth keeping: B54 named the
+# uncertainty patterns first among what was unrun, and they are **three
+# mutants**, because cosmic-ray mutates operators rather than the contents of
+# a regex table. The unrun bulk is period and range parsing.
+
+[cosmic-ray]
+module-path = "src/redstring/domain/temporal_parsing.py"
+timeout = 30.0
+test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit/domain/test_temporal_parsing.py -k 'TestRanges or TestRangesThatAreNotRanges or TestPrecision or TestPartialDatesResolveToTheRightMoment or TestUnparseable'"
+excluded-modules = []
+
+[cosmic-ray.distributor]
+name = "local"

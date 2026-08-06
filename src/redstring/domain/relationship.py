@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, field_validator, model_validator
 
 from redstring.domain.ids import EntityId, RelationshipId, TenantId
+from redstring.domain.json_safety import Passthrough, reject_unstorable_text
 
 
 class Relationship(BaseModel):
@@ -19,6 +20,15 @@ class Relationship(BaseModel):
     relationship_type: str
     properties: dict[str, Any] = {}
     confidence: float
+
+    @field_validator("relationship_type", "properties")
+    @classmethod
+    def _reject_unstorable_in_free_form_text(cls, value: Passthrough) -> Passthrough:
+        """No field reaching the event log may carry text that cannot be
+        stored; see `domain/json_safety.py`. Listed per field for the reason
+        `Entity` gives: the ids and the confidence cannot hold any."""
+        reject_unstorable_text(value, what="relationship field")
+        return value
 
     @field_validator("confidence")
     @classmethod

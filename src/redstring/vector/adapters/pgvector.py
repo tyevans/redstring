@@ -67,7 +67,7 @@ import re
 from typing import TYPE_CHECKING, Any, Self
 
 from redstring.domain.exceptions import DimensionMismatchError
-from redstring.domain.vector import VectorMatch, VectorRecord, is_zero_vector
+from redstring.domain.vector import VectorMatch, VectorRecord, clamp_score, has_zero_norm
 from redstring.ports.vector_store import entity_type_of
 
 if TYPE_CHECKING:
@@ -340,7 +340,10 @@ class PgVectorStore:
                 entity_id=row["entity_id"],
                 # Clamped, because float32 arithmetic can put an identical
                 # pair marginally above 1.0 and `VectorMatch` bounds the field.
-                score=min(1.0, max(0.0, float(row["score"]))),
+                # Shared with `cosine_score` rather than spelled again here:
+                # a private copy is a branch no test can reach through this
+                # method, which is how both copies came to be unenforced.
+                score=clamp_score(float(row["score"])),
                 metadata=json.loads(row["metadata"]),
             )
             for row in rows
@@ -410,7 +413,7 @@ class PgVectorStore:
         """
         if len(vector) != self._dimension:
             raise DimensionMismatchError(expected=self._dimension, actual=len(vector))
-        if is_zero_vector(vector):
+        if has_zero_norm(vector):
             raise ValueError("a zero vector has no direction; cosine is undefined for it")
 
 

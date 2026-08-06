@@ -597,6 +597,43 @@ if you are unsure where a dead run stopped, resume from an *earlier* position
 rather than a later one. Re-delivering events costs time; skipping them costs
 correctness.
 
+## Stopping on the first failure with `strict=True`
+
+Everything above assumes you would rather have most of the log than none of
+it, which is the right trade for a rebuild over a long log: one poison event
+must not deny the projection every event after it.
+
+It is the wrong trade in two places, and they are the two where a silently
+partial rebuild costs most and shows least — **a test**, and **a first
+deployment**. In both, a run that dropped every event still returns a report
+and exits successfully, and `failed` is a number nobody read.
+
+```python
+report = await project(event_store, projections, strict=True)
+# redstring.ReplayFailedError: GraphProjection rejected DocumentExtracted
+# at <Position>: entity ... does not exist in tenant ...
+```
+
+Three things about the error, each deliberate:
+
+- **It carries the failure, not a message about one.** `error.failure` is a
+  `ReplayFailure` with `position`, `event_type` and `projection` on it, so a
+  caller acts on the specific event rather than parsing `str(exc)`. "Replay
+  failed, 1 event rejected" is the same silent-partial-rebuild problem in a
+  louder voice — you still have to go and find out which one.
+- **`projection` is the class *name*, not the object.** A report is something
+  an operator reads or logs, and holding the live projection would make it a
+  handle into the read model.
+- **It stops where it failed.** Events after the poison are not applied, so a
+  strict run is not "the tolerant run plus an exception at the end".
+
+The DLQ entry is written either way — the projection records it before
+re-raising — so a strict run that stops still leaves the same evidence a
+tolerant one would, for the events it reached.
+
+Use it in tests and on a first deployment; leave it off for the operational
+rebuild this page is otherwise about.
+
 ## Bounding the run with `max_events`
 
 `project` reads at most `max_events` events and raises when the feed keeps

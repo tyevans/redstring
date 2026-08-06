@@ -92,6 +92,9 @@ error.
 Run on demand, not on commit — both are slow.
 
 ```
+uv run python scripts/mutation.py mutmut            # preferred: guards the baseline
+uv run python scripts/mutation.py cosmic-ray
+
 uv run mutmut run                                   # config in pyproject.toml
 uv run cosmic-ray init cosmic-ray.toml session.sqlite
 uv run cosmic-ray exec cosmic-ray.toml session.sqlite
@@ -99,7 +102,12 @@ uv run cr-report session.sqlite
 ```
 
 Both are kept because mutmut 3.x will not mutate decorated functions and
-cosmic-ray will.
+cosmic-ray will. `scripts/mutation.py` wraps both: it builds a detached
+worktree under `.mutation/worktree`, syncs it `--all-extras`, runs that tool's
+own configured test command *there*, and **refuses to start unless the result
+is green with a positive pass count**. Use it rather than the raw commands —
+the paragraphs below explain what it is protecting you from, and it has both
+of this file's mutation incidents encoded in one refusal.
 
 ### Never gate on a raw survivor count
 
@@ -144,6 +152,12 @@ same environment and require it green. cosmic-ray runs in a separate worktree
 or clone (its `local` distributor mutates the working tree in place), and a
 worktree is exactly where a missing extra goes unnoticed.
 
+**`scripts/mutation.py` is that check, and it refuses rather than warns.** Note
+what it insists on beyond a zero exit code: a *positive pass count*. "0 failed"
+and "0 collected" are the same exit status, and the incident above is the
+second one — so a wrapper checking only `returncode == 0` would have let slice
+7's run through and read as a control while being none.
+
 Hand-verifying a mutant has its own trap: CPython validates a `.pyc` on
 `(mtime, size)`, so an edit that leaves the file the same size — `1.0` for
 `2.0` — can keep stale bytecode loaded and the mutant never runs. Use
@@ -164,7 +178,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape sixteen times,
+  testing the difference.** This project has hit the same shape eighteen times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -185,6 +199,8 @@ reading the code:
   | an expectation written in terms of the constant under test (`start + INSTANT`) | *any* value of that constant, including one that makes the interval empty |
   | asserting only the *precision* of a parsed date, never where it lands | every wrong arithmetic — "Q3" moving to January, April or August all keep MONTH precision |
   | intervals whose bounds never *coincide* | direction derived from a sort — the shorter of two extents sharing a lower bound sorts first, and its edge is silently dropped |
+  | only the **19th** century, whose base 1800 shares no set bit with 1, 33, 34, 66, 67 or 100 | `+` written as `\|` or `^` — the same number at that base, and eleven mutants unkillable until a case used the 20th |
+  | a *month range* whose endpoints differ | `end < start` widened to `<=` — "1900-1900" becomes unparseable and every other range still works |
 
   The interval row was the campaign's only Critical, and its lesson is
   structural rather than about inputs: **an invariant that holds because of an
@@ -210,7 +226,17 @@ reading the code:
   expect, and assert every claim the function makes rather than the one that
   was convenient.
 
-  **Four of the sixteen rows are identity-vs-equality**, and they are the
+  **The century row is the one to read if you think you know this list.**
+  It is not an interned string or a cached small int — it is a *bit pattern*
+  in the most natural example anyone would pick. `(century - 1) * 100` for the
+  19th century is 1800, and 1800 shares no set bit with any constant in the
+  table beside it, so `base + k`, `base | k` and `base ^ k` are the same
+  number and `century - 1` equals `century ^ 1` for any odd century. A library
+  that reads historical text will reach for the 19th century every time. The
+  lesson generalises past bits: **when a test's example is the one the domain
+  makes obvious, ask what that example is quietly making true.**
+
+  **Four of the eighteen rows are identity-vs-equality**, and they are the
   ones to expect rather than to be surprised by. Three fired because the test
   value sat inside a CPython cache — interned strings, cached small ints, and
   `len()` on a short collection returning that same cached int. Test numeric

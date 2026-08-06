@@ -322,11 +322,20 @@ each spelling matters to a different write in the fold. `upsert_entity` and
 leaves exactly one row holding the later value. `delete_relationship` and
 `remove_alias` return `False` for something already absent rather than raising,
 which is what makes the self-loop delete on the resolution path replayable at
-all. And `upsert_relationships` is **explicitly not atomic** — a
-`MissingEntityError` part-way through leaves earlier elements written — which
-the port can afford only because each element is individually idempotent, so a
-retry converges on the same final state instead of needing a rollback the
-`GraphStore` interface does not offer.
+all. And `upsert_relationships` was **explicitly not atomic** when this was
+written — a `MissingEntityError` part-way through left earlier elements
+written — which the port could afford only because each element is
+individually idempotent, so a retry converges on the same final state instead
+of needing a rollback the `GraphStore` interface does not offer.
+
+That promise has since been **strengthened to all-or-nothing**
+([`0019`](0019-batch-relationship-writes-are-atomic.md)), because the two
+adapters never agreed on it. The argument above is unaffected and slightly
+strengthened: it rests on per-element idempotency making a retry converge
+without a rollback, which is still true, and there is now less to converge
+from. The fold's own partial application — entities written, then the
+relationship call refused — is a property of making two calls and is
+unchanged.
 
 Any "have I seen this event already" bookkeeping added to the projection would
 duplicate a guarantee the port already owes, in the one place it cannot be

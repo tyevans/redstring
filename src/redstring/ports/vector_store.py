@@ -44,13 +44,21 @@ a poor trade. A caller must therefore not rely on a float64 value surviving
 the written one with `==` unless the components were float32-representable to
 begin with.
 
-## Zero vectors are rejected
+## Vectors with a zero norm are rejected
 
 Cosine is undefined at the origin. Backends express that incompatibly --
 pgvector yields NaN, which sorts unpredictably and would make ranking depend
-on the query plan -- so a zero vector raises `ValueError` on the way in and on
+on the query plan -- so such a vector raises `ValueError` on the way in and on
 the way into `search`, rather than being stored and producing a meaningless
 score later.
+
+**The test is the norm, and it is taken in float32**, which is a slightly
+wider rejection than "every component is zero". Since a stored vector is
+float32 (above), a component below about `1e-19` squares to zero there: a
+vector of such components has non-zero components, a non-zero float64 norm,
+and no direction any backend can compute. Rejecting on the components alone
+let the two adapters disagree about exactly that band, which is what
+`domain.vector.has_zero_norm` is for. No real embedding is anywhere near it.
 
 ## Metadata, and what `entity_types` filters on
 
@@ -131,7 +139,7 @@ class VectorStore(Protocol):
         `None` means the empty mapping.
 
         Raises `DimensionMismatchError` if `len(vector) != dimension`, and
-        `ValueError` for a zero vector.
+        `ValueError` for a vector whose float32 norm is zero.
         """
         ...
 
@@ -188,7 +196,7 @@ class VectorStore(Protocol):
         would return different members on different backends.
 
         Raises `DimensionMismatchError` if `len(vector) != dimension`, and
-        `ValueError` for a zero vector.
+        `ValueError` for a vector whose float32 norm is zero.
         """
         ...
 

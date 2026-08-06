@@ -19,18 +19,42 @@ from hypothesis import strategies as st
 
 from redstring.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
 from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.json_safety import reject_unstorable_text
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-from redstring.domain.vector import _reject_nul
 
 if TYPE_CHECKING:
     from uuid import UUID
 
+
+#: Characters a domain type will actually accept.
+#:
+#: `codec="utf-8"` is doing more work than it looks like: `st.characters()`
+#: with no codec **generates unpaired surrogates**, which are legal Python
+#: `str` contents with no UTF-8 encoding at all. Naming the codec is how you
+#: ask hypothesis for text that can leave the process. Passing only
+#: `exclude_characters` -- the obvious way to write "no NUL" -- silently
+#: *widens* the alphabet past `st.text()`'s default and reintroduces them.
+storable_characters = st.characters(codec="utf-8", exclude_characters="\x00")
+
+
+#: Text that a domain type will actually accept.
+#:
+#: `Entity` and `Relationship` refuse a NUL in every free-form field, because
+#: a JSON column cannot hold one (`domain/json_safety.py`), so a bare
+#: `st.text()` here draws values these strategies cannot construct -- rarely,
+#: and therefore as an intermittent failure in whatever property happened to
+#: draw it rather than as a finding about the guard. Excluded in the alphabet
+#: so the constraint is stated once, where the text is generated.
+def text(**kwargs: Any) -> st.SearchStrategy[str]:
+    return st.text(alphabet=storable_characters, **kwargs)
+
+
 # Non-blank: `Entity.name` rejects whitespace-only values.
-names = st.text(min_size=1, max_size=40).filter(lambda s: bool(s.strip()))
+names = text(min_size=1, max_size=40).filter(lambda s: bool(s.strip()))
 entity_types = st.sampled_from(["person", "organization", "place", "concept", "plot_point"])
 relationship_types = st.sampled_from(["knows", "works_at", "located_in", "mentions", "part_of"])
-blocking_key_values = st.text(min_size=1, max_size=12)
+blocking_key_values = text(min_size=1, max_size=12)
 # Provider-qualified and versioned, per the convention on `Entity.model`.
 model_names = st.sampled_from(
     [
@@ -43,15 +67,13 @@ confidences = st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_inf
 
 
 def _property_values(children: st.SearchStrategy[Any]) -> st.SearchStrategy[Any]:
-    return st.lists(children, max_size=3) | st.dictionaries(
-        st.text(max_size=6), children, max_size=3
-    )
+    return st.lists(children, max_size=3) | st.dictionaries(text(max_size=6), children, max_size=3)
 
 
 property_dicts = st.dictionaries(
-    st.text(max_size=6),
+    text(max_size=6),
     st.recursive(
-        st.none() | st.booleans() | st.integers() | st.text(max_size=10),
+        st.none() | st.booleans() | st.integers() | text(max_size=10),
         _property_values,
         max_leaves=6,
     ),
@@ -78,7 +100,7 @@ def temporal_extents(draw: st.DrawFn) -> TemporalExtent:
         end_date=draw(st.none() | st.just(end)),
         precision=draw(st.none() | st.sampled_from(list(DatePrecision))),
         uncertainty=draw(st.none() | st.sampled_from(list(UncertaintyMarker))),
-        original_text=draw(st.none() | st.text(max_size=20)),
+        original_text=draw(st.none() | text(max_size=20)),
         sequence_position=draw(st.none() | st.integers(min_value=0, max_value=1000)),
         publication_date=draw(st.none() | aware_datetimes),
     )
@@ -100,10 +122,10 @@ def entities(
         normalized_name=draw(names),
         entity_type=draw(entity_types),
         original_entity_type=draw(st.none() | names),
-        description=draw(st.none() | st.text(max_size=40)),
-        source_id=draw(st.none() | st.text(min_size=1, max_size=12)),
-        source_text=draw(st.none() | st.text(max_size=40)),
-        external_ids=draw(st.dictionaries(st.text(max_size=6), st.text(max_size=12), max_size=3)),
+        description=draw(st.none() | text(max_size=40)),
+        source_id=draw(st.none() | text(min_size=1, max_size=12)),
+        source_text=draw(st.none() | text(max_size=40)),
+        external_ids=draw(st.dictionaries(text(max_size=6), text(max_size=12), max_size=3)),
         properties=draw(property_dicts),
         extraction_method=method,
         # `Entity` rejects `model` for methods that invoke none; the strategy
@@ -167,12 +189,15 @@ vector_components = st.floats(
     allow_nan=False,
     allow_infinity=False,
     width=32,
-    # Subnormals square to zero, so a vector of them is non-zero by the port's
-    # guard -- which asks whether the components are zero -- and still has a
-    # norm of zero, at which point cosine is undefined for a vector that was
-    # accepted. That gap is real and is filed as BACKLOG B10l; excluding
-    # subnormals here keeps it from arriving as an intermittent failure in an
-    # unrelated property.
+    # Subnormals square to zero, so a vector of them has a zero norm and no
+    # direction. The port now *rejects* those (`domain.vector.has_zero_norm`,
+    # which closed the divergence), which is why this exclusion is still here
+    # and no longer papering over a gap: a drawn subnormal would make an
+    # unrelated property fail on a legitimate `ValueError` from the guard.
+    # The guard's own band is pinned by examples rather than by sampling --
+    # `test_a_vector_whose_norm_underflows_is_rejected_too` in
+    # `vector_store.py` and `TestHasZeroNorm` in
+    # `tests/unit/domain/test_vector.py`.
     allow_subnormal=False,
 )
 
@@ -185,15 +210,16 @@ def vectors(dimension: int) -> st.SearchStrategy[list[float]]:
     property, in every property that draws a vector.
 
     The bound is on the **norm**, not on "some component is non-zero" -- see
-    the comment on `vector_components` and BACKLOG B10l for why those are not
-    the same question.
+    the comment on `vector_components` for why those are not the same
+    question, and `domain.vector.has_zero_norm` for the guard that asks the
+    norm's version of it.
     """
     return st.lists(vector_components, min_size=dimension, max_size=dimension).filter(
         lambda values: sum(value * value for value in values) > 1e-12
     )
 
 
-def _has_no_nul(mapping: dict[str, Any]) -> bool:
+def _is_storable(mapping: dict[str, Any]) -> bool:
     """Whether `VectorRecord` would accept this metadata.
 
     Written against the domain rule rather than restating it, so widening or
@@ -203,7 +229,7 @@ def _has_no_nul(mapping: dict[str, Any]) -> bool:
     its output never finds one.
     """
     try:
-        _reject_nul(mapping)
+        reject_unstorable_text(mapping)
     except ValueError:
         return False
     return True
@@ -257,5 +283,5 @@ def metadata_dicts(draw: st.DrawFn) -> dict[str, Any]:
     metadata = dict(draw(property_dicts))
     if draw(st.booleans()):
         metadata["entity_type"] = draw(_entity_type_values)
-    assume(_has_no_nul(metadata))
+    assume(_is_storable(metadata))
     return metadata

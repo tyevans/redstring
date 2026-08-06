@@ -322,7 +322,14 @@ class TestDuplicatePreference:
 
     @given(
         confidence=st.floats(0.0, 1.0),
-        properties=st.dictionaries(st.text(max_size=4), st.integers(), max_size=3),
+        # NUL excluded: `Relationship` refuses one in `properties`, since no
+        # JSON-backed store can hold it (`domain/json_safety.py`). This
+        # property is about the preference order, not about that guard.
+        properties=st.dictionaries(
+            st.text(alphabet=st.characters(codec="utf-8", exclude_characters="\x00"), max_size=4),
+            st.integers(),
+            max_size=3,
+        ),
     )
     def test_it_is_reflexive_and_deterministic(self, confidence, properties):
         tenant, source, target = uuid4(), uuid4(), uuid4()

@@ -168,17 +168,37 @@ class InMemoryGraphStore:
     # ------------------------------------------------------------------
 
     async def upsert_relationship(self, relationship: Relationship) -> None:
-        known = self._entities.get(relationship.tenant_id, {})
-        for endpoint in (relationship.source_entity_id, relationship.target_entity_id):
-            if endpoint not in known:
-                raise MissingEntityError(entity_id=endpoint, tenant_id=relationship.tenant_id)
-
+        self._require_endpoints(relationship)
         tenant = self._relationships.setdefault(relationship.tenant_id, {})
         tenant[relationship.id] = relationship.model_copy(deep=True)
 
     async def upsert_relationships(self, relationships: Sequence[Relationship]) -> None:
+        """All-or-nothing: every endpoint is checked before anything is written.
+
+        Two passes rather than a loop over `upsert_relationship`, because the
+        port promises the batch is atomic and a loop writes the prefix before
+        it reaches the bad element. The Neo4j adapter has always behaved this
+        way -- it validates every endpoint in one query, since round-tripping
+        per element would be the expensive way to write it -- so this is the
+        cheap adapter catching up with the contract rather than a new cost
+        (BACKLOG B10g).
+
+        There is no rollback here and none is needed: nothing is written until
+        every element is known good, which is the same reason the failure
+        cannot disturb a *previous* batch.
+        """
         for relationship in relationships:
-            await self.upsert_relationship(relationship)
+            self._require_endpoints(relationship)
+        for relationship in relationships:
+            tenant = self._relationships.setdefault(relationship.tenant_id, {})
+            tenant[relationship.id] = relationship.model_copy(deep=True)
+
+    def _require_endpoints(self, relationship: Relationship) -> None:
+        """Raise `MissingEntityError` unless both endpoints exist for the tenant."""
+        known = self._entities.get(relationship.tenant_id, {})
+        for endpoint in (relationship.source_entity_id, relationship.target_entity_id):
+            if endpoint not in known:
+                raise MissingEntityError(entity_id=endpoint, tenant_id=relationship.tenant_id)
 
     async def get_relationships(
         self,

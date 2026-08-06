@@ -30,7 +30,7 @@ dimension in step with the store's — at which point the port is doing very
 little for them.
 
 It was reported by the first downstream project to build on redstring, as the
-gap that mattered most to them (`BACKLOG.md` B66). It was not found by any gate
+gap that mattered most to them. It was not found by any gate
 here, which is itself informative: **nothing tests that a port is reachable.**
 The compliance suites prove each adapter satisfies its contract; no check asks
 whether the pipeline can produce the contract's inputs.

@@ -17,28 +17,42 @@ are cited by name in about twenty-eight files under `src/` and `tests/`, so
 renumbering means editing shipped source for a cosmetic gain that the section
 headings already deliver. Treat a number as a stable handle and nothing more.
 
-**Closed entries are deleted, and tracked code still cites eight of them.**
-`docs/plans/ring-migration.md` indexes B10b, B10d, B26, B33, B34, B40, B55 and B56 —
-what each was and where its reasoning lives now — so those pointers resolve.
+**Closed entries are deleted, and a closed entry's *lesson* is moved rather
+than dropped.** `docs/plans/ring-migration.md` indexes B10b, B10d, B26, B33,
+B34, B40, B55 and B56 — what each was and where its reasoning lives now — so
+those pointers resolve. Later closures whose lesson was a recurring defect are
+in `.claude/rules/recurring-defects.md` under "Local instances", which is
+where a future author will actually meet them; a file about open work is not
+a place anyone reads for them.
+
+**A "— closed" heading is a deferral, not a closure.** Five entries carried
+one, several for two slices, and the effect was a file whose length overstated
+what was outstanding. When you close an entry: move any lesson to its home,
+repoint the citations (the deletions that prompted this rule left six, one of
+which was actively *wrong* — a how-to still telling a reader to build a test
+module that exists), and delete the entry in the same commit.
 
 ## State of the tree
 
-The default gate collects **1761 tests**, plus **197 `integration` tests** —
-against a real Neo4j (slices 4, 7), real pgvector (slice 5), a live
-`qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`), and a built wheel (slice 10).
-The first two need `docker-compose.test.yml`. The integration suite is
-deselected by default (B10a); a run prints what it deselected and how to run
-it. There is **no `accuracy` suite** — see B12.
+The default gate collects **1995 tests**, plus **245 `integration` tests** and
+**4 `accuracy` tests** — against a real Neo4j (slices 4, 7), real pgvector
+(slice 5), a live `qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`), and a built
+wheel (slice 10). The first two need `docker-compose.test.yml`. Both extra
+suites are deselected by default (B10a); a run prints what it deselected and
+how to run it. What the accuracy suite can and cannot tell you is B12.
 
-**The gate is not reliably green.** Slice 11's verification run under the
-gate's own conditions (`-n auto --cov`) gave **1760 passed, 1 failed** — a
-hypothesis deadline flake that passes in isolation. It is **B59**, and it can
-block a commit. Do not read "the suite passes" here as more than "it usually
-passes".
+**The gate is green.** Verified under its own conditions
+(`uv run python scripts/coverage_ratchet.py`, which is `pytest -q -n auto
+--cov`): **1995 passed**, no failures. The hypothesis deadline flake that made
+this paragraph say otherwise was fixed at the class level rather than the
+instance — `tests/conftest.py` now registers a suite-wide `deadline=None`
+profile, and `tests/unit/test_hypothesis_deadline_policy.py` fails if a
+`deadline=` reappears in a `settings()` decorator and makes the profile inert
+for that test.
 
-Coverage is **93.69%** (`.coverage-baseline`); slice 11 re-measured it at
-**94%** on a run with one failure. Do not read that as a quality trend; see
-B14 for why the number moved for reasons that were not test quality.
+Coverage is **94.05%** (`.coverage-baseline`), held exactly by the run above.
+Do not read the movement from 93.69% as a quality trend; see B14 for why the
+number moves for reasons that are not test quality.
 
 **Note that the two compliance suites must be run in separate pytest
 invocations** — see B10m.
@@ -166,86 +180,6 @@ problem is currently worth:
 slice 6, when extraction actually emits." Slice 6 happened and did not take it
 up. It is open on its own merits now, not scheduled.
 
-### B36. Free-form event payload dicts can hold a NUL that `jsonb` refuses
-
-`domain/entity.py` (`properties`, `external_ids`) and
-`domain/relationship.py` (`properties`) are `dict[str, Any]` with no
-validation, and they reach the event log as payloads. Postgres `jsonb`
-**cannot store a NUL character in text** -- it rejects the write outright --
-so an entity carrying one is accepted by every in-memory adapter and refused
-by the first persistent event store it reaches.
-
-This is not hypothetical here: slice 5 hit exactly this on
-`VectorRecord.metadata`, found it with a round-trip property test, and fixed
-it in `domain/vector.py::_reject_nul` rather than in either adapter, so every
-adapter would reject it identically.
-
-Deferred rather than fixed in slice 5b for one reason: `_reject_nul` is
-private to `domain/vector.py`, and sharing it means either a cross-module
-private import or a new home for it, and slice 5b's permanent surface was
-worth keeping minimal. Deferring is safe in a way that deferring a *schema*
-decision is not -- adding the rejection later only refuses data that could
-never have been persisted anyway, so no stored event becomes invalid.
-
-To fix: move `_reject_nul` somewhere both can reach (a `domain/_json.py`, or
-onto `domain/normalization.py`), and apply it in field validators on the three
-fields above. The `VectorRecord` docstring explains why stripping or escaping
-the NUL was rejected in favour of raising.
-
-### B10g. `upsert_relationships` is atomic in Neo4j, where the port permits partial writes
-
-`ports/graph_store.py::upsert_relationships` says a `MissingEntityError`
-part-way through **leaves earlier elements written**.
-`graph/adapters/memory.py` behaves that way.
-`graph/adapters/neo4j.py::upsert_relationships` validates every endpoint in one
-query before writing anything, so on a dangling edge it writes **nothing** --
-strictly stronger than the contract.
-
-Nothing pins either behaviour: the compliance suite asserts that the error is
-raised, never what survived it, so the two adapters differ on an axis no test
-covers. That is exactly the kind of difference that gets depended on by
-accident.
-
-**What a caller may rely on:** that `MissingEntityError` was raised and that
-the batch is not *fully* written. **What a caller may not rely on:** which
-of the earlier elements landed. Code that retries the whole batch after the
-error is correct against both adapters; code that skips the prefix it assumes
-was written is correct against neither.
-
-Resolving it means choosing: pin the weak contract in the compliance suite
-(and accept that Neo4j is gratuitously stronger), or strengthen the port to
-all-or-nothing (and make the in-memory adapter validate up front, which is a
-few lines). The second is the better contract for replay, and it is cheap
-because the adapter that would find it hard already does it.
-
-### B10l. A vector with non-zero components can still have a zero norm
-
-`domain/vector.py::is_zero_vector` asks whether every component is zero.
-`cosine_score` needs the **norm** to be non-zero, and those are not the same
-question: `[1e-200, 1e-200]` has non-zero components and a squared norm that
-underflows to `0.0`, so the port's guard accepts it on `upsert` and `search`
-then raises `ValueError` from a code path documented as unreachable.
-`tests/unit/domain/test_vector.py::test_a_vector_whose_norm_underflows_is_treated_as_zero`
-pins the current behaviour.
-
-The band is far narrower in float32, where pgvector stores: components below
-about `1e-19` square to zero there, and `<=>` against such a row yields NaN,
-which sorts unpredictably and would then fail `VectorMatch`'s `0..1` bound.
-**So the two adapters fail differently on the same input** -- the in-memory one
-raises at search time, pgvector produces a NaN score -- which is the kind of
-divergence the shared suite exists to prevent, and the suite does not catch it
-because `tests/compliance/strategies.py::vector_components` excludes
-subnormals to avoid intermittent failures in unrelated properties.
-
-**Deferred rather than fixed because the fix requires a decision, not a
-check.** Guarding on the norm instead of the components is two lines; deciding
-*what threshold* is another matter, because "an embedding of magnitude 1e-160"
-is not a thing any real model produces and picking a number without a caller
-to serve invents a contract. The honest resolution is probably to reject on
-the float32 norm being zero (which is what any adapter would hit) and say so
-in the port. Nothing depends on this today: real embeddings are unit-norm or
-close to it.
-
 ### B35. `GraphProjection.reset()` raises instead of truncating
 
 `projections/graph.py` and `projections/vector.py` --
@@ -314,79 +248,31 @@ the model says.
 - **It does not settle ADR 0011.** It can show that off-schema extraction got
   worse; it cannot show that constraining to the schema would be better.
 
-### B53. `Entity.temporal` round-trips through Neo4j but no shared test says so
+### B53. `Entity.temporal`'s storage shape is settled with B48, not before
 
-**Rewritten in slice 11; the previous version of this entry was false.** It
-claimed the Neo4j adapter "does not store or index `Entity.temporal`" and that
-every temporal query would answer `[]` in production. Checked against the live
-Neo4j container in slice 11:
+**The missing test is written.** `tests/compliance/graph_store.py` now asserts
+that a fully-populated `TemporalExtent` round-trips field for field, and that
+an entity with no extent comes back with `None` rather than an empty one --
+both by example rather than by sampler, since `entities()` draws a temporal
+only about half the time and `max_examples` is environment-tunable and lowered
+to 5 by mutation runs. Proved able to fail by making the in-memory adapter drop
+the field. Every adapter is now held to it, which was the point of putting it
+in the shared suite.
 
-```
-ROUND TRIPS EXACTLY: True
-temporal query hits: ['Ada']
-```
+The original entry's storage claim was **false** and was corrected in slice 11:
+the Neo4j adapter does encode `temporal` as `temporal_json`, and
+`TemporalQuery.entities_in_interval` returns the entity, including the
+precision-widening case. *That claim survived two slices because it was
+plausible and nobody ran it. It took ninety seconds to check.*
 
-The adapter encodes `temporal` as `temporal_json` alongside `properties` and
-`external_ids`, and `TemporalQuery.entities_in_interval` returns the entity —
-including the precision-widening case, a YEAR-precision `2023` matching a
-June-July 2023 interval, which exercises both the JSON round-trip and
-`domain/interval.py`.
-
-**What is actually missing is the test.** `tests/compliance/graph_store.py`
-contains no assertion about `temporal` at all, so the storage above is correct
-by accident of implementation rather than by contract, and a future adapter can
-drop the field and pass the suite. Close it in the shared suite — a round-trip
-assertion there covers every adapter at once, which is the point of having one.
-
-**The indexing half of the original entry stands.** `temporal` is a JSON blob,
-so it cannot serve an indexed range prefilter, and that interacts with B48:
-flattening `TemporalExtent` into node properties would make B48's prefilter
-possible, while the JSON blob makes it impossible. Do not change the storage
-shape without settling B48 at the same time.
-
-*The lesson is worth more than the entry: this claim survived two slices
-because it was plausible and nobody ran it. It took ninety seconds to check.*
-
-### B41. `RedisCache` compliance — closed, and it found a bug
-
-**Closed.** `tests/integration/llm/test_redis_cache.py` runs
-`CacheCompliance` against a real Redis (`docker-compose.test.yml`, port 6381,
-in CI's integration job). 26 tests; every adapter of every port in this
-repository is now held to its port's contract.
-
-The entry predicted what it would find and was right about one of them.
-`ZADD` member uniqueness: **two hits recorded at the same instant collapsed
-into one**, so `count_hits` under-reported exactly when a burst is what a
-caller is trying to detect.
-
-The interesting part is that the bug was *guarded against*, in a comment
-directly above it:
-
-```python
-# The member must be unique or two hits at the same instant
-# collapse into one, which under-counts exactly when a burst is
-# what the caller is trying to detect.
-pipe.zadd(window, {f"{at!r}:{id(self):x}": at})
-```
-
-The comment is correct and the code under it does not do what the comment
-says. `id(self)` is the *cache object's* address — constant for its whole
-life — so it distinguished two `RedisCache` instances and never two hits,
-which is the only thing it was there for. Across processes it is worse than
-useless: an address can collide outright between two callers sharing one
-Redis.
-
-`MemoryCache` cannot exhibit this at all, because it appends to a list. That
-is the "in-memory reference more forgiving than the real backend" failure the
-compliance directory exists to prevent — demonstrated, at last, by the one
-adapter that had been excused from the suite written about it.
-
-Fixed with `uuid4().hex`. Proved by restoring `id(self)` and watching the
-same test fail.
-
-**B38 is now unblocked.** The `redis<6` cap was justified by absence of
-evidence; there is now a suite that can supply some. Widening it means
-running these 26 tests against a redis 6/7/8 client and reading the result.
+**What remains open is the indexing half, and it is a joint decision with
+B48.** `temporal` is a JSON blob, so it cannot serve an indexed range
+prefilter. Flattening `TemporalExtent` into node properties would make B48's
+prefilter possible; the blob makes it impossible. Do not change the storage
+shape without settling B48 at the same time -- and note that the round-trip
+test above is now what would catch a flattening that loses `precision`, which
+is the field `domain/interval.py` needs and the one a timestamp column would
+silently drop.
 
 ### B10a. The Cypher-executing half of the Neo4j adapter is not in the gate
 
@@ -465,29 +351,112 @@ env KG_COMPLIANCE_MAX_EXAMPLES=5 ./.venv/bin/pytest -x -q --no-header -p no:rand
 The `-m integration` is required — `addopts` deselects it otherwise, and the
 run then silently mutates code no test executes, which is how B10a happened.
 
-### B54. 793 of `temporal_parsing.py`'s 850 mutants were never run
+### B54. `temporal_parsing.py`'s mutants: 444 run, 406 still unrun
 
-Slice 8 ran cosmic-ray over `domain/interval.py` (217, all classified),
-`temporal/inference.py` (95, all classified) and **the precision logic only**
-of `domain/temporal_parsing.py` (57 of 850). The remaining 793 cover the
-uncertainty patterns, the marker stripping, the range and period regexes, the
-ambiguity probe and `render_temporal`.
+**Progress, with the mechanism now in the tree.** Slice 8 ran the precision
+logic (57 of 850). Two scoped sessions have since run the range and
+partial-date region (268 mutants) and the period/century region (176), and
+**each found something**. 406 remain: `parse_temporal` itself,
+`render_temporal`, `widen`, and the absolute/natural strategies.
 
-They were not run because each mutant costs ~70 seconds: it re-runs the whole
-file, which includes two hypothesis properties at 300 examples and a
-`dateparser` import. 850 × 70s is about seventeen hours. The 57 that were run
-found a real defect -- the quarter arithmetic, closed in `44e213d` -- so the
-remainder is likely to be worth the time rather than not.
+**Run one with the wrapper**, which makes this affordable and is why the
+remainder is now a matter of time rather than of design:
 
-**How to make it affordable** rather than just waiting: give the session a
-narrower `test-command`. The round-trip properties are the expensive part and
-they exercise `render_temporal` and the partial-date strategies; a session
-aimed at the uncertainty patterns can run against the marker tests alone in a
-second or two per mutant. Split by target, not by patience.
+```
+uv run python scripts/mutation.py cosmic-ray \
+    --config cosmic-ray-ranges.toml --rows 207:320 --session ranges.sqlite
+```
 
-The mechanism for scoping is worth keeping: cosmic-ray has no line filter, so
-`init` the full session and then `DELETE FROM mutation_specs` / `work_items`
-for the rows whose `start_pos_row` is outside the range of interest.
+`--config` narrows the `test-command` (and the baseline with it, so the
+narrower command is proved green first); `--rows` deletes the mutants outside
+the region, since cosmic-ray has no line filter. Against the default command a
+mutant costs ~70s and the whole module is seventeen hours; scoped, the 268
+took about ninety minutes.
+
+**Where the mutants actually are.** This is the part to read before picking a
+region, because the distribution is not the one the module's sections suggest:
+
+| Region | Lines | Mutants | Status |
+|---|---|---|---|
+| periods / centuries | 321-362 | 176 | **run** |
+| ranges | 207-273 | 160 | **run** |
+| `render_temporal` | 530-574 | 126 | unrun |
+| `widen` | 575-599 | 113 | unrun |
+| partial dates | 274-320 | 108 | **run** |
+| `parse_temporal` | 462-529 | 73 | unrun |
+| absolute / natural | 389-461 | 44 | unrun |
+| uncertainty + stripping | 124-206 | 3 | run |
+
+The last row corrects this entry's own premise: it named the uncertainty
+patterns first among what was unrun, and they are **three mutants**, because
+cosmic-ray mutates operators and that region is a table of compiled regexes.
+A session aimed there would have finished in a minute having proved nothing.
+
+**The run: 268 mutants, 22 survivors, all classified.**
+
+- **16 equivalent by construction** — `_Parsed | None` in two return
+  annotations, rewritten as `+`, `%`, `^`, `**` and so on. PEP 563 makes
+  annotations strings that are never evaluated; unkillable here and anywhere.
+- **1 equivalent** — `name != "September"` as `is not`, over month names that
+  are module-level literals and therefore interned. It is CLAUDE.md's row-one
+  trap sitting in the tree, equivalent only because every operand is a
+  literal, and it would stop being equivalent the moment a spelling arrived
+  from anywhere else.
+- **4 test gaps, now closed** — a year range and a month range with *equal*
+  endpoints (`end < start` widened to `<=` returned `None` and nothing
+  noticed), and a quarter range *starting* at Q3 or Q4. The last is the
+  instructive one: `(first - 1) * 3 + 1` and `(first >> 1) * 3 + 1` agree for
+  Q1 and Q2 and differ for Q3 and Q4, and the existing cases were `Q1-Q2` and
+  `Q2-Q4` — so the range's *end* was covered at Q4 while its *start* was
+  blind, which reading the parameters does not reveal.
+- **1 real defect, fixed** — see below.
+
+**The defect: `_MONTH_NUMBERS` carried a spelling `_MONTH` could not produce.**
+The spelling table has exactly one conditional, whose entire purpose is to add
+"Sept" for September. The `_MONTH` pattern accepted `Sep(?:tember)?` and not
+"Sept", so that entry was **unreachable** — "Sept 2024" fell through every
+pattern to `dateparser`, resolved differently against the two probe dates, and
+raised `AmbiguousReferenceDateError` instead of parsing. Two declarations of
+one fact with nothing failing while they disagreed, and it could only have
+been found this way: mutating the branch changed nothing observable, because
+no input reached it.
+
+Fixed in the pattern rather than by deleting the entry — "Sept" is ordinary
+text and the table's intent was plainly to accept it — with
+`test_every_spelling_the_table_maps_is_one_the_pattern_accepts` as the gate,
+proved red by reverting the pattern.
+
+**The period/century run: 176 mutants, 28 survivors, all classified.**
+
+- **11 equivalent by construction** — the `_Parsed | None` return annotation
+  again.
+- **2 equivalent, and worth understanding rather than pattern-matching** —
+  `base + 1` rewritten as `base | 1` and `base ^ 1`. `base` is
+  `(century - 1) * 100`, always a multiple of 100 and therefore always even,
+  so bit 0 is clear and all three spellings agree for *every* century. Not
+  "equivalent on the inputs we test": equivalent, full stop.
+- **15 test gaps, now closed.** Four on the `century < 1` guard and eleven on
+  the portion arithmetic.
+
+**The century arithmetic could not be tested at the 19th century at all**, and
+that is the finding worth carrying. `(19 - 1) * 100` is 1800, which shares no
+set bit with 1, 33, 34, 66, 67 or 100 — so `base + k`, `base | k` and
+`base ^ k` are *the same number* for every constant in the table. And
+`century - 1` equals `century ^ 1` for any odd century. Every existing case
+used the 19th century, which is the natural example for a library that reads
+historical text, and it made eleven mutants unkillable. The 20th century
+(base 1900) breaks every one of those coincidences.
+
+The guard needed its own boundary: `century < 1` widened to `< 2` rejects
+"early 1st century", and the first version of that test used plain
+"1st century" — which `_CENTURY` matches and which never reaches the guard at
+all, so it passed against the mutant. **A boundary test has to reach the
+branch the boundary is in.**
+
+**What to expect from the remaining 406.** Three regions run, three findings,
+all of the same shape: arithmetic exercised at exactly one value, where a
+wrong implementation happens to agree. `widen` and `render_temporal` are 239
+mutants of precisely that kind.
 
 ### B10i. The `EXPLAIN` tests run against an empty database and do not pin the negative
 
@@ -548,40 +517,6 @@ of exactly the kind above — would not be caught by anything. Add an `EXPLAIN`
 case with `min_score` set before touching it, and make the assertion count
 occurrences of the operator so a rewrite that claims to evaluate it once has
 to prove it.
-
-### B10n. `cosine_score`'s upper clamp is not reachable from float64 input
-
-`domain/vector.py::cosine_score` ends with `min(1.0, max(0.0, ...))`. A
-cosmic-ray mutant changing `min(1.0, …)` to `min(2.0, …)` **survived**, and the
-survivor is understood rather than equivalent: the clamp is genuinely
-unenforced by any test.
-
-Searched, not assumed: over roughly 2 × 10^6 random vectors (dimensions 2–768,
-magnitudes to 10^6) the unclamped value never exceeded 1.0. The reason is that
-the overshoot is about one ulp of the *ratio* `dot / magnitude`, and the
-`(1 + ratio) / 2` that follows halves it into the ulp below 1.0, where it
-rounds away. Slice 0's `cosine_similarity` did exceed its bound because it
-returned the raw ratio with no such halving.
-
-**`PgVectorStore.search`'s clamp is in the same position, and was measured
-too.** Over 4000 random 8-dimension vectors, each queried against itself and
-against its negation, `1 - (embedding <=> $1) / 2` returned exactly `0.0` and
-exactly `1.0` at the extremes and never stepped outside — pgvector clamps
-`<=>` internally. So both of its mutants survive for the same reason, and the
-clamp is dead code against **pgvector 0.8.5 specifically**.
-
-Both clamps are kept, and this is the argument to preserve. The guarantee is
-needed at precisions and backends this repo does not yet have: any store that
-reports a raw cosine, or computes the mapping itself without clamping, hands
-`VectorMatch` a value its `le=1` bound rejects outright — turning a one-ulp
-rounding artefact into a hard `ValidationError` for the caller. A Qdrant
-adapter is the next candidate.
-
-Resolving this means either constructing an input that reaches a clamp — which
-may not exist in float64 or in pgvector, in which case the honest answer is a
-comment recording the measurement — or moving the clamp into a single shared
-helper both call, so one test covers both. Do **not** resolve it by deleting a
-clamp.
 
 ---
 
@@ -817,77 +752,6 @@ import and have each subclass select it — or give the suite a class-level hook
 Either is a change to slice 3's suite, which is why slice 4 did not make it
 unilaterally.
 
-### B59. A hypothesis property in `temporal/` exceeds its deadline under the gate's own conditions
-
-**Found in slice 11, in the run that verified this file's test count.**
-
-```
-FAILED tests/unit/temporal/test_inference.py::TestTheInvariantIsStructural::
-       test_the_default_set_loses_no_pair_that_relate_calls_related
-  - DeadlineExceeded('Test took 285.03ms, which exceeds the deadline of 200.00ms')
-```
-
-1 failed, 1760 passed. **The gate is not reliably green**, and this is a
-commit-blocking flake rather than a theoretical one: `scripts/coverage_ratchet.py`
-runs `pytest -q -n auto --cov`, which is precisely the condition that produced
-it — sixteen xdist workers competing while a coverage tracer is attached.
-
-Measured, not assumed: the class passes in isolation three runs out of three,
-around 10.6s each. The property draws two lists of up to five integers and runs
-`infer_relations` at `max_examples=300`, so it is doing real interval
-arithmetic 300 times per example set with a tracer on every line.
-
-**This is the third occurrence of the shape B50 describes, and B50 predicted
-it almost exactly** — "the third occurrence will be in a file whose author has
-no idea `dateparser` is involved." The prediction was right about the file and
-possibly wrong about the cause: nothing in this test path goes through
-`map_extraction`, so `dateparser` is probably innocent here and the cause is
-simply instrumented arithmetic under contention. Both produce the same
-symptom, which is the point — **the 200ms default deadline is not survivable
-under this gate's own parallelism for any property that does non-trivial work
-per example.**
-
-**Deliberately not fixed here**, for B51's reason: a green-run-dependent edit
-made under time pressure is how one flake becomes two. And the fix is a
-judgement, not a keystroke. Three options, and the reflex is the worst one:
-
-- `deadline=None`, which is what the previous nine sites did (B50). It works,
-  it takes ten seconds, and it is why this keeps recurring — each drop makes
-  the next one easier and removes the only signal that would notice a genuine
-  performance regression in `infer_relations`.
-- **Lower `max_examples` for this property.** 300 is a lot for a search space
-  of two five-element integer lists, and the per-example cost is what exceeds
-  the deadline, not the example count. This is probably the right answer.
-- **Set a project-wide hypothesis profile with a realistic deadline**, selected
-  by the gate. This is the only option that fixes the class rather than the
-  instance, and it is the one to take if a fourth site appears. Note that it
-  interacts with B10h: an explicit `settings()` outranks a profile, so the nine
-  existing `deadline=None` sites would keep their behaviour and the profile
-  would only govern everything else.
-
-Whichever is chosen, **do not verify it by running the file alone.** It passes
-alone. Verify under `-n auto --cov` over the whole suite, several times.
-
-### B51. `test_delay_between_retries` asserts on wall-clock time under xdist
-
-`tests/unit/llm/test_retry.py::TestRetryTiming::test_delay_between_retries`
-asserts `0.15 <= second_delay <= 0.25` for a 0.2s backoff. It failed once
-during slice 8 with `second_delay == 0.298` -- not a regression in the retry
-policy, which slept the amount it was asked to, but `pytest-xdist` scheduling
-the coroutine's resumption late on a loaded machine.
-
-An upper bound on how long `asyncio.sleep` takes to return is not a property of
-this code and cannot be made one; the machine can always be busier. What the
-test is really for is that the delay *grows*, so the fix is to assert the shape
-(`second_delay > first_delay`, and each at least its nominal value) and drop
-the ceilings. Left alone in slice 8 because that slice touched nothing in
-`llm/` and a green-run-dependent edit is how a flake becomes two flakes. There
-is no such excuse now; this is a small, safe fix waiting for someone.
-
-Note the failure mode this has in common with B45: a timing assertion that
-fails intermittently in CI reads as infrastructure trouble and gets retried
-rather than investigated.
-
 ### B10j. `_schema_ready` is module-level mutable test state
 
 `tests/integration/graph/test_neo4j_store.py`. **Harmless today and
@@ -901,56 +765,6 @@ module-level mutable state in a test file, correct until collection order or
 process reuse changes underneath it. If B10f is resolved by giving each worker
 its own database, revisit this at the same time — that is the change that
 would make the cached flag mean something different per worker.
-
-### B45. No wrapper enforces a green baseline before a mutation run
-
-**The rule is written down; the enforcement is not.** CLAUDE.md's "A
-zero-survivor run is the result most in need of suspicion" carries the
-reasoning and the habit -- run the configured `test-command` unmutated in the
-same environment and require it green before reading any result. What is left
-here is only the automation.
-
-The incident, kept because it is the argument for automating it: slice 7's
-first cosmic-ray run reported **0 survivors out of 426**, and a planner-only
-run before it reported 0 out of 45. Both were worthless -- the worktree had
-been synced with `uv sync --extra dev`, `jellyfish` was absent, and every
-mutant "died" on a collection error. `cr-report` showed `WorkerOutcome.NORMAL,
-TestOutcome.KILLED` for all 426, which is exactly what a perfect suite looks
-like. The real run, once the environment was fixed, had 136 survivors from 28
-source lines, four of them genuine defects.
-
-**It happened again in slice 9, from a different direction, which is why the
-wrapper should not be scoped to mutation runs alone.** Running
-`uv remove sqlalchemy psycopg2-binary pgvector` re-resolved the environment to
-`--extra dev` only, silently uninstalling the `eventsourcing`, `neo4j` and
-`llm` extras. The next `mypy` reported **47 errors in 11 files**, all of the
-form `Cannot find implementation or library stub for module named
-"eventsource.ports.store"` -- in modules the commit had not touched. Nothing
-was wrong with the code; a full sync fixed all 47.
-
-That is slice 7's incident with the sign flipped: there, a missing extra made
-a mutation run report a perfect score, and here it made a clean tree report 47
-errors. Both are the environment lying about the code, and neither is
-detectable from the output. Note the trap specific to this one: **`uv add` and
-`uv remove` re-sync**, so any dependency change can silently narrow the
-installed extras.
-
-**The documentation half of this is closed.** Both `CLAUDE.md` and the README
-now say `uv sync --all-extras`, and `eventsource-py` became a core dependency
-in slice 10, so the narrowest failure mode is gone. What remains is only the
-wrapper.
-
-A habit that has already been forgotten once is a habit, not a control.
-Wanted: a `scripts/mutation.py` that does the baseline, the init, the exec and
-the report, and **refuses to start if the baseline is red**. Two things to
-decide first, which is why it is not done:
-
-- Whether mutmut gets the same wrapper. Both tools are kept deliberately (see
-  CLAUDE.md), and two half-wrappers would be worse than none.
-- Where the baseline runs. cosmic-ray's `local` distributor mutates the
-  working tree, so the run belongs in a worktree or clone -- and a worktree is
-  exactly where a missing extra goes unnoticed, so the baseline must run
-  *there*, not in the main tree where it would pass.
 
 ### B37. Hand-applied mutants can be masked by a stale `__pycache__`
 
@@ -1111,7 +925,8 @@ verified resolvable in slice 11**:
   Caching a query result is the caller's policy — it depends on the caller's
   read/write ratio and staleness tolerance, neither of which this library can
   know. Note that its 512-line test file was ~90% `unittest.mock` against a
-  fake Redis, which is the shape B41 already records as worthless.
+  fake Redis, which is the shape `recurring-defects.md` (g) records as
+  worthless.
 
 ### B49. The temporal parser dropped confidence, parse method and named eras
 
@@ -1237,11 +1052,19 @@ declares its layered contract in `pyproject.toml`, enforced by
 rules file would be defect shape §2 — a redundant declaration site with
 undocumented precedence — in the file that warns against it.
 
-Revisit when `docs/plans/ring-migration.md` lands: at that point there will
-be per-ring guidance ("what belongs in `domain/`", "why this import is
-forbidden") that the contract expresses only as a graph and that `CLAUDE.md`
-should not grow to hold. The rule to write then is redstring's own, derived
-from its rings — not a port of eventsource's.
+**The trigger has fired and this is now actionable.**
+`docs/plans/ring-migration.md` landed and the migration it describes is
+finished, so the per-ring guidance the entry was waiting for — "what belongs
+in `domain/`", "why *this* import is forbidden" — is knowable rather than
+speculative. The contract in `pyproject.toml` expresses it only as a graph,
+and `CLAUDE.md`'s layer section is already the longest thing in that file.
+
+The rule to write is redstring's own, derived from its rings, not a port of
+eventsource's. Its content is the reasoning `pyproject.toml` carries inline
+about *why each sibling is a sibling* — `llm` beside `extraction` so
+extraction can reach only the port, `consolidation` and `temporal` beside it
+so neither can reach `mapping.py` — which is currently readable only by
+someone who thinks to open a config file.
 
 ### B28. Three property-merge strategies deferred
 
@@ -1323,113 +1146,14 @@ merging in `consolidation/`, timelines in `temporal/`.
 | `Cache` | `MemoryCache`, default gate | Redis, `-m integration` (slice 11) |
 | `LlmProvider` | `FakeLlmProvider`, default gate | live model, `-m integration` (slice 6) |
 
-Every port now has both tiers; the `Cache` row was the last gap and B41 closed
-it in slice 11. What remains is structural — about *how* the integration suites
+Every port now has both tiers; the `Cache` row was the last gap, closed in
+slice 11 by running `CacheCompliance` against a real Redis -- which promptly
+found a bug (`recurring-defects.md` (g)). What remains is structural — about *how* the integration suites
 run rather than whether they exist: B10a, B10f, B10m.
 
 ---
 
 ## 6. Tooling, packaging and hygiene
-
-### B60. Packaging metadata beyond the licence — closed
-
-**Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
-Changelog), `keywords`, `maintainers`, and eleven trove `classifiers`
-including `Typing :: Typed` and `Development Status :: 4 - Beta`. The licence
-half was already done and is verified in the built artifact rather than the
-config: the wheel carries `License-Expression: MIT` and ships the file at
-`dist-info/licenses/LICENSE`.
-
-`Typing :: Typed` was a **false claim when it was written**, which is why it
-came with `src/redstring/py.typed` and a test. PEP 561 says a type checker
-ignores a dependency's annotations entirely unless the installed package
-carries that marker, so `mypy --strict` over the whole package bought
-downstream callers nothing: `redstring` resolved as `Any` for all of them.
-Nothing in this repo could notice, because every test imports from `src/`
-where annotations are read directly. `tests/integration/test_wheel_contents.py`
-now asserts the marker is present in an installed wheel, and was proved red
-by removing it.
-
-B61's dependency narrowing is done too, and it was the item genuinely
-cheaper before a release than after: `dependencies` is published metadata for
-0.1.0, and narrowing it in 0.2 would break anyone who had installed under the
-wider set. Every backend is behind an extra now. A CHANGELOG is B22, also
-closed.
-
-### B38. The `redis` pin and `eventsource-py[all]` — closed
-
-**Closed by measurement, in the order B41 set up.** The `redis` extra is
-`>=5.3,<9`, and the cap moved because four client majors were run against
-`CacheCompliance` on a real Redis rather than argued about:
-
-| Client | Result |
-|---|---|
-| 5.3.1 | 26 passed |
-| 6.4.0 | 26 passed |
-| 7.4.1 | 26 passed |
-| 8.1.0 | 26 passed |
-
-Including `test_a_value_comes_back_as_str_not_bytes`, which is the assertion
-this adapter could most plausibly have failed across a major and the reason
-the suite exists.
-
-The conflict this entry was originally about is gone with it.
-`eventsource-py[all]>=0.9.1` requires `redis>=8.0,<9.0`, which `<6` excluded
-outright; the two now resolve together, verified by locking a throwaway
-project that depends on both rather than by reading the ranges.
-
-Two things that did **not** change, and should not be assumed to have:
-
-- **The `eventsource-py<0.11` cap stays.** It is about that library being
-  pre-1.0 with an API that changed wholesale between 0.5 and 0.9, and has
-  nothing to do with redis.
-- **There is still no `eventsourcing` extra**, because there is nothing to
-  put in one: the event store, bus, projections and aggregates are all in
-  eventsource's base package. That only changes if a Kafka, RabbitMQ or
-  PostgreSQL event-store backend is wanted here, each of which lives behind
-  an extra of its own.
-
-### B22. There is no CHANGELOG, and no published documentation — closed
-
-**Both exist.** `CHANGELOG.md` in Keep a Changelog format with a `0.1.0`
-section, and a mkdocs-material site at <https://tyevans.github.io/redstring>
-deployed from `main`.
-
-The entry below is kept for one paragraph of its reasoning, which turned out
-to be wrong in an instructive way. It argued against a doc site on the
-grounds that "right now every reader is also a contributor", and that a
-second audience was what would justify one. That was a fair reading of the
-audience and a wrong reading of what a site is *for*: `mkdocs build --strict`
-found 43 inbound ADR links pointing at files that had not existed for
-slices, 71 in-page anchors that resolved nowhere, and 35 links out of `docs/`
-that could not work in both a checkout and a site. Every one of those was
-already broken for the contributor-readers the entry had in mind.
-
-**The site's first value was as a gate, not as a publication.** Prose is the
-last thing in this repository with no failing test, and that — not a second
-audience — is the argument that should have carried it.
-
-### B22 (original entry). There is no CHANGELOG, and no published documentation
-
-**Rewritten in slice 11.** The previous version said "no `docs/` beyond
-`docs/plans/` and an empty `docs/adrs/`, no ADRs, no mkdocs, no CHANGELOG" and
-claimed the ring migration would create "ADR 0001 and a CHANGELOG with the
-breaking-path entries". The ADRs exist — there are six, plus
-`docs/plans/ring-migration.md`, `docs/history/` and `docs/examples/`. **The CHANGELOG
-was never written**, and that half of the claim was simply false for ten
-slices.
-
-What is actually missing:
-
-- **A CHANGELOG.** This matters more than it did, because `0.1.0` is
-  unreleased and the whole migration is one breaking change from whatever
-  callers existed. Keep-a-Changelog format; the first entry writes itself from
-  `docs/plans/ring-migration.md`'s deletion table.
-- **Published docs.** No mkdocs, no rendered API reference. The README plus the
-  `__init__` docstring plus `docs/examples/build_a_graph.py` is the whole user-
-  facing surface, and for a library this size that may be the right amount —
-  do not add a doc site reflexively. What would justify one is a second
-  audience: right now every reader is also a contributor.
 
 ### B18. `UP042` is ignored project-wide
 
@@ -1467,24 +1191,15 @@ fixes are both wrong:
   `Any`.
 
 The real fix is upstream: `properties` and `external_ids` have no value schema
-at all (see B36 for the concrete harm that causes). Give them one and this rule
-stops firing on its own. Until then, `noqa` with this note beats a lie in the
+at all. They are no longer entirely unconstrained -- `domain/json_safety.py`
+refuses a NUL anywhere inside them, because a JSON column cannot hold one --
+but that is one rule about text, not a schema, and `Any` is still what the
+annotation says. Give them a value schema and this rule stops firing on its
+own. Until then, `noqa` with this note beats a lie in the
 signature, and **it must not become a per-file ignore**: both legacy exemption
 lists emptied in slice 10 and mypy's `exclude` key was deleted outright, so
 there is no list left to be added to — which makes adding one back a visible
 decision rather than an edit.
-
-### B23. `.claude/skills/migrating-modules-to-rings/sweep.sh` is not portable
-
-Hardcodes `eventsource` as the root package and allowlists
-`docs/superpowers/`, which does not exist here (verified in slice 11). It was
-never run during this migration — the sweeps were done by hand — so it is
-untested against this repo as well as unparameterised.
-
-Parameterise for `redstring` before relying on it, or delete it. Note that
-`docs/history/` and `docs/adr/` are now the paths that legitimately hold stale
-references to deleted packages, and any sweep must exclude them or it will
-report the migration's own record as a defect.
 
 ### B27. `child_of` normalization — the code this described no longer exists
 
@@ -1533,84 +1248,86 @@ delete statement) adds a third statement to every batch upsert, whose write
 cost ADR 0003 measured carefully. Measure the leak before paying for it, and
 correct the ADR either way.
 
-### B65. Two reference pages document a fraction of what they link to
+### B65. `reference/domain-value-types.md` and the outline it was written against
 
-Fixing B63 surfaced this and it is the larger finding. The broken anchors were
-not renamed headings — **most pointed at sections that exist nowhere in the
-docs.** Both pages were written against an outline, and the outline is still
-visible in the links while the content was never filled in.
+**Closed for both pages.** Every section the two module-map tables promise now
+exists, written against the code rather than against the outline -- which the
+original entry warned was three slices stale and wrong at least once.
 
-`reference/domain-value-types.md` has 22 headings and covers `Entity`,
-`Relationship`, `SourceDocument` and `Alias`. It linked to, and does not
-contain, sections on: temporal value types, temporal intervals,
-`SimilarityFeatures`, `VectorMatch.score`, `normalize_name`,
-`blocking_keys_for`, `RelationshipRedirection`, `AliasCycleError`,
-`AmbiguousReferenceDateError`, and a "what is public" summary. Its own module
-map table lists `temporal.py`, `temporal_parsing.py`, `interval.py` and
-`merge_strategy.py` as things the page covers.
+Kept, reduced, because the *finding* outlives the work and will recur. The
+broken anchors these pages carried were not renamed headings: most pointed at
+sections that existed nowhere, because both pages were written from an outline
+whose content was never filled in. The links were the only surviving trace of
+it, and repairing them made the gap invisible again -- which is why this
+entry existed at all.
 
-`reference/domain-schema-yaml.md` documents top-level, entity-type and
-property fields, and stops. There is no relationship-type field section, and
-`RelationshipTypeSchema`'s per-element rules — `id` normalization, the
-description bounds, the two endpoint lists, `bidirectional` — are named in
-prose as "documented under" a section that does not exist.
+**Two claims in those dead links were wrong rather than missing**, and that is
+the transferable half:
 
-**The dangling links are now repaired, so this is invisible again**, which is
-why it needs an entry rather than a comment. Where a real section covered the
-subject the link was repointed; where nothing did, the sentence was rewritten
-to state the fact rather than promise a section. No content was invented.
+- the anchor for `VectorMatch.score` encoded the mapping as `(1 - cosine) / 2`,
+  a *distance*, where `domain/vector.py` says `(1 + cosine) / 2`. The two
+  differ on every input.
+- writing the temporal section produced a fresh one -- that a widened one-day
+  extent has coincident endpoints. `widen` returns the first instant *after*
+  the unit, half-open on purpose, so it does not.
 
-One repair is worth knowing about because it was a *wrong* claim rather than a
-missing one: the dead anchor for `VectorMatch.score` encoded the mapping as
-`(1 - cosine) / 2`. `domain/vector.py` says `(1 + cosine) / 2`, and the two
-differ on every input. The prose now states the formula from the source. A
-link nobody can follow is also a claim nobody re-checks.
+The first survived because a link nobody can follow is a claim nobody
+re-checks. The second was caught only by running the code while writing the
+paragraph. **Write a reference section against the source, then execute the
+examples**; a plausible paragraph about arithmetic nobody re-derived is how
+both of these got in.
 
-Picking this up means writing the missing sections against the code, not
-against the old outline — the outline is three slices stale and was wrong at
-least once.
+**Both halves now have a gate, and the second one is new.**
+`mkdocs build --strict` fails on an anchor that resolves nowhere, and caught
+two of mine while this was being written.
+`tests/unit/test_reference_map_tables_are_honest.py` fails when the map table
+names a section the page does not have, or when the two orders disagree --
+which is the check whose absence let fourteen rows stand over five sections
+for several slices. Proved by adding a row for a section that does not exist
+and watching it fail.
 
-### B66. `EmbeddingProvider` — built, and what it deliberately does not do
+Nothing gates the *wrong claim* except running the code while you write the
+paragraph, which is the habit to keep.
 
-**Closed.** `ports/embedding_provider.py`, two adapters, a compliance suite,
-and `build_graph` wiring that populates a `VectorStore`. See
-`docs/adr/0017-the-embedding-provider-port.md` for the decisions.
+### B75. `is_valid_source` normalizes differently from the loader that filled the list
 
-Two things the work turned up that the entry did not predict.
+`extraction/domains/models.py`. `RelationshipTypeSchema.normalize_type_lists`
+stores `valid_source_types` / `valid_target_types` lowercased, stripped, with
+spaces and hyphens turned into underscores. `is_valid_source` and
+`is_valid_target` normalize the argument with **`.lower().strip()` only**, so
+the string that was written in the YAML does not match itself:
 
-**`VectorProjection` and `Document.record_embeddings` already existed and
-neither had a caller.** The event, the aggregate command and the projection
-were all written when `EntitiesEmbedded` was designed, and nothing ever emitted
-one — `recurring-defects.md` §3 sitting in the tree for six slices while the
-port it served looked complete. The wiring is therefore mostly *calling* code
-that was already there, which is why it is small.
+```python
+schema = RelationshipTypeSchema(
+    id="loves", description="...", valid_source_types=["Main Character"]
+)
+schema.valid_source_types  # ['main_character']
+schema.is_valid_source("Main Character")  # False
+schema.is_valid_source("main_character")  # True
+```
 
-**A test asserted the wrong thing and failed, correctly.** `build_graph`
-constructs a fresh `Document` per call, so `record_embeddings`' repeat
-suppression is unreachable through it: re-running embeds again and reports the
-full count. The first draft of `GraphBuildReport.embedded`'s docstring claimed
-the opposite. Both are corrected, and the dead branch in `_embed_entities` is
-named as dead rather than left to be rediscovered.
+Recurring-defect §2 exactly: one fact -- "how an entity type id is spelled" --
+with two normalizers and nothing that fails when they disagree.
 
-What is **not** built, and is the obvious next work:
+**Who is actually hurt.** Entity type *ids* are normalized on load, so a
+caller passing an `EntityTypeSchema.id` is fine, and that is what the bundled
+schemas and every test do. The caller who is not fine is one passing an
+`Entity.entity_type`, which is free-form text straight from the model where
+"Main Character" is an ordinary answer -- and `DomainSchema.validate_relationship`
+is a public helper that invites exactly that.
 
-- **No chunk-level or document-level embedding.** Entity *names* are embedded,
-  whole. Retrieval over document text is a different feature over the same
-  port.
-- **Vectors go stale on merge.** A consolidated entity keeps the vector of its
-  pre-merge name until something re-embeds it. Related to B67 and not solved by
-  either.
-- ~~No integration test against a live embeddings endpoint.~~ **Done, and it
-  immediately earned its keep.** `tests/integration/llm/test_live_embeddings.py`
-  runs the whole compliance body against a real server. Its first run failed
-  two clauses -- not because the adapter was wrong, but because the *contract*
-  was: it asserted `==` for determinism and for positional order, which passed
-  against a hash and a stub and which no real backend can satisfy. Batch
-  composition changes floating-point accumulation by up to `4e-3` per
-  component. Ordering was fine (cosine 0.9996 matched against 0.27 mismatched);
-  the equality was not. Fixed by comparing with cosine above a stated threshold
-  plus a check that mismatched pairs fall below it -- tolerance alone is not a
-  test, because every vector is somewhat similar to every other.
+**Not fixed on the spot because it is a behaviour change on a public helper,
+not a typo.** Sharing one normalizer makes calls that return `False` today
+start returning `True`, which is the intended answer but is still a change a
+caller could be relying on. The fix is to lift the loader's transform into a
+named function in the same module and call it from both -- there is no case
+for two -- and to add the test that would have caught it: assert
+`is_valid_source(x)` for the *same string* `x` that was passed to the
+constructor, which no current test does.
+
+Found while writing the relationship-type section of
+`reference/domain-schema-yaml.md` (B65), and documented there as observable
+behaviour rather than left for the next reader to trip over.
 
 ### B67. No way to find entities that were never consolidated
 
@@ -1673,23 +1390,6 @@ The practical bound today is that a failure only lands here after the
 projection base class has already retried it and written it to the DLQ, so a
 run failing at that volume is slow long before it is large.
 
-### B74. The ADR list in `.claude/rules/definition-of-done.md` stops at 0014
-
-That file's "ADRs a spec has to be run against" table ends at
-`0014-exemption-lists-are-empty-and-must-stay-falsifiable.md`, and
-`docs/adr/` now holds `0018`. `0015` (consolidation's composed entry point),
-`0016` (`GraphStore` as five capabilities), `0017` (the `EmbeddingProvider`
-port) and `0018` (replay failures and scoped reads) are absent, and the same
-file's item 5 tells the next author to number "against the highest already on
-`main`" while its own prose says 0014 is that.
-
-Not fixed here because the table is *prose about which decisions are settled*
-and each new row is a sentence someone has to write with the ADR in front of
-them — doing four at once, for ADRs written by other slices, is how a summary
-row ends up subtly wrong about what an ADR decided. This is
-`recurring-defects.md` §5 in the file that carries §5, which is the argument
-for fixing it soon rather than the argument for fixing it hastily.
-
 ### B70. `eventsource-py` floor was too low, and the library was published with it
 
 **Fixed, and recorded here because the shipped `0.1.0` carries the wrong
@@ -1727,39 +1427,32 @@ The cap also moved to `<0.12`, tested against 0.11.0; the floor deliberately
 did **not** move with it, because a floor states what the library needs and
 nothing here needs anything 0.11.0 added.
 
-### B71. The confined-dependency table is hand-kept, so a new driver is silent
+### B71. Confining a *fifth* library — closed by the cheap 80%, and what is left
 
-`tests/unit/test_dependencies_stay_confined.py` carries `CONFINEMENTS`, four
-rows naming a third-party client and the one directory it may be imported
-from. Every row is guarded in both directions — a row whose directory has
-stopped importing its library fails, and a leak outside it fails — so the rows
-that *exist* cannot rot.
+**Closed as the entry proposed.**
+`tests/unit/test_dependencies_stay_confined.py::test_every_third_party_import_is_accounted_for`
+walks `src/`, collects every top-level import that is neither stdlib nor
+first-party, and fails on any not covered by a `CONFINEMENTS` row or by the
+new `ALLOWED_EVERYWHERE` set. Adding an unlisted client is now a red test
+naming it, rather than a green suite. Proved by importing `httpx` from
+`composition.py` and watching it fail.
 
-**What nothing catches is a fifth library with no row at all.** Add
-`uv add --optional graph some-driver`, import it from `composition.py`, and the
-suite stays green: the file only knows about what someone listed. That is
-`recurring-defects.md` §2 — the set of confined dependencies is declared in two
-places (`pyproject.toml`'s optional-dependency tables and this tuple) with
-nothing failing when they disagree — and it is the same shape the test itself
-exists to fix, one level up.
+`ALLOWED_EVERYWHERE` is the complement of the confinements: dependencies with
+no single home because the library is built on them everywhere. It is
+deliberately *not* a `Confinement` with `directory="."` — a confinement to the
+whole tree confines nothing, and would make that row's two direction-guards
+pass vacuously.
 
-The reason it was left: deriving the list from `pyproject.toml` is not the
-one-liner it looks like. `[project.optional-dependencies]` names
-*distributions* (`langchain-openai`, `neo4j`), not import names
-(`langchain_openai`, `neo4j`), and the mapping between them is only
-discoverable from installed package metadata (`importlib.metadata.packages_distributions()`),
-which needs the extra installed — the condition `--all-extras` exists to
-guarantee and that CLAUDE.md records losing a mutation run to. It also has no
-opinion about *which* directory a given distribution belongs in, so the
-directory column stays hand-written regardless; the derivable part is only
-"every optional distribution has a row", which is the half that matters.
-
-A cheaper 80% is a test asserting the set of top-level packages imported
-anywhere under `src/` and not in the stdlib and not first-party is a subset of
-the union of the table's `packages` plus a small allowed-everywhere set
-(`pydantic`, `eventsource`, `jellyfish`, `yaml`). That needs no metadata and
-fails the day an unlisted client appears. Worth doing before the fifth adapter,
-not after.
+**What is still not derived, and why that is the right trade.** The set of
+optional distributions in `pyproject.toml` is not checked against the table.
+Doing so means mapping distribution names (`langchain-openai`) to import names
+(`langchain_openai`), which is only discoverable from installed metadata —
+needing the extra installed, the exact condition a `--extra dev` sync silently
+breaks, and therefore a check that would fail for environmental reasons in the
+one situation it most needs to be believed. The new test needs nothing
+installed. It answers "is there an import here that no rule covers", which is
+the half that matters; the other half is "is there a declared extra nobody
+imports", which is a packaging tidiness question rather than a leak.
 
 ### B72. A failed `verify` is unrecoverable, because the tag is spent
 

@@ -8,7 +8,7 @@ the updated file is staged so it travels with the commit that earned it.
 
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -38,12 +38,21 @@ def read_baseline() -> float | None:
 
 
 def write_baseline(value: float) -> None:
+    """Write the new baseline and stage it, so it travels with the commit.
+
+    `# nosec` here and on `run_tests`: both argv lists are literals defined in
+    this file, nothing reaches them from a caller, and `shell=True` is never
+    used. B404/B603/B607 are about `subprocess` being *capable* of injection
+    rather than about a call that is.
+    """
     BASELINE_PATH.write_text(f"{value:.2f}\n")
-    subprocess.run(["git", "add", str(BASELINE_PATH)], cwd=REPO_ROOT, check=False)
+    subprocess.run(  # nosec B603 B607
+        ["git", "add", str(BASELINE_PATH)], cwd=REPO_ROOT, check=False
+    )
 
 
 def run_tests() -> int:
-    return subprocess.run(PYTEST_ARGS, cwd=REPO_ROOT, check=False).returncode
+    return subprocess.run(PYTEST_ARGS, cwd=REPO_ROOT, check=False).returncode  # nosec B603
 
 
 def measure() -> float:

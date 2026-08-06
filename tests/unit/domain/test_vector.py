@@ -9,13 +9,19 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from redstring.domain.vector import VectorMatch, VectorRecord, cosine_score, is_zero_vector
+from redstring.domain.vector import (
+    VectorMatch,
+    VectorRecord,
+    clamp_score,
+    cosine_score,
+    has_zero_norm,
+)
 
 _components = st.floats(
     min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, allow_subnormal=False
 )
 # Bounded on the norm rather than on "some component is non-zero": see
-# `test_a_vector_whose_norm_underflows_is_treated_as_zero`.
+# `test_a_vector_whose_norm_underflows_has_no_score`.
 _vectors = st.lists(_components, min_size=4, max_size=4).filter(
     lambda values: sum(value * value for value in values) > 1e-12
 )
@@ -86,19 +92,16 @@ class TestCosineScore:
         with pytest.raises(ValueError, match="zero"):
             cosine_score([0.0, 0.0], [1.0, 1.0])
 
-    def test_a_vector_whose_norm_underflows_is_treated_as_zero(self):
+    def test_a_vector_whose_norm_underflows_has_no_score(self):
         """Non-zero components, zero magnitude.
 
-        Every component here is a perfectly good float and `is_zero_vector`
-        says the vector is fine, but each squares to zero, so the norm is zero
-        and cosine is genuinely undefined. The port's guard asks about the
-        components; this asks about the norm, and the two disagree in exactly
-        this band. Recorded as BACKLOG B10l rather than fixed, because closing
-        it means deciding what an embedding of magnitude 1e-160 should mean
-        rather than merely adding a check.
+        Every component here is a perfectly good float64, but each squares to
+        zero, so the norm is zero and cosine is genuinely undefined. The guard
+        agrees with `cosine_score` about this band -- which is the point of
+        `has_zero_norm` asking about the norm rather than the components.
         """
         tiny = [1e-200, 1e-200]
-        assert not is_zero_vector(tiny)
+        assert has_zero_norm(tiny)
         with pytest.raises(ValueError, match="zero"):
             cosine_score(tiny, tiny)
 
@@ -109,19 +112,91 @@ class TestCosineScore:
             cosine_score([1.0, 2.0], [1.0])
 
 
-class TestIsZeroVector:
+class TestClampScore:
+    """The clamp both `cosine_score` and `PgVectorStore.search` apply.
+
+    It is tested **here**, directly, because it cannot be reached through
+    either caller: over roughly 2e6 random float64 vectors the unclamped
+    cosine mapping never exceeded 1.0, and pgvector 0.8.5 clamps its distance
+    operator internally. Two copies of the clamp were therefore two branches
+    no test could reach, and a mutant widening one of them survived
+    (BACKLOG B10n). Sharing the function is what makes the guard reachable at
+    all -- by passing it a number.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (1.0 + 1e-16, 1.0),
+            (1.5, 1.0),
+            (2.0, 1.0),
+            (-1e-16, 0.0),
+            (-0.5, 0.0),
+            (float("inf"), 1.0),
+            (float("-inf"), 0.0),
+        ],
+    )
+    def test_a_value_outside_the_bound_is_pulled_to_it(self, value: float, expected: float):
+        assert clamp_score(value) == expected
+
+    @pytest.mark.parametrize("value", [0.0, 0.5, 1.0, 1e-300, 1.0 - 1e-16])
+    def test_a_value_inside_the_bound_is_untouched(self, value: float):
+        """The other direction. A clamp that returned a constant, or that
+        clamped to the wrong bound, would pass every assertion above."""
+        assert clamp_score(value) == value
+
+    def test_the_result_always_satisfies_the_model(self):
+        """Stated in the terms the clamp exists for: `VectorMatch.score` has a
+        `0..1` bound, and an unclamped overshoot reaches a caller as a
+        `ValidationError` rather than as a rounding artefact."""
+        for value in (-3.0, 1.0 + 1e-9, 7.5):
+            VectorMatch(entity_id=uuid4(), score=clamp_score(value))
+
+
+class TestHasZeroNorm:
     @pytest.mark.parametrize(
         ("vector", "expected"),
         [
             ([0.0, 0.0], True),
             ([], True),
             ([-0.0, 0.0], True),  # negative zero is still zero
-            ([0.0, 1e-30], False),
             ([0.0, -1.0], False),
+            ([0.0, 1e-20], False),  # squares to a float32 subnormal, not to zero
         ],
     )
     def test_recognises_the_origin(self, vector: list[float], expected: bool):
-        assert is_zero_vector(vector) is expected
+        assert has_zero_norm(vector) is expected
+
+    @pytest.mark.parametrize("component", [1e-30, 1e-200, 5e-24])
+    def test_a_norm_that_survives_float64_and_dies_in_float32_is_zero(self, component: float):
+        """The band this function exists for.
+
+        `1e-30` squares to `1e-60`: a normal float64, and zero in float32.
+        Every adapter here stores float32 (`ports/vector_store.py` says so),
+        so a vector whose norm is zero *there* is one no backend can score,
+        whatever float64 makes of it. Checking the float64 norm alone would
+        accept the first and third of these and leave pgvector returning NaN.
+        """
+        assert has_zero_norm([component] * 8)
+
+    @pytest.mark.parametrize("component", [1e30, -1e30, 1e300, -1e300])
+    def test_a_component_too_large_to_square_is_not_zero(self, component: float):
+        """The overflow half of the same arithmetic.
+
+        `1e30` is an ordinary float32 whose *square* is not one, and `1e300`
+        is beyond float32 entirely. `struct.pack("f", ...)` raises
+        `OverflowError` rather than returning an infinity, so a check that
+        squared unconditionally would reject a large but perfectly good vector
+        with the wrong exception type -- and `1e300` would not even reach the
+        squaring. Both are as far from a zero norm as a float gets.
+        """
+        assert not has_zero_norm([component] * 4)
+
+    def test_one_surviving_component_is_enough(self):
+        """The check is about the vector's norm, not about every component:
+        a single component that squares to something float32 can hold gives
+        the vector a direction, however many others underflow."""
+        assert not has_zero_norm([1e-30, 1e-30, 1.0])
 
 
 class TestMetadataMustBeStorableAsJson:

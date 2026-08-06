@@ -896,7 +896,7 @@ relationship_types
 
 Per-element rules — `id` normalization, the 1-500 character `description`, the
 two endpoint lists and `bidirectional` — live on `RelationshipTypeSchema` and
-live on `RelationshipTypeSchema`.
+are documented under [Relationship type fields](#relationship-type-fields-relationshiptypeschema).
 
 #### One is enough for the model; five is the bundled convention
 
@@ -2143,4 +2143,127 @@ required description. The uniformity above is habit, and the habit is sound —
 `type` and `required` buy nothing at present, so the bundled schemas mostly
 leave them at their defaults and spend the effort on descriptions.
 
-The per-field detail for `name`, `type`, `description` and `required` follows.
+The per-field detail for `name`, `type`, `description` and `required` is the
+table at the top of this section.
+
+
+## Relationship type fields (`RelationshipTypeSchema`)
+
+One element of the top-level `relationship_types` list: an edge kind the
+extractor is asked to look for. Like everything else in the format it produces
+prompt text — a relationship type the model returns that is not declared here
+is **not** discarded (ADR 0011).
+
+```yaml
+relationship_types:
+  - id: loves
+    description: Romantic love between characters
+    valid_source_types: [character]
+    valid_target_types: [character]
+    bidirectional: false
+```
+
+| Field | Required | Type | Default | Bounds |
+|---|---|---|---|---|
+| `id` | yes | string | — | 1-100 chars, normalized, must be a valid Python identifier |
+| `description` | yes | string | — | 1-500 chars |
+| `valid_source_types` | no | list of string | `[]` — meaning *any* | each element normalized; each must name a declared entity type |
+| `valid_target_types` | no | list of string | `[]` — meaning *any* | same |
+| `bidirectional` | no | boolean | `false` | — |
+
+`model_config` is `extra="forbid"`, `frozen=True`, `str_strip_whitespace=True`,
+the same as the other two nested models: a sixth key is a load error, the
+object is immutable and hashable, and whitespace is stripped before the bounds
+apply.
+
+### `id` is normalized the same way an entity type id is
+
+Lowercased and stripped, spaces and hyphens replaced with underscores, runs of
+underscores collapsed to one, leading and trailing underscores removed. The
+result must be a valid Python identifier or the load fails:
+
+```
+Relationship type ID must be a valid identifier: 'is-a?' -> 'is_a?'
+```
+
+So `Works At`, `works-at` and `works_at` are the same relationship type, and
+`__works__at__` normalizes to `works_at` as well. Write the normalized form;
+relying on the normalizer means the id in your file and the id in the prompt
+differ, and it is the normalized one that a caller matches against.
+
+An id that normalizes to nothing at all — `"___"`, `"  "` — is rejected with a
+different message naming the empty result, because "not an identifier" would
+be a confusing thing to say about a string the file did contain.
+
+### `description` is required here, unlike a property's
+
+1-500 characters, and there is no way to omit it. This is the same rule the
+entity type's description carries, and it differs from `PropertySchema`, whose
+`description` is the one optional-and-nullable string in the format. The
+asymmetry is not arbitrary: the description is what
+`{relationship_descriptions}` expands to, so a relationship type without one
+would contribute a bare id to the prompt and tell the model nothing about when
+to use it.
+
+### The two endpoint lists constrain nothing at extraction time
+
+`valid_source_types` and `valid_target_types` are lists of entity type ids.
+**Empty means any**, which is the default, and is why omitting them is not the
+same as "unconstrained by accident" — it is the declared value.
+
+Two things happen to them, and neither is enforcement of the model's output:
+
+- **Each element is normalized on load**, the same lowercase-and-underscore
+  transform the ids get. `[Main Character]` is stored as `["main_character"]`.
+- **Each must name a declared entity type**, checked by the
+  `validate_relationship_type_references` model validator on `DomainSchema` —
+  the one cross-field rule in the format. A typo is a load error naming the
+  offender and listing the valid ids, rather than a constraint that silently
+  matches nothing:
+
+  ```
+  Relationship 'loves' references unknown source type: 'charcter'.
+  Valid types: ['character', 'location']
+  ```
+
+  Note that this is checked against the entity types **in the same file**, so
+  it cannot be satisfied by an entity type another schema declares.
+
+What they do *not* do is filter extraction. `DomainSchema.validate_relationship`
+and the `is_valid_source` / `is_valid_target` helpers on this model are
+available for a caller who wants to check an edge, and nothing in the
+extraction path calls them.
+
+**`is_valid_source` normalizes differently from the loader, and the mismatch
+is observable.** The loader replaces spaces and hyphens with underscores; the
+lookup only lowercases and strips, so the string you wrote in the YAML does not
+match itself:
+
+```python
+schema = RelationshipTypeSchema(id="loves", description="…", valid_source_types=["Main Character"])
+schema.valid_source_types  # ['main_character']
+schema.is_valid_source("Main Character")  # False
+schema.is_valid_source("main_character")  # True
+```
+
+Entity type ids are themselves normalized on load, so a caller passing an
+`EntityTypeSchema.id` is unaffected. A caller passing an `Entity.entity_type`
+— free-form text straight from the model, where "Main Character" is an
+ordinary answer — gets the wrong result. Recorded rather than fixed here
+because this page is documentation; see `BACKLOG.md`.
+
+### `bidirectional` is a prompt hint, not a graph property
+
+`false` by default. Relationships in the graph are directed —
+`Relationship` has a `source_entity_id` and a `target_entity_id` and nothing
+else — so setting this does not cause a second edge to be written, and no
+reader treats an edge as symmetric because its declared type said so. It
+describes the relationship to the model, which is the whole of the format's
+job.
+
+### Looking one up
+
+`DomainSchema.get_relationship_type(id)` returns the schema or `None`, and
+`is_valid_relationship_type(id)` returns a bool. Both normalize the id they are
+given the same way the loader does, so a lookup by `"Works At"` finds
+`works_at` — which is the behaviour the endpoint lists above do *not* have.

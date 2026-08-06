@@ -1,0 +1,24 @@
+# A **scoped** cosmic-ray session: the period and century parsing of
+# `domain/temporal_parsing.py` (lines ~321-362, 207 mutants).
+#
+#   uv run python scripts/mutation.py cosmic-ray \
+#       --config cosmic-ray-periods.toml --rows 321:362 --session periods.sqlite
+#
+# The largest single region of the 582 mutants B54 still lists as unrun, and
+# the same shape as the two that have already produced a real defect each:
+# arithmetic over a small integer, where a test at one value agrees with a
+# wrong implementation.
+#
+# See `cosmic-ray-ranges.toml` for the measured distribution and the reasoning
+# behind scoping at all. `--rows` is required, not optional -- without it the
+# session runs all 850 against a command covering some of them, and every
+# mutant outside the region survives for a reason that says nothing.
+
+[cosmic-ray]
+module-path = "src/redstring/domain/temporal_parsing.py"
+timeout = 30.0
+test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit/domain/test_temporal_parsing.py -k 'TestCenturyPortions or TestPrecision or TestPartialDatesResolveToTheRightMoment or TestRanges or TestUnparseable or TestRangesThatAreNotRanges'"
+excluded-modules = []
+
+[cosmic-ray.distributor]
+name = "local"

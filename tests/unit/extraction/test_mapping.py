@@ -91,6 +91,72 @@ class TestEntities:
         assert [e.name for e in result.entities] == ["Ada Lovelace"]
         assert result.dropped_entities == 1
 
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            pytest.param(lambda: entity("Ada\x00Lovelace"), id="in-the-name"),
+            pytest.param(lambda: entity("Bad", entity_type="per\x00son"), id="in-the-type"),
+            pytest.param(
+                lambda: entity("Bad", description="a\x00b"),
+                id="in-the-description",
+            ),
+            pytest.param(
+                lambda: entity("Bad", properties={"note": "a\x00b"}),
+                id="in-a-property-value",
+            ),
+            pytest.param(
+                lambda: entity("Bad", properties={"a\x00b": "note"}),
+                id="in-a-property-key",
+            ),
+        ],
+    )
+    def test_a_nul_anywhere_is_dropped_rather_than_crashing_the_extraction(self, bad):
+        """A model can emit a NUL, and no JSON-backed store can hold one.
+
+        `Entity` refuses it (`domain/json_safety.py`), so without an explicit
+        guard here that refusal arrives as a `ValidationError` out of
+        `map_extraction` and costs every other row in the document -- which is
+        precisely what the blank-name guard above exists to prevent, for a
+        cause the model is equally responsible for.
+
+        The good entity is stated **after** the bad one in every case: on a
+        one-element input a drop and a crash are distinguishable, but a guard
+        that stopped the loop rather than skipping the row would look correct.
+        """
+        result = mapped(Extraction(entities=[bad(), entity("Ada Lovelace")]))
+
+        assert [e.name for e in result.entities] == ["Ada Lovelace"]
+        assert result.dropped_entities == 1
+
+    def test_a_lone_surrogate_is_dropped_too(self):
+        """The failure that is not about storage at all.
+
+        A lone surrogate has no UTF-8 encoding, and `entity_id_for` hashes
+        with `uuid5`, which encodes -- so this raised `UnicodeEncodeError` out
+        of the mapper before any store was involved, taking the whole chunk
+        with it. `json.loads` builds one from an escape without complaint, so
+        it is ordinary model output rather than an exotic input.
+
+        Found by the mutation wrapper's baseline run rather than by review:
+        the property that draws entity names had been given a hand-written
+        alphabet that widened past `st.text()`'s default and started
+        generating them.
+        """
+        result = mapped(Extraction(entities=[entity("Ada\ud800"), entity("Ada Lovelace")]))
+
+        assert [e.name for e in result.entities] == ["Ada Lovelace"]
+        assert result.dropped_entities == 1
+
+    def test_the_drop_is_counted_apart_from_its_siblings(self):
+        """Four counters summed from one loop can be wired to each other's
+        fields and still add up; only input that moves them differently says
+        which line feeds which."""
+        result = mapped(Extraction(entities=[entity("a\x00b"), entity("Ada Lovelace")]))
+
+        assert result.dropped_entities == 1
+        assert (result.unresolved_relationships, result.self_loops) == (0, 0)
+        assert result.undatable_relative == 0
+
 
 class TestIdentity:
     def test_the_same_name_and_type_get_the_same_id_every_time(self):
@@ -589,7 +655,16 @@ class TestProperties:
 
         assert forwards == backwards
 
-    @given(name=st.text(min_size=1).filter(lambda s: s.strip()))
+    # Unstorable text excluded for the reason `test_merging.py::DESCRIPTIONS`
+    # gives: a candidate carrying it is dropped, so there would be no id to
+    # check. `codec="utf-8"` is load-bearing -- without it `st.characters()`
+    # generates unpaired surrogates, which is how the real defect this
+    # property found got in.
+    _NAMES = st.text(
+        alphabet=st.characters(codec="utf-8", exclude_characters="\x00"), min_size=1
+    ).filter(lambda s: s.strip())
+
+    @given(name=_NAMES)
     def test_every_mapped_entity_id_is_a_uuid5(self, name):
         [mapped_entity] = mapped(Extraction(entities=[entity(name)])).entities
 

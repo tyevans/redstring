@@ -457,6 +457,33 @@ class VectorStoreCompliance:
                 [VectorRecord(entity_id=uuid4(), tenant_id=uuid4(), vector=zeroes)]
             )
 
+    async def test_a_vector_whose_norm_underflows_is_rejected_too(self, store: VectorStore) -> None:
+        """Every component non-zero, and the norm still zero.
+
+        `1e-30` is a perfectly good float64 whose square underflows to zero in
+        float32, which is what every adapter here stores. A guard asking
+        whether the *components* are zero accepts this and lets the two
+        adapters diverge on it -- the in-memory one raises from `cosine_score`
+        at search time, and pgvector's `<=>` yields NaN, which sorts
+        unpredictably and would then fail `VectorMatch`'s `0..1` bound. Asking
+        about the norm instead is what makes them agree.
+
+        Note the magnitude: `1e-30` squares to `1e-60`, which is a normal
+        float64 and a zero float32. A test written at float64's underflow
+        band (`1e-200`) would pass against a guard that only checked the
+        float64 norm, and that guard would still let pgvector return NaN.
+        """
+        underflowing = [1e-30] * self.DIMENSION
+
+        with pytest.raises(ValueError, match="zero"):
+            await store.upsert(uuid4(), underflowing, uuid4())
+        with pytest.raises(ValueError, match="zero"):
+            await store.search(underflowing, uuid4())
+        with pytest.raises(ValueError, match="zero"):
+            await store.upsert_many(
+                [VectorRecord(entity_id=uuid4(), tenant_id=uuid4(), vector=underflowing)]
+            )
+
     # ------------------------------------------------------------------
     # Property 5 -- delete and delete_by_tenant are exact
     # ------------------------------------------------------------------

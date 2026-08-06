@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from redstring.domain.ids import EntityId, SourceId, TenantId
+from redstring.domain.json_safety import Passthrough, reject_unstorable_text
 from redstring.domain.temporal import TemporalExtent
 
 
@@ -70,6 +71,35 @@ class Entity(BaseModel):
     # type, soundex). The entity carries the keys; the store only groups by
     # them and computes nothing.
     blocking_keys: frozenset[str] | None = None
+
+    @field_validator(
+        "name",
+        "normalized_name",
+        "entity_type",
+        "original_entity_type",
+        "description",
+        "source_id",
+        "source_text",
+        "model",
+        "external_ids",
+        "properties",
+        "blocking_keys",
+    )
+    @classmethod
+    def _reject_unstorable_in_free_form_text(cls, value: Passthrough) -> Passthrough:
+        """No field reaching the event log may carry text that cannot be
+        stored -- a NUL, or an unpaired surrogate. See
+        `domain/json_safety.py` for why, and why it raises rather than strips.
+
+        Listed per field rather than checked over the whole model: the typed
+        fields (`id`, `tenant_id`, `confidence`, `temporal`) cannot hold one,
+        and walking them would make this a general schema check that happens
+        to be about text. If a free-form field is added to this model it
+        belongs in this list -- an omission is silent until a real event store
+        refuses the write.
+        """
+        reject_unstorable_text(value, what="entity field")
+        return value
 
     @field_validator("name")
     @classmethod

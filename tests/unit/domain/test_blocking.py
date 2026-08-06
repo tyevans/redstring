@@ -242,7 +242,18 @@ class TestProperties:
         for key in blocking_keys_for(entity):
             assert len(key) > 2, key
 
-    @given(name=st.text(min_size=PREFIX_LENGTH + 1, max_size=40).filter(str.strip))
+    @given(
+        name=st.text(
+            # `Entity` refuses a NUL in any free-form field, because a JSON
+            # column cannot hold one (`domain/json_safety.py`). Excluding it in
+            # the alphabet rather than catching `ValidationError` the way the
+            # property above does: this one is about the *prefix window*, and a
+            # rejected construction would silently stop testing that.
+            alphabet=st.characters(codec="utf-8", exclude_characters="\x00"),
+            min_size=PREFIX_LENGTH + 1,
+            max_size=40,
+        ).filter(str.strip)
+    )
     def test_the_prefix_never_exceeds_its_window(self, name):
         assert len(prefix_key(_entity(name))) <= len("p:") + PREFIX_LENGTH
 

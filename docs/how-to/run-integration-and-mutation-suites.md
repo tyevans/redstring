@@ -675,10 +675,13 @@ Three exceptions, all with a name and a cause:
   ([B10m](#step-4-do-not-combine-it-with-the-unit-suite-in-one-invocation)).
 - **A single `DeadlineExceeded` that passes on its own** — hypothesis's 200 ms
   default deadline is not survivable under contention for a property doing real
-  work (**B59**). It has been seen in the *unit* suite under the gate's
-  `-n auto --cov`, not in this one, but the shape has recurred three times and
-  a serial integration run is not immune. Re-run the single test in isolation
-  before believing it; if it passes there, it is the deadline, not the backend.
+  work, and the shape recurred three times before it was fixed at the class
+  level. `tests/conftest.py` now registers a suite-wide `deadline=None`
+  profile, so this can only reach you two ways: you passed
+  `--hypothesis-profile=strict`, which opts back in deliberately, or someone
+  put `deadline=` back into a `settings()` decorator, which outranks the
+  profile — `tests/unit/test_hypothesis_deadline_policy.py` exists to fail
+  when they do. Neither is a finding about the backend.
 
 Everything else that fails, failed for a reason in the code. Re-run one test
 with `-x` and read it.
@@ -819,6 +822,28 @@ which is a zero-survivor run manufactured on purpose.
 
 ### Step 1: prove the harness works — run the configured `test-command` unmutated
 
+**`scripts/mutation.py` now does this for you, and refuses to start if the
+baseline is not green.** Prefer it to the manual sequence below:
+
+```
+uv run python scripts/mutation.py cosmic-ray     # baseline, init, exec, report
+uv run python scripts/mutation.py mutmut         # baseline, then mutmut run
+uv run python scripts/mutation.py cosmic-ray --baseline-only   # just the check
+```
+
+It creates a detached worktree under `.mutation/worktree`, syncs it with
+`--all-extras`, runs *that tool's own configured command* there, and stops if
+the result is anything other than a green run with a positive pass count. The
+last clause is the one that matters: a run that exits 0 having collected
+nothing looks identical to a passing suite, and is exactly what produced the
+incident below.
+
+It wraps **both** tools deliberately — wrapping one would leave the other as
+the unguarded path, and the run someone reaches for in a hurry is the one that
+needs the guard.
+
+The manual sequence, still correct and worth knowing:
+
 ```
 uv sync --all-extras
 uv run python -c "import neo4j, asyncpg, redis, langchain_openai; print('extras ok')"
@@ -847,15 +872,15 @@ and `cr-report` showed `WorkerOutcome.NORMAL, TestOutcome.KILLED` for all 426
 the environment was fixed, had 136 survivors over 28 source lines, four of them
 genuine defects.
 
-**Nothing in either tool checks this for you** (**B45**). The rule is written
-down in `CLAUDE.md` and in
-[quality gates](../reference/quality-gates.md); the enforcement — a
-`scripts/mutation.py` that refuses to start on a red baseline — does not exist,
-because two questions have to be answered first: whether mutmut gets the same
-wrapper (two half-wrappers would be worse than none), and where the baseline
-runs. It must run **in the worktree**, not in the main tree where it would pass
-regardless. A habit that has already been forgotten once is a habit, not a
-control.
+**Nothing in either tool checks this for you**, which is why the wrapper does.
+Its two open questions were settled the way the incident argues for: both tools
+get it, and the baseline runs **in the worktree**, never in the main tree where
+it would pass regardless of what the worktree is missing.
+
+The refusal is a pure function of the baseline's exit code and output, and
+`tests/unit/test_mutation_wrapper_refuses_a_bad_baseline.py` exercises the
+refusals rather than the happy path — a guard nobody has watched fire is
+indistinguishable from one that cannot.
 
 ### Step 2: run mutmut
 
@@ -949,7 +974,22 @@ that is the entire reason
 place.** cosmic-ray edits your tracked source, runs the suite, and writes the
 file back — so an interrupted session leaves a mutant behind in a file git
 considers yours. Run it from a `git worktree` or a fresh clone, never from the
-checkout you are editing:
+checkout you are editing.
+
+**`scripts/mutation.py` does all of this**, and is the recommended path:
+
+```
+uv run python scripts/mutation.py cosmic-ray
+```
+
+It creates `.mutation/worktree`, **resets it to the current `HEAD`** on every
+run, syncs `--all-extras`, runs Step 1 there, and only then inits and execs.
+The reset is not tidiness: a reused worktree left at a previous `HEAD` mutates
+code that is not the code you are asking about and reports survivors against
+tests that have since changed — a result wrong in a way that looks exactly
+like a result.
+
+By hand, if you want to watch it:
 
 ```
 git worktree add ../redstring-mutation
@@ -978,6 +1018,60 @@ uv run cr-report session.sqlite
 large the job is before committing to it. `exec` is resumable against the same
 `session.sqlite`, so an interrupted run continues rather than starting over,
 and `cr-report` can be read against a partial session.
+
+#### Scoping a module too big to mutate whole
+
+`domain/temporal_parsing.py` has **850 mutants**, and against the default
+`test-command` each costs about seventy seconds — the file carries two
+hypothesis properties at 300 examples and a `dateparser` import. Seventeen
+hours. That is why 793 of them had never been run (**B54**).
+
+The fix is two narrowings that have to agree with each other:
+
+```
+uv run python scripts/mutation.py cosmic-ray \
+    --config cosmic-ray-ranges.toml --rows 207:320 --session ranges.sqlite
+```
+
+- **`--config`** points at a session whose `test-command` runs only the test
+  classes covering the region. The wrapper takes its *baseline* from that same
+  file, so the narrower command is proved green before anything is mutated —
+  which is the reason the baseline is read from config rather than restated in
+  the script.
+- **`--rows FIRST:LAST`** deletes every mutant outside those source lines from
+  the initialised session. cosmic-ray has no line filter, so this is the only
+  way to aim one, and it is required rather than optional: without it the
+  session runs all 850 against a command covering some of them, and everything
+  outside the region survives for a reason that says nothing about the code.
+- **`--session NAME`** names a database under **`.mutation/sessions/`**, not
+  inside the worktree. That is not a filing preference: the worktree is reset
+  with `git clean -fdx` at the start of every run, so a session written into it
+  is deleted by the *next* invocation. Running a range session and then a
+  period session destroyed the first one's results, and nothing warned —
+  deleting a build artefact is exactly what that clean is for. `exec` is
+  resumable against the same file and `cr-report` reads a partial one, so the
+  file is worth keeping.
+
+**Pick the region by counting mutants, not by reading the module.** The
+distribution is not the one the section headings suggest:
+
+| Region | Lines | Mutants |
+|---|---|---|
+| periods / centuries | 321–362 | 207 |
+| ranges | 207–273 | 160 |
+| `render_temporal` | 530–574 | 126 |
+| `widen` | 575–599 | 113 |
+| partial dates | 274–320 | 108 |
+| `parse_temporal` | 462–529 | 73 |
+| absolute / natural | 389–461 | 44 |
+| **uncertainty + marker stripping** | 124–206 | **3** |
+
+B54 named the uncertainty patterns first among what was unrun. They are three
+mutants, because cosmic-ray mutates *operators* and that region is a table of
+compiled regexes. A session aimed there would have finished in a minute having
+proved almost nothing. (Line numbers decay; re-derive with
+`SELECT start_pos_row, count(*) FROM mutation_specs GROUP BY 1` after an
+`init`.)
 
 The config it reads is four lines and each is worth knowing:
 
@@ -1184,11 +1278,16 @@ testing and essentially nothing else does. Real examples from this repo:
   every test ran against a table an earlier run had created — the DDL was
   never observed doing anything (see [tear down](#tear-down)).
 - `min(1.0, …)` widened to `min(2.0, …)` in `domain/vector.py::cosine_score`
-  survived, and the survivor is **understood but not equivalent**: the clamp is
-  genuinely unenforced, and roughly 2 × 10^6 random vectors failed to produce
-  an input that reaches it (**B10n**). That is what an honest non-equivalent
-  label looks like — a measurement and a backlog entry, not a test bolted on
-  and not a clamp deleted.
+  survived, and the survivor was **understood but not equivalent**: the clamp
+  was genuinely unenforced, and roughly 2 × 10⁶ random vectors failed to
+  produce an input that reaches it. The honest first response was a
+  measurement and a backlog entry rather than a test bolted on or a clamp
+  deleted — and the resolution, once the same mutant turned up on the
+  *adapter's* copy of the same expression, was to notice that two unreachable
+  branches are one reachable function. `clamp_score` is now shared, and a test
+  passing it `1.5` covers both. **A guard you cannot reach through its caller
+  can often be reached by extracting it**, which is a better move than either
+  labelling it equivalent or leaving it uncovered.
 
 The full catalogue of input shapes that make two implementations agree is the
 table in [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md) and

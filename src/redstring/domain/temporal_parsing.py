@@ -71,9 +71,19 @@ MAX_INPUT_LENGTH: Final = 500
 _PROBE_A: Final = datetime(1999, 6, 15, tzinfo=UTC)
 _PROBE_B: Final = datetime(2035, 2, 20, tzinfo=UTC)
 
+#: Every month spelling the parsers accept. Kept in step with
+#: `_MONTH_NUMBERS` below, which maps each of them to a number.
+#:
+#: Note `Sep(?:t|tember)?`, which is the odd one out and the only alternative
+#: here that is not "prefix, optionally completed". "Sept" is an ordinary
+#: abbreviation and `_MONTH_NUMBERS` has always carried it -- but this pattern
+#: did not, so the entry was unreachable and "Sept 2023" fell through to
+#: `dateparser` and raised `AmbiguousReferenceDateError`. Found by a surviving
+#: mutant: nothing could kill a change to the branch that adds "Sept", because
+#: no input could reach it.
 _MONTH: Final = (
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
-    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
 )
 
 _MONTH_NAMES: Final = (

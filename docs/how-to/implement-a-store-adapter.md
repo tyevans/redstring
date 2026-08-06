@@ -172,10 +172,16 @@ blocking-key reads. Two behaviours are easy to miss on a first pass:
 
 - **Dangling edges are not permitted.** `upsert_relationship` raises
   `MissingEntityError` when either endpoint is absent from that tenant, and
-  `upsert_relationships` is *not* atomic: a failure part-way through leaves
-  earlier elements written. Do not make your adapter more permissive than the
-  port — an adapter that accepts a dangling edge is useless as a reference,
-  because tests written against it pass there and fail on Neo4j.
+  `upsert_relationships` is **atomic**: a failure writes nothing at all, not
+  even the elements before the offending one. Validate the whole batch before
+  writing any of it — Neo4j does this in one query because per-element round
+  trips would be the expensive way to write it, and the in-memory adapter
+  makes two passes. This used to be the opposite, and the weaker promise is
+  what let those two adapters differ in a way nothing asserted; see
+  [ADR 0019](../adr/0019-batch-relationship-writes-are-atomic.md). Do not make
+  your adapter more permissive than the port — an adapter that accepts a
+  dangling edge is useless as a reference, because tests written against it
+  pass there and fail on Neo4j.
 - **There is no `delete_entity`, and there will not be one.** A merged entity
   survives as an alias node. `delete_relationship` and `delete_by_tenant` are
   the only removals.
@@ -552,11 +558,13 @@ exactly, so "the stored vector equals the written one" is a claim *every*
 adapter can meet; the magnitude bound keeps the sum of squares far from
 float32 overflow, so a norm is never `inf` and cosine is never NaN for a
 reason unrelated to the property under test; and subnormals are excluded
-because they square to zero — a vector of them passes the port's non-zero
-guard, which asks about components, and still has a norm of zero, at which
-point cosine is undefined for a vector that was accepted. That gap is real,
-filed as **BACKLOG B10l**, and excluded here so it does not arrive as an
-intermittent failure in an unrelated property. If you generate your own
+because they square to zero, so a vector of them has no direction and the
+port **rejects** it (`domain.vector.has_zero_norm`). Drawing one would make
+an unrelated property fail on a legitimate `ValueError` from the guard rather
+than on the thing it was written to check. The guard's own band is pinned by
+examples instead — `test_a_vector_whose_norm_underflows_is_rejected_too` in
+the compliance suite, and `TestHasZeroNorm` in
+`tests/unit/domain/test_vector.py`. If you generate your own
 vectors in adapter-specific tests, use `strategies.vectors(dimension)` rather
 than reinventing those three bounds.
 
@@ -673,16 +681,21 @@ something unnumeric raises `ValueError` — because Redis raises there, and
 silently resetting to `1` would hide a caller that had mixed `set` and
 `increment` as a failure count that quietly restarts.
 
-If you are writing the Redis-side subclass, note that it does not yet exist:
-**`RedisCache` is the only `Cache` adapter with no run of the compliance suite
-behind it** (BACKLOG **B41**). Everything above was reasoned about and coded
-for in that adapter and none of it is verified against a real server. The
-entry says what to build — `tests/integration/llm/test_redis_cache.py`
-subclassing `CacheCompliance`, a `cache` fixture pointing at a `redis` service
-in `docker-compose.test.yml`, a skip probe that round-trips a key rather than
-opening a socket, and a per-xdist-worker key prefix so two workers do not share
-a keyspace. That is the same shape step 4 describes for the two integration
-store adapters.
+The Redis-side subclass **exists**: `tests/integration/llm/test_redis_cache.py`
+runs `CacheCompliance` against a real Redis from `docker-compose.test.yml`,
+with a skip probe that round-trips a key rather than opening a socket and a
+per-xdist-worker key prefix so two workers do not share a keyspace. That is
+the same shape step 4 describes for the two integration store adapters.
+
+**It is worth knowing what that run found on its first pass**, because it is
+the argument for every sentence above. `RedisCache` had been the one adapter
+excused from its port's shared suite, and it recorded a rate-limit hit with a
+member keyed on `id(self)` — the cache object's address, constant for its
+whole life — under a comment correctly stating that the member had to be
+unique per *hit* or two hits at the same instant would collapse into one.
+They did, so `count_hits` under-reported exactly when a burst is what a caller
+is trying to detect. `MemoryCache` cannot exhibit it at all, because it
+appends to a list. See `.claude/rules/recurring-defects.md` (g).
 
 #### Time is a caller-supplied argument (`at=`, `since=`), never a sleep
 

@@ -24,3 +24,9 @@ cosmic-ray.sqlite*
 uv.lock
 .claude/worktrees/
 site/
+
+# `scripts/mutation.py` builds a detached worktree here and runs the session
+# in it, because cosmic-ray's `local` distributor mutates the working tree in
+# place. Nothing in it is worth keeping between runs except the time the sync
+# took, which is why the script reuses it rather than recreating it.
+.mutation/

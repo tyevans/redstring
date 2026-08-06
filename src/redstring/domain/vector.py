@@ -30,6 +30,7 @@ same pair of vectors, which is what makes `min_score` portable.
 from __future__ import annotations
 
 import math
+import struct
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -38,44 +39,24 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from redstring.domain.ids import EntityId, TenantId
-
-
-def _reject_nul(value: object) -> None:
-    """Raise if any string reachable from `value` contains U+0000.
-
-    Metadata is stored as JSON by every adapter worth having, and Postgres
-    `jsonb` **cannot hold a NUL in text** -- it rejects the write outright.
-    Python dictionaries can, so without this check the in-memory adapter
-    accepts metadata that pgvector refuses, which is precisely the silent
-    divergence a shared compliance suite exists to prevent. Found by the
-    round-trip property, and fixed here rather than in either adapter so that
-    every adapter rejects it identically and for the same reason.
-
-    Stripping or escaping the NUL instead was rejected: it would make the
-    round-trip contract a lie, and a caller with a NUL in its metadata has a
-    bug upstream that is better surfaced than smoothed over.
-    """
-    if isinstance(value, str):
-        if "\x00" in value:
-            raise ValueError("metadata must not contain a NUL character; JSON storage rejects it")
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            _reject_nul(key)
-            _reject_nul(item)
-    elif isinstance(value, (list, tuple)):
-        for item in value:
-            _reject_nul(item)
+from redstring.domain.json_safety import reject_unstorable_text
 
 
 class _HasPortableMetadata(BaseModel):
-    """Shared metadata validation; see `_reject_nul`."""
+    """Shared metadata validation; see `domain/json_safety.py`.
+
+    The rule used to live here as a private `_reject_nul`, which is where it
+    was found. `Entity` and `Relationship` needed the same one (BACKLOG B36),
+    so it moved to a module both can reach rather than being copied -- a
+    second copy is exactly the shape that lets two of them drift.
+    """
 
     metadata: dict[str, Any] = {}
 
     @field_validator("metadata")
     @classmethod
     def _metadata_is_storable_as_json(cls, value: dict[str, Any]) -> dict[str, Any]:
-        _reject_nul(value)
+        reject_unstorable_text(value, what="metadata")
         return value
 
 
@@ -102,6 +83,35 @@ class VectorMatch(_HasPortableMetadata):
     score: float = Field(ge=0.0, le=1.0)
 
 
+def clamp_score(value: float) -> float:
+    """`value` forced into `VectorMatch`'s `0..1` bound.
+
+    **One declaration site for the clamp**, called by `cosine_score` and by
+    every adapter that computes the mapping in its backend. That is not tidying:
+    each copy of `min(1.0, max(0.0, ...))` is a branch no test can reach through
+    its own caller, so each was separately unenforced, and a mutant widening one
+    of them survived (BACKLOG B10n). Here the guard is reachable by passing a
+    number, so one test covers every caller.
+
+    **Measured, so the next reader does not repeat the search.** The overshoot
+    this exists for is about one ulp of the ratio `dot / magnitude`, and the
+    `(1 + ratio) / 2` that follows halves it into the ulp below 1.0, where it
+    rounds away -- so over roughly 2e6 random float64 vectors (dimensions
+    2-768, magnitudes to 1e6) the unclamped value never exceeded 1.0. pgvector
+    0.8.5 clamps its distance operator internally, so its scores did not either
+    over 4000 queries at the extremes. Slice 0's `cosine_similarity` *did*
+    exceed its bound, because it returned the raw ratio with no halving.
+
+    **Kept anyway, and not because of those measurements but despite them.**
+    The guarantee is needed at precisions and backends this repository does not
+    yet have: a store reporting a raw cosine, or computing the mapping itself
+    without clamping, hands `VectorMatch` a value its `le=1` bound rejects --
+    turning a one-ulp rounding artefact into a hard `ValidationError` for the
+    caller. Do not resolve a surviving mutant here by deleting the clamp.
+    """
+    return min(1.0, max(0.0, value))
+
+
 def cosine_score(left: Sequence[float], right: Sequence[float]) -> float:
     """`(1 + cosine(left, right)) / 2`, clamped into `0..1`.
 
@@ -121,13 +131,68 @@ def cosine_score(left: Sequence[float], right: Sequence[float]) -> float:
     magnitude = _norm(left) * _norm(right)
     if magnitude == 0.0:
         raise ValueError("cosine is undefined for a zero vector")
-    return min(1.0, max(0.0, (1.0 + dot / magnitude) / 2.0))
+    return clamp_score((1.0 + dot / magnitude) / 2.0)
 
 
 def _norm(vector: Sequence[float]) -> float:
     return float(math.sqrt(sum(value * value for value in vector)))
 
 
-def is_zero_vector(vector: Sequence[float]) -> bool:
-    """Whether every component is zero, so cosine against it is undefined."""
-    return not any(vector)
+def has_zero_norm(vector: Sequence[float]) -> bool:
+    """Whether the vector's norm is zero **as float32**, so cosine is undefined.
+
+    The question is about the norm, not about the components, and the two are
+    not the same question. `[1e-30, 1e-30]` has two perfectly good float64
+    components, and each squares to `1e-60` -- a normal float64 and a zero
+    float32. A guard asking `not any(vector)` accepts that vector, and the two
+    adapters then disagree about what it means: the in-memory one raises from
+    `cosine_score` at search time, from a path its docstring calls
+    unreachable, while a SQL backend's cosine-distance operator yields NaN,
+    which sorts unpredictably and would fail `VectorMatch`'s `0..1` bound.
+    That divergence is what the shared compliance suite exists to prevent.
+
+    **float32 is the threshold because it is the one every adapter already
+    imposes**, not because a magnitude was picked. `ports/vector_store.py`
+    says a stored vector is float32 -- pgvector's `vector` is float4, and so
+    is most of the managed competition -- so a vector whose norm vanishes
+    there is one no backend can score, whatever float64 makes of it. Choosing
+    any other cutoff would have meant inventing a contract for "an embedding
+    of magnitude 1e-19", which no model produces and no caller has asked for.
+    Real embeddings are unit-norm or close to it and are nowhere near this.
+
+    Testing each squared component rather than the accumulated sum is
+    deliberate and not an approximation: a sum of non-negative terms is at
+    least its largest term, so the norm is zero exactly when every squared
+    component is.
+    """
+    return all(_squares_to_zero_in_float32(value) for value in vector)
+
+
+def _squares_to_zero_in_float32(value: float) -> bool:
+    """Whether `value * value` underflows to zero once rounded to float32.
+
+    The `>= 1.0` short-circuit is not an optimisation. Squaring a large
+    component overflows float32 -- `1e30` is an ordinary float32 whose square
+    is not -- and `struct.pack("f", ...)` raises `OverflowError` rather than
+    returning an infinity, so squaring unconditionally would reject a
+    perfectly good vector with the wrong exception type. Below 1.0 in
+    magnitude the square is below 1.0 too, so neither rounding can overflow.
+    """
+    component = _to_float32(value)
+    if abs(component) >= 1.0:
+        return False
+    return _to_float32(component * component) == 0.0
+
+
+def _to_float32(value: float) -> float:
+    """`value` rounded to the nearest float32, as every adapter stores it.
+
+    A magnitude beyond float32's range is *not* an error here: the caller is
+    asking whether the norm vanishes, and a value too large to represent is
+    the furthest thing from vanishing. Answering `inf` keeps that question
+    total, and the range check belongs to whatever writes the vector.
+    """
+    try:
+        return float(struct.unpack("f", struct.pack("f", value))[0])
+    except OverflowError:
+        return math.inf if value > 0 else -math.inf

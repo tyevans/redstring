@@ -12,8 +12,9 @@ derived from an audit of ~130 `fix:` and correction commits. The *shapes* are
 general and worth carrying; the *evidence* was that project's history, and is
 summarised here abstractly rather than by SHA. redstring **has** now been
 audited against its own history: the ring-migration campaign
-(`docs/plans/ring-migration.md`) supplied instances for shapes 1, 3, 4 and 5,
-recorded with their SHAs under "Local instances" at the bottom. Read that
+(`docs/plans/ring-migration.md`) supplied the first instances for shapes 1, 3,
+4 and 5, and later slices have added more; all are recorded with their SHAs
+under "Local instances" at the bottom. Read that
 section before treating any shape here as a foreign import — those four are
 load-bearing local evidence. Shapes 2 and 6 remain priors, and stay priors
 until someone records an instance; keep adding to "Local instances" as they
@@ -277,7 +278,7 @@ test that asserts the *wrong value*. Its more common sibling is a test that
 asserts a right value under an input that cannot tell the right
 implementation from a wrong one — same outcome, no observably bad assertion,
 and it survives review because it reads correctly. That catalogue is not
-repeated here: **CLAUDE.md carries the sixteen-row table of failure shapes**
+repeated here: **CLAUDE.md carries the eighteen-row table of failure shapes**
 this project has actually hit (interned string literals hiding `is` for `==`,
 a chain graph hiding first-found for shortest-path, ids from `uuid4()` hiding
 a composite key compared on one component, an expectation written in terms of
@@ -355,9 +356,11 @@ under a provisional name (branch name or date suffix), and allocate the number
 at merge time after checking the ADR directory on current `main`. Before
 merging any branch that adds an ADR, re-check the number.
 
-The directory is **`docs/adr/`**, singular — not `docs/adrs/`. It holds
-`0001` through `0014`, so a new ADR is numbered against the highest one
-there:
+The directory is **`docs/adr/`**, singular — not `docs/adrs/`. A new ADR is
+numbered against the highest one there, which you find by asking rather than
+by reading a number out of this file — the count written here went stale
+within three ADRs of being written, which is §5 catching the section that
+warns about §5:
 
 ```
 git ls-tree --name-only main docs/adr/ | sort | tail -1
@@ -415,9 +418,12 @@ a bare number does not.
 
 ## Local instances
 
-redstring's own evidence, from the ring-migration campaign
-(`docs/plans/ring-migration.md`). Each entry names the shape it instances, the
-commit, and — the part worth having — *how it stayed invisible*. Shapes 2 and 6
+redstring's own evidence. (a) through (f) come from the
+ring-migration campaign (`docs/plans/ring-migration.md`) and the rest from the
+slices after it. Each entry names the shape it instances, the commit, and —
+the part worth having — *how it stayed invisible*. Several arrived here from
+`BACKLOG.md`, which is where a closed entry's lesson would otherwise sit in a
+file about open work until someone deleted it. Shapes 2 and 6
 have no entry yet and remain imported priors; add to this list rather than
 rewriting a shape when one turns up.
 
@@ -531,3 +537,45 @@ the habit worth copying is in `aa0e2eb`: fixing it, the same reasoning turned
 up a *second* time in the same file, in a map entry no test could reach whose
 justification was also an argument about the sort. Grep for the second
 instance before closing — both times this project has looked, it was there.
+
+**(g) §1 and §3 — a comment that correctly described what the code had to do,
+directly above code that did not do it (`31093f9`).** `RedisCache` recorded a
+hit with `pipe.zadd(window, {f"{at!r}:{id(self):x}": at})`, under this comment:
+"the member must be unique or two hits at the same instant collapse into one,
+which under-counts exactly when a burst is what the caller is trying to
+detect." The comment is right. `id(self)` is the *cache object's* address —
+constant for its whole life — so it distinguished two `RedisCache` instances
+and never two hits, which was the only thing it was there for; across
+processes an address can collide between two callers sharing one Redis. So
+`count_hits` under-reported precisely in the case the comment names.
+`MemoryCache` cannot exhibit it at all, because it appends to a list. **This
+is the §1 shape demonstrated by the one adapter that had been excused from
+the shared suite written about it**, and the §3 shape at the same time — a
+uniqueness guard that never once made anything unique. Fixed with
+`uuid4().hex`, proved by restoring `id(self)` and watching the test fail. Two
+lessons: an adapter outside its compliance suite is where this shape lives,
+and *a comment stating an invariant is not evidence the line beneath it holds
+one* — read the expression, not the intent.
+
+**(h) §3 — a `Typing :: Typed` classifier that was a false claim, and nothing
+in the repo could have noticed (`9a99170`).** PEP 561 says a type checker
+ignores a dependency's annotations entirely unless the installed package
+carries a `py.typed` marker. Without it, `mypy --strict` over this whole
+package bought downstream callers *nothing* — `redstring` resolved as `Any`
+for all of them — while the repo's own gate was as green as it would ever be.
+It could not have been caught from inside: every test imports from `src/`,
+where annotations are read directly, so the difference is invisible except in
+an installed wheel. The fix was the marker plus
+`tests/integration/test_wheel_contents.py` asserting it survives packaging,
+proved red by removing it. **When a claim is about the artifact, only the
+artifact can falsify it.**
+
+**(i) §3 — a projection, an event and an aggregate command with no caller,
+for six slices (`f87ba86`).** `VectorProjection` and
+`Document.record_embeddings` were both written when `EntitiesEmbedded` was
+designed, and nothing ever emitted one. The port they served looked complete
+from the inside — tests, types, a compliance suite — because everything
+existed except the call. Building `EmbeddingProvider` turned out to be mostly
+*calling* code that was already there. **Code that is fully tested and never
+invoked passes every gate this repository has**, so the question to ask of a
+new component is not "is it covered" but "what in the tree reaches it".

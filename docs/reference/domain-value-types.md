@@ -33,7 +33,7 @@ inside an event rather than by import are described in
 ## Scope and how to read this page
 
 Everything documented here lives in `src/redstring/domain/`, one section per
-concern, in roughly the order the modules build on each other:
+concern, **in page order**:
 
 | Section | Module |
 |---|---|
@@ -41,16 +41,24 @@ concern, in roughly the order the modules build on each other:
 | Entity | `entity.py` |
 | Relationship | `relationship.py` |
 | SourceDocument | `source.py` |
-| Alias, RelationshipRedirection | `alias.py`, `consolidation.py` |
+| Alias | `alias.py` |
 | Temporal value types | `temporal.py` |
-| Temporal parsing | `temporal_parsing.py` |
+| Vector types | `vector.py` |
+| Name normalization | `normalization.py` |
+| Blocking keys | `blocking.py` |
+| Similarity | `similarity.py` |
 | Temporal intervals | `interval.py` |
 | Merge strategies | `merge_strategy.py` |
-| Similarity | `similarity.py` |
-| Vector types | `vector.py` |
-| Blocking keys | `blocking.py` |
-| Name normalization | `normalization.py` |
+| RelationshipRedirection | `consolidation.py` |
+| Temporal parsing | `temporal_parsing.py` |
 | Error types | `exceptions.py` |
+
+`tests/unit/test_reference_map_tables_are_honest.py` fails if a row here names
+a section this page does not have, or if the two orders disagree. That gate
+exists because the absence of one is what this table's previous version
+demonstrated: it listed nine sections that had never been written, the links
+to them were the only trace, and repairing the links made the gap invisible
+again.
 
 Out of scope, deliberately: the write model (`aggregates`, and the events it
 emits — see [Events](events.md)), the store ports and their adapters, and the
@@ -1092,8 +1100,8 @@ into itself asserts nothing, and would make alias resolution a fixed point
 that never terminates in the useful direction. `resolve_canonical` on
 `GraphStore` refuses to merge *into* an alias, which is what stops longer
 cycles and is reported as `AliasCycleError`; this validator is what stops the
-degenerate one-element case at construction. See
-AliasCycleError.
+degenerate one-element case at construction. `AliasCycleError` is the error
+that reports the longer case; it is exported, so a caller can name it.
 
 Three rules the type conspicuously does **not** enforce:
 
@@ -1108,3 +1116,716 @@ Three rules the type conspicuously does **not** enforce:
 - **No chain rule.** Nothing here prevents an `Alias` whose
   `canonical_entity_id` is itself some other alias's `alias_entity_id`.
   Resolution is transitive at the port, and cycle detection lives there.
+
+## Temporal value types
+
+`temporal.py`: one model and two enums, all three exported. `TemporalExtent`
+is the type `Entity.temporal` holds, and it is the answer to "when did this
+happen, and how confidently do we know".
+
+**All seven fields are optional and default to `None`**, which is unusual
+enough on this page to state first: an extent carrying nothing is legal, and
+`is_empty` is how you ask. `Entity.temporal` is itself `None` when extraction
+found no date, so a caller sees "no extent" and "an empty extent" as different
+values — see [`is_empty`](#derived-is_empty-and-has_range) for why the second
+exists at all.
+
+### Fields and defaults
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `start_date` | `datetime \| None` | `None` | timezone-required |
+| `end_date` | `datetime \| None` | `None` | timezone-required; must be `>= start_date` |
+| `precision` | `DatePrecision \| None` | `None` | how much of the date is meant |
+| `uncertainty` | `UncertaintyMarker \| None` | `None` | how the source hedged |
+| `original_text` | `str \| None` | `None` | the phrase this was read from |
+| `sequence_position` | `int \| None` | `None` | must be `>= 0` |
+| `publication_date` | `datetime \| None` | `None` | timezone-required |
+
+`original_text` is the field to keep populated. It is what
+`render_temporal` has to reconstruct when it goes the other way, and it is the
+only record of what the model actually saw — a `TemporalExtent` for 1815 does
+not say whether the document wrote "1815", "the mid-1810s" or "circa 1815",
+and the last two are different claims that the `uncertainty` marker only
+partly captures.
+
+`sequence_position` is for narrative order where no date exists at all — "the
+third thing that happens" — and is deliberately not a date. Nothing in this
+package orders by it; it is carried for a caller who has a use for it.
+
+`publication_date` is the vantage point a *relative* expression was read
+against, not a property of the event. It is the same value
+`parse_temporal(..., reference_date=...)` takes, kept on the extent so that
+"last year" remains interpretable after the document that said it is out of
+scope.
+
+### DatePrecision members
+
+`YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE` — a `str` enum, so the value is the
+lowercase name and it serialises as text.
+
+**Precision is a claim about the source, not about the stored value.** A
+`start_date` is always a full `datetime`; `precision = YEAR` means only the
+year part was stated and the rest is padding. Two consequences worth knowing
+before comparing extents:
+
+- **A padded field is not a measurement.** `datetime(2023, 1, 1)` with
+  `precision = YEAR` does not assert January, and code that compares months
+  across two extents of differing precision is comparing one real number with
+  one arbitrary one. `interval.py` exists for this: it widens an extent to the
+  bounds its precision actually supports before relating two of them.
+- **There is no `DECADE` or `CENTURY`**, though the parser reads both. "The
+  1810s" and "the 19th century" become a *range* at `YEAR` precision rather
+  than a coarser precision value, which keeps the enum a statement about
+  calendar fields and puts the width in the dates where arithmetic can reach
+  it.
+
+### UncertaintyMarker members
+
+`EXACT`, `APPROXIMATE`, `CIRCA`, `BEFORE`, `AFTER`, `INFERRED`.
+
+These are **not ordered and not a confidence scale**, and nothing in the
+package treats them as one. `BEFORE` and `AFTER` are directional claims about
+a boundary rather than degrees of doubt, so any code sorting or thresholding
+this enum has mistaken it for `Entity.confidence`, which is the bounded float
+that does mean that (see
+[Confidence and score fields](#confidence-and-score-fields-are-bounded-0010-inclusive)).
+
+`INFERRED` is the one a caller sets rather than the parser: it marks an extent
+worked out from context rather than read from the text.
+
+### Validation: timezones, ordering, and a non-negative position
+
+**1. Every datetime must be timezone-aware.** `start_date`, `end_date` and
+`publication_date`, by the rule stated once under
+[Every datetime field is timezone-required](#every-datetime-field-is-timezone-required).
+Any offset is accepted and nothing normalizes to UTC.
+
+**2. `end_date` must be `>= start_date`.** A `model_validator`, since it spans
+two fields, and it is skipped when either is `None` — an extent with one
+endpoint is legal and common. Note that **equality is permitted**: an extent
+whose endpoints coincide is an instant, not an error.
+
+Do not confuse that with what `interval.py` produces. `widen(moment,
+precision)` returns the first instant *after* the unit containing `moment` —
+half-open, deliberately, so that no comparison has to know whether the store
+underneath counts in microseconds or nanoseconds. So a widened one-day extent
+has endpoints one day apart rather than coinciding, and a coincident pair here
+is a caller's instant rather than a parsed unit.
+
+**3. `sequence_position` must be `>= 0`.** Position, not offset; a negative
+one has no reading.
+
+Two rules it does **not** enforce, both deliberate:
+
+- **`precision` is not checked against the dates.** Nothing stops
+  `precision = MINUTE` on a date whose time is midnight, because midnight is a
+  real minute and the type cannot tell a padded field from a measured one.
+  That is what `original_text` is for.
+- **`uncertainty` is not checked against the range.** `BEFORE` with both
+  endpoints set is not rejected; the marker describes the source's hedge and
+  the dates describe the extent, and a caller combining them is doing
+  interpretation the domain does not own.
+
+### Derived: `is_empty` and `has_range`
+
+`is_empty` is `True` when **all seven** fields are `None` — not when the dates
+are. An extent carrying only `original_text` is not empty, which is the point:
+it records that the document said something temporal that could not be parsed,
+and discarding it would lose the only evidence that there was anything to
+read.
+
+`has_range` is `True` only when *both* `start_date` and `end_date` are set. A
+one-sided extent is not a range, and code that treats a `None` endpoint as
+"open" has to say which direction it means — `interval.py` does, and is where
+that decision lives.
+
+`Entity.is_temporal` composes with these: it is `True` when `temporal` is not
+`None` **and** not empty, so an entity carrying an empty extent reads as
+untemporal, which is the answer a caller wants.
+
+## Vector types
+
+`vector.py`: two models and two functions. `VectorRecord` and `VectorMatch`
+are exported; `cosine_score` and `has_zero_norm` are reached by path.
+
+**Two types, deliberately not one.** A `VectorRecord` is what a tenant *has*;
+a `VectorMatch` is the answer to a question, and its score only means anything
+relative to the query that produced it. Folding the score onto the record
+would make "the score of this record" look like a stored property.
+
+### VectorRecord — fields and defaults
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `entity_id` | `EntityId` | — | required |
+| `tenant_id` | `TenantId` | — | required |
+| `vector` | `list[float]` | — | required; length is the store's business, not the type's |
+| `metadata` | `dict[str, Any]` | `{}` | no NUL, no unpaired surrogate |
+
+`vector` is a mutable `list` and `metadata` a mutable `dict` **on purpose**. A
+store handing back its own object would let a caller corrupt stored state, and
+the port requires that it does not — so the compliance suite mutates what a
+read returned and asserts a later read is unaffected. Immutable containers
+here would make that property unfalsifiable: it would pass against an adapter
+that leaks, because there would be nothing to mutate.
+
+Note what the type does *not* check: `len(vector)`. Dimension is a property of
+the store, not of the record, and `DimensionMismatchError` comes from the port.
+
+### VectorMatch — fields and defaults
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `entity_id` | `EntityId` | — | required |
+| `score` | `float` | — | bounded `0.0..1.0` inclusive |
+| `metadata` | `dict[str, Any]` | `{}` | same rule as above |
+
+There is no `tenant_id`: a search is already scoped to one, and repeating it
+on every row would invite a caller to filter results by a tenant the query did
+not use.
+
+### The score scale, stated once and enforced by the bound
+
+**`score` is cosine similarity mapped onto `0..1` by `(1 + cosine) / 2`**,
+higher meaning more similar:
+
+| cosine | meaning | score |
+|---|---|---|
+| `1.0` | identical direction | `1.0` |
+| `0.0` | orthogonal | `0.5` |
+| `-1.0` | opposite direction | `0.0` |
+
+Note the sign. `(1 - cosine) / 2` is a *distance* on the same range and
+differs on every input, and an earlier version of this page said exactly that
+— a dead anchor that nobody could follow and therefore nobody re-checked. The
+formula above is the one in `domain/vector.py`.
+
+Pinning the scale in the domain type is what makes `min_score` portable
+between adapters. "Score" is ambiguous across vector databases — several
+report a distance, where lower is better — so an adapter that inverted the
+sense would return plausible nonsense rather than an error. With the scale
+fixed and the `0..1` bound on the model, an inversion becomes a validation
+failure at the boundary instead of a silent quality regression. The mapping is
+strictly monotone in cosine, so **ranking is unaffected by the choice**; what
+it buys is that every adapter reports the same number for the same pair.
+
+`0.0` is not a no-op `min_score`: it excludes exactly the antipodal vectors.
+
+### `cosine_score` — clamped, and undefined at the origin
+
+`cosine_score(left, right)` returns the transform above, clamped into
+`0..1`, and raises `ValueError` if either vector has no direction.
+
+The clamp is `clamp_score`, shared with every adapter that computes the
+mapping in its backend rather than spelled once per caller — a private copy is
+a branch no test can reach through its own caller, which is how two of them
+came to be separately unenforced.
+
+It is not defensive tidying. Accumulated rounding makes the dot product of a
+float vector with *itself* exceed its squared norm by an ulp or two, so the
+unclamped value for an identical pair can land marginally above `1.0` — which
+the `le=1` bound would then reject.
+
+**Measured, and kept despite the measurement.** Over roughly 2×10⁶ random
+float64 vectors the unclamped mapping never exceeded `1.0` — the overshoot is
+about one ulp of the ratio, and the `(1 + ratio) / 2` halves it into the ulp
+below 1.0 where it rounds away — and pgvector 0.8.5 clamps its distance
+operator internally. The guarantee is for the precisions and backends this
+repository does not have yet: a store reporting a raw cosine hands
+`VectorMatch` a value its bound rejects, turning a rounding artefact into a
+hard `ValidationError` for the caller. The clamp can only pull an overshoot
+back, so `cosine_score(v, v)` is `<= 1.0` and approximately `1.0`, **not
+exactly** `1.0`; every score assertion in the compliance suite compares with a
+tolerance for that reason.
+
+Vectors of different lengths raise rather than being truncated to the shorter
+one, which would produce a plausible score for two incomparable vectors.
+
+### `has_zero_norm` — the norm, not the components
+
+`has_zero_norm(vector)` is what the port's rejection is written in terms of,
+and it asks whether the **norm** is zero *as float32* — not whether every
+component is zero, which is a different question.
+
+`[1e-30, 1e-30]` has two perfectly good float64 components and a non-zero
+float64 norm, and each squares to `1e-60`, which is zero in float32. Since a
+stored vector is float32 (pgvector's `vector` is float4, and so is most of the
+managed competition), such a vector has no direction any backend can compute —
+and the two adapters disagreed about what that meant until the guard asked the
+right question. The threshold is float32 because that is the one every adapter
+already imposes, not because a magnitude was chosen; no real embedding is
+anywhere near it.
+
+### Metadata must survive a JSON column
+
+Both models reject metadata containing a **NUL** or an **unpaired surrogate**,
+at any depth — inside a nested dict, a list, a tuple or a set, and in keys as
+well as values.
+
+Postgres `jsonb` cannot hold a NUL in text and refuses the write; an unpaired
+surrogate is a legal Python `str` with no UTF-8 encoding at all, so it cannot
+cross a connection that speaks one. A Python `dict` holds both quite happily,
+which is the whole problem: without the check the in-memory adapter accepts
+what the first persistent store refuses.
+
+The rule lives in `domain/json_safety.py` and is shared with `Entity` and
+`Relationship`. It **rejects rather than strips**, because silently altering
+the value would make every round-trip contract in this repository a lie, and a
+caller with unstorable text has a bug upstream that is better surfaced than
+smoothed over.
+
+## Name normalization
+
+`normalization.py` holds one function.
+
+`normalize_name(name)` **casefolds, strips, and collapses internal whitespace
+runs to a single space.** It never raises, and it returns a `str` for any
+`str`.
+
+Hyphens and underscores are **left untouched**, and that is the entire design
+decision. This is an *identity* concern: `normalize_name` feeds
+`entity_id_for`, so two names it maps together become one entity. Collapsing
+`"foo bar"` and `"foo-bar"` would silently merge two things a document
+distinguished, and no later step could tell they had been merged.
+
+The slug-producing normalizer in `extraction/domains/models.py` — which *does*
+turn spaces and hyphens into underscores — answers a different question: what
+is this type's identifier in a schema file. Do not reach for one where the
+other belongs. Blocking is the third case again: `prefix_key` normalizes for
+*grouping*, where being lossy is the point, and it calls this function rather
+than a looser one because a key must not depend on which extractor wrote
+`Entity.normalized_name`.
+
+Note the asymmetry with `Entity.normalized_name`: the field is whatever the
+extractor put there, and every key function re-normalizes rather than trusting
+it.
+
+## Blocking keys
+
+`blocking.py`: three key functions, an enum naming them, and
+`blocking_keys_for` to apply a set of them.
+
+**Blocking decides which entities are worth comparing at all.** Comparing
+every pair of a tenant's entities is quadratic and unaffordable past a few
+thousand, so each entity carries a small set of deliberately lossy keys and
+only entities sharing a key are ever scored against each other.
+
+**Keys are computed here and stored on the entity.**
+`GraphStore.find_by_blocking_key` looks them up and computes nothing, which is
+what keeps this pure domain logic rather than one strategy per backend.
+
+### The three key functions
+
+| Function | Namespace | Returns |
+|---|---|---|
+| `prefix_key(entity)` | `p:` | first `PREFIX_LENGTH` (5) characters of the normalized name |
+| `entity_type_key(entity)` | `t:` | the normalized entity type — **always** present |
+| `soundex_key(entity)` | `s:` | phonetic code, or `None` |
+
+`BlockingKeyStrategy` names the three (`PREFIX`, `ENTITY_TYPE`, `SOUNDEX`) and
+`DEFAULT_STRATEGIES` is all of them, because they fail differently: a prefix
+catches "Ada Lovelace" against "Ada Lovelace, Countess" and misses
+"A. Lovelace"; soundex catches spelling variants and misses abbreviations; the
+type key catches nothing on its own and is what stops an entity from being
+unblockable.
+
+There is no `TRIGRAM`. It was never a key function — approximate matching is
+`VectorStore.search`, and an adapter with a native fuzzy index may serve it
+faster, but nothing may depend on it having one.
+
+### Namespacing is not decoration
+
+`"person"` as an entity type and `"person"` as a five-character name prefix
+are different claims. Un-namespaced, `"Personal Data"` would block with every
+person in the tenant — a block big enough to undo the point of blocking. Hence
+`p:`, `t:`, `s:`, and hence no key is ever just its namespace.
+
+### Why a soundex key can be absent
+
+`soundex_key` returns `None` for a name with no ASCII letters. This is a
+correction rather than defensiveness: `jellyfish.soundex` refuses nothing and
+produces nonsense instead — `"2024"` and `"2007"` both code `2000`, so every
+year lands in one block. An oversized block puts the quadratic back, which is
+the one failure blocking cannot survive. So the name is reduced to its ASCII
+letters first, and a name with none gets no soundex key rather than a junk
+one.
+
+**Accents are folded, not discarded**, and the difference is the point of the
+reduction. Dropping non-ASCII characters loses a *coded* letter whenever the
+accent sits on a consonant: "Muñoz" becomes "muoz" and codes `M200` while
+"Munoz" codes `M520`, so two spellings of one name could never share a block.
+NFKD splits the character into base letter plus combining mark, the letter
+survives, and only the mark is dropped. An accented *vowel* hides this
+entirely, since soundex ignores vowels after the first letter — which is why
+the test for it uses a consonant.
+
+### `blocking_keys_for`
+
+Returns a `frozenset`, matching `Entity.blocking_keys`: the keys are a set of
+claims and their order means nothing. **Absent keys are dropped rather than
+represented**, so the result can be empty — but only if `ENTITY_TYPE` was left
+out of the strategies, since that one always produces a key.
+
+## Similarity
+
+`similarity.py`: two pure functions, two frozen models, and the function that
+combines them. `FeatureWeights` and `SimilarityFeatures` are exported.
+
+**Three signals, deliberately independent, because they fail in different
+places.** Name similarity catches typos and inflections and is fooled by two
+different people with the same name. Graph similarity catches the case the
+others cannot — two records that barely look alike but sit in the same part of
+the graph. The embedding signal is *not computed here*: it arrives from
+`VectorStore.search`, already on the port's `0..1` scale.
+
+Everything in the module is a function of its arguments — no store, no
+provider, no I/O — which is what makes any of it testable in a scoring loop.
+
+### `string_similarity(left, right)`
+
+Jaro-Winkler over **normalized** names, on `0..1`. Casing and whitespace are
+not differences, so `"Ada  LOVELACE"` and `"ada lovelace"` score `1.0`.
+
+Symmetric, and exactly `1.0` when the normalized names are equal. Neither
+property is free: some Jaro-Winkler implementations apply the prefix bonus to
+whichever string is passed first, so both are pinned by test.
+
+### `graph_similarity(left, right)`
+
+Jaccard overlap of two entities' **neighbour sets**, on `0..1`. It takes the
+neighbours rather than two entities and a store, which is what keeps it usable
+inside a loop that has already fetched them.
+
+**Two empty sets score `0.0`, not the conventional `1.0`.** Jaccard of two
+empty sets is defined as 1 in most references and that convention is wrong
+here: two freshly-extracted entities that nothing points at yet would score a
+perfect graph match and drag a merge over the threshold on the strength of
+knowing nothing about either. *No evidence is not perfect agreement.*
+
+### `FeatureWeights` — fields and defaults
+
+| Field | Type | Default | Bounds |
+|---|---|---|---|
+| `name` | `float` | `0.5` | `>= 0.0` |
+| `embedding` | `float` | `0.3` | `>= 0.0` |
+| `graph` | `float` | `0.2` | `>= 0.0` |
+
+**Frozen**, because a weight vector mutated between two comparisons makes the
+scores incomparable and nothing in a score would show it.
+
+The values need not sum to anything. `combined_score` renormalizes over the
+features actually present, so a caller with no embedding gets a
+name-and-graph score on the same `0..1` scale rather than a smaller number —
+otherwise "the embedding provider was down" and "these entities are unalike"
+would produce the same number.
+
+**All-zero weights are rejected at construction.** A scorer returning `0.0`
+for everything looks exactly like a corpus with no duplicates in it, which is
+a plausible answer and therefore not one anybody investigates.
+
+### `SimilarityFeatures` — fields and defaults
+
+| Field | Type | Default | Bounds |
+|---|---|---|---|
+| `name` | `float \| None` | `None` | `0.0..1.0` |
+| `embedding` | `float \| None` | `None` | `0.0..1.0` |
+| `graph` | `float \| None` | `None` | `0.0..1.0` |
+
+Frozen, for the same reason.
+
+**`None` and `0.0` are different and must stay so.** `None` drops the feature
+out of the weighting; `0.0` is positive evidence that the entities disagree on
+it. Collapsing them would let a missing embedding push a pair *below* the
+merge threshold — a merge not happening because a provider was slow.
+
+### `combined_score(features, weights=None)`
+
+A weighted mean of whichever features are present, on `0..1`, clamped.
+
+The clamp is not tidying: a weighted mean of values each within `1.0` can
+still land a hair above it once the weights are renormalized, and that is the
+same overshoot that broke a `le=1` bound downstream in slice 0.
+
+**Returns `0.0` when nothing was computed at all.** Both alternatives are
+worse: "perfectly alike" merges on no evidence, and raising turns a provider
+outage into a crash in the middle of a consolidation run rather than a run
+that merges nothing.
+
+**A weight of zero is exactly equivalent to not supplying the feature**, and
+that falls out of the arithmetic rather than being arranged — the term leaves
+the numerator and the weight leaves the divisor together. An earlier version
+filtered zero-weight features out explicitly, and a hand-applied mutant
+removing that filter survived every test, which is what an equivalent branch
+looks like from outside. The filter is gone and the property is pinned
+directly.
+
+## Temporal intervals
+
+`interval.py`: `Bounds`, `TemporalRelation`, and three functions —
+`bounds`, `relate`, `relate_bounds`. `Bounds` and `TemporalRelation` are
+exported.
+
+This is where two `TemporalExtent`s become comparable. The extent says what
+the text stated; the interval says what that *denotes*, with the precision
+rule applied, so that "2023" and "March 2023" can be related without either
+pretending to a resolution it does not have.
+
+### `Bounds`
+
+A `NamedTuple` of `lower` and `upper`, representing the **half-open** interval
+`[lower, upper)`. `None` is infinity outwards — `None` as a lower bound is
+minus infinity, `None` as an upper bound is plus infinity.
+
+Half-open is what lets adjacent units abut without overlapping: 2023 ends
+exactly where 2024 begins, and neither contains that instant twice. It is also
+why no comparison has to know whether the store underneath counts microseconds
+or nanoseconds.
+
+`INSTANT` is module-level rather than an attribute of `Bounds`, and the reason
+is a real trap: an annotated name in a `NamedTuple` body becomes a *field*, so
+`Bounds.INSTANT` would make every `Bounds(lower, upper)` call site a
+`TypeError` waiting for the first branch that read it. It is **one
+microsecond** — the width given to a moment whose extent states no precision.
+Not a day: defaulting to a day would invent a claim the extent never made, and
+let one exact timestamp swallow every other event that day.
+
+### `TemporalRelation` members
+
+`BEFORE`, `AFTER`, `DURING`, `CONTAINS`, `OVERLAPS`, `EQUALS`.
+
+**Deliberately coarser than Allen's thirteen relations.** `meets`, `starts`,
+`finishes` and their inverses turn on exact endpoint equality, and an endpoint
+that came from widening a year is an artefact of the precision rule rather
+than something the text asserted. Offering them would be offering a
+distinction the data cannot support.
+
+### `bounds(extent)`
+
+Returns the interval, or `None` for an extent that denotes none — one holding
+only a `sequence_position`, say. That is not an error: sequence position
+orders events that have no dates at all, and no interval comparison applies.
+
+**Only two uncertainty markers change the interval.** `BEFORE` and `AFTER`
+open a bound. `EXACT`, `CIRCA`, `APPROXIMATE` and `INFERRED` all fall through
+to the ordinary closed interval, and that is a decision rather than an
+omission: "circa 1850" is a claim about *how confidently* 1850 is known, not
+about which years it might have been. Widening it means inventing a margin — a
+decade? a century? — and then every comparison rests on a number nobody chose.
+The uncertainty stays on the extent for a caller that wants to weight it.
+
+**An open marker discards the far endpoint.** "before 1900" names one instant,
+so an extent carrying both a `BEFORE` marker and an `end_date` has said
+something contradictory, and the marker wins. Reading it as
+`(-inf, end_date)` would honour both and silently convert a contradiction into
+a plausible interval. `parse_temporal` cannot construct one, so this is a
+guard against hand-built extents, and it fails towards the smaller claim.
+
+Note the asymmetry in where an open bound lands: `BEFORE 1900` stops where
+1900 *begins*, and `AFTER 1900` starts once 1900 is *over*. Both exclude the
+named unit, which is what the words mean.
+
+### `relate(first, second)` and `relate_bounds(first, second)`
+
+`relate` returns how `first` stands to `second`, or `None` if either extent
+states no date. `relate_bounds` does the same for two intervals and is
+**total** — always exactly one answer.
+
+`relate_bounds` is public rather than an implementation detail, and the reason
+is worth copying: the interval open at *both* ends is not reachable from any
+`TemporalExtent`, since an extent with neither date has no bounds at all. It
+is exactly the case where a `None`-handling mistake hides, so it needs to be
+callable directly to be testable at all.
+
+The order of the checks is the specification: `EQUALS` first, then disjointness
+in each direction, then containment in each direction, and `OVERLAPS` as the
+remainder. Containment is tested with helpers that read `None` as the right
+infinity for the *position* it appears in — a `None` lower bound is minus
+infinity and a `None` upper bound is plus infinity, so the two comparisons are
+not the same function.
+
+## Merge strategies
+
+`merge_strategy.py`: one enum and one function. Merging "Ada Lovelace" into
+"Augusta Ada King" leaves one entity and several candidate values for every
+property; `resolve` is that choice, made **per property**, so a caller can
+keep the canonical description while unioning the external ids.
+
+### `PropertyMergeStrategy` members, and which resolve
+
+| Member | Status |
+|---|---|
+| `PREFER_CANONICAL` | implemented; the default |
+| `UNION` | implemented |
+| `PREFER_MERGED` | raises `NotImplementedError` |
+| `LATEST` | raises `NotImplementedError` |
+| `DEEP_MERGE` | raises `NotImplementedError` |
+
+`IMPLEMENTED` is the frozenset of the first two, so a caller can ask before
+committing to a strategy.
+
+**The three unimplemented ones raise, and do not fall back to the default.**
+That is the point rather than an omission: a silent fallback writes the
+canonical value while the caller believes it asked for a deep merge, which
+corrupts data while looking like it worked and leaves nothing in the result to
+show it happened.
+
+`LATEST` is not merely unimplemented, it is **unanswerable** with the data
+that exists. Timestamps are per entity, not per property, so "the most
+recently updated value" has nothing behind it — and implementing it against
+the entity timestamp would answer a different question in a way no caller
+could detect.
+
+`UNION` is structural rather than a preference, which is why it is one of the
+two that exist. Merging *inherently* produces alias sets — the whole point is
+that several names denote one thing — so a strategy that accumulates instead
+of picking is not optional equipment.
+
+### `resolve(strategy, *, canonical, others)`
+
+`canonical` is the surviving entity's value and **may be `None`, which is a
+value rather than an absence** — `PREFER_CANONICAL` keeps it. `others` are the
+absorbed entities' values, in the order the merge listed those entities.
+
+`UNION` returns a **list**, canonical first, in first-seen order, flattening
+one level. Three properties of that, each load-bearing:
+
+- **A list rather than a set**, because these values reach an event payload
+  where a set has no JSON form and no stable ordering to compare replays
+  against.
+- **`==` rather than hashing**, because the values are frequently unhashable —
+  a list of external ids, a dict of properties — so a set would raise on
+  exactly the nested values `UNION` exists to accumulate. That makes it
+  O(n²) in the number of entities in one merge, which is single digits.
+- **Flattens one level**, so applying `UNION` twice does not produce
+  `[[a, b], c]`. Idempotence matters because a projection replays.
+
+## RelationshipRedirection
+
+`consolidation.py` holds one model: an edge, `before` and `after` a merge
+moved or dropped it. `after` is `None` when the merge *dropped* the edge —
+which happens when redirecting both endpoints onto the canonical entity would
+have made it a self-loop.
+
+| Field | Type | Default |
+|---|---|---|
+| `before` | `Relationship` | — |
+| `after` | `Relationship \| None` | `None` |
+
+### Validation: `after` must be the same edge, moved
+
+When `after` is present, its `id` and its `tenant_id` must equal `before`'s.
+
+The reason is about **undo**, not about tidiness. A redirection is applied by
+upserting `after` over the id it shares with `before`. If the ids could
+differ, applying it would create a *second* edge and leave the original in
+place — and undoing it by upserting `before` would not remove that second
+edge, so the undo would silently be a no-op on half the change. The
+`tenant_id` check is the same argument where the leak crosses a tenant
+boundary.
+
+## Temporal parsing
+
+`temporal_parsing.py`: `parse_temporal`, `render_temporal`, `widen`, and
+`AmbiguousReferenceDateError`. This is the only module here that reads free
+text, and the only one whose answer depends on *when the text was written*.
+
+### `parse_temporal(text, *, reference_date)`
+
+Returns a `TemporalExtent`, or **`None` if the text states no date**. `None`
+is a normal outcome, not a failure: most entity mentions are not dated.
+
+`reference_date` is the vantage point relative expressions resolve against —
+`SourceDocument.published_at`, typically — and must be timezone-aware; a naive
+one raises `ValueError`.
+
+Text is rejected without parsing if it is blank or longer than
+`MAX_INPUT_LENGTH` (500 characters). A temporal expression is short; the bound
+is there so a paragraph handed to it by mistake does not become a
+`dateparser` workload.
+
+### `reference_date=None` is checked, not assumed
+
+`None` is permitted and means *"this text had better not need one"* — and that
+claim is **tested rather than trusted**. The text is parsed twice, against two
+probe dates far apart (1999 and 2035), and if the two answers differ it raises
+`AmbiguousReferenceDateError`.
+
+This is the design decision worth carrying: the failure mode it prevents is
+that "last year" silently becomes a date relative to *now*, so re-extracting
+the same document next year produces a different graph — a corruption with no
+symptom at the time it happens. The error is raised only after the ambiguity
+has been *demonstrated* on that specific text, so it never fires speculatively
+on text that happens to contain a relative-looking word.
+
+### `render_temporal(extent)`
+
+The inverse: `extent` as text this module parses back to the same extent, or
+`None`.
+
+It exists for the **round-trip property**, which is the only test shape that
+can catch a strategy quietly mangling a form an earlier strategy already
+handled. That is why it returns `None` for anything it cannot render
+*faithfully* — an approximate rendering would make the property pass by
+lowering the bar it was written to hold.
+
+So the set of extents it can render is deliberately narrow: it needs a
+`start_date` and a `precision`, refuses anything carrying a
+`sequence_position` or a `publication_date`, refuses a start that is not
+exactly on the boundary of its stated precision, and refuses month and day
+*ranges* entirely, because the range patterns it would have to parse back
+cannot express a cross-year span.
+
+### `widen(moment, precision)`
+
+**The first instant *after* the unit of `precision` containing `moment`** —
+half-open, deliberately. The alternative, the last representable instant
+inside the unit, forces every comparison to know the resolution of the
+underlying store, and `datetime`'s microseconds, Neo4j's nanoseconds and
+Postgres's microseconds do not agree on what that is.
+
+It lives here rather than in `interval.py` because it is the exact inverse of
+what the parsers do when they floor a partial date, and the two have to stay
+each other's inverse.
+
+### `AmbiguousReferenceDateError`
+
+A `ValueError` subclass carrying the offending `text`. Its message names the
+consequence rather than the rule — that parsing without a reference date would
+make a re-extraction produce a different graph — and says what to pass instead.
+
+## Error types
+
+`exceptions.py`. **`RedstringError` is the base of every error this library
+raises deliberately**, so `except RedstringError` is a complete catch for
+anything the library means to tell you.
+
+`AmbiguousReferenceDateError` is the one exception to that shape: it subclasses
+`ValueError` rather than `RedstringError`, because it is raised by a pure
+parsing function about its own argument.
+
+| Error | Raised when |
+|---|---|
+| `MissingEntityError` | writing a relationship whose endpoint the tenant does not have |
+| `DimensionMismatchError` | a vector's length is not the store's `dimension` |
+| `AliasCycleError` | resolving an entity through its aliases did not terminate |
+| `UnknownDomainError` | no bundled or registered domain schema by that id |
+| `LlmProviderError` | base for the three provider failures below |
+| `EmptyCompletionError` | the model returned no usable content |
+| `RefusedCompletionError` | the model declined, and its safety layer said so |
+| `MalformedCompletionError` | content came back and did not validate against the schema |
+| `EmbeddingProviderError` | an `EmbeddingProvider` could not produce usable vectors |
+| `ConsolidationInvariantError` | base for the merge-log invariants below |
+| `MergeIntoAliasError` | the merge target is itself already an alias |
+| `DoubleMergeError` | an entity in this merge has already been merged elsewhere |
+| `UnknownMergeError` | no merge in effect matches the event id an undo names |
+| `ReplayFailedError` | a projection rejected an event under `project(strict=True)` |
+
+Two groupings are load-bearing rather than tidy. **`RefusedCompletionError`
+must be distinguishable from `EmptyCompletionError`** — a refusal is a
+decision about the content and a retry will produce it again, while an empty
+completion is usually worth retrying — which is why all three are exported
+rather than collapsed into `LlmProviderError`. And **`UnknownMergeError`
+covers both "never happened" and "already undone"**, deliberately: from a
+caller's point of view there is no merge to reverse either way, and
+distinguishing them in the type would invite handling only one.

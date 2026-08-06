@@ -63,7 +63,14 @@ from typing import NamedTuple
 import pytest
 
 PROJECT = Path(__file__).resolve().parents[2]
-PACKAGE = PROJECT / "src" / "redstring"
+#: Every tree a `# nosec` can live in and be checked by the configured bandit.
+#:
+#: `scripts/` is here because the pre-commit hook excludes only `^tests/`, so a
+#: marker there is subject to exactly the same rot as one in the package --
+#: bandit stops reporting at that line, the suppression stays, and nothing
+#: says so. Scanning only `src/` would have made this module's own guarantee
+#: quietly partial the first time a script needed one, which it now does.
+SCANNED = (PROJECT / "src" / "redstring", PROJECT / "scripts")
 
 #: A real marker is a comment that *starts* `# nosec`. Prose mentioning the
 #: convention -- including the block in `pgvector.py` explaining why the five
@@ -85,7 +92,8 @@ class Marker(NamedTuple):
 
 def _markers() -> list[Marker]:
     found: list[Marker] = []
-    for path in sorted(PACKAGE.rglob("*.py")):
+    paths = sorted(path for tree in SCANNED for path in tree.rglob("*.py"))
+    for path in paths:
         source = path.read_text()
         tokens = tokenize.generate_tokens(io.StringIO(source).readline)
         for token in tokens:
@@ -125,6 +133,7 @@ def _findings_ignoring_suppressions() -> list[Finding]:
             "pyproject.toml",
             "-r",
             "src/",
+            "scripts/",
             "--ignore-nosec",
             "-f",
             "json",

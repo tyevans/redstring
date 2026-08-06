@@ -46,6 +46,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from redstring.domain.blocking import blocking_keys_for
 from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.json_safety import has_unstorable_text
 from redstring.domain.normalization import normalize_name
 
 # Re-exported rather than defined here. They moved to `domain/` when
@@ -88,7 +89,9 @@ class MappedExtraction(NamedTuple):
 
     entities: list[Entity]
     relationships: list[Relationship]
-    #: Rows the domain refused, overwhelmingly blank names.
+    #: Rows the domain refused: blank names overwhelmingly, and anything
+    #: carrying text no JSON-backed store can hold (a NUL, or an unpaired
+    #: surrogate, which has no UTF-8 encoding at all).
     dropped_entities: int = 0
     #: Edges naming an endpoint that was never listed as an entity.
     unresolved_relationships: int = 0
@@ -235,11 +238,24 @@ def _build_entity(
     Returns the entity and whether its temporal expression had to be dropped
     for want of a reference date.
 
-    The guard is on `name.strip()` rather than a `try`/`except ValidationError`
-    so that a *different* validation failure -- one that is our bug, not the
-    model's -- still raises instead of being counted as a dropped row.
+    The guards are explicit -- `name.strip()`, and a NUL anywhere in the
+    candidate -- rather than a `try`/`except ValidationError`, so that a
+    *different* validation failure, one that is our bug rather than the
+    model's, still raises instead of being counted as a dropped row.
+
+    Both guards name a way the *model* can hand back something unusable.
+    Text that no JSON-backed event store can hold -- a NUL, or an unpaired
+    surrogate -- is refused by `Entity` (`domain/json_safety.py`); without
+    this guard that refusal would surface as a `ValidationError` out of
+    `map_extraction` and fail the whole chunk over one bad row, which is not
+    how any other bad row is treated. The surrogate case does not even get
+    that far: `entity_id_for` hashes with `uuid5`, which encodes, so it raised
+    `UnicodeEncodeError` from this function.
+    `model_dump()` rather than the fields read below, because the dropping
+    decision should not have to be revisited each time this function starts
+    reading one more field of the candidate.
     """
-    if not candidate.name.strip():
+    if not candidate.name.strip() or has_unstorable_text(candidate.model_dump()):
         return None, False
     temporal, undatable = _build_extent(candidate, reference_date=reference_date)
     built = Entity(
