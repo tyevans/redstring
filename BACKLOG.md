@@ -1233,9 +1233,17 @@ paragraph. **Write a reference section against the source, then execute the
 examples**; a plausible paragraph about arithmetic nobody re-derived is how
 both of these got in.
 
-`mkdocs build --strict` is now the gate for the first kind -- it fails on an
-anchor that resolves nowhere, and it caught two of mine while this was being
-written. Nothing gates the second kind but running the code.
+**Both halves now have a gate, and the second one is new.**
+`mkdocs build --strict` fails on an anchor that resolves nowhere, and caught
+two of mine while this was being written.
+`tests/unit/test_reference_map_tables_are_honest.py` fails when the map table
+names a section the page does not have, or when the two orders disagree --
+which is the check whose absence let fourteen rows stand over five sections
+for several slices. Proved by adding a row for a section that does not exist
+and watching it fail.
+
+Nothing gates the *wrong claim* except running the code while you write the
+paragraph, which is the habit to keep.
 
 ### B72. `is_valid_source` normalizes differently from the loader that filled the list
 

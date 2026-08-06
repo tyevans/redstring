@@ -33,7 +33,7 @@ inside an event rather than by import are described in
 ## Scope and how to read this page
 
 Everything documented here lives in `src/redstring/domain/`, one section per
-concern, in roughly the order the modules build on each other:
+concern, **in page order**:
 
 | Section | Module |
 |---|---|
@@ -41,16 +41,24 @@ concern, in roughly the order the modules build on each other:
 | Entity | `entity.py` |
 | Relationship | `relationship.py` |
 | SourceDocument | `source.py` |
-| Alias, RelationshipRedirection | `alias.py`, `consolidation.py` |
+| Alias | `alias.py` |
 | Temporal value types | `temporal.py` |
-| Temporal parsing | `temporal_parsing.py` |
+| Vector types | `vector.py` |
+| Name normalization | `normalization.py` |
+| Blocking keys | `blocking.py` |
+| Similarity | `similarity.py` |
 | Temporal intervals | `interval.py` |
 | Merge strategies | `merge_strategy.py` |
-| Similarity | `similarity.py` |
-| Vector types | `vector.py` |
-| Blocking keys | `blocking.py` |
-| Name normalization | `normalization.py` |
+| RelationshipRedirection | `consolidation.py` |
+| Temporal parsing | `temporal_parsing.py` |
 | Error types | `exceptions.py` |
+
+`tests/unit/test_reference_map_tables_are_honest.py` fails if a row here names
+a section this page does not have, or if the two orders disagree. That gate
+exists because the absence of one is what this table's previous version
+demonstrated: it listed nine sections that had never been written, the links
+to them were the only trace, and repairing the links made the gap invisible
+again.
 
 Out of scope, deliberately: the write model (`aggregates`, and the events it
 emits — see [Events](events.md)), the store ports and their adapters, and the
