@@ -1235,3 +1235,120 @@ that decision lives.
 `Entity.is_temporal` composes with these: it is `True` when `temporal` is not
 `None` **and** not empty, so an entity carrying an empty extent reads as
 untemporal, which is the answer a caller wants.
+
+## Vector types
+
+`vector.py`: two models and two functions. `VectorRecord` and `VectorMatch`
+are exported; `cosine_score` and `has_zero_norm` are reached by path.
+
+**Two types, deliberately not one.** A `VectorRecord` is what a tenant *has*;
+a `VectorMatch` is the answer to a question, and its score only means anything
+relative to the query that produced it. Folding the score onto the record
+would make "the score of this record" look like a stored property.
+
+### VectorRecord — fields and defaults
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `entity_id` | `EntityId` | — | required |
+| `tenant_id` | `TenantId` | — | required |
+| `vector` | `list[float]` | — | required; length is the store's business, not the type's |
+| `metadata` | `dict[str, Any]` | `{}` | no NUL, no unpaired surrogate |
+
+`vector` is a mutable `list` and `metadata` a mutable `dict` **on purpose**. A
+store handing back its own object would let a caller corrupt stored state, and
+the port requires that it does not — so the compliance suite mutates what a
+read returned and asserts a later read is unaffected. Immutable containers
+here would make that property unfalsifiable: it would pass against an adapter
+that leaks, because there would be nothing to mutate.
+
+Note what the type does *not* check: `len(vector)`. Dimension is a property of
+the store, not of the record, and `DimensionMismatchError` comes from the port.
+
+### VectorMatch — fields and defaults
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `entity_id` | `EntityId` | — | required |
+| `score` | `float` | — | bounded `0.0..1.0` inclusive |
+| `metadata` | `dict[str, Any]` | `{}` | same rule as above |
+
+There is no `tenant_id`: a search is already scoped to one, and repeating it
+on every row would invite a caller to filter results by a tenant the query did
+not use.
+
+### The score scale, stated once and enforced by the bound
+
+**`score` is cosine similarity mapped onto `0..1` by `(1 + cosine) / 2`**,
+higher meaning more similar:
+
+| cosine | meaning | score |
+|---|---|---|
+| `1.0` | identical direction | `1.0` |
+| `0.0` | orthogonal | `0.5` |
+| `-1.0` | opposite direction | `0.0` |
+
+Note the sign. `(1 - cosine) / 2` is a *distance* on the same range and
+differs on every input, and an earlier version of this page said exactly that
+— a dead anchor that nobody could follow and therefore nobody re-checked. The
+formula above is the one in `domain/vector.py`.
+
+Pinning the scale in the domain type is what makes `min_score` portable
+between adapters. "Score" is ambiguous across vector databases — several
+report a distance, where lower is better — so an adapter that inverted the
+sense would return plausible nonsense rather than an error. With the scale
+fixed and the `0..1` bound on the model, an inversion becomes a validation
+failure at the boundary instead of a silent quality regression. The mapping is
+strictly monotone in cosine, so **ranking is unaffected by the choice**; what
+it buys is that every adapter reports the same number for the same pair.
+
+`0.0` is not a no-op `min_score`: it excludes exactly the antipodal vectors.
+
+### `cosine_score` — clamped, and undefined at the origin
+
+`cosine_score(left, right)` returns the transform above, clamped into
+`0..1`, and raises `ValueError` if either vector has no direction.
+
+The clamp is not defensive tidying. Accumulated rounding makes the dot product
+of a float vector with *itself* exceed its squared norm by an ulp or two, so
+the unclamped value for an identical pair can land marginally above `1.0` —
+which the `le=1` bound would then reject. The clamp can only pull an overshoot
+back, so `cosine_score(v, v)` is `<= 1.0` and approximately `1.0`, **not
+exactly** `1.0`; every score assertion in the compliance suite compares with a
+tolerance for that reason.
+
+Vectors of different lengths raise rather than being truncated to the shorter
+one, which would produce a plausible score for two incomparable vectors.
+
+### `has_zero_norm` — the norm, not the components
+
+`has_zero_norm(vector)` is what the port's rejection is written in terms of,
+and it asks whether the **norm** is zero *as float32* — not whether every
+component is zero, which is a different question.
+
+`[1e-30, 1e-30]` has two perfectly good float64 components and a non-zero
+float64 norm, and each squares to `1e-60`, which is zero in float32. Since a
+stored vector is float32 (pgvector's `vector` is float4, and so is most of the
+managed competition), such a vector has no direction any backend can compute —
+and the two adapters disagreed about what that meant until the guard asked the
+right question. The threshold is float32 because that is the one every adapter
+already imposes, not because a magnitude was chosen; no real embedding is
+anywhere near it.
+
+### Metadata must survive a JSON column
+
+Both models reject metadata containing a **NUL** or an **unpaired surrogate**,
+at any depth — inside a nested dict, a list, a tuple or a set, and in keys as
+well as values.
+
+Postgres `jsonb` cannot hold a NUL in text and refuses the write; an unpaired
+surrogate is a legal Python `str` with no UTF-8 encoding at all, so it cannot
+cross a connection that speaks one. A Python `dict` holds both quite happily,
+which is the whole problem: without the check the in-memory adapter accepts
+what the first persistent store refuses.
+
+The rule lives in `domain/json_safety.py` and is shared with `Entity` and
+`Relationship`. It **rejects rather than strips**, because silently altering
+the value would make every round-trip contract in this repository a lie, and a
+caller with unstorable text has a bug upstream that is better surfaced than
+smoothed over.
