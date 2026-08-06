@@ -1289,46 +1289,6 @@ and watching it fail.
 Nothing gates the *wrong claim* except running the code while you write the
 paragraph, which is the habit to keep.
 
-### B75. `is_valid_source` normalizes differently from the loader that filled the list
-
-`extraction/domains/models.py`. `RelationshipTypeSchema.normalize_type_lists`
-stores `valid_source_types` / `valid_target_types` lowercased, stripped, with
-spaces and hyphens turned into underscores. `is_valid_source` and
-`is_valid_target` normalize the argument with **`.lower().strip()` only**, so
-the string that was written in the YAML does not match itself:
-
-```python
-schema = RelationshipTypeSchema(
-    id="loves", description="...", valid_source_types=["Main Character"]
-)
-schema.valid_source_types  # ['main_character']
-schema.is_valid_source("Main Character")  # False
-schema.is_valid_source("main_character")  # True
-```
-
-Recurring-defect §2 exactly: one fact -- "how an entity type id is spelled" --
-with two normalizers and nothing that fails when they disagree.
-
-**Who is actually hurt.** Entity type *ids* are normalized on load, so a
-caller passing an `EntityTypeSchema.id` is fine, and that is what the bundled
-schemas and every test do. The caller who is not fine is one passing an
-`Entity.entity_type`, which is free-form text straight from the model where
-"Main Character" is an ordinary answer -- and `DomainSchema.validate_relationship`
-is a public helper that invites exactly that.
-
-**Not fixed on the spot because it is a behaviour change on a public helper,
-not a typo.** Sharing one normalizer makes calls that return `False` today
-start returning `True`, which is the intended answer but is still a change a
-caller could be relying on. The fix is to lift the loader's transform into a
-named function in the same module and call it from both -- there is no case
-for two -- and to add the test that would have caught it: assert
-`is_valid_source(x)` for the *same string* `x` that was passed to the
-constructor, which no current test does.
-
-Found while writing the relationship-type section of
-`reference/domain-schema-yaml.md` (B65), and documented there as observable
-behaviour rather than left for the next reader to trip over.
-
 ### B67. No way to find entities that were never consolidated
 
 Reported downstream. `Entity` carries no consolidation state, so "resolve
