@@ -1621,3 +1621,83 @@ remainder. Containment is tested with helpers that read `None` as the right
 infinity for the *position* it appears in — a `None` lower bound is minus
 infinity and a `None` upper bound is plus infinity, so the two comparisons are
 not the same function.
+
+## Merge strategies
+
+`merge_strategy.py`: one enum and one function. Merging "Ada Lovelace" into
+"Augusta Ada King" leaves one entity and several candidate values for every
+property; `resolve` is that choice, made **per property**, so a caller can
+keep the canonical description while unioning the external ids.
+
+### `PropertyMergeStrategy` members, and which resolve
+
+| Member | Status |
+|---|---|
+| `PREFER_CANONICAL` | implemented; the default |
+| `UNION` | implemented |
+| `PREFER_MERGED` | raises `NotImplementedError` |
+| `LATEST` | raises `NotImplementedError` |
+| `DEEP_MERGE` | raises `NotImplementedError` |
+
+`IMPLEMENTED` is the frozenset of the first two, so a caller can ask before
+committing to a strategy.
+
+**The three unimplemented ones raise, and do not fall back to the default.**
+That is the point rather than an omission: a silent fallback writes the
+canonical value while the caller believes it asked for a deep merge, which
+corrupts data while looking like it worked and leaves nothing in the result to
+show it happened.
+
+`LATEST` is not merely unimplemented, it is **unanswerable** with the data
+that exists. Timestamps are per entity, not per property, so "the most
+recently updated value" has nothing behind it — and implementing it against
+the entity timestamp would answer a different question in a way no caller
+could detect.
+
+`UNION` is structural rather than a preference, which is why it is one of the
+two that exist. Merging *inherently* produces alias sets — the whole point is
+that several names denote one thing — so a strategy that accumulates instead
+of picking is not optional equipment.
+
+### `resolve(strategy, *, canonical, others)`
+
+`canonical` is the surviving entity's value and **may be `None`, which is a
+value rather than an absence** — `PREFER_CANONICAL` keeps it. `others` are the
+absorbed entities' values, in the order the merge listed those entities.
+
+`UNION` returns a **list**, canonical first, in first-seen order, flattening
+one level. Three properties of that, each load-bearing:
+
+- **A list rather than a set**, because these values reach an event payload
+  where a set has no JSON form and no stable ordering to compare replays
+  against.
+- **`==` rather than hashing**, because the values are frequently unhashable —
+  a list of external ids, a dict of properties — so a set would raise on
+  exactly the nested values `UNION` exists to accumulate. That makes it
+  O(n²) in the number of entities in one merge, which is single digits.
+- **Flattens one level**, so applying `UNION` twice does not produce
+  `[[a, b], c]`. Idempotence matters because a projection replays.
+
+## RelationshipRedirection
+
+`consolidation.py` holds one model: an edge, `before` and `after` a merge
+moved or dropped it. `after` is `None` when the merge *dropped* the edge —
+which happens when redirecting both endpoints onto the canonical entity would
+have made it a self-loop.
+
+| Field | Type | Default |
+|---|---|---|
+| `before` | `Relationship` | — |
+| `after` | `Relationship \| None` | `None` |
+
+### Validation: `after` must be the same edge, moved
+
+When `after` is present, its `id` and its `tenant_id` must equal `before`'s.
+
+The reason is about **undo**, not about tidiness. A redirection is applied by
+upserting `after` over the id it shares with `before`. If the ids could
+differ, applying it would create a *second* edge and leave the original in
+place — and undoing it by upserting `before` would not remove that second
+edge, so the undo would silently be a no-op on half the change. The
+`tenant_id` check is the same argument where the leak crosses a tenant
+boundary.
