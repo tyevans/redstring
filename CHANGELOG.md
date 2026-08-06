@@ -12,7 +12,7 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-06
 
 ### Added
 
@@ -65,6 +65,44 @@ Exported: `ReplayFailure`, `ReplayFailedError`, `replay`. See
   counted once per event); constructing a report with `failed=` now raises
   `TypeError`. `failures` has one entry per *rejection*, so an event both folds
   rejected counts once in `failed` and twice in `failures`.
+
+- **The eight string enums are now `enum.StrEnum`.** `DatePrecision`,
+  `MergeStrategy`, `ExtractionMethod` and the rest. `.value` and
+  member-as-plain-string are unchanged — those reach Neo4j properties and event
+  payloads, and are pinned member by member in
+  `tests/unit/test_enum_values_are_a_wire_format.py`. What does change is
+  `str(DatePrecision.YEAR)`, which was `"DatePrecision.YEAR"` and is now
+  `"year"`. Anything formatting a member into a message or a log line reads
+  differently; nothing that persists one does.
+
+- **Batch relationship writes are atomic.** A batch that fails writes no edges
+  rather than a prefix. See
+  [ADR 0019](https://github.com/tyevans/redstring/blob/main/docs/adr/0019-batch-relationship-writes-are-atomic.md).
+
+### Fixed
+
+- **`DomainSchema` normalizes a type id one way, not three.** The same rule was
+  spelled six times in three strengths, and the disagreement was reachable from
+  ordinary input: `is_valid_source("Main Character")` answered `False` against a
+  list built from that exact string, and `get_entity_type("Access Road")`
+  returned `None` for a type declared as `Access Road`. Callers passing an
+  `EntityTypeSchema.id` never saw it — ids are normalized on load — but a caller
+  passing an `Entity.entity_type`, which is free-form text from the model, did.
+  Eleven call sites now share `normalize_type_id` / `normalize_identifier`.
+
+  Two behaviour changes fall out, both intended: a reference written `__site__`
+  matches an entity type written `__site__`, and lookups that returned `None`
+  for an unnormalized argument now find the type.
+
+- **A vector is rejected for a zero *norm*, not for zero components.** Those are
+  different questions: components around 1e-30 are eight good float64 values
+  with a non-zero float64 norm that stores as zero, and `cosine_score` needs the
+  norm.
+
+- **A NUL byte is refused in every field that reaches the event log**, not only
+  in metadata.
+
+- **`"Sept"` parses.** The spelling table claimed it and the pattern refused it.
 
 ## [0.2.0] - 2026-08-05
 
@@ -227,7 +265,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/tyevans/redstring/releases/tag/v0.3.0
 [0.2.0]: https://github.com/tyevans/redstring/releases/tag/v0.2.0
 [0.1.0]: https://github.com/tyevans/redstring/releases/tag/v0.1.0
 [0.1.0a1]: https://github.com/tyevans/redstring/releases/tag/v0.1.0a1
