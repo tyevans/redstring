@@ -62,14 +62,14 @@ SYNC = ["uv", "sync", "--all-extras"]
 _PASSED = re.compile(r"(\d+) passed")
 
 
-def baseline_command(tool: str) -> list[str]:
+def baseline_command(tool: str, config_path: str = "cosmic-ray.toml") -> list[str]:
     """The test command the mutants will run, read from that tool's own config.
 
     Restating it here would let the two drift, and a baseline that runs a
     different command than the mutation session is not a baseline for it.
     """
     if tool == "cosmic-ray":
-        config = tomllib.loads((REPO_ROOT / "cosmic-ray.toml").read_text())
+        config = tomllib.loads((REPO_ROOT / config_path).read_text())
         return shlex.split(config["cosmic-ray"]["test-command"])
 
     config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
@@ -141,7 +141,23 @@ def ensure_worktree() -> Path:
         if result.returncode != 0:
             sys.exit("could not create the mutation worktree")
     else:
-        print(f"reusing the existing worktree at {WORKTREE}", flush=True)
+        # **Reset, never merely reuse.** A worktree left at a previous HEAD
+        # mutates code that is not the code you are asking about, and reports
+        # survivors against tests that have since changed -- a result wrong in
+        # the direction this whole script exists to prevent, because it looks
+        # exactly like a result. `--hard` is safe here precisely because
+        # nothing in this directory is authored: cosmic-ray's `local`
+        # distributor writes mutants into it and expects them thrown away.
+        print(f"resetting the worktree at {WORKTREE} to HEAD", flush=True)
+        head = run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture=True)
+        if head.returncode != 0:
+            sys.exit("could not read HEAD")
+        for step in (
+            ["git", "reset", "--hard", head.stdout.strip()],
+            ["git", "clean", "-fdx", "--exclude=.venv"],
+        ):
+            if run(step, cwd=WORKTREE).returncode != 0:
+                sys.exit("could not reset the mutation worktree")
 
     if run(SYNC, cwd=WORKTREE).returncode != 0:
         sys.exit("`uv sync --all-extras` failed in the worktree")
@@ -151,6 +167,16 @@ def ensure_worktree() -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tool", choices=["cosmic-ray", "mutmut"])
+    parser.add_argument(
+        "--config",
+        default="cosmic-ray.toml",
+        help=(
+            "cosmic-ray config, relative to the repo root. A scoped session -- a "
+            "narrower `test-command`, one module in `module-path` -- is how a "
+            "target too big to mutate whole becomes affordable; the baseline "
+            "then runs that config's own command, which is the point."
+        ),
+    )
     parser.add_argument(
         "--session",
         default="session.sqlite",
@@ -166,7 +192,7 @@ def main() -> int:
     worktree = ensure_worktree()
 
     print("\n== baseline ==", flush=True)
-    command = baseline_command(args.tool)
+    command = baseline_command(args.tool, args.config)
     result = run(command, cwd=worktree, capture=True)
     print(result.stdout, flush=True)
 
@@ -187,7 +213,7 @@ def main() -> int:
 
     print(f"\n== {args.tool} ==", flush=True)
     if args.tool == "cosmic-ray":
-        config = str(REPO_ROOT / "cosmic-ray.toml")
+        config = str(REPO_ROOT / args.config)
         for step in (
             ["uv", "run", "cosmic-ray", "init", config, args.session],
             ["uv", "run", "cosmic-ray", "exec", config, args.session],
