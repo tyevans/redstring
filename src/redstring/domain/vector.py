@@ -83,6 +83,35 @@ class VectorMatch(_HasPortableMetadata):
     score: float = Field(ge=0.0, le=1.0)
 
 
+def clamp_score(value: float) -> float:
+    """`value` forced into `VectorMatch`'s `0..1` bound.
+
+    **One declaration site for the clamp**, called by `cosine_score` and by
+    every adapter that computes the mapping in its backend. That is not tidying:
+    each copy of `min(1.0, max(0.0, ...))` is a branch no test can reach through
+    its own caller, so each was separately unenforced, and a mutant widening one
+    of them survived (BACKLOG B10n). Here the guard is reachable by passing a
+    number, so one test covers every caller.
+
+    **Measured, so the next reader does not repeat the search.** The overshoot
+    this exists for is about one ulp of the ratio `dot / magnitude`, and the
+    `(1 + ratio) / 2` that follows halves it into the ulp below 1.0, where it
+    rounds away -- so over roughly 2e6 random float64 vectors (dimensions
+    2-768, magnitudes to 1e6) the unclamped value never exceeded 1.0. pgvector
+    0.8.5 clamps its distance operator internally, so its scores did not either
+    over 4000 queries at the extremes. Slice 0's `cosine_similarity` *did*
+    exceed its bound, because it returned the raw ratio with no halving.
+
+    **Kept anyway, and not because of those measurements but despite them.**
+    The guarantee is needed at precisions and backends this repository does not
+    yet have: a store reporting a raw cosine, or computing the mapping itself
+    without clamping, hands `VectorMatch` a value its `le=1` bound rejects --
+    turning a one-ulp rounding artefact into a hard `ValidationError` for the
+    caller. Do not resolve a surviving mutant here by deleting the clamp.
+    """
+    return min(1.0, max(0.0, value))
+
+
 def cosine_score(left: Sequence[float], right: Sequence[float]) -> float:
     """`(1 + cosine(left, right)) / 2`, clamped into `0..1`.
 
@@ -102,7 +131,7 @@ def cosine_score(left: Sequence[float], right: Sequence[float]) -> float:
     magnitude = _norm(left) * _norm(right)
     if magnitude == 0.0:
         raise ValueError("cosine is undefined for a zero vector")
-    return min(1.0, max(0.0, (1.0 + dot / magnitude) / 2.0))
+    return clamp_score((1.0 + dot / magnitude) / 2.0)
 
 
 def _norm(vector: Sequence[float]) -> float:

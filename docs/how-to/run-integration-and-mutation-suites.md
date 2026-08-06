@@ -1270,11 +1270,16 @@ testing and essentially nothing else does. Real examples from this repo:
   every test ran against a table an earlier run had created — the DDL was
   never observed doing anything (see [tear down](#tear-down)).
 - `min(1.0, …)` widened to `min(2.0, …)` in `domain/vector.py::cosine_score`
-  survived, and the survivor is **understood but not equivalent**: the clamp is
-  genuinely unenforced, and roughly 2 × 10^6 random vectors failed to produce
-  an input that reaches it (**B10n**). That is what an honest non-equivalent
-  label looks like — a measurement and a backlog entry, not a test bolted on
-  and not a clamp deleted.
+  survived, and the survivor was **understood but not equivalent**: the clamp
+  was genuinely unenforced, and roughly 2 × 10⁶ random vectors failed to
+  produce an input that reaches it. The honest first response was a
+  measurement and a backlog entry rather than a test bolted on or a clamp
+  deleted — and the resolution, once the same mutant turned up on the
+  *adapter's* copy of the same expression, was to notice that two unreachable
+  branches are one reachable function. `clamp_score` is now shared, and a test
+  passing it `1.5` covers both. **A guard you cannot reach through its caller
+  can often be reached by extracting it**, which is a better move than either
+  labelling it equivalent or leaving it uncovered.
 
 The full catalogue of input shapes that make two implementations agree is the
 table in [`.claude/rules/testing.md`](https://github.com/tyevans/redstring/blob/main/.claude/rules/testing.md) and

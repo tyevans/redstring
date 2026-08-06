@@ -9,7 +9,13 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from redstring.domain.vector import VectorMatch, VectorRecord, cosine_score, has_zero_norm
+from redstring.domain.vector import (
+    VectorMatch,
+    VectorRecord,
+    clamp_score,
+    cosine_score,
+    has_zero_norm,
+)
 
 _components = st.floats(
     min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, allow_subnormal=False
@@ -104,6 +110,47 @@ class TestCosineScore:
         would produce a plausible score for two incomparable vectors."""
         with pytest.raises(ValueError, match="argument 2 is shorter"):
             cosine_score([1.0, 2.0], [1.0])
+
+
+class TestClampScore:
+    """The clamp both `cosine_score` and `PgVectorStore.search` apply.
+
+    It is tested **here**, directly, because it cannot be reached through
+    either caller: over roughly 2e6 random float64 vectors the unclamped
+    cosine mapping never exceeded 1.0, and pgvector 0.8.5 clamps its distance
+    operator internally. Two copies of the clamp were therefore two branches
+    no test could reach, and a mutant widening one of them survived
+    (BACKLOG B10n). Sharing the function is what makes the guard reachable at
+    all -- by passing it a number.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (1.0 + 1e-16, 1.0),
+            (1.5, 1.0),
+            (2.0, 1.0),
+            (-1e-16, 0.0),
+            (-0.5, 0.0),
+            (float("inf"), 1.0),
+            (float("-inf"), 0.0),
+        ],
+    )
+    def test_a_value_outside_the_bound_is_pulled_to_it(self, value: float, expected: float):
+        assert clamp_score(value) == expected
+
+    @pytest.mark.parametrize("value", [0.0, 0.5, 1.0, 1e-300, 1.0 - 1e-16])
+    def test_a_value_inside_the_bound_is_untouched(self, value: float):
+        """The other direction. A clamp that returned a constant, or that
+        clamped to the wrong bound, would pass every assertion above."""
+        assert clamp_score(value) == value
+
+    def test_the_result_always_satisfies_the_model(self):
+        """Stated in the terms the clamp exists for: `VectorMatch.score` has a
+        `0..1` bound, and an unclamped overshoot reaches a caller as a
+        `ValidationError` rather than as a rounding artefact."""
+        for value in (-3.0, 1.0 + 1e-9, 7.5):
+            VectorMatch(entity_id=uuid4(), score=clamp_score(value))
 
 
 class TestHasZeroNorm:

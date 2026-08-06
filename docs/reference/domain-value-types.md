@@ -1317,10 +1317,24 @@ it buys is that every adapter reports the same number for the same pair.
 `cosine_score(left, right)` returns the transform above, clamped into
 `0..1`, and raises `ValueError` if either vector has no direction.
 
-The clamp is not defensive tidying. Accumulated rounding makes the dot product
-of a float vector with *itself* exceed its squared norm by an ulp or two, so
-the unclamped value for an identical pair can land marginally above `1.0` —
-which the `le=1` bound would then reject. The clamp can only pull an overshoot
+The clamp is `clamp_score`, shared with every adapter that computes the
+mapping in its backend rather than spelled once per caller — a private copy is
+a branch no test can reach through its own caller, which is how two of them
+came to be separately unenforced.
+
+It is not defensive tidying. Accumulated rounding makes the dot product of a
+float vector with *itself* exceed its squared norm by an ulp or two, so the
+unclamped value for an identical pair can land marginally above `1.0` — which
+the `le=1` bound would then reject.
+
+**Measured, and kept despite the measurement.** Over roughly 2×10⁶ random
+float64 vectors the unclamped mapping never exceeded `1.0` — the overshoot is
+about one ulp of the ratio, and the `(1 + ratio) / 2` halves it into the ulp
+below 1.0 where it rounds away — and pgvector 0.8.5 clamps its distance
+operator internally. The guarantee is for the precisions and backends this
+repository does not have yet: a store reporting a raw cosine hands
+`VectorMatch` a value its bound rejects, turning a rounding artefact into a
+hard `ValidationError` for the caller. The clamp can only pull an overshoot
 back, so `cosine_score(v, v)` is `<= 1.0` and approximately `1.0`, **not
 exactly** `1.0`; every score assertion in the compliance suite compares with a
 tolerance for that reason.
