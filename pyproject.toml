@@ -53,22 +53,32 @@ dependencies = [
     # and every one of those needs eventsource -- so `import redstring`
     # needed it, and a public API that fails to import without an extra is not
     # a public API. The events are the write model, not an optional backend.
-    # The `<0.11` cap stays deliberate: this is a pre-1.0 library whose entire
-    # API changed between 0.5 and 0.9. See BACKLOG B38.
+    # The one-minor cap stays deliberate: this is a pre-1.0 library whose
+    # entire API changed between 0.5 and 0.9, and which operates a stated
+    # no-shim policy -- 0.12.0 alone renamed a keyword argument and changed an
+    # abstract method's arity, neither with an alias. See BACKLOG B38.
     #
-    # **The floor is 0.10.0 because `projections/base.py` forwards
-    # `retry_policy` and `tracer`**, which `DeclarativeProjection.__init__`
-    # gained in 0.10.0. It was `>=0.9.1`, and `0.1.0` shipped with that -- a
-    # resolver picking the low end got `TypeError: unexpected keyword argument
+    # **The floor is 0.12.0 because `redstring/projections/` imports
+    # `StoreProjection` from `eventsource.application.projections`**, which
+    # does not exist before it. This is the first bump where the floor moves
+    # because something here needs it rather than because the cap dragged it:
+    # both projections were built on a local copy of that class until 0.12.0
+    # upstreamed it, together with the `replay` driver this package also used
+    # to carry. See docs/adr/0020.
+    #
+    # The previous floor was 0.10.0, for `projections/base.py` forwarding
+    # `retry_policy` and `tracer` to `DeclarativeProjection.__init__`, which
+    # gained them in 0.10.0. `0.1.0` shipped declaring `>=0.9.1` -- a resolver
+    # picking the low end got `TypeError: unexpected keyword argument
     # 'retry_policy'` at the first projection construction. Not at import, so
-    # a smoke test that imports the package would not have caught it.
-    # (`tenant_filter`, forwarded alongside them, did exist in 0.9.1.)
+    # a smoke test that imports the package would not have caught it. That
+    # file is now deleted and the hazard belongs to eventsource.
     #
     # Reported by a downstream project, not by this repository's own gates:
     # CI resolves fresh and therefore always tests the *newest* permitted
     # version, so a too-low floor is invisible here by construction. See
     # BACKLOG B70 for the check that would measure it.
-    "eventsource-py>=0.10.0,<0.12",
+    "eventsource-py>=0.12.0,<0.13",
 ]
 
 [project.optional-dependencies]

@@ -2,15 +2,14 @@
 
 Two separate mechanisms, easily confused: the **checkpoint** is per
 projection and lives in a `ProjectionCheckpoints` repository; the **position**
-is per feed and is what `project` takes and returns. This suite pins what each
+is per feed and is what `replay` takes and returns. This suite pins what each
 one means, because resuming from the wrong one skips events.
 """
 
 from __future__ import annotations
 
 from eventsource.adapters.memory import InMemorySnapshotStore
-
-from redstring.projections import project
+from eventsource.application.projections import replay
 
 from .conftest import fresh_rig
 from .log_builder import build_log
@@ -33,7 +32,7 @@ class TestCheckpoints:
     async def test_the_checkpoint_advances_as_events_are_delivered(self):
         rig, _ = await _built(SINGLE)
         before = await rig.projections[0].get_checkpoint()
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
         after = await rig.projections[0].get_checkpoint()
         assert before is None
         assert after is not None
@@ -53,7 +52,7 @@ class TestCheckpoints:
         rig, _ = await _built(SINGLE)
         events = [envelope.event async for envelope in rig.event_store.read_all()]
 
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
 
         last = str(events[-1].event_id)
         assert await rig.projections[0].get_checkpoint() == last
@@ -66,7 +65,7 @@ class TestResumingFromAPosition:
         envelopes = [envelope async for envelope in rig.event_store.read_all()]
         assert len(envelopes) >= 3
 
-        resumed = await project(
+        resumed = await replay(
             rig.event_store, rig.projections, from_position=envelopes[0].position
         )
 
@@ -78,7 +77,7 @@ class TestResumingFromAPosition:
         wrong in a way no single run would reveal.
         """
         whole_rig, built = await _built(WITH_MERGE)
-        await project(whole_rig.event_store, whole_rig.projections)
+        await replay(whole_rig.event_store, whole_rig.projections)
         whole = await whole_rig.dump(built.tenant_ids)
 
         # A *second build* of the same scenario, deliberately -- the two rigs
@@ -93,11 +92,11 @@ class TestResumingFromAPosition:
         envelopes = [envelope async for envelope in halves_rig.event_store.read_all()]
         midpoint = envelopes[len(envelopes) // 2].position
 
-        first = await project(halves_rig.event_store, halves_rig.projections)
+        first = await replay(halves_rig.event_store, halves_rig.projections)
         assert first.last_position is not None
-        await project(halves_rig.event_store, halves_rig.projections)
+        await replay(halves_rig.event_store, halves_rig.projections)
 
-        stopped_early = await project(
+        stopped_early = await replay(
             halves_rig.event_store, halves_rig.projections, from_position=midpoint
         )
         assert stopped_early.applied > 0

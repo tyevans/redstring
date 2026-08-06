@@ -1441,50 +1441,54 @@ maintains an unresolved set from `DocumentExtracted` and `EntitiesMerged`, or a
 store-level query over "entities with no alias and no merge event". Both are
 real designs; neither is a field.
 
-### B68. `project()` scopes by tenant, not by stream or category
+### B68. `replay()` scopes by tenant and aggregate type, not by stream or category
 
-**Half fixed.** `project(..., tenant_id=...)` forwards
-`FeedReadOptions(tenant_id=...)`, which the eventsource adapters push into the
-query, so a shared store rebuilds one tenant with an indexed read instead of
-scanning every other tenant's events and discarding them in Python. That is
-the case downstream actually had, and tenant is what this library models end
-to end.
+**Closed, upstream.** `eventsource-py` 0.12.0 added
+`FeedReadOptions.aggregate_type` (its ADR 0052) and its `replay` pushes both
+`tenant_id=` and `aggregate_type=` into the adapter's query. This project
+writes two aggregate types — `Document` and `ConsolidationLog` — so a rebuild
+of the read models can now ask for the first and skip the second, which is the
+half of this entry that was open. The local driver this entry was written
+against is deleted; see ADR 0020.
 
 **Category scoping is still open and is a different question.**
 `GlobalEventFeed` has no `read_category`; `EventStore` does, and taking it
-would mean `project` accepting a narrower port than the one it documents, or
+would mean `replay` accepting a narrower port than the one it documents, or
 accepting both and branching. Neither is obviously right, and nobody has asked
-for it — a caller wanting one stream can pass `from_position` and a tenant.
-Do not add it speculatively; the reason to wait is that the branch would be
-untestable against the in-memory feed without also deciding what happens when
-both `tenant_id` and `categories` are given.
+for it — a caller wanting one stream can pass `from_position`, a tenant and an
+aggregate type. Do not add it speculatively; the reason to wait is that the
+branch would be untestable against the in-memory feed without also deciding
+what happens when both `tenant_id` and `categories` are given. It is now
+upstream's call to make, not this project's, and the argument above is what to
+send them if it comes up.
 
-The remaining cost is that `tenant_id` is a *read* filter only. A projection
-constructed with `tenant_filter` still applies its own filter after delivery,
-so a caller who sets both pays for one and gets no benefit from the other.
-That is harmless and slightly confusing; `docs/how-to/drive-projections-from-an-event-store.md`
-says which to reach for.
+The remaining cost is unchanged and is upstream's too: `tenant_id` is a *read*
+filter only. A projection constructed with `tenant_filter` still applies its
+own filter after delivery, so a caller who sets both pays for one and gets no
+benefit from the other. That is harmless and slightly confusing;
+`docs/how-to/drive-projections-from-an-event-store.md` says which to reach for.
 
 ### B73. `ReplayReport.failures` is unbounded, and holds live tracebacks
 
-`projections/replay.py` appends a `ReplayFailure` per rejection with no cap,
-and each holds the exception object — so its `__traceback__` and every frame's
-locals stay reachable for the length of the call. `MAX_EVENTS_PER_REPLAY`
-bounds the *loop* at ten million; it does not bound this.
+**Closed, upstream, and it is worth reading how.** This entry declined to cap
+the list, and said why: a cap that silently truncated would reproduce the exact
+defect the field was added to fix — an operator told "3 failed" who cannot
+reach the third. It named the two honest shapes instead, a cap that *reports*
+what it dropped (`failures_truncated: int`) or a callback that streams
+failures rather than accumulating them, and deferred choosing between them
+until someone had a replay failing at that scale.
 
-Deliberate rather than overlooked, and the reasoning is why it was not simply
-capped. A cap silently truncating the list reproduces the exact defect this
-field was added to fix — an operator told "3 failed" who cannot reach the
-third. The honest shapes are a cap that *says* it truncated (a
-`failures_truncated: int` on the report), or streaming failures to a callback
-instead of accumulating them. Both are API decisions, and neither is worth
-making before someone has a replay that actually fails at that scale: a
-rebuild dropping a hundred thousand events has a problem the report is not
-going to solve.
+`eventsource-py` 0.12.0 took **both** — `max_failures` with
+`failures_truncated`, and `on_failure=` firing for every failure whether
+retained or not — which is the right answer to a two-good-options question
+when neither costs the other. The local driver is deleted; see ADR 0020.
 
-The practical bound today is that a failure only lands here after the
-projection base class has already retried it and written it to the DLQ, so a
-run failing at that volume is slow long before it is large.
+Recorded rather than deleted because of what it demonstrates. The entry was
+written as "here is what is wrong, here is what I learned that made deferring
+right, here are the shapes a fix would take", per this file's own rule, and
+that is what an upstream implementer could act on. An entry reading "cap the
+failures list" would have thrown the expensive part away and got a silent
+truncation back.
 
 ### B70. `eventsource-py` floor was too low, and the library was published with it
 
@@ -1522,6 +1526,20 @@ floor is proved, and each one is a separate `>=` that CI never resolves to.
 The cap also moved to `<0.12`, tested against 0.11.0; the floor deliberately
 did **not** move with it, because a floor states what the library needs and
 nothing here needs anything 0.11.0 added.
+
+**Update (eventsource 0.12.0).** Range is now `>=0.12.0,<0.13`, and this is
+the first bump where the floor moves for the stated reason rather than the
+cap dragging it: `redstring.projections` imports `StoreProjection` from
+`eventsource.application.projections`, which 0.11.0 does not have, so the
+library genuinely needs 0.12.0. See ADR 0020. The floors test's assertion
+changed meaning with it — it used to prove *our* forwarding worked at the
+floor, and now proves the class exists there and its `ProjectionOptions`
+still accepts every option we pass. The general case remains open, and it is
+worth noting upstream closed *its* version of this in the same release
+(`make floors`, resolving `lowest-direct` into a throwaway environment) and
+found eight of eleven declared floors wrong. That is the shape to copy here
+when the general case gets picked up: a resolver flag beats a hand-written
+test per dependency.
 
 ### B71. Confining a *fifth* library — closed by the cheap 80%, and what is left
 

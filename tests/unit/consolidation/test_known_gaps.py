@@ -40,13 +40,14 @@ from eventsource.adapters.memory import (
     InMemoryEventStore,
     InMemorySnapshotStore,
 )
+from eventsource.application.projections import replay
 from eventsource.domain.tenant_context import tenant_scope
 
 from redstring.aggregates.repositories import document_repository
 from redstring.consolidation.service import ConsolidationService
 from redstring.events.streams import document_stream
 from redstring.graph.adapters.memory import InMemoryGraphStore
-from redstring.projections import GraphProjection, project
+from redstring.projections import GraphProjection
 
 from .conftest import edge, entity
 
@@ -89,7 +90,7 @@ class Rig:
             await self.documents.save(document)
 
     async def catch_up(self):
-        report = await project(self.event_store, [self.projection])
+        report = await replay(self.event_store, [self.projection])
         assert report.failed == 0
 
 
@@ -183,7 +184,7 @@ class TestAnEdgeTheMergeNeverSawBecomesAPermanentDuplicate:
         await rig.extract("doc-2", in_doc_2, [unseen], "m3")
         await rig.catch_up()
         await rig.graph_store.delete_by_tenant(tenant_id)
-        await project(
+        await replay(
             rig.event_store,
             [
                 GraphProjection(

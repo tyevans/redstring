@@ -7,11 +7,18 @@ Tenant isolation is the property this project treats as inviolable, and
 having it enforced at write time by tested library code beats re-deriving it
 at each call site.
 
-`validate_on_save` is left at its default `True`; `enforce_on_load` is not
-turned on, because it validates that a context exists without filtering
+`validate_on_save` is left at its default `True`; `require_tenant_context` is
+not turned on, because it requires that a context exists without filtering
 events by it -- see the library's own note. Loading is safe regardless: a
 `Document` stream holds one document's events and its id is already derived
 from the tenant, and a `ConsolidationLog` stream *is* a tenant.
+
+The flag was called `enforce_on_load` until `eventsource-py` 0.12.0 (its ADR
+0057) renamed it, and the rename is the reason this paragraph is shorter than
+it was: the old name promised enforcement the code never performed, so a
+downstream note had to spend a paragraph saying so. `require_tenant_context`
+states the precondition it does impose, and there is no alias -- passing
+`enforce_on_load=` now raises `TypeError`, which is the point.
 """
 
 from __future__ import annotations

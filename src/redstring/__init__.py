@@ -66,19 +66,21 @@ could not be caught without a dotted import.
   `RelationshipTypeSchema`, `PropertySchema` and `ConfidenceThresholds`.
 - **Pieces, for callers who want the steps rather than the whole.**
   `ExtractionPipeline` (`PipelineResult`, `DEFAULT_SYSTEM_PROMPT`),
-  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`, `project`
-  (aliased `replay`, for callers whose own vocabulary has a *project* noun),
-  `ReplayReport`/`ReplayFailure`, and `Document` with `document_stream` to
-  address it.
+  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`, and
+  `Document` with `document_stream` to address it.
 - **Errors.** `RedstringError` and everything under it that a caller can
   reach: `LlmProviderError` and its three shapes, `MissingEntityError`,
   `AliasCycleError`, `DimensionMismatchError`, `PartialExtractionError`,
-  `ReplayFailedError`, and the chunking three.
+  and the chunking three.
 
-`project`'s signature is the one place the surface deliberately names another
-package's types: `GlobalEventFeed`, `EventSubscriber` and `Position` all come
-from `eventsource` (a core dependency, so they are importable). Re-exporting
-them under our own name would be worse than depending on them openly.
+**The rebuild driver is `eventsource.replay`, not ours.** `project`/`replay`,
+`ReplayReport`, `ReplayFailure` and `ReplayFailedError` were exported here
+while `eventsource-py` had no rebuild driver. They were reported upstream and
+landed in 0.12.0, so they are gone from this surface rather than re-exported
+from it -- a caller writes `from eventsource import replay`, which is the same
+choice this module makes everywhere else: depending on another package openly
+beats republishing its names under ours. `redstring.projections` says what the
+upstream version does that this one did not.
 
 ## What is deliberately not here
 
@@ -108,7 +110,7 @@ them under our own name would be worse than depending on them openly.
 Extraction emits `DocumentExtracted` on a `Document` aggregate and stops.
 `redstring.projections` folds that event into a store. `build_graph` does
 both in one call for a caller with no event store; a caller who has one
-appends `report.event` and drives `project` over the feed instead. The
+appends `report.event` and drives `eventsource.replay` over the feed instead. The
 separation is not decoration -- it is why a store can be rebuilt, and
 `tests/unit/projections/test_replay_equivalence.py` is what proves it can.
 """
@@ -185,15 +187,7 @@ from redstring.ports.graph_store import (
 )
 from redstring.ports.llm_provider import LlmProvider
 from redstring.ports.vector_store import VectorStore
-from redstring.projections import (
-    GraphProjection,
-    ReplayFailedError,
-    ReplayFailure,
-    ReplayReport,
-    VectorProjection,
-    project,
-    replay,
-)
+from redstring.projections import GraphProjection, VectorProjection
 from redstring.temporal.inference import InferredRelation, infer_relations
 from redstring.temporal.query import CursorStalledError, TemporalQuery
 from redstring.vector.adapters.memory import InMemoryVectorStore
@@ -266,9 +260,6 @@ __all__ = [
     "RelationshipRedirection",
     "RelationshipStore",
     "RelationshipTypeSchema",
-    "ReplayFailedError",
-    "ReplayFailure",
-    "ReplayReport",
     "Response",
     "ScoredCandidate",
     "SimilarityFeatures",
@@ -293,6 +284,4 @@ __all__ = [
     "infer_relations",
     "load_schema_from_file",
     "load_schema_from_string",
-    "project",
-    "replay",
 ]

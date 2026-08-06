@@ -7,7 +7,9 @@ and was not exported, so `except RefusedCompletionError` needed a dotted path
 into an internal module; `build_graph(domain=...)` accepted and *advertised* a
 `DomainSchema` that had no public constructor; `Chunker` was the same shape;
 and `project`'s entire signature was `eventsource` types with nothing saying
-where they came from.
+where they came from. (`project` has since gone upstream and off this
+surface -- the entries it required went with it, which is
+`test_no_documented_foreign_type_is_stale` doing its job.)
 
 Four occurrences is a missing gate, not four mistakes -- the same conclusion
 `test_compliance_coverage.py` reached about isolation tests. Ruff's F822 covers
@@ -37,6 +39,18 @@ base. `Document(...)` is `AggregateRoot.__init__`, which lives in eventsource,
 so no annotation of ours mentions the `StreamId` it takes. That is why
 `document_stream` is exported -- reachability there had to be reasoned about
 rather than measured.
+
+`GraphProjection` and `VectorProjection` became the second instance when
+`StoreProjection` went upstream in `eventsource-py` 0.12.0. Their constructor
+is now `StoreProjection.__init__(store, **options: Unpack[ProjectionOptions])`,
+which lives in eventsource, so `RetryPolicy`, `Tracer`, `TenantFilter`,
+`ProjectionCheckpoints` and `DLQRepository` stopped being mentioned by any
+signature of ours and `test_no_documented_foreign_type_is_stale` correctly
+struck their entries. That is the check working, not a gap opening: the five
+names are no longer *ours* to document, and `ProjectionOptions` -- eventsource's
+own name for exactly that option set -- is where a caller reads them. It is
+recorded in `redstring.projections`, reasoned about rather than measured, for
+the same reason `document_stream` is.
 
 `typing.get_type_hints` raises `NameError` on exactly the modules this matters
 most for -- `composition.py` holds all eight of its annotation imports that
@@ -70,14 +84,6 @@ SRC = Path(redstring.__file__).resolve().parent
 #: not silence a check, it records an answer. An entry that stops appearing in
 #: any signature is caught by `test_no_documented_foreign_type_is_stale`.
 DOCUMENTED_FOREIGN_TYPES = {
-    "GlobalEventFeed": "eventsource.ports.store -- the log `project` replays",
-    "EventSubscriber": "eventsource.ports.handlers -- what a projection is",
-    "Position": "eventsource.ports.positions -- a cursor into the log",
-    "ProjectionCheckpoints": "eventsource.ports.checkpoints -- projection resume state",
-    "DLQRepository": "eventsource.ports.dlq -- where a poison event goes",
-    "RetryPolicy": "eventsource.application.projections.retry",
-    "TenantFilter": "eventsource.application.projections.base",
-    "Tracer": "eventsource.observability",
     "StreamId": (
         "eventsource.ports.positions -- what `document_stream` returns and "
         "`Document` is constructed from"

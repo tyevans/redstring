@@ -18,7 +18,7 @@ By the end you will have:
 - a script that extracts a document and appends its event to an event store,
 - `GraphProjection` and `VectorProjection` constructed with a checkpoint
   repository, a DLQ repository and a retry policy,
-- a `project` call over the feed, and a `ReplayReport` you know how to read,
+- a `replay` call over the feed, and a `ReplayReport` you know how to read,
 - a rebuild-from-zero you can run twice without corrupting the result.
 
 This is a task guide, not a tour of the event model. For what the events mean
@@ -70,7 +70,7 @@ in the store, and something has to fold them into the read models.
 And if the log already exists and one store is wrong, stale, or newly added,
 you want the shorter recipe: wipe that store per tenant and replay from zero,
 in [Rebuild a projection](rebuild-a-projection.md). The difference is not the
-machinery — both end in a `project` call — but the scope: that guide restores
+machinery — both end in a `replay` call — but the scope: that guide restores
 one read model, this one stands the whole path up, extraction included.
 
 ## What `build_graph` gives up: per-call idempotency and no log to rebuild from
@@ -169,7 +169,7 @@ a server.
 **An event store that both appends and reads a global feed.** This is
 `eventsource`'s, not ours — redstring never creates one. Two capabilities are
 needed and they are two different ports: appending `report.event` needs an
-`EventAppender` (`append(stream, events, expected)`), and `project` needs a
+`EventAppender` (`append(stream, events, expected)`), and `replay` needs a
 `GlobalEventFeed` (`read_all(from_position)`). `eventsource`'s
 `InMemoryEventStore` is both, and is a complete implementation rather than a
 test double:
@@ -181,7 +181,7 @@ event_store = InMemoryEventStore()
 ```
 
 Swap in `PostgreSQLEventStore` or `SQLiteEventStore` when the log has to
-outlive the process. Nothing in this guide changes: `project` takes the feed,
+outlive the process. Nothing in this guide changes: `replay` takes the feed,
 not an adapter.
 
 **The stores you are projecting into.** A `GraphStore` for `GraphProjection`;
@@ -222,14 +222,24 @@ from redstring import (
     GraphProjection,
     InMemoryGraphStore,
     InMemoryVectorStore,
-    ReplayReport,
     SourceDocument,
     VectorProjection,
     build_graph,
     document_stream,
-    project,
 )
 ```
+
+`replay` and `ReplayReport` are **not** in that list. They were exported here
+until `eventsource-py` 0.12.0 upstreamed the rebuild driver this package had
+written for itself (its ADR 0054), and they are now imported from there:
+
+```python
+from eventsource import ReplayFailedError, ReplayFailure, ReplayReport, replay
+```
+
+Which is the same rule as the foreign types below, not an exception to it:
+re-exporting another package's function under our name would be worse than
+depending on it openly.
 
 `document_stream` is in that list because you need it in step 2: the event has
 to be appended to the same stream the aggregate was addressed by, and
@@ -238,9 +248,10 @@ Deriving rather than storing it is deliberate — re-extracting a document
 appends to the stream it already has.
 
 The foreign types are `eventsource`'s and stay under their own names —
-`GlobalEventFeed`, `EventSubscriber` and `Position` in `project`'s signature,
+`GlobalEventFeed`, `EventSubscriber` and `Position` in `replay`'s signature,
 `ProjectionCheckpoints`, `DLQRepository` and `RetryPolicy` in the projections'
-constructors. The next section says where each one lives. Re-exporting another
+constructors (where they arrive as `ProjectionOptions`, eventsource's
+`TypedDict` naming that option set once). The next section says where each one lives. Re-exporting another
 package's ports under our names would be worse than depending on them openly,
 and `eventsource` is a core dependency, so they are always importable.
 
@@ -261,17 +272,17 @@ append: `Document.record_embeddings(...)` with the `VectorRecord`s from
 whatever embedding model you run, saved through a repository — that is
 [Use the write model](use-the-write-model.md). Wire `VectorProjection` in
 anyway if that is coming; a projection that ignores every event in the feed is
-harmless, and `project` still counts those events as applied.
+harmless, and `replay` still counts those events as applied.
 
 ### What you do not need
 
-**A checkpoint to resume from, on the first run.** `project` never consults
+**A checkpoint to resume from, on the first run.** `replay` never consults
 one. It starts wherever `from_position` says, and the default `None` means the
 beginning of the log — see the resume section below, and
 [Rebuild a projection](rebuild-a-projection.md) for the same property used
 deliberately.
 
-**A subscription runner.** `project` is a loop over a feed, driven by you.
+**A subscription runner.** `replay` is a loop over a feed, driven by you.
 Live catch-up on a timer is a different job with a different component.
 
 ## The foreign types this path needs, and where they come from (`EventStore`, `GlobalEventFeed`, `EventSubscriber`, `Position` from `eventsource`)
@@ -281,9 +292,9 @@ none of them is re-exported under a redstring name. That is deliberate — see
 the note at the end of this section — so it is worth knowing what each one is
 before you go looking for ours.
 
-### `GlobalEventFeed` — the first argument to `project`
+### `GlobalEventFeed` — the first argument to `replay`
 
-`project`'s first parameter is a feed, not a store:
+`replay`'s first parameter is a feed, not a store:
 
 ```python
 async def project(
@@ -310,7 +321,7 @@ class GlobalEventFeed(Protocol):
     async def current_position(self) -> Position | None: ...
 ```
 
-`project` uses exactly one of them — `read_all(from_position)`, iterated with
+`replay` uses exactly one of them — `read_all(from_position)`, iterated with
 `async for`. That is the whole coupling. Anything with those methods works,
 which is why this guide's script and a Postgres-backed rebuild are the same
 code with a different constructor.
@@ -324,7 +335,7 @@ five narrow Protocols, and the concrete adapters implement all of them:
 |---|---|---|
 | `EventAppender` | `append(stream, events, expected)` | step 2, appending `report.event` |
 | `StreamReader` | `read_stream`, `get_stream_version` | loading a `Document` aggregate |
-| `GlobalEventFeed` | `read_all`, `current_position` | `project` |
+| `GlobalEventFeed` | `read_all`, `current_position` | `replay` |
 | `EventLookup` | `event_exists(event_id)` | nothing in this guide |
 | `CategoryQuery` | `read_category(category)` | nothing in this guide |
 
@@ -339,7 +350,7 @@ worth having in the signature rather than in a comment.
 
 ### `EventSubscriber` — what `GraphProjection` and `VectorProjection` are
 
-`project`'s second argument is a `Sequence[EventSubscriber]`.
+`replay`'s second argument is a `Sequence[EventSubscriber]`.
 `EventSubscriber` is an **ABC**, not a Protocol — `eventsource.ports.handlers`
 makes it one so subclasses can add methods beyond the two abstract ones:
 
@@ -352,7 +363,7 @@ Our two projections are subscribers by inheritance: both extend
 `StoreProjection`, which extends `eventsource`'s `DeclarativeProjection`,
 which supplies `subscribed_to` from the handler declarations and wraps
 `handle` with the retry, checkpoint and DLQ behaviour. You never implement
-either method; you construct the projection and hand it to `project`.
+either method; you construct the projection and hand it to `replay`.
 
 Because the parameter is a plain sequence of subscribers, a projection of your
 own goes in the same list. It has to be a real `EventSubscriber` — an object
@@ -388,13 +399,13 @@ the base class you would be skipping.
 
 `Position` reaches you in two places: `ReplayReport.last_position` (typed
 `Position | None`, and `None` when the feed was empty, because it is only ever
-set from an envelope you actually read) and `project`'s `from_position`, which
+set from an envelope you actually read) and `replay`'s `from_position`, which
 is **exclusive** and defaults to `None` for "from the very beginning". Feeding
 one back into the other is the whole resume protocol.
 
 One adapter detail worth knowing before you build on positions:
 `EventEnvelope.position` is typed `Position | None` because feedless stores
-exist. A store with no global feed is not one you can drive `project` over at
+exist. A store with no global feed is not one you can drive `replay` over at
 all, so on this path you will always see a real position — but that is a fact
 about your adapter choice, not a guarantee from the type.
 
@@ -476,12 +487,12 @@ Two answers, both correct:
 
 - **Pass a throwaway store**, as above. `scratch_graph` is populated and then
   discarded, and the store you actually care about is only ever written by
-  `project` in step 4. Take this when you want the log to be the single path
+  `replay` in step 4. Take this when you want the log to be the single path
   into the read model — a rebuild then exercises the same code that built the
   store in the first place, which is the property that makes a rebuild
   trustworthy.
 - **Pass the real graph store.** The event is folded once now and once again
-  when `project` reaches it. That is safe rather than merely tolerable: every
+  when `replay` reaches it. That is safe rather than merely tolerable: every
   write in `GraphProjection` is an upsert or an idempotent delete, which is
   the same property the redelivery section below rests on. Take this when you
   want the graph populated the moment extraction returns and do not want to
@@ -708,7 +719,7 @@ AppendResult(stream=..., new_version=..., position=...)
 first extraction. `position` is the global-feed position of the **first**
 event in the batch, and is `None` for a feedless store.
 
-**Do not pass that position to `project` as `from_position`.**
+**Do not pass that position to `replay` as `from_position`.**
 `from_position` is exclusive, so a replay starting there skips the event you
 just appended — which is exactly backwards. It is a handle for "where in the
 feed did my write land", useful for logging or for waiting on a consumer to
@@ -721,7 +732,7 @@ catch up. Resuming is the checkpoint repository's job, and rebuilding wants
 carries `aggregate_version=1`**, including the second and third extraction of
 the same document under new models. The store does not mind: the memory
 adapter computes `stream_version` from the stream's length, so the envelopes
-come back correctly numbered 1, 2, 3, and both `project` and the projections
+come back correctly numbered 1, 2, 3, and both `replay` and the projections
 read the event's payload rather than its version.
 
 Rehydration does mind. `AggregateRoot.apply_event` sets
@@ -816,7 +827,7 @@ same shape: `store` positionally, then `checkpoint_repo`, `dlq_repo` and
 keyword-only. Pass the repositories by keyword anyway — `GraphProjection(store,
 checkpoints, dlq)` is legal and reads as three anonymous objects.
 
-The list order does not matter. `project` hands every event to every
+The list order does not matter. `replay` hands every event to every
 projection, each projection ignores what it has no handler for, and neither
 fold reads the other's store.
 
@@ -852,7 +863,7 @@ that string. Two consequences:
 
 What lands in the row is `event_id` and `event_type` — `update_checkpoint`
 takes no position, and `get_checkpoint()` hands you back a string. **You
-cannot feed it to `project`'s `from_position`**, which wants a `Position`.
+cannot feed it to `replay`'s `from_position`**, which wants a `Position`.
 These are two mechanisms that sound like one, and
 `tests/unit/projections/test_checkpoints.py` exists to keep them apart: the
 checkpoint answers "what has this projection seen", the position answers
@@ -878,7 +889,7 @@ exhausting the retries would DLQ an event the projection has done.
 ### The DLQ is what makes a failed event recoverable rather than merely counted
 
 Without `dlq_repo`, a permanently failed event raises out of `handle`,
-`project` catches it, `failed` goes up by one, and the event is not named
+`replay` catches it, `failed` goes up by one, and the event is not named
 anywhere. `ReplayReport.failed` tells you *how much* of the log did not land
 and nothing else — you cannot fix what you cannot identify.
 
@@ -915,7 +926,7 @@ says they were never applied.
 `ExponentialBackoffRetryPolicy(RetryConfig(max_retries=2, initial_delay=2.0,
 exponential_base=2.0, jitter=0.1))` — three attempts per failing event, with
 `await asyncio.sleep(...)` of about two and then four seconds in between.
-`project` is a sequential loop, so that is six seconds of wall clock *per
+`replay` is a sequential loop, so that is six seconds of wall clock *per
 poison event*, spent in the middle of your rebuild.
 
 Note the trap in the neighbouring default: `ExponentialBackoffRetryPolicy()`
@@ -950,7 +961,7 @@ upserts entities and *then* relationships, so an event that fails on a
 dangling edge has already written its entities. That is pinned by
 `test_the_poisoned_event_left_no_partial_state`, and it is safe only because
 replaying the fixed event is idempotent: once the missing endpoint exists,
-re-running `project` over the whole log applies the previously poisoned event
+re-running `replay` over the whole log applies the previously poisoned event
 with no special handling and `failed` drops to zero. Partial application is a
 state to replay out of, not one to repair by hand.
 
@@ -980,47 +991,43 @@ below does.
 With the projections built, everything is in place: a feed to read, subscribers
 to fold with, and somewhere for progress and poison to go. Step 4 is one call.
 
-## Step 4: drive `project` over the feed
+## Step 4: drive `replay` over the feed
 
 ```python
-from redstring import project
-
-report = await project(event_store, projections)
-```
-
-If your own vocabulary has a *project* noun — most knowledge-graph consumers
-do — import `replay` instead. It is the same function object, not a wrapper:
-
-```python
-from redstring import replay
+from eventsource import replay
 
 report = await replay(event_store, projections)
 ```
 
 That is the whole step. `event_store` is being passed as a `GlobalEventFeed` —
-`project` calls `read_all(from_position, options)` on it and nothing else — and
+`replay` calls `read_all(from_position, options)` on it and nothing else — and
 `projections` is the list you built in step 3.
 
-The signature has four more parameters, all keyword-only and all with
+The signature has seven more parameters, all keyword-only and all with
 defaults that are right for a first run:
 
 ```python
-report = await project(
+report = await replay(
     event_store,
     projections,
     from_position=None,  # from the very beginning of the log
     tenant_id=None,  # every tenant in the store
+    aggregate_type=None,  # every aggregate type in the store
     strict=False,  # record failures and carry on
     max_events=MAX_EVENTS_PER_REPLAY,
+    max_failures=MAX_FAILURES_PER_REPLAY,  # retain this many, count the rest
+    on_failure=None,  # called for every failure, retained or not
 )
 ```
 
 `from_position` is covered in
 [Resuming](#resuming-from_position-is-exclusive-and-none-means-rebuild-from-the-beginning);
-`tenant_id` in [Scoping the read](#scoping-the-read-tenant_id-narrows-the-query-tenant_filter-narrows-the-delivery);
+`tenant_id` and `aggregate_type` in [Scoping the read](#scoping-the-read-tenant_id-narrows-the-query-tenant_filter-narrows-the-delivery);
 `strict` in [Failing loudly](#failing-loudly-stricttrue-and-replayfailure);
 `max_events` in
-[Bounding the loop](#bounding-the-loop-max_events_per_replay-and-the-cursor-that-fails-to-advance).
+[Bounding the loop](#bounding-the-loop-max_events_per_replay-and-the-cursor-that-fails-to-advance);
+`max_failures` and `on_failure` in
+[Reading the `ReplayReport`](#reading-the-replayreport-applied-failed-failures-last_position).
 
 ### Scoping the read: `tenant_id` narrows the query, `tenant_filter` narrows the delivery
 
@@ -1028,7 +1035,7 @@ In a store shared with other event types — sessions, jobs, whatever else the
 application writes — a rebuild reads all of it. `tenant_id` is the cheap fix:
 
 ```python
-report = await project(event_store, projections, tenant_id=this_tenant)
+report = await replay(event_store, projections, tenant_id=this_tenant)
 ```
 
 It becomes `FeedReadOptions(tenant_id=...)` on the `read_all` call, and the
@@ -1042,10 +1049,26 @@ see less than the others; it is the wrong tool for scoping a rebuild.
 
 Setting both is harmless and pointless — the filter has nothing left to drop.
 
-Two things `tenant_id` does not do. It does not scope by stream or category:
-`GlobalEventFeed` has no `read_category`, and see `BACKLOG.md` B68 for why
-that is deliberately still open. And `last_position` is then the last position
-the *filtered* read reached, which is the one to checkpoint for a subsequent
+`aggregate_type` narrows the same way and composes with it. This library
+writes `Document` and `ConsolidationLog` aggregates, so a rebuild of the read
+models wants the first and none of the second:
+
+```python
+report = await replay(event_store, projections, tenant_id=this_tenant, aggregate_type="Document")
+```
+
+It became possible in `eventsource-py` 0.12.0 (its ADR 0052). Before that the
+filter had nowhere to go — `FeedReadOptions` carried `tenant_id` and not this
+— so a consumer interested in one aggregate type read the whole feed and
+discarded the rest in Python. On PostgreSQL it is served by a composite
+`(aggregate_type, global_position)` index; on SQLite `global_position` is the
+rowid and none is needed. Note it is not `read_category`, which selects the
+same events and orders them by storage time.
+
+One thing neither does. Scoping by *stream* is still not a thing `replay`
+offers — `GlobalEventFeed` has no `read_category`, and see `BACKLOG.md` B68
+for why that is deliberately still open. And `last_position` is then the last
+position the *filtered* read reached, which is the one to checkpoint for a subsequent
 scoped run and **not** interchangeable with a whole-feed cursor.
 
 ### Failing loudly: `strict=True` and `ReplayFailure`
@@ -1059,7 +1082,7 @@ rebuild is most costly when it is least visible.
 from redstring import ReplayFailedError
 
 try:
-    report = await project(event_store, projections, strict=True)
+    report = await replay(event_store, projections, strict=True)
 except ReplayFailedError as exc:
     print(exc.failure.position, exc.failure.event_type, exc.failure.error)
 ```
@@ -1073,7 +1096,7 @@ same objects in `report.failures`. Strict is a convenience for "stop now";
 
 ### What one call does, in order
 
-`project` is a single pass over the feed. For each envelope it reads, in
+`replay` is a single pass over the feed. For each envelope it reads, in
 order:
 
 1. counts the event against `max_events` and raises if the bound is exceeded,
@@ -1090,16 +1113,16 @@ folded one after another, not concurrently — `GraphProjection` finishes before
 `VectorProjection` starts on the same event — so a slow store is wall clock
 you pay per event. And an event is delivered to a projection that has no
 handler for it just the same; `DeclarativeProjection` matching nothing is what
-makes that a no-op, not `project` filtering by `subscribed_to`.
+makes that a no-op, not `replay` filtering by `subscribed_to`.
 
-### `project` catches and continues; the projections raise
+### `replay` catches and continues; the projections raise
 
 This is the one behaviour worth understanding before you run a rebuild over a
 log you did not curate.
 
 `CheckpointTrackingProjection.handle` retries, writes the DLQ entry, and then
 **re-raises** — the re-raise is how a live subscription is told to stop rather
-than checkpoint past a failure. A rebuild wants the opposite, so `project`
+than checkpoint past a failure. A rebuild wants the opposite, so `replay`
 catches, increments `failed`, and reads the next envelope. One bad event
 therefore costs you that event, not every event after it. This is pinned by
 `test_the_events_after_it_are_still_applied`: a three-event log whose middle
@@ -1130,7 +1153,7 @@ then be mistaken for "none did" by a truthiness check.
 
 ### Calling it twice
 
-Nothing about `project` is single-use, and re-running it over the same feed
+Nothing about `replay` is single-use, and re-running it over the same feed
 from the same position is the normal way to make progress after fixing the
 cause of a failure. Re-running an already-applied event is safe for the
 reasons in
@@ -1141,11 +1164,11 @@ replays a log whose `failed` was 1, adds the missing endpoint, replays again,
 and gets `failed == 0` with the previously poisoned edge in the graph — no
 special handling, no DLQ replay API, just the same call.
 
-So the operating loop is: run `project`, read `failed`, and if it is non-zero
+So the operating loop is: run `replay`, read `failed`, and if it is non-zero
 go to the DLQ for the events themselves. `report.failed` tells you how much
 did not land; only `dlq.get_failed_events()` tells you what.
 
-### What `project` does not do
+### What `replay` does not do
 
 - **It does not wipe anything.** A replay from zero over a populated store
   folds on top of what is there. Wiping is a separate, per-tenant step; see
@@ -1153,14 +1176,14 @@ did not land; only `dlq.get_failed_events()` tells you what.
 - **It does not consult a checkpoint.** It starts at `from_position` and
   nothing else. The projections' checkpoints are written as a side effect of
   delivery and are never read back by this function.
-- **It does not follow the feed.** When `read_all` is exhausted, `project`
+- **It does not follow the feed.** When `read_all` is exhausted, `replay`
   returns. Live catch-up on a timer is `eventsource`'s
   `ProjectionCoordinator`, a different component for a different job — this is
   a foreground operation someone is waiting on.
 
 ## Reading the `ReplayReport`: `applied`, `failed`, `failures`, `last_position`
 
-`project` returns one small value, and it is the only thing the call tells
+`replay` returns one small value, and it is the only thing the call tells
 you:
 
 ```python
@@ -1169,13 +1192,14 @@ class ReplayReport:
     applied: int
     last_position: Position | None
     failures: tuple[ReplayFailure, ...] = ()
+    failures_truncated: int = 0
 
     @property
     def failed(self) -> int:
-        """Events at least one projection rejected."""
+        """Events at least one *retained* failure names."""
 ```
 
-It is exported from the package root (`from redstring import ReplayReport`),
+It is imported from `eventsource` (`from eventsource import ReplayReport`),
 frozen, and compares by value — two runs that read the same amount of the same
 feed produce equal reports, which is convenient in tests and meaningless as a
 health check.
@@ -1185,11 +1209,45 @@ rejecting one event is one failed event and two failures, and deriving the
 first from the second is what stops the two answers disagreeing. There is no
 `failed` argument to the constructor.
 
-Each `ReplayFailure` carries `position`, `event_type`, `projection` (the
-rejecting projection's class name) and `error` — **the exception object**, so
-`MissingEntityError.entity_id` is reachable without parsing a message. That is
-the part a caller cannot reconstruct: a count can always be derived from
-detail, never the other way round.
+It dedupes on **`event_id`**, not on `position`. `position` is
+`Position | None` by contract, and a store with no feed sets it on nothing, so
+keying on it would fold an entire failed rebuild into a count of one. This
+package's copy of the driver keyed on `position` and had that latent defect;
+`eventsource-py` 0.12.0 fixed it on the way up.
+
+Each `ReplayFailure` carries `position`, `event_id`, `event_type`, `projection`
+(the rejecting projection's class name) and `error` — **the exception object**,
+so `MissingEntityError.entity_id` is reachable without parsing a message. That
+is the part a caller cannot reconstruct: a count can always be derived from
+detail, never the other way round. `event_type` is the event's own registered
+`event_type` string rather than `type(event).__name__` — the same string here,
+and the stored one wherever a wire name is deliberately pinned.
+
+### `max_failures` and `on_failure`: the list is capped, and says so
+
+A retained `ReplayFailure` pins a live exception and every frame's locals with
+it, so `failures` is capped at `MAX_FAILURES_PER_REPLAY` (1000). What the cap
+drops is **counted, not hidden**: `failures_truncated` is non-zero exactly
+when the report is a sample, and `failed` is then a lower bound.
+
+```python
+if report.failures_truncated:
+    print(f"{report.failed}+ events failed; {report.failures_truncated} not named here")
+```
+
+Truncating silently would have recreated the defect `failures` exists to fix —
+an operator told "N failed" with no route to the Nth. `on_failure` is the way
+to keep all of them, and it fires for every failure whether retained or not,
+before a `strict=True` raise:
+
+```python
+report = await replay(event_store, projections, on_failure=log.write_failure)
+```
+
+This is `BACKLOG.md` B73 closed, and closed upstream rather than here: the
+entry argued a cap that *says* it truncated, or a streaming callback, were the
+two honest shapes, and that neither was worth deciding before someone had a
+replay failing at that scale. `eventsource-py` 0.12.0 took both.
 
 ### `applied + failed` is the number of events read
 
@@ -1199,7 +1257,7 @@ answers a question neither counter does on its own: **did the feed give me
 anything at all?**
 
 ```python
-report = await project(event_store, projections)
+report = await replay(event_store, projections)
 read = report.applied + report.failed
 ```
 
@@ -1234,7 +1292,9 @@ failed, once.
 
 It is deliberately an `int` rather than a flag, so `if report.failed:` reads
 as what it is and "some events failed" cannot be mistaken for "none did" by a
-truthiness check on a bool that was never set.
+truthiness check on a bool that was never set. Check `failures_truncated`
+alongside it: past the cap, `failed` counts the events the *retained*
+failures name and nothing more.
 
 What it does not carry is *which* events. That is the DLQ's job, and it is why
 step 3 tells you to pass a `dlq_repo`:
@@ -1248,10 +1308,10 @@ if report.failed:
 Without a DLQ, a non-zero `failed` is a number you cannot act on. With one,
 the operating loop is: read `failed`, fetch the entries, fix the cause
 (usually a missing entity that a later document supplies), and re-run
-`project` from the beginning — `test_a_rerun_after_the_missing_entity_arrives_applies_it`
+`replay` from the beginning — `test_a_rerun_after_the_missing_entity_arrives_applies_it`
 does exactly that and comes back `failed == 0`.
 
-**A non-zero `failed` does not mean the run stopped.** `project` catches and
+**A non-zero `failed` does not mean the run stopped.** `replay` catches and
 continues, so the events after a poison event are applied normally:
 `test_the_events_after_it_are_still_applied` replays a three-event log with a
 bad middle event and gets `applied == 2, failed == 1`, with the third
@@ -1259,7 +1319,7 @@ document's entities in the graph.
 
 ### `last_position` is the last event *read*, not the last applied
 
-This is the field most likely to be misread. `project` records
+This is the field most likely to be misread. `replay` records
 `envelope.position` before handing the event to any projection, so a failed
 event still advances `last_position`. It is a high-water mark for the feed,
 not a watermark for successful application — resuming from it will not
@@ -1277,7 +1337,7 @@ envelope, so:
 
 - an empty log gives `ReplayReport(applied=0, last_position=None, failures=())` —
   pinned by `test_an_empty_log_projects_to_empty_stores`, which exists to
-  catch a `project` whose loop never ran and whose report was fabricated;
+  catch a `replay` whose loop never ran and whose report was fabricated;
 - **a resume that finds nothing new also gives `None`**, not the position you
   passed in. `test_resuming_from_the_last_position_applies_nothing` asserts
   both `applied == 0` and `last_position is None`. So do not blindly write
@@ -1315,20 +1375,20 @@ keyed by class name: see
 
 ## Resuming: `from_position` is exclusive, and `None` means rebuild from the beginning
 
-`from_position` is the only thing that decides where a `project` call starts.
+`from_position` is the only thing that decides where a `replay` call starts.
 It has exactly two modes, and the second one is the default:
 
 ```python
 # Resume: read everything strictly *after* this position.
-report = await project(event_store, projections, from_position=cursor)
+report = await replay(event_store, projections, from_position=cursor)
 
 # Rebuild: read the whole log, from before the first event.
-report = await project(event_store, projections, from_position=None)
+report = await replay(event_store, projections, from_position=None)
 ```
 
 ### Exclusive means "after", so hand back the last position you read
 
-`project` passes `from_position` straight to `feed.read_all(from_position)`,
+`replay` passes `from_position` straight to `feed.read_all(from_position)`,
 and the feed's contract is strictly-greater-than — the memory adapter filters
 with `e.position > from_position`. So the position of an event you have
 already applied is the correct thing to resume from: that event is not
@@ -1341,14 +1401,14 @@ run becoming `from_position` for the next:
 cursor: Position | None = None
 
 while True:
-    report = await project(event_store, projections, from_position=cursor)
+    report = await replay(event_store, projections, from_position=cursor)
     if report.last_position is None:
         break  # caught up: nothing new in the feed
     cursor = report.last_position
 ```
 
 `test_resuming_from_the_last_position_applies_nothing` pins both halves of
-this: a replay of a one-document log, then a second `project` from
+this: a replay of a one-document log, then a second `replay` from
 `first.last_position`, comes back `applied == 0` — the last event is not
 re-applied — and `last_position is None`.
 
@@ -1389,7 +1449,7 @@ not a stale cursor.
 
 ### Resuming does not retry what failed
 
-`project` records `envelope.position` *before* handing the event to any
+`replay` records `envelope.position` *before* handing the event to any
 projection, so a failed event advances `last_position` exactly like an applied
 one. Resuming from it therefore skips the failure permanently.
 
@@ -1419,7 +1479,7 @@ questions:
 | What it is | opaque `(store_id, key)` token | an `event_id` string plus `event_type` |
 | Scope | the whole feed | one projection, keyed by class name |
 | Who writes it | you, from `report.last_position` | the projection base class, after each delivery |
-| Accepted by `project` | yes, as `from_position` | **no** — wrong type, wrong meaning |
+| Accepted by `replay` | yes, as `from_position` | **no** — wrong type, wrong meaning |
 
 `get_checkpoint()` hands back a string, and there is no way to turn it into a
 `Position`. `tests/unit/projections/test_checkpoints.py` exists to keep the
@@ -1463,13 +1523,13 @@ wants the beginning:
 ## Why a rebuild does not stop on a bad event, and where that event went
 
 A rebuild reads a log you did not curate, so sooner or later an event will not
-apply. `project` is built for that case rather than against it: the bad event
+apply. `replay` is built for that case rather than against it: the bad event
 is counted, recorded, and left behind, and the rest of the log is folded
 normally.
 
 ### The two halves disagree on purpose
 
-The projection base class and `project` do opposite things with a failure, and
+The projection base class and `replay` do opposite things with a failure, and
 both are right for the job they are doing.
 
 `CheckpointTrackingProjection.handle` retries under your policy, writes a DLQ
@@ -1477,7 +1537,7 @@ entry, and then **re-raises**. That re-raise is what a *live subscription*
 needs: stopping is how a subscription avoids checkpointing past an event it
 never applied.
 
-`project` is not a subscription. It catches, increments `failed`, and reads
+`replay` is not a subscription. It catches, increments `failed`, and reads
 the next envelope:
 
 ```python
@@ -1563,9 +1623,9 @@ The DLQ is not a graveyard. Once whatever the event needed exists, replaying
 the whole log applies it with no special handling and no DLQ replay API:
 
 ```python
-report = await project(event_store, projections)  # failed == 1
+report = await replay(event_store, projections)  # failed == 1
 ...  # the missing document arrives
-report = await project(event_store, projections)  # failed == 0
+report = await replay(event_store, projections)  # failed == 0
 ```
 
 `test_a_rerun_after_the_missing_entity_arrives_applies_it` does this end to
@@ -1575,7 +1635,7 @@ with the previously poisoned edge in the graph.
 
 Two things to get right when you do this:
 
-- **Replay from `None`, not from `report.last_position`.** `project` records
+- **Replay from `None`, not from `report.last_position`.** `replay` records
   the position before handing the event to any projection, so a failed event
   advances the high-water mark exactly like an applied one. Resuming from it
   skips the failure permanently; see
@@ -1586,18 +1646,18 @@ Two things to get right when you do this:
   [Redelivery and re-projection](#redelivery-and-re-projection-why-applying-the-log-twice-is-safe)
   rests on — and wiping would discard the entities the fix depends on.
 
-So the operating loop is: run `project`, read `failed`, and if it is non-zero
-go to the DLQ for the events, fix the cause, and run `project` from the
+So the operating loop is: run `replay`, read `failed`, and if it is non-zero
+go to the DLQ for the events, fix the cause, and run `replay` from the
 beginning again. If you are restoring one read model rather than repairing a
 run, the shorter recipe is
 [Rebuild a projection](rebuild-a-projection.md).
 
 ## Bounding the loop: `MAX_EVENTS_PER_REPLAY` and the cursor that fails to advance
 
-`project`'s last parameter is a safety bound, not a page size:
+`replay`'s last parameter is a safety bound, not a page size:
 
 ```python
-report = await project(event_store, projections, max_events=MAX_EVENTS_PER_REPLAY)
+report = await replay(event_store, projections, max_events=MAX_EVENTS_PER_REPLAY)
 ```
 
 `MAX_EVENTS_PER_REPLAY` is `10_000_000` — far above any real rebuild and far
@@ -1633,13 +1693,13 @@ advances normally means the log really is bigger than the bound.
 
 ### It raises — it does not return a short report
 
-This is the one exit from `project` that does not produce a `ReplayReport`.
+This is the one exit from `replay` that does not produce a `ReplayReport`.
 There is no partial report, no `truncated` flag, and no position handed back
 to resume from:
 
 ```python
 try:
-    report = await project(event_store, projections)
+    report = await replay(event_store, projections)
 except RuntimeError:
     ...  # no report exists; nothing tells you how far it got except the message
 ```
@@ -1680,7 +1740,7 @@ Note what that pair implies about the small-`max_events` case — it is not a
 pagination knob. Setting `max_events=1` to "read one event" does not read one
 event and stop; it reads two and raises, having already applied the first.
 There is no supported way to consume a log in bounded chunks through
-`project`. If that is what you want, the mechanism is `from_position` over a
+`replay`. If that is what you want, the mechanism is `from_position` over a
 feed that ends, and the chunking belongs to your adapter.
 
 ### When to change it
@@ -1698,7 +1758,7 @@ Almost never. Three cases:
   afterwards — a bound tuned to today's log size becomes a spurious failure
   the week the corpus grows.
 
-The bound is per call, not per process. A resume loop that calls `project`
+The bound is per call, not per process. A resume loop that calls `replay`
 repeatedly gets a fresh count each time, so it is never the thing that stops a
 long-running follower; see
 [Resuming](#resuming-from_position-is-exclusive-and-none-means-rebuild-from-the-beginning).
@@ -1757,7 +1817,7 @@ for tenant_id in tenant_ids:  # 1. wipe, per tenant
     await graph_store.delete_by_tenant(tenant_id)
     await vector_store.delete_by_tenant(tenant_id)
 
-report = await project(event_store, projections)  # 2. replay from zero
+report = await replay(event_store, projections)  # 2. replay from zero
 
 assert report.failed == 0  # 3. verify — see below
 ```
@@ -1811,7 +1871,7 @@ see
 [Resuming](#resuming-from_position-is-exclusive-and-none-means-rebuild-from-the-beginning)
 for why a cursor you happen to be carrying is the wrong thing to pass here.
 
-Nothing needs resetting first. `project` never consults a checkpoint, so a
+Nothing needs resetting first. `replay` never consults a checkpoint, so a
 projection whose checkpoint says it has seen the whole log still replays the
 whole log. The checkpoints are rewritten as the rebuild delivers, and end
 where they started — pointing at the last event of the feed, which is what a
@@ -1827,7 +1887,7 @@ will refill.
 Three checks, each catching something the others cannot.
 
 **`report.failed == 0`.** Non-zero means some events did not reach the read
-models, and the count is all `project` gives you; the events themselves are in
+models, and the count is all `replay` gives you; the events themselves are in
 the DLQ:
 
 ```python
@@ -1938,7 +1998,7 @@ Every other section leans on one property, so here it is stated once and
 sourced: **applying an event twice leaves the same state as applying it once.**
 That is what makes a rebuild something you can run without ceremony, a retry
 something you can do without bookkeeping, and an at-least-once feed something
-you can drive `project` over without a dedupe layer.
+you can drive `replay` over without a dedupe layer.
 
 You do not have to arrange for it. There is no dedupe table, no "have I seen
 this event" check in either projection, and nothing to configure.
@@ -2003,7 +2063,7 @@ distinguish.
 What is *not* covered is reordering. A bus that could deliver `e1, e2, e1`
 would break the graph fold, and no amount of upserting fixes that — an
 `EntitiesMerged` followed by a stale redelivery of the `DocumentExtracted` it
-superseded is a different final state. `project` over a `GlobalEventFeed`
+superseded is a different final state. `replay` over a `GlobalEventFeed`
 cannot produce that shape: `read_all` yields in position order.
 
 There was a real ordering hazard here once and it was not a delivery problem
@@ -2022,7 +2082,7 @@ write side emits, which no delivery mechanism can supply.
 - **Do not check whether an event has already been applied.** The projection
   checkpoint looks like it is for this and is not — it records the last
   `event_id` *delivered*, is keyed by class name, and is never read by
-  `project`. See
+  `replay`. See
   [the checkpoint note in step 3](#step-3-construct-the-projections-graphprojection-vectorprojection-with-a-checkpoint-repository-a-dlq-repository-and-a-retry-policy).
 - **Do not wipe before re-running a failed replay.** Re-applying the events
   that already landed is free, and wiping would discard the entities a poison
@@ -2179,7 +2239,7 @@ async def main() -> tuple[int, int, list[str]]:
     ]
 
     # Step 4: fold the log. `from_position` defaults to None — the beginning.
-    replay = await project(event_store, projections)
+    replay = await replay(event_store, projections)
 
     if replay.failed:
         for entry in await dlq.get_failed_events():
@@ -2232,13 +2292,13 @@ it must `import redstring`**, because that import is what registers
 rebuild worker importing only `eventsource` fails on the first envelope it
 tries to deserialise.
 
-To rebuild rather than build, put the wipe in front of the `project` call and
+To rebuild rather than build, put the wipe in front of the `replay` call and
 keep `from_position` at `None`:
 
 ```python
 await graph_store.delete_by_tenant(tenant_id)
 await vector_store.delete_by_tenant(tenant_id)
-replay = await project(event_store, projections)
+replay = await replay(event_store, projections)
 ```
 
 That is the whole difference, and it is covered in

@@ -28,6 +28,7 @@ from uuid import uuid4
 
 import pytest
 from eventsource.adapters.memory import InMemorySnapshotStore
+from eventsource.application.projections import replay
 from eventsource.domain.tenant_context import tenant_scope
 
 from redstring.aggregates.repositories import (
@@ -38,7 +39,6 @@ from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.events.streams import consolidation_stream, document_stream
-from redstring.projections import project
 
 from .conftest import fresh_rig
 
@@ -145,7 +145,7 @@ class TestALaterExtractionCannotRevertAMerge:
             rig, tenant_id, re_extract=False
         )
 
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         assert report.failed == 0
 
         shape = await rig.shape([tenant_id])
@@ -167,7 +167,7 @@ class TestALaterExtractionCannotRevertAMerge:
             rig, tenant_id, re_extract=True
         )
 
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         assert report.failed == 0
 
         edges = (await rig.shape([tenant_id]))[str(tenant_id)]["edges"]
@@ -180,7 +180,7 @@ class TestALaterExtractionCannotRevertAMerge:
             rig, tenant_id, re_extract=True
         )
 
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
 
         assert await rig.graph_store.get_entity(absorbed, tenant_id) is not None
         assert await rig.graph_store.resolve_entity_ids([absorbed], tenant_id) == {
@@ -202,12 +202,12 @@ class TestALaterExtractionCannotRevertAMerge:
         rig = fresh_rig()
         await build_merge_then_re_extraction(rig, tenant_id, re_extract=True)
 
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
         live = await rig.dump([tenant_id])
 
         await rig.graph_store.delete_by_tenant(tenant_id)
         await rig.vector_store.delete_by_tenant(tenant_id)
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
 
         assert await rig.dump([tenant_id]) == live
 
@@ -290,7 +290,7 @@ class TestAnEdgeThatCollapsesOntoOneEntity:
         rig = fresh_rig()
         _edge, _canonical = await self._log(rig, tenant_id, re_extract=False)
 
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         assert report.failed == 0
 
         assert (await rig.shape([tenant_id]))[str(tenant_id)]["edges"] == {}
@@ -299,7 +299,7 @@ class TestAnEdgeThatCollapsesOntoOneEntity:
         rig = fresh_rig()
         edge, _canonical = await self._log(rig, tenant_id, re_extract=True)
 
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         # Not merely "the edge is absent": a `Relationship` self-loop raises,
         # so a fold that tried to write one would fail the event instead, and
         # an absent edge would look identical. This is the assertion that

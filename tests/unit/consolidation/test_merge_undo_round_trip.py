@@ -32,6 +32,7 @@ from eventsource.adapters.memory import (
     InMemoryEventStore,
     InMemorySnapshotStore,
 )
+from eventsource.application.projections import replay
 from eventsource.domain.tenant_context import tenant_scope
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -45,7 +46,7 @@ from redstring.domain.exceptions import (
 )
 from redstring.events.streams import document_stream
 from redstring.graph.adapters.memory import InMemoryGraphStore
-from redstring.projections import GraphProjection, project
+from redstring.projections import GraphProjection
 
 from .conftest import edge, entity
 from .oracle import snapshot
@@ -85,7 +86,7 @@ class Rig:
             await documents.save(document)
 
     async def catch_up(self):
-        report = await project(self.event_store, [self.projection])
+        report = await replay(self.event_store, [self.projection])
         assert report.failed == 0, "an event went to the DLQ; the fold failed"
 
     async def snapshot(self, tenant_id):
@@ -270,7 +271,7 @@ class TestTheRoundTrip:
             checkpoint_repo=InMemoryCheckpointRepository(),
             dlq_repo=InMemoryDLQRepository(),
         )
-        report = await project(rig.event_store, [rebuilt])
+        report = await replay(rig.event_store, [rebuilt])
 
         assert report.failed == 0
         assert await rig.snapshot(tenant_id) == live

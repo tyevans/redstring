@@ -12,7 +12,7 @@ answers**. That is `.claude/rules/recurring-defects.md` §4 exactly -- the
 inputs cannot distinguish the implementations -- so a test that only looked at
 which entities landed would pass against the workaround it exists to replace.
 `RecordingFeed` is the query plan, in the only form a port exposes one: what
-`project` asked the adapter for.
+`replay` asked the adapter for.
 
 The behavioural half is still here, because forwarding the options and having
 the adapter honour them are two claims and each can fail without the other.
@@ -23,13 +23,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from eventsource.application.projections import replay
 from eventsource.domain.tenant_context import tenant_scope
 from eventsource.ports.positions import ExpectedVersion
 
+from redstring.aggregates.consolidation_log import ConsolidationLog
+from redstring.aggregates.document import Document
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.events import DocumentExtracted
-from redstring.events.streams import document_stream
-from redstring.projections import project
+from redstring.events.streams import consolidation_stream, document_stream
 
 from .conftest import fresh_rig
 
@@ -87,6 +89,23 @@ async def _append(event_store, entity):
         )
 
 
+async def _append_a_merge(event_store):
+    """One `Consolidation` event in the same log, so the filter has something
+    to exclude. Written through the aggregate rather than hand-built, so the
+    `aggregate_type` on the envelope is the one production writes."""
+    stream = consolidation_stream(tenant_id=QUIET)
+    log = ConsolidationLog(aggregate_id=stream.aggregate_id)
+    canonical, absorbed = uuid4(), uuid4()
+    async with tenant_scope(QUIET):
+        log.merge(
+            tenant_id=QUIET,
+            canonical_entity_id=canonical,
+            merged_entity_ids=[absorbed],
+            redirections=[],
+        )
+        await event_store.append(stream, list(log.uncommitted_events), ExpectedVersion.no_stream())
+
+
 async def _shared_log():
     """One quiet tenant's document buried among a loud tenant's."""
     rig = fresh_rig()
@@ -104,7 +123,7 @@ class TestTheFilterReachesTheAdapter:
         rig, _ = await _shared_log()
         feed = RecordingFeed(rig.event_store)
 
-        await project(feed, rig.projections, tenant_id=QUIET)
+        await replay(feed, rig.projections, tenant_id=QUIET)
 
         ((_, options),) = feed.calls
         assert options is not None
@@ -117,7 +136,7 @@ class TestTheFilterReachesTheAdapter:
         rig, _ = await _shared_log()
         feed = RecordingFeed(rig.event_store)
 
-        await project(feed, rig.projections)
+        await replay(feed, rig.projections)
 
         ((_, options),) = feed.calls
         assert options is None
@@ -127,7 +146,7 @@ class TestTheScopedReplayRebuildsOnlyThatTenant:
     async def test_only_the_named_tenants_events_are_applied(self) -> None:
         rig, _quiet = await _shared_log()
 
-        report = await project(rig.event_store, rig.projections, tenant_id=QUIET)
+        report = await replay(rig.event_store, rig.projections, tenant_id=QUIET)
 
         # Seven documents in the log, one of them this tenant's.
         assert report.applied == 1
@@ -136,7 +155,7 @@ class TestTheScopedReplayRebuildsOnlyThatTenant:
     async def test_the_other_tenant_is_left_out_of_the_read_models(self) -> None:
         rig, quiet = await _shared_log()
 
-        await project(rig.event_store, rig.projections, tenant_id=QUIET)
+        await replay(rig.event_store, rig.projections, tenant_id=QUIET)
 
         shape = await rig.shape([QUIET, LOUD])
         assert shape[str(QUIET)]["entity_ids"] == [str(quiet.id)]
@@ -148,7 +167,7 @@ class TestTheScopedReplayRebuildsOnlyThatTenant:
         an empty log."""
         rig, _ = await _shared_log()
 
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
 
         assert report.applied == 7
 
@@ -158,8 +177,67 @@ class TestTheScopedReplayRebuildsOnlyThatTenant:
         resumes past events it never saw."""
         rig, _ = await _shared_log()
 
-        scoped = await project(rig.event_store, rig.projections, tenant_id=QUIET)
-        whole = await project(rig.event_store, fresh_rig().projections)
+        scoped = await replay(rig.event_store, rig.projections, tenant_id=QUIET)
+        whole = await replay(rig.event_store, fresh_rig().projections)
 
         assert scoped.last_position is not None
         assert scoped.last_position < whole.last_position
+
+
+class TestAggregateTypeNarrowsTheReadTheSameWay:
+    """`aggregate_type=` is `tenant_id=`'s companion, and new in 0.12.0.
+
+    This library writes two aggregate types -- `Document` and `Consolidation`
+    -- into one log, and only the first carries the events a read-model
+    rebuild folds. Before `FeedReadOptions.aggregate_type` existed the filter
+    had nowhere to go, so a rebuild read the merge log too and discarded it in
+    Python (`BACKLOG.md` B68).
+
+    The string is asserted against `Document.aggregate_type` rather than
+    written out, because the two must agree and a literal here would keep
+    passing after a rename that broke every caller following the how-to guide.
+    """
+
+    async def test_the_aggregate_type_is_forwarded_as_feed_read_options(self) -> None:
+        rig, _ = await _shared_log()
+        feed = RecordingFeed(rig.event_store)
+
+        await replay(feed, rig.projections, aggregate_type=Document.aggregate_type)
+
+        ((_, options),) = feed.calls
+        assert options is not None
+        assert options.aggregate_type == "Document"
+
+    async def test_it_composes_with_the_tenant_rather_than_replacing_it(self) -> None:
+        """Both in one `FeedReadOptions`, or the second silently wins."""
+        rig, _ = await _shared_log()
+        feed = RecordingFeed(rig.event_store)
+
+        await replay(feed, rig.projections, tenant_id=QUIET, aggregate_type=Document.aggregate_type)
+
+        ((_, options),) = feed.calls
+        assert (options.tenant_id, options.aggregate_type) == (QUIET, "Document")
+
+    async def test_the_merge_log_is_read_out_and_the_documents_are_not(self) -> None:
+        """The behavioural half. A store holding both types, scoped to one.
+
+        Asserted from both sides: scoping to `Consolidation` must read the one
+        merge event and none of the seven documents, which is what would fail
+        if the option were forwarded and ignored -- the counts would be equal
+        either way if only the `Document` direction were checked, since seven
+        is also what an unfiltered read of a document-only log returns.
+        """
+        rig, _ = await _shared_log()
+        await _append_a_merge(rig.event_store)
+
+        documents = await replay(
+            rig.event_store, rig.projections, aggregate_type=Document.aggregate_type
+        )
+        merges = await replay(
+            rig.event_store,
+            fresh_rig().projections,
+            aggregate_type=ConsolidationLog.aggregate_type,
+        )
+        everything = await replay(rig.event_store, fresh_rig().projections)
+
+        assert (documents.applied, merges.applied, everything.applied) == (7, 1, 8)

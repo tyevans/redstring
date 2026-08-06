@@ -19,11 +19,10 @@ than an error.
 
 from __future__ import annotations
 
-from eventsource.application.projections import handles
+from eventsource.application.projections import StoreProjection, handles
 
 from redstring.events.document import EntitiesEmbedded
 from redstring.ports.vector_store import VectorStore
-from redstring.projections.base import StoreProjection
 
 
 class VectorProjection(StoreProjection[VectorStore]):
