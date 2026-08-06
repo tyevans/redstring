@@ -594,6 +594,25 @@ class TestRenderDeclines:
                 end_date=utc(2023, 6, 1),
                 precision=DatePrecision.YEAR,
             ),
+            # Declines for the *second* clause of that `or`, which the case
+            # above cannot reach: June 1 is not the first of its year, so the
+            # first clause answers and `end.year <= start.year` never decides.
+            # A cosmic-ray mutant rewriting it as `end.year is start.year`
+            # survived the whole file -- identity is false for every distinct
+            # `int` object, so "2023-2023" would have rendered as a range the
+            # parser then refuses to read back.
+            #
+            # `TemporalExtent` rejects `end < start` outright, so *coincident*
+            # is the only way to reach the clause at all: the `<` half of
+            # `<=` is unreachable by construction and this is the whole of
+            # what can be tested. CLAUDE.md's row about intervals whose
+            # bounds never coincide, second instance -- the first was in
+            # `domain/interval.py`.
+            TemporalExtent(
+                start_date=utc(2023, 1, 1),
+                end_date=utc(2023, 1, 1),
+                precision=DatePrecision.YEAR,
+            ),
             TemporalExtent(
                 start_date=utc(2023, 1, 1),
                 end_date=utc(2023, 3, 1),

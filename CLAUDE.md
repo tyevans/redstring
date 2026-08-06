@@ -178,7 +178,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape eighteen times,
+  testing the difference.** This project has hit the same shape nineteen times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -201,6 +201,17 @@ reading the code:
   | intervals whose bounds never *coincide* | direction derived from a sort — the shorter of two extents sharing a lower bound sorts first, and its edge is silently dropped |
   | only the **19th** century, whose base 1800 shares no set bit with 1, 33, 34, 66, 67 or 100 | `+` written as `\|` or `^` — the same number at that base, and eleven mutants unkillable until a case used the 20th |
   | a *month range* whose endpoints differ | `end < start` widened to `<=` — "1900-1900" becomes unparseable and every other range still works |
+  | a *year range* whose endpoints differ, in a case that declines for a **different** clause of the same `or` | `end.year <= start.year` written as `is` — "2023-2023" renders as a range the parser then refuses to read back |
+
+  **The first and last rows are the same row, two years and two modules
+  apart**, which is why "bounds that never coincide" is worth reading as a
+  standing habit rather than one file's bug. The second instance was found by
+  mutation in `render_temporal` while the first was still the headline example
+  in this table — and its test *existed*: a year range was in the parameter
+  list, declining for the first clause of an `or` so that the comparison under
+  test never decided anything. **When a guard is a disjunction, one case per
+  clause.** A case that reaches the function is not a case that reaches the
+  branch.
 
   The interval row was the campaign's only Critical, and its lesson is
   structural rather than about inputs: **an invariant that holds because of an
@@ -236,13 +247,20 @@ reading the code:
   lesson generalises past bits: **when a test's example is the one the domain
   makes obvious, ask what that example is quietly making true.**
 
-  **Four of the eighteen rows are identity-vs-equality**, and they are the
+  **Five of the nineteen rows are identity-vs-equality**, and they are the
   ones to expect rather than to be surprised by. Three fired because the test
   value sat inside a CPython cache — interned strings, cached small ints, and
   `len()` on a short collection returning that same cached int. Test numeric
   bounds at a *realistic* magnitude: `nomic-embed-text` is 768, and a
   dimension check written with `is not` passes at 8 and rejects everything
   real.
+
+  The fifth is `end.year <= start.year` rewritten as `is`, and it is the one
+  that shows the family is not really about caches at all: the years are large
+  ints outside every cache, so identity is *always* false, and the mutant
+  survives purely because no input made the two operands equal. An
+  identity-vs-equality defect needs a test where the values coincide; whether
+  a cache would have hidden it is a detail of which values.
 
   The fourth is not a cache at all and is the one to watch for next. Ids that
   come back **through a port** compared with `is` pass because both adapters
