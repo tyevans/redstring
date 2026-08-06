@@ -34,7 +34,7 @@ module that exists), and delete the entry in the same commit.
 
 ## State of the tree
 
-The default gate collects **1995 tests**, plus **245 `integration` tests** and
+The default gate collects **2209 tests**, plus **250 `integration` tests** and
 **4 `accuracy` tests** — against a real Neo4j (slices 4, 7), real pgvector
 (slice 5), a live `qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`), and a built
 wheel (slice 10). The first two need `docker-compose.test.yml`. Both extra
@@ -43,7 +43,7 @@ how to run it. What the accuracy suite can and cannot tell you is B12.
 
 **The gate is green.** Verified under its own conditions
 (`uv run python scripts/coverage_ratchet.py`, which is `pytest -q -n auto
---cov`): **1995 passed**, no failures. The hypothesis deadline flake that made
+--cov`): **2209 passed**, no failures. The hypothesis deadline flake that made
 this paragraph say otherwise was fixed at the class level rather than the
 instance — `tests/conftest.py` now registers a suite-wide `deadline=None`
 profile, and `tests/unit/test_hypothesis_deadline_policy.py` fails if a
@@ -1154,26 +1154,6 @@ run rather than whether they exist: B10a, B10f, B10m.
 ---
 
 ## 6. Tooling, packaging and hygiene
-
-### B18. `UP042` is ignored project-wide
-
-Rewriting `class X(str, Enum)` as `enum.StrEnum` changes `str(X.A)` from
-`"X.A"` to `"a"`, silently altering every f-string and log line holding a
-member. This is a behaviour migration to make wholesale with tests, not a
-drive-by autofix. Rationale is recorded in `pyproject.toml`.
-
-**The idiom appears at 8 sites, not the 33 this entry claimed** (re-counted in
-slice 11; the 33 was measured before slices 6-10 deleted most of the
-codebase). The eight are `BlockingKeyStrategy`, `DatePrecision`,
-`UncertaintyMarker`, `PropertyMergeStrategy`, `MergeDecision`, `CircuitState`,
-`TemporalRelation` and `ExtractionMethod` — every one of them in `domain/`
-except `MergeDecision` and `CircuitState`.
-
-At eight sites this is now a genuinely small job, and the reason to do it is
-sharper than tidiness: **several of these are persisted in event payloads**, so
-their `str()` form is a wire format. Doing the migration deliberately, with a
-test pinning the serialised value of each member before and after, is cheap
-now and gets more expensive with every event written.
 
 ### B42. `ANN401` is silenced on `domain/merge_strategy.py::resolve`
 

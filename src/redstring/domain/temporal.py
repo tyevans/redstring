@@ -8,12 +8,12 @@ deleted those, so this module is the single definition. Both are public API.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, field_validator, model_validator
 
 
-class DatePrecision(str, Enum):
+class DatePrecision(StrEnum):
     """Precision level of temporal data."""
 
     YEAR = "year"
@@ -23,7 +23,7 @@ class DatePrecision(str, Enum):
     MINUTE = "minute"
 
 
-class UncertaintyMarker(str, Enum):
+class UncertaintyMarker(StrEnum):
     """Uncertainty indicator for temporal data."""
 
     EXACT = "exact"
