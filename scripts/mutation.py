@@ -53,6 +53,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: repository so a stray `rm -rf` here cannot reach a sibling checkout.
 WORKTREE = REPO_ROOT / ".mutation" / "worktree"
 
+#: Where session databases live: **outside** the worktree, on purpose.
+#:
+#: A session file is the *result* of a run, and the worktree is reset with
+#: `git clean -fdx` at the start of the next one -- so a session written into
+#: it is destroyed by the following invocation. That was not theoretical: the
+#: first two scoped runs were a range session and a period session, and
+#: starting the second deleted the first's database. Nothing warned, because
+#: deleting a build artefact is exactly what that clean is for.
+SESSIONS = REPO_ROOT / ".mutation" / "sessions"
+
 #: `uv sync` in the worktree uses this. `--all-extras` and not `--extra dev`:
 #: the dev extra holds only the tooling, and a venv without `neo4j` or `llm`
 #: fails *collection* on the modules that import them rather than skipping
@@ -197,6 +207,8 @@ def ensure_worktree() -> Path:
         # exactly like a result. `--hard` is safe here precisely because
         # nothing in this directory is authored: cosmic-ray's `local`
         # distributor writes mutants into it and expects them thrown away.
+        # Session databases are kept in `SESSIONS`, outside it, for that
+        # reason -- a result must not live where the next run cleans.
         print(f"resetting the worktree at {WORKTREE} to HEAD", flush=True)
         head = run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture=True)
         if head.returncode != 0:
@@ -229,7 +241,11 @@ def main() -> int:
     parser.add_argument(
         "--session",
         default="session.sqlite",
-        help="cosmic-ray session file, relative to the worktree",
+        help=(
+            "cosmic-ray session file, kept under .mutation/sessions/ so the "
+            "next run's worktree reset cannot delete it. `exec` is resumable "
+            "against the same file, and `cr-report` reads a partial one."
+        ),
     )
     parser.add_argument(
         "--rows",
@@ -274,15 +290,17 @@ def main() -> int:
     print(f"\n== {args.tool} ==", flush=True)
     if args.tool == "cosmic-ray":
         config = str(REPO_ROOT / args.config)
-        init = ["uv", "run", "cosmic-ray", "init", config, args.session]
+        SESSIONS.mkdir(parents=True, exist_ok=True)
+        session = str(SESSIONS / args.session)
+        init = ["uv", "run", "cosmic-ray", "init", config, session]
         if run(init, cwd=worktree).returncode != 0:
             return 1
-        if args.rows and not keep_rows(worktree / args.session, args.rows):
+        if args.rows and not keep_rows(Path(session), args.rows):
             return 1
-        exec_ = ["uv", "run", "cosmic-ray", "exec", config, args.session]
+        exec_ = ["uv", "run", "cosmic-ray", "exec", config, session]
         if run(exec_, cwd=worktree).returncode != 0:
             return 1
-        return run(["uv", "run", "cr-report", args.session], cwd=worktree).returncode
+        return run(["uv", "run", "cr-report", session], cwd=worktree).returncode
 
     return run(["uv", "run", "mutmut", "run"], cwd=worktree).returncode
 

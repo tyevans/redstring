@@ -1043,6 +1043,14 @@ uv run python scripts/mutation.py cosmic-ray \
   way to aim one, and it is required rather than optional: without it the
   session runs all 850 against a command covering some of them, and everything
   outside the region survives for a reason that says nothing about the code.
+- **`--session NAME`** names a database under **`.mutation/sessions/`**, not
+  inside the worktree. That is not a filing preference: the worktree is reset
+  with `git clean -fdx` at the start of every run, so a session written into it
+  is deleted by the *next* invocation. Running a range session and then a
+  period session destroyed the first one's results, and nothing warned —
+  deleting a build artefact is exactly what that clean is for. `exec` is
+  resumable against the same file and `cr-report` reads a partial one, so the
+  file is worth keeping.
 
 **Pick the region by counting mutants, not by reading the module.** The
 distribution is not the one the section headings suggest:
