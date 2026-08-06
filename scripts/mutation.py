@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import re
 import shlex
+import sqlite3
 import subprocess  # nosec B404
 import sys
 import tomllib
@@ -107,6 +108,54 @@ def baseline_verdict(returncode: int, output: str) -> str | None:
     if passed == 0:
         return "the baseline passed 0 tests, which is not evidence of anything"
     return None
+
+
+def keep_rows(session: Path, span: str) -> bool:
+    """Delete every mutant outside `first:last` from an initialised session.
+
+    cosmic-ray has no line filter, so a session is initialised over the whole
+    module and then narrowed here. Both tables are pruned: `mutation_specs`
+    holds the line numbers and `work_items` holds the job ids, and leaving the
+    second populated would leave the run its full length while reporting on a
+    subset -- the worst of both.
+
+    Reports the count kept rather than doing it quietly. A range that matches
+    nothing would otherwise start a session with no work in it and finish
+    instantly with a clean report, which is this repository's least favourite
+    shape of result.
+    """
+    first, _, last = span.partition(":")
+    try:
+        lo, hi = int(first), int(last)
+    except ValueError:
+        print(f"--rows wants FIRST:LAST, not {span!r}", file=sys.stderr)
+        return False
+
+    connection = sqlite3.connect(session)
+    with connection:
+        keep = [
+            row[0]
+            for row in connection.execute(
+                "SELECT job_id FROM mutation_specs WHERE start_pos_row BETWEEN ? AND ?",
+                (lo, hi),
+            )
+        ]
+        if not keep:
+            print(
+                f"--rows {span} matches no mutant in this module; refusing to "
+                f"run a session with nothing in it",
+                file=sys.stderr,
+            )
+            return False
+        placeholders = ",".join("?" * len(keep))
+        for table in ("work_items", "mutation_specs"):
+            connection.execute(
+                f"DELETE FROM {table} WHERE job_id NOT IN ({placeholders})",  # nosec B608
+                keep,
+            )
+    connection.close()
+    print(f"scoped to lines {lo}-{hi}: {len(keep)} mutants", flush=True)
+    return True
 
 
 def run(command: list[str], *, cwd: Path, capture: bool = False) -> subprocess.CompletedProcess:
@@ -183,6 +232,17 @@ def main() -> int:
         help="cosmic-ray session file, relative to the worktree",
     )
     parser.add_argument(
+        "--rows",
+        metavar="FIRST:LAST",
+        help=(
+            "keep only mutants whose source line is in this inclusive range, "
+            "deleting the rest from the session after `init`. cosmic-ray has "
+            "no line filter, so this is the only way to aim a session at part "
+            "of a module -- and aiming it is what makes a big module runnable "
+            "at all."
+        ),
+    )
+    parser.add_argument(
         "--baseline-only",
         action="store_true",
         help="run and judge the baseline, then stop. Use to check an environment.",
@@ -214,12 +274,14 @@ def main() -> int:
     print(f"\n== {args.tool} ==", flush=True)
     if args.tool == "cosmic-ray":
         config = str(REPO_ROOT / args.config)
-        for step in (
-            ["uv", "run", "cosmic-ray", "init", config, args.session],
-            ["uv", "run", "cosmic-ray", "exec", config, args.session],
-        ):
-            if run(step, cwd=worktree).returncode != 0:
-                return 1
+        init = ["uv", "run", "cosmic-ray", "init", config, args.session]
+        if run(init, cwd=worktree).returncode != 0:
+            return 1
+        if args.rows and not keep_rows(worktree / args.session, args.rows):
+            return 1
+        exec_ = ["uv", "run", "cosmic-ray", "exec", config, args.session]
+        if run(exec_, cwd=worktree).returncode != 0:
+            return 1
         return run(["uv", "run", "cr-report", args.session], cwd=worktree).returncode
 
     return run(["uv", "run", "mutmut", "run"], cwd=worktree).returncode
