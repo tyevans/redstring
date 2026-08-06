@@ -1537,3 +1537,87 @@ filtered zero-weight features out explicitly, and a hand-applied mutant
 removing that filter survived every test, which is what an equivalent branch
 looks like from outside. The filter is gone and the property is pinned
 directly.
+
+## Temporal intervals
+
+`interval.py`: `Bounds`, `TemporalRelation`, and three functions —
+`bounds`, `relate`, `relate_bounds`. `Bounds` and `TemporalRelation` are
+exported.
+
+This is where two `TemporalExtent`s become comparable. The extent says what
+the text stated; the interval says what that *denotes*, with the precision
+rule applied, so that "2023" and "March 2023" can be related without either
+pretending to a resolution it does not have.
+
+### `Bounds`
+
+A `NamedTuple` of `lower` and `upper`, representing the **half-open** interval
+`[lower, upper)`. `None` is infinity outwards — `None` as a lower bound is
+minus infinity, `None` as an upper bound is plus infinity.
+
+Half-open is what lets adjacent units abut without overlapping: 2023 ends
+exactly where 2024 begins, and neither contains that instant twice. It is also
+why no comparison has to know whether the store underneath counts microseconds
+or nanoseconds.
+
+`INSTANT` is module-level rather than an attribute of `Bounds`, and the reason
+is a real trap: an annotated name in a `NamedTuple` body becomes a *field*, so
+`Bounds.INSTANT` would make every `Bounds(lower, upper)` call site a
+`TypeError` waiting for the first branch that read it. It is **one
+microsecond** — the width given to a moment whose extent states no precision.
+Not a day: defaulting to a day would invent a claim the extent never made, and
+let one exact timestamp swallow every other event that day.
+
+### `TemporalRelation` members
+
+`BEFORE`, `AFTER`, `DURING`, `CONTAINS`, `OVERLAPS`, `EQUALS`.
+
+**Deliberately coarser than Allen's thirteen relations.** `meets`, `starts`,
+`finishes` and their inverses turn on exact endpoint equality, and an endpoint
+that came from widening a year is an artefact of the precision rule rather
+than something the text asserted. Offering them would be offering a
+distinction the data cannot support.
+
+### `bounds(extent)`
+
+Returns the interval, or `None` for an extent that denotes none — one holding
+only a `sequence_position`, say. That is not an error: sequence position
+orders events that have no dates at all, and no interval comparison applies.
+
+**Only two uncertainty markers change the interval.** `BEFORE` and `AFTER`
+open a bound. `EXACT`, `CIRCA`, `APPROXIMATE` and `INFERRED` all fall through
+to the ordinary closed interval, and that is a decision rather than an
+omission: "circa 1850" is a claim about *how confidently* 1850 is known, not
+about which years it might have been. Widening it means inventing a margin — a
+decade? a century? — and then every comparison rests on a number nobody chose.
+The uncertainty stays on the extent for a caller that wants to weight it.
+
+**An open marker discards the far endpoint.** "before 1900" names one instant,
+so an extent carrying both a `BEFORE` marker and an `end_date` has said
+something contradictory, and the marker wins. Reading it as
+`(-inf, end_date)` would honour both and silently convert a contradiction into
+a plausible interval. `parse_temporal` cannot construct one, so this is a
+guard against hand-built extents, and it fails towards the smaller claim.
+
+Note the asymmetry in where an open bound lands: `BEFORE 1900` stops where
+1900 *begins*, and `AFTER 1900` starts once 1900 is *over*. Both exclude the
+named unit, which is what the words mean.
+
+### `relate(first, second)` and `relate_bounds(first, second)`
+
+`relate` returns how `first` stands to `second`, or `None` if either extent
+states no date. `relate_bounds` does the same for two intervals and is
+**total** — always exactly one answer.
+
+`relate_bounds` is public rather than an implementation detail, and the reason
+is worth copying: the interval open at *both* ends is not reachable from any
+`TemporalExtent`, since an extent with neither date has no bounds at all. It
+is exactly the case where a `None`-handling mistake hides, so it needs to be
+callable directly to be testable at all.
+
+The order of the checks is the specification: `EQUALS` first, then disjointness
+in each direction, then containment in each direction, and `OVERLAPS` as the
+remainder. Containment is tested with helpers that read `None` as the right
+infinity for the *position* it appears in — a `None` lower bound is minus
+infinity and a `None` upper bound is plus infinity, so the two comparisons are
+not the same function.

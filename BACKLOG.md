@@ -1216,9 +1216,9 @@ visible in the links while the content was never filled in.
 (`TemporalExtent`, `DatePrecision`, `UncertaintyMarker`) and the vector types
 (`VectorRecord`, `VectorMatch`, `cosine_score`, `has_zero_norm`, the score
 scale and the metadata rule). Still promised by its module-map table and still
-absent: temporal parsing, temporal intervals, merge strategies,
-`RelationshipRedirection` and the error types. `normalize_name`, the blocking
-keys and similarity are written.
+absent: temporal parsing, merge strategies, `RelationshipRedirection` and the
+error types. `normalize_name`, the blocking keys, similarity and temporal
+intervals are written.
 
 Writing the temporal section produced one wrong claim that only checking
 caught — that a widened one-day extent has coincident endpoints. `widen`
