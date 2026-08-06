@@ -1444,3 +1444,96 @@ Returns a `frozenset`, matching `Entity.blocking_keys`: the keys are a set of
 claims and their order means nothing. **Absent keys are dropped rather than
 represented**, so the result can be empty — but only if `ENTITY_TYPE` was left
 out of the strategies, since that one always produces a key.
+
+## Similarity
+
+`similarity.py`: two pure functions, two frozen models, and the function that
+combines them. `FeatureWeights` and `SimilarityFeatures` are exported.
+
+**Three signals, deliberately independent, because they fail in different
+places.** Name similarity catches typos and inflections and is fooled by two
+different people with the same name. Graph similarity catches the case the
+others cannot — two records that barely look alike but sit in the same part of
+the graph. The embedding signal is *not computed here*: it arrives from
+`VectorStore.search`, already on the port's `0..1` scale.
+
+Everything in the module is a function of its arguments — no store, no
+provider, no I/O — which is what makes any of it testable in a scoring loop.
+
+### `string_similarity(left, right)`
+
+Jaro-Winkler over **normalized** names, on `0..1`. Casing and whitespace are
+not differences, so `"Ada  LOVELACE"` and `"ada lovelace"` score `1.0`.
+
+Symmetric, and exactly `1.0` when the normalized names are equal. Neither
+property is free: some Jaro-Winkler implementations apply the prefix bonus to
+whichever string is passed first, so both are pinned by test.
+
+### `graph_similarity(left, right)`
+
+Jaccard overlap of two entities' **neighbour sets**, on `0..1`. It takes the
+neighbours rather than two entities and a store, which is what keeps it usable
+inside a loop that has already fetched them.
+
+**Two empty sets score `0.0`, not the conventional `1.0`.** Jaccard of two
+empty sets is defined as 1 in most references and that convention is wrong
+here: two freshly-extracted entities that nothing points at yet would score a
+perfect graph match and drag a merge over the threshold on the strength of
+knowing nothing about either. *No evidence is not perfect agreement.*
+
+### `FeatureWeights` — fields and defaults
+
+| Field | Type | Default | Bounds |
+|---|---|---|---|
+| `name` | `float` | `0.5` | `>= 0.0` |
+| `embedding` | `float` | `0.3` | `>= 0.0` |
+| `graph` | `float` | `0.2` | `>= 0.0` |
+
+**Frozen**, because a weight vector mutated between two comparisons makes the
+scores incomparable and nothing in a score would show it.
+
+The values need not sum to anything. `combined_score` renormalizes over the
+features actually present, so a caller with no embedding gets a
+name-and-graph score on the same `0..1` scale rather than a smaller number —
+otherwise "the embedding provider was down" and "these entities are unalike"
+would produce the same number.
+
+**All-zero weights are rejected at construction.** A scorer returning `0.0`
+for everything looks exactly like a corpus with no duplicates in it, which is
+a plausible answer and therefore not one anybody investigates.
+
+### `SimilarityFeatures` — fields and defaults
+
+| Field | Type | Default | Bounds |
+|---|---|---|---|
+| `name` | `float \| None` | `None` | `0.0..1.0` |
+| `embedding` | `float \| None` | `None` | `0.0..1.0` |
+| `graph` | `float \| None` | `None` | `0.0..1.0` |
+
+Frozen, for the same reason.
+
+**`None` and `0.0` are different and must stay so.** `None` drops the feature
+out of the weighting; `0.0` is positive evidence that the entities disagree on
+it. Collapsing them would let a missing embedding push a pair *below* the
+merge threshold — a merge not happening because a provider was slow.
+
+### `combined_score(features, weights=None)`
+
+A weighted mean of whichever features are present, on `0..1`, clamped.
+
+The clamp is not tidying: a weighted mean of values each within `1.0` can
+still land a hair above it once the weights are renormalized, and that is the
+same overshoot that broke a `le=1` bound downstream in slice 0.
+
+**Returns `0.0` when nothing was computed at all.** Both alternatives are
+worse: "perfectly alike" merges on no evidence, and raising turns a provider
+outage into a crash in the middle of a consolidation run rather than a run
+that merges nothing.
+
+**A weight of zero is exactly equivalent to not supplying the feature**, and
+that falls out of the arithmetic rather than being arranged — the term leaves
+the numerator and the weight leaves the divisor together. An earlier version
+filtered zero-weight features out explicitly, and a hand-applied mutant
+removing that filter survived every test, which is what an equivalent branch
+looks like from outside. The filter is gone and the property is pinned
+directly.
