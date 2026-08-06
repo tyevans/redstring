@@ -1008,11 +1008,19 @@ declares its layered contract in `pyproject.toml`, enforced by
 rules file would be defect shape §2 — a redundant declaration site with
 undocumented precedence — in the file that warns against it.
 
-Revisit when `docs/plans/ring-migration.md` lands: at that point there will
-be per-ring guidance ("what belongs in `domain/`", "why this import is
-forbidden") that the contract expresses only as a graph and that `CLAUDE.md`
-should not grow to hold. The rule to write then is redstring's own, derived
-from its rings — not a port of eventsource's.
+**The trigger has fired and this is now actionable.**
+`docs/plans/ring-migration.md` landed and the migration it describes is
+finished, so the per-ring guidance the entry was waiting for — "what belongs
+in `domain/`", "why *this* import is forbidden" — is knowable rather than
+speculative. The contract in `pyproject.toml` expresses it only as a graph,
+and `CLAUDE.md`'s layer section is already the longest thing in that file.
+
+The rule to write is redstring's own, derived from its rings, not a port of
+eventsource's. Its content is the reasoning `pyproject.toml` carries inline
+about *why each sibling is a sibling* — `llm` beside `extraction` so
+extraction can reach only the port, `consolidation` and `temporal` beside it
+so neither can reach `mapping.py` — which is currently readable only by
+someone who thinks to open a config file.
 
 ### B28. Three property-merge strategies deferred
 
@@ -1148,18 +1156,6 @@ signature, and **it must not become a per-file ignore**: both legacy exemption
 lists emptied in slice 10 and mypy's `exclude` key was deleted outright, so
 there is no list left to be added to — which makes adding one back a visible
 decision rather than an edit.
-
-### B23. `.claude/skills/migrating-modules-to-rings/sweep.sh` is not portable
-
-Hardcodes `eventsource` as the root package and allowlists
-`docs/superpowers/`, which does not exist here (verified in slice 11). It was
-never run during this migration — the sweeps were done by hand — so it is
-untested against this repo as well as unparameterised.
-
-Parameterise for `redstring` before relying on it, or delete it. Note that
-`docs/history/` and `docs/adr/` are now the paths that legitimately hold stale
-references to deleted packages, and any sweep must exclude them or it will
-report the migration's own record as a defect.
 
 ### B27. `child_of` normalization — the code this described no longer exists
 
