@@ -146,6 +146,52 @@ class TestPartialDatesResolveToTheRightMoment:
     def test_a_month_and_year_resolves_to_the_first_of_that_month(self, text, expected):
         assert parse_temporal(text, reference_date=REF).start_date == expected
 
+    @pytest.mark.parametrize("text", ["Sep 2024", "Sept 2024", "September 2024"])
+    def test_september_is_accepted_in_all_three_spellings(self, text):
+        """September is the one month with a four-letter abbreviation, and it
+        is the only special case in the spelling table.
+
+        `_MONTH_NUMBERS` has always carried "Sept" -- the whole reason that
+        table has a conditional at all -- while the `_MONTH` pattern accepted
+        only `Sep(?:tember)?`. So the entry was **unreachable**: "Sept 2024"
+        fell through every pattern to `dateparser`, which resolved it
+        differently against two probe dates, and it raised
+        `AmbiguousReferenceDateError` rather than parsing.
+
+        Found by a surviving mutant, and it could only have been found that
+        way: mutating the branch that adds "Sept" changed nothing observable,
+        because no input could reach it. That is the inert-code shape
+        (`recurring-defects.md` §3) hiding inside a table that looks like data.
+        """
+        parsed = parse_temporal(text, reference_date=REF)
+        assert parsed is not None
+        assert parsed.start_date == utc(2024, 9, 1)
+        assert parsed.precision is DatePrecision.MONTH
+
+    def test_every_spelling_the_table_maps_is_one_the_pattern_accepts(self):
+        """The general form of the bug above, as a gate rather than a case.
+
+        `_MONTH` and `_MONTH_NUMBERS` are two declarations of one fact -- which
+        month spellings this module reads -- and nothing failed while they
+        disagreed. This fails when they drift again, in the direction that
+        produced an unreachable entry rather than a `KeyError`, which is the
+        silent direction.
+        """
+        import re
+
+        from redstring.domain.temporal_parsing import _MONTH, _MONTH_NUMBERS
+
+        unreachable = [
+            spelling
+            for spelling in _MONTH_NUMBERS
+            if not re.fullmatch(_MONTH, spelling, re.IGNORECASE)
+        ]
+        assert not unreachable, (
+            f"`_MONTH_NUMBERS` maps spellings `_MONTH` cannot produce: "
+            f"{sorted(unreachable)}. Either the pattern is missing them or the "
+            f"table should not claim them."
+        )
+
     @pytest.mark.parametrize(
         ("text", "first", "last"),
         [("the 1850s", 1850, 1859), ("1990s", 1990, 1999), ("the 2000s", 2000, 2009)],
@@ -161,6 +207,14 @@ class TestPartialDatesResolveToTheRightMoment:
         [
             ("Q1-Q2 2024", utc(2024, 1, 1), utc(2024, 4, 1)),
             ("Q2-Q4 2024", utc(2024, 4, 1), utc(2024, 10, 1)),
+            # Ranges *starting* at Q3 and Q4. The two above cannot see a wrong
+            # start: `(first - 1) * 3 + 1` and `(first >> 1) * 3 + 1` agree for
+            # first = 1 and first = 2 and disagree for 3 and 4, so a mutant
+            # making that substitution survived the pair. Note the asymmetry --
+            # the range *end* was already covered at Q4, so only the start was
+            # blind, which is why reading the parameters does not reveal it.
+            ("Q3-Q4 2024", utc(2024, 7, 1), utc(2024, 10, 1)),
+            ("Q4-Q4 2024", utc(2024, 10, 1), utc(2024, 10, 1)),
         ],
     )
     def test_a_quarter_range_spans_from_one_quarter_to_the_other(self, text, first, last):
@@ -211,6 +265,28 @@ class TestRanges:
         assert parsed is not None
         assert parsed.start_date == utc(2024, 1, 1)
         assert parsed.end_date == utc(2024, 3, 1)
+        assert parsed.precision is DatePrecision.MONTH
+
+    def test_a_range_whose_endpoints_are_equal_is_a_range(self):
+        """`1900-1900` is one year stated twice, not a rejection.
+
+        The guard is `end < start`, and widening it to `end <= start` -- which
+        is what a reader reaching for "the endpoints must differ" would write
+        -- turns this into `None`. Every other range test uses endpoints that
+        differ, so nothing distinguished the two (killed a surviving mutant).
+        """
+        parsed = parse_temporal("1900-1900", reference_date=REF)
+        assert parsed is not None
+        assert parsed.start_date == utc(1900, 1, 1)
+        assert parsed.end_date == utc(1900, 1, 1)
+        assert parsed.precision is DatePrecision.YEAR
+
+    def test_a_month_range_whose_endpoints_are_equal_is_a_range(self):
+        """The same boundary on the month path, which has its own guard."""
+        parsed = parse_temporal("March-March 2023", reference_date=REF)
+        assert parsed is not None
+        assert parsed.start_date == utc(2023, 3, 1)
+        assert parsed.end_date == utc(2023, 3, 1)
         assert parsed.precision is DatePrecision.MONTH
 
     def test_a_century_is_a_range(self):

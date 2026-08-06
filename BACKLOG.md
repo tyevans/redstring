@@ -356,29 +356,85 @@ env KG_COMPLIANCE_MAX_EXAMPLES=5 ./.venv/bin/pytest -x -q --no-header -p no:rand
 The `-m integration` is required — `addopts` deselects it otherwise, and the
 run then silently mutates code no test executes, which is how B10a happened.
 
-### B54. 793 of `temporal_parsing.py`'s 850 mutants were never run
+### B54. `temporal_parsing.py`'s mutants: 268 run, 582 still unrun
 
-Slice 8 ran cosmic-ray over `domain/interval.py` (217, all classified),
-`temporal/inference.py` (95, all classified) and **the precision logic only**
-of `domain/temporal_parsing.py` (57 of 850). The remaining 793 cover the
-uncertainty patterns, the marker stripping, the range and period regexes, the
-ambiguity probe and `render_temporal`.
+**Progress, with the mechanism now in the tree.** Slice 8 ran the precision
+logic (57 of 850). The range and partial-date region (lines 207-320, 268
+mutants) has now been run too, and it found a real defect. 582 remain: the
+period/century parsing, `parse_temporal` itself, `render_temporal` and
+`widen`.
 
-They were not run because each mutant costs ~70 seconds: it re-runs the whole
-file, which includes two hypothesis properties at 300 examples and a
-`dateparser` import. 850 × 70s is about seventeen hours. The 57 that were run
-found a real defect -- the quarter arithmetic, closed in `44e213d` -- so the
-remainder is likely to be worth the time rather than not.
+**Run one with the wrapper**, which makes this affordable and is why the
+remainder is now a matter of time rather than of design:
 
-**How to make it affordable** rather than just waiting: give the session a
-narrower `test-command`. The round-trip properties are the expensive part and
-they exercise `render_temporal` and the partial-date strategies; a session
-aimed at the uncertainty patterns can run against the marker tests alone in a
-second or two per mutant. Split by target, not by patience.
+```
+uv run python scripts/mutation.py cosmic-ray \
+    --config cosmic-ray-ranges.toml --rows 207:320 --session ranges.sqlite
+```
 
-The mechanism for scoping is worth keeping: cosmic-ray has no line filter, so
-`init` the full session and then `DELETE FROM mutation_specs` / `work_items`
-for the rows whose `start_pos_row` is outside the range of interest.
+`--config` narrows the `test-command` (and the baseline with it, so the
+narrower command is proved green first); `--rows` deletes the mutants outside
+the region, since cosmic-ray has no line filter. Against the default command a
+mutant costs ~70s and the whole module is seventeen hours; scoped, the 268
+took about ninety minutes.
+
+**Where the mutants actually are.** This is the part to read before picking a
+region, because the distribution is not the one the module's sections suggest:
+
+| Region | Lines | Mutants | Status |
+|---|---|---|---|
+| periods / centuries | 321-362 | 207 | unrun |
+| ranges | 207-273 | 160 | **run** |
+| `render_temporal` | 530-574 | 126 | unrun |
+| `widen` | 575-599 | 113 | unrun |
+| partial dates | 274-320 | 108 | **run** |
+| `parse_temporal` | 462-529 | 73 | unrun |
+| absolute / natural | 389-461 | 44 | unrun |
+| uncertainty + stripping | 124-206 | 3 | run |
+
+The last row corrects this entry's own premise: it named the uncertainty
+patterns first among what was unrun, and they are **three mutants**, because
+cosmic-ray mutates operators and that region is a table of compiled regexes.
+A session aimed there would have finished in a minute having proved nothing.
+
+**The run: 268 mutants, 22 survivors, all classified.**
+
+- **16 equivalent by construction** — `_Parsed | None` in two return
+  annotations, rewritten as `+`, `%`, `^`, `**` and so on. PEP 563 makes
+  annotations strings that are never evaluated; unkillable here and anywhere.
+- **1 equivalent** — `name != "September"` as `is not`, over month names that
+  are module-level literals and therefore interned. It is CLAUDE.md's row-one
+  trap sitting in the tree, equivalent only because every operand is a
+  literal, and it would stop being equivalent the moment a spelling arrived
+  from anywhere else.
+- **4 test gaps, now closed** — a year range and a month range with *equal*
+  endpoints (`end < start` widened to `<=` returned `None` and nothing
+  noticed), and a quarter range *starting* at Q3 or Q4. The last is the
+  instructive one: `(first - 1) * 3 + 1` and `(first >> 1) * 3 + 1` agree for
+  Q1 and Q2 and differ for Q3 and Q4, and the existing cases were `Q1-Q2` and
+  `Q2-Q4` — so the range's *end* was covered at Q4 while its *start* was
+  blind, which reading the parameters does not reveal.
+- **1 real defect, fixed** — see below.
+
+**The defect: `_MONTH_NUMBERS` carried a spelling `_MONTH` could not produce.**
+The spelling table has exactly one conditional, whose entire purpose is to add
+"Sept" for September. The `_MONTH` pattern accepted `Sep(?:tember)?` and not
+"Sept", so that entry was **unreachable** — "Sept 2024" fell through every
+pattern to `dateparser`, resolved differently against the two probe dates, and
+raised `AmbiguousReferenceDateError` instead of parsing. Two declarations of
+one fact with nothing failing while they disagreed, and it could only have
+been found this way: mutating the branch changed nothing observable, because
+no input reached it.
+
+Fixed in the pattern rather than by deleting the entry — "Sept" is ordinary
+text and the table's intent was plainly to accept it — with
+`test_every_spelling_the_table_maps_is_one_the_pattern_accepts` as the gate,
+proved red by reverting the pattern.
+
+**What to expect from the remaining 582.** The two runs so far have found one
+real defect each, both in arithmetic that a test happened to exercise at a
+value where the wrong answer coincided with the right one. `widen` and
+`render_temporal` are the same shape and are jointly 239 mutants.
 
 ### B10i. The `EXPLAIN` tests run against an empty database and do not pin the negative
 
