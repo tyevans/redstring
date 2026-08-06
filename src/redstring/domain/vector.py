@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from redstring.domain.ids import EntityId, TenantId
-from redstring.domain.json_safety import reject_nul
+from redstring.domain.json_safety import reject_unstorable_text
 
 
 class _HasPortableMetadata(BaseModel):
@@ -56,7 +56,7 @@ class _HasPortableMetadata(BaseModel):
     @field_validator("metadata")
     @classmethod
     def _metadata_is_storable_as_json(cls, value: dict[str, Any]) -> dict[str, Any]:
-        reject_nul(value, what="metadata")
+        reject_unstorable_text(value, what="metadata")
         return value
 
 

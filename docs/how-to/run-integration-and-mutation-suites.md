@@ -822,6 +822,28 @@ which is a zero-survivor run manufactured on purpose.
 
 ### Step 1: prove the harness works — run the configured `test-command` unmutated
 
+**`scripts/mutation.py` now does this for you, and refuses to start if the
+baseline is not green.** Prefer it to the manual sequence below:
+
+```
+uv run python scripts/mutation.py cosmic-ray     # baseline, init, exec, report
+uv run python scripts/mutation.py mutmut         # baseline, then mutmut run
+uv run python scripts/mutation.py cosmic-ray --baseline-only   # just the check
+```
+
+It creates a detached worktree under `.mutation/worktree`, syncs it with
+`--all-extras`, runs *that tool's own configured command* there, and stops if
+the result is anything other than a green run with a positive pass count. The
+last clause is the one that matters: a run that exits 0 having collected
+nothing looks identical to a passing suite, and is exactly what produced the
+incident below.
+
+It wraps **both** tools deliberately — wrapping one would leave the other as
+the unguarded path, and the run someone reaches for in a hurry is the one that
+needs the guard.
+
+The manual sequence, still correct and worth knowing:
+
 ```
 uv sync --all-extras
 uv run python -c "import neo4j, asyncpg, redis, langchain_openai; print('extras ok')"
@@ -850,15 +872,15 @@ and `cr-report` showed `WorkerOutcome.NORMAL, TestOutcome.KILLED` for all 426
 the environment was fixed, had 136 survivors over 28 source lines, four of them
 genuine defects.
 
-**Nothing in either tool checks this for you** (**B45**). The rule is written
-down in `CLAUDE.md` and in
-[quality gates](../reference/quality-gates.md); the enforcement — a
-`scripts/mutation.py` that refuses to start on a red baseline — does not exist,
-because two questions have to be answered first: whether mutmut gets the same
-wrapper (two half-wrappers would be worse than none), and where the baseline
-runs. It must run **in the worktree**, not in the main tree where it would pass
-regardless. A habit that has already been forgotten once is a habit, not a
-control.
+**Nothing in either tool checks this for you**, which is why the wrapper does.
+Its two open questions were settled the way the incident argues for: both tools
+get it, and the baseline runs **in the worktree**, never in the main tree where
+it would pass regardless of what the worktree is missing.
+
+The refusal is a pure function of the baseline's exit code and output, and
+`tests/unit/test_mutation_wrapper_refuses_a_bad_baseline.py` exercises the
+refusals rather than the happy path — a guard nobody has watched fire is
+indistinguishable from one that cannot.
 
 ### Step 2: run mutmut
 

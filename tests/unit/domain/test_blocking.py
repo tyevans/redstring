@@ -249,7 +249,7 @@ class TestProperties:
             # the alphabet rather than catching `ValidationError` the way the
             # property above does: this one is about the *prefix window*, and a
             # rejected construction would silently stop testing that.
-            alphabet=st.characters(exclude_characters="\x00"),
+            alphabet=st.characters(codec="utf-8", exclude_characters="\x00"),
             min_size=PREFIX_LENGTH + 1,
             max_size=40,
         ).filter(str.strip)

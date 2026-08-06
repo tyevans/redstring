@@ -92,6 +92,9 @@ error.
 Run on demand, not on commit — both are slow.
 
 ```
+uv run python scripts/mutation.py mutmut            # preferred: guards the baseline
+uv run python scripts/mutation.py cosmic-ray
+
 uv run mutmut run                                   # config in pyproject.toml
 uv run cosmic-ray init cosmic-ray.toml session.sqlite
 uv run cosmic-ray exec cosmic-ray.toml session.sqlite
@@ -99,7 +102,12 @@ uv run cr-report session.sqlite
 ```
 
 Both are kept because mutmut 3.x will not mutate decorated functions and
-cosmic-ray will.
+cosmic-ray will. `scripts/mutation.py` wraps both: it builds a detached
+worktree under `.mutation/worktree`, syncs it `--all-extras`, runs that tool's
+own configured test command *there*, and **refuses to start unless the result
+is green with a positive pass count**. Use it rather than the raw commands —
+the paragraphs below explain what it is protecting you from, and it has both
+of this file's mutation incidents encoded in one refusal.
 
 ### Never gate on a raw survivor count
 
@@ -143,6 +151,12 @@ Before reading a run: execute the configured `test-command` unmutated in the
 same environment and require it green. cosmic-ray runs in a separate worktree
 or clone (its `local` distributor mutates the working tree in place), and a
 worktree is exactly where a missing extra goes unnoticed.
+
+**`scripts/mutation.py` is that check, and it refuses rather than warns.** Note
+what it insists on beyond a zero exit code: a *positive pass count*. "0 failed"
+and "0 collected" are the same exit status, and the incident above is the
+second one — so a wrapper checking only `returncode == 0` would have let slice
+7's run through and read as a control while being none.
 
 Hand-verifying a mutant has its own trap: CPython validates a `.pyc` on
 `(mtime, size)`, so an edit that leaves the file the same size — `1.0` for

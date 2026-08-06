@@ -19,12 +19,23 @@ from hypothesis import strategies as st
 
 from redstring.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
 from redstring.domain.entity import Entity, ExtractionMethod
-from redstring.domain.json_safety import reject_nul
+from redstring.domain.json_safety import reject_unstorable_text
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 
 if TYPE_CHECKING:
     from uuid import UUID
+
+
+#: Characters a domain type will actually accept.
+#:
+#: `codec="utf-8"` is doing more work than it looks like: `st.characters()`
+#: with no codec **generates unpaired surrogates**, which are legal Python
+#: `str` contents with no UTF-8 encoding at all. Naming the codec is how you
+#: ask hypothesis for text that can leave the process. Passing only
+#: `exclude_characters` -- the obvious way to write "no NUL" -- silently
+#: *widens* the alphabet past `st.text()`'s default and reintroduces them.
+storable_characters = st.characters(codec="utf-8", exclude_characters="\x00")
 
 
 #: Text that a domain type will actually accept.
@@ -36,7 +47,7 @@ if TYPE_CHECKING:
 #: draw it rather than as a finding about the guard. Excluded in the alphabet
 #: so the constraint is stated once, where the text is generated.
 def text(**kwargs: Any) -> st.SearchStrategy[str]:
-    return st.text(alphabet=st.characters(exclude_characters="\x00"), **kwargs)
+    return st.text(alphabet=storable_characters, **kwargs)
 
 
 # Non-blank: `Entity.name` rejects whitespace-only values.
@@ -208,7 +219,7 @@ def vectors(dimension: int) -> st.SearchStrategy[list[float]]:
     )
 
 
-def _has_no_nul(mapping: dict[str, Any]) -> bool:
+def _is_storable(mapping: dict[str, Any]) -> bool:
     """Whether `VectorRecord` would accept this metadata.
 
     Written against the domain rule rather than restating it, so widening or
@@ -218,7 +229,7 @@ def _has_no_nul(mapping: dict[str, Any]) -> bool:
     its output never finds one.
     """
     try:
-        reject_nul(mapping)
+        reject_unstorable_text(mapping)
     except ValueError:
         return False
     return True
@@ -272,5 +283,5 @@ def metadata_dicts(draw: st.DrawFn) -> dict[str, Any]:
     metadata = dict(draw(property_dicts))
     if draw(st.booleans()):
         metadata["entity_type"] = draw(_entity_type_values)
-    assume(_has_no_nul(metadata))
+    assume(_is_storable(metadata))
     return metadata

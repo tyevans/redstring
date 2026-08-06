@@ -326,7 +326,7 @@ class TestDuplicatePreference:
         # JSON-backed store can hold it (`domain/json_safety.py`). This
         # property is about the preference order, not about that guard.
         properties=st.dictionaries(
-            st.text(alphabet=st.characters(exclude_characters="\x00"), max_size=4),
+            st.text(alphabet=st.characters(codec="utf-8", exclude_characters="\x00"), max_size=4),
             st.integers(),
             max_size=3,
         ),

@@ -120,7 +120,14 @@ That is the same invocation the ratchet drives, with
 trusting any result that depends on the environment being complete — in
 particular before reading a mutation session, where a green unmutated
 `test-command` in the *same* environment is the precondition for the numbers
-meaning anything. See
+meaning anything.
+
+For a mutation session you no longer have to remember: `scripts/mutation.py`
+does the check in the worktree the session will run in, and refuses to start
+otherwise. `--baseline-only` runs just the check, which makes it a way to ask
+"is this environment complete?" that answers in the terms the tool will.
+
+See
 [How to run the integration and mutation suites](../how-to/run-integration-and-mutation-suites.md).
 
 ## Dependency groups: `neo4j`, `llm`, `all`, `dev`

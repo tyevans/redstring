@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from redstring.domain.ids import EntityId, SourceId, TenantId
-from redstring.domain.json_safety import Passthrough, reject_nul
+from redstring.domain.json_safety import Passthrough, reject_unstorable_text
 from redstring.domain.temporal import TemporalExtent
 
 
@@ -86,8 +86,9 @@ class Entity(BaseModel):
         "blocking_keys",
     )
     @classmethod
-    def _reject_nul_in_free_form_text(cls, value: Passthrough) -> Passthrough:
-        """No field reaching the event log may carry a NUL; see
+    def _reject_unstorable_in_free_form_text(cls, value: Passthrough) -> Passthrough:
+        """No field reaching the event log may carry text that cannot be
+        stored -- a NUL, or an unpaired surrogate. See
         `domain/json_safety.py` for why, and why it raises rather than strips.
 
         Listed per field rather than checked over the whole model: the typed
@@ -97,7 +98,7 @@ class Entity(BaseModel):
         belongs in this list -- an omission is silent until a real event store
         refuses the write.
         """
-        reject_nul(value, what="entity field")
+        reject_unstorable_text(value, what="entity field")
         return value
 
     @field_validator("name")

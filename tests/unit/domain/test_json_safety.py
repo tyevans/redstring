@@ -14,12 +14,14 @@ from uuid import uuid4
 import pytest
 
 from redstring.domain.entity import Entity, ExtractionMethod
-from redstring.domain.json_safety import reject_nul
+from redstring.domain.json_safety import reject_unstorable_text
 from redstring.domain.relationship import Relationship
 
 #: Every nesting a free-form value can take. A NUL three levels down breaks a
 #: `jsonb` write exactly as thoroughly as one at the top, and a check that
 #: recursed only into dicts would pass all but the first two of these.
+SURROGATE = "\ud800"
+
 NESTINGS = [
     pytest.param({"\x00": "v"}, id="in-a-key"),
     pytest.param({"k": "a\x00b"}, id="in-a-value"),
@@ -28,6 +30,9 @@ NESTINGS = [
     pytest.param({"k": [{"deeper": "\x00"}]}, id="list-of-dicts"),
     pytest.param({"k": ("in", "a\x00tuple")}, id="nested-tuple"),
     pytest.param({"k": {"in", "a\x00set"}}, id="nested-set"),
+    pytest.param({"k": "lone " + SURROGATE}, id="surrogate-in-a-value"),
+    pytest.param({SURROGATE: "v"}, id="surrogate-in-a-key"),
+    pytest.param({"k": ["fine", SURROGATE]}, id="surrogate-nested"),
 ]
 
 
@@ -60,13 +65,28 @@ class TestRejectNul:
     @pytest.mark.parametrize("value", NESTINGS)
     def test_a_nul_at_any_depth_is_refused(self, value: object):
         with pytest.raises(ValueError, match="NUL"):
-            reject_nul(value)
+            reject_unstorable_text(value)
+
+    def test_a_lone_surrogate_is_refused_even_though_json_will_escape_it(self):
+        """The half that is not about `jsonb`.
+
+        `json.dumps` of a lone surrogate succeeds -- it emits an escape -- so a check
+        written by round-tripping through `json` would pass this. The string
+        has no UTF-8 encoding at all, which is what actually stops it: it
+        cannot cross a connection, and `uuid5` raises `UnicodeEncodeError` on
+        it long before a store is involved.
+        """
+        import json
+
+        assert json.dumps(SURROGATE)  # the check a reasonable person writes first
+        with pytest.raises(ValueError, match="surrogate"):
+            reject_unstorable_text(SURROGATE)
 
     def test_the_error_names_the_field(self):
         """Several free-form fields per type, so 'somewhere in this entity'
         is not a useful thing to tell a caller."""
         with pytest.raises(ValueError, match="external_ids"):
-            reject_nul({"a": "\x00"}, what="external_ids")
+            reject_unstorable_text({"a": "\x00"}, what="external_ids")
 
     @pytest.mark.parametrize(
         "value",
@@ -83,12 +103,12 @@ class TestRejectNul:
         ],
     )
     def test_everything_else_passes(self, value: object):
-        reject_nul(value)
+        reject_unstorable_text(value)
 
     @pytest.mark.parametrize("value", [None, 42, 3.5, True, [1, 2, 3]])
     def test_a_non_string_is_not_its_business(self, value: object):
         """It asks one question about text; it is not a schema check."""
-        reject_nul(value)
+        reject_unstorable_text(value)
 
 
 class TestEntityRefusesIt:

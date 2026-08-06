@@ -128,6 +128,25 @@ class TestEntities:
         assert [e.name for e in result.entities] == ["Ada Lovelace"]
         assert result.dropped_entities == 1
 
+    def test_a_lone_surrogate_is_dropped_too(self):
+        """The failure that is not about storage at all.
+
+        A lone surrogate has no UTF-8 encoding, and `entity_id_for` hashes
+        with `uuid5`, which encodes -- so this raised `UnicodeEncodeError` out
+        of the mapper before any store was involved, taking the whole chunk
+        with it. `json.loads` builds one from an escape without complaint, so
+        it is ordinary model output rather than an exotic input.
+
+        Found by the mutation wrapper's baseline run rather than by review:
+        the property that draws entity names had been given a hand-written
+        alphabet that widened past `st.text()`'s default and started
+        generating them.
+        """
+        result = mapped(Extraction(entities=[entity("Ada\ud800"), entity("Ada Lovelace")]))
+
+        assert [e.name for e in result.entities] == ["Ada Lovelace"]
+        assert result.dropped_entities == 1
+
     def test_the_drop_is_counted_apart_from_its_siblings(self):
         """Four counters summed from one loop can be wired to each other's
         fields and still add up; only input that moves them differently says
@@ -636,13 +655,16 @@ class TestProperties:
 
         assert forwards == backwards
 
-    # NUL excluded for the reason `test_merging.py::DESCRIPTIONS` gives: a
-    # candidate carrying one is dropped, so there would be no id to check.
-    @given(
-        name=st.text(alphabet=st.characters(exclude_characters="\x00"), min_size=1).filter(
-            lambda s: s.strip()
-        )
-    )
+    # Unstorable text excluded for the reason `test_merging.py::DESCRIPTIONS`
+    # gives: a candidate carrying it is dropped, so there would be no id to
+    # check. `codec="utf-8"` is load-bearing -- without it `st.characters()`
+    # generates unpaired surrogates, which is how the real defect this
+    # property found got in.
+    _NAMES = st.text(
+        alphabet=st.characters(codec="utf-8", exclude_characters="\x00"), min_size=1
+    ).filter(lambda s: s.strip())
+
+    @given(name=_NAMES)
     def test_every_mapped_entity_id_is_a_uuid5(self, name):
         [mapped_entity] = mapped(Extraction(entities=[entity(name)])).entities
 

@@ -752,56 +752,6 @@ process reuse changes underneath it. If B10f is resolved by giving each worker
 its own database, revisit this at the same time — that is the change that
 would make the cached flag mean something different per worker.
 
-### B45. No wrapper enforces a green baseline before a mutation run
-
-**The rule is written down; the enforcement is not.** CLAUDE.md's "A
-zero-survivor run is the result most in need of suspicion" carries the
-reasoning and the habit -- run the configured `test-command` unmutated in the
-same environment and require it green before reading any result. What is left
-here is only the automation.
-
-The incident, kept because it is the argument for automating it: slice 7's
-first cosmic-ray run reported **0 survivors out of 426**, and a planner-only
-run before it reported 0 out of 45. Both were worthless -- the worktree had
-been synced with `uv sync --extra dev`, `jellyfish` was absent, and every
-mutant "died" on a collection error. `cr-report` showed `WorkerOutcome.NORMAL,
-TestOutcome.KILLED` for all 426, which is exactly what a perfect suite looks
-like. The real run, once the environment was fixed, had 136 survivors from 28
-source lines, four of them genuine defects.
-
-**It happened again in slice 9, from a different direction, which is why the
-wrapper should not be scoped to mutation runs alone.** Running
-`uv remove sqlalchemy psycopg2-binary pgvector` re-resolved the environment to
-`--extra dev` only, silently uninstalling the `eventsourcing`, `neo4j` and
-`llm` extras. The next `mypy` reported **47 errors in 11 files**, all of the
-form `Cannot find implementation or library stub for module named
-"eventsource.ports.store"` -- in modules the commit had not touched. Nothing
-was wrong with the code; a full sync fixed all 47.
-
-That is slice 7's incident with the sign flipped: there, a missing extra made
-a mutation run report a perfect score, and here it made a clean tree report 47
-errors. Both are the environment lying about the code, and neither is
-detectable from the output. Note the trap specific to this one: **`uv add` and
-`uv remove` re-sync**, so any dependency change can silently narrow the
-installed extras.
-
-**The documentation half of this is closed.** Both `CLAUDE.md` and the README
-now say `uv sync --all-extras`, and `eventsource-py` became a core dependency
-in slice 10, so the narrowest failure mode is gone. What remains is only the
-wrapper.
-
-A habit that has already been forgotten once is a habit, not a control.
-Wanted: a `scripts/mutation.py` that does the baseline, the init, the exec and
-the report, and **refuses to start if the baseline is red**. Two things to
-decide first, which is why it is not done:
-
-- Whether mutmut gets the same wrapper. Both tools are kept deliberately (see
-  CLAUDE.md), and two half-wrappers would be worse than none.
-- Where the baseline runs. cosmic-ray's `local` distributor mutates the
-  working tree, so the run belongs in a worktree or clone -- and a worktree is
-  exactly where a missing extra goes unnoticed, so the baseline must run
-  *there*, not in the main tree where it would pass.
-
 ### B37. Hand-applied mutants can be masked by a stale `__pycache__`
 
 Found the hard way in slice 5b. Verifying a mutant by editing a source file,
@@ -1402,11 +1352,16 @@ contain, sections on: temporal value types, temporal intervals,
 map table lists `temporal.py`, `temporal_parsing.py`, `interval.py` and
 `merge_strategy.py` as things the page covers.
 
-`reference/domain-schema-yaml.md` documents top-level, entity-type and
-property fields, and stops. There is no relationship-type field section, and
-`RelationshipTypeSchema`'s per-element rules — `id` normalization, the
-description bounds, the two endpoint lists, `bidirectional` — are named in
-prose as "documented under" a section that does not exist.
+`reference/domain-schema-yaml.md` **has its relationship-type section now**,
+written against the code: `id` normalization, the description bounds, the two
+endpoint lists and `bidirectional`, plus the cross-field validator and the two
+lookup helpers. Writing it turned up a real defect the page now documents and
+B72 records — the endpoint lists are normalized one way on load and another on
+lookup — which is the argument for writing these against the source rather
+than the outline, in one instance.
+
+Its trailing "the per-field detail follows" promise, which pointed at nothing,
+now points back at the table that holds it.
 
 **The dangling links are now repaired, so this is invisible again**, which is
 why it needs an entry rather than a comment. Where a real section covered the
@@ -1464,6 +1419,46 @@ What is **not** built, and is the obvious next work:
   the equality was not. Fixed by comparing with cosine above a stated threshold
   plus a check that mismatched pairs fall below it -- tolerance alone is not a
   test, because every vector is somewhat similar to every other.
+
+### B72. `is_valid_source` normalizes differently from the loader that filled the list
+
+`extraction/domains/models.py`. `RelationshipTypeSchema.normalize_type_lists`
+stores `valid_source_types` / `valid_target_types` lowercased, stripped, with
+spaces and hyphens turned into underscores. `is_valid_source` and
+`is_valid_target` normalize the argument with **`.lower().strip()` only**, so
+the string that was written in the YAML does not match itself:
+
+```python
+schema = RelationshipTypeSchema(
+    id="loves", description="...", valid_source_types=["Main Character"]
+)
+schema.valid_source_types  # ['main_character']
+schema.is_valid_source("Main Character")  # False
+schema.is_valid_source("main_character")  # True
+```
+
+Recurring-defect §2 exactly: one fact -- "how an entity type id is spelled" --
+with two normalizers and nothing that fails when they disagree.
+
+**Who is actually hurt.** Entity type *ids* are normalized on load, so a
+caller passing an `EntityTypeSchema.id` is fine, and that is what the bundled
+schemas and every test do. The caller who is not fine is one passing an
+`Entity.entity_type`, which is free-form text straight from the model where
+"Main Character" is an ordinary answer -- and `DomainSchema.validate_relationship`
+is a public helper that invites exactly that.
+
+**Not fixed on the spot because it is a behaviour change on a public helper,
+not a typo.** Sharing one normalizer makes calls that return `False` today
+start returning `True`, which is the intended answer but is still a change a
+caller could be relying on. The fix is to lift the loader's transform into a
+named function in the same module and call it from both -- there is no case
+for two -- and to add the test that would have caught it: assert
+`is_valid_source(x)` for the *same string* `x` that was passed to the
+constructor, which no current test does.
+
+Found while writing the relationship-type section of
+`reference/domain-schema-yaml.md` (B65), and documented there as observable
+behaviour rather than left for the next reader to trip over.
 
 ### B67. No way to find entities that were never consolidated
 

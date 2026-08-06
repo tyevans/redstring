@@ -281,7 +281,11 @@ NAMES = st.text(alphabet=st.characters(min_codepoint=97, max_codepoint=122), min
 #: `test_mapping.py::test_a_nul_anywhere_is_dropped_rather_than_crashing_the_extraction`.
 DESCRIPTIONS = st.one_of(
     st.none(),
-    st.text(alphabet=st.characters(exclude_characters="\x00"), min_size=0, max_size=12),
+    st.text(
+        alphabet=st.characters(codec="utf-8", exclude_characters="\x00"),
+        min_size=0,
+        max_size=12,
+    ),
 )
 
 MENTIONS = st.lists(st.tuples(NAMES, DESCRIPTIONS), min_size=1, max_size=6)

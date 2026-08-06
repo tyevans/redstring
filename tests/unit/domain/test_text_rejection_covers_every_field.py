@@ -34,7 +34,7 @@ GUARDED_MODELS = [Entity, Relationship]
 
 #: The validator every guarded model applies. Named rather than detected, so
 #: renaming it fails here instead of silently emptying the gate.
-VALIDATOR = "_reject_nul_in_free_form_text"
+VALIDATOR = "_reject_unstorable_in_free_form_text"
 
 #: Fields exempt from the check, with the reason. Empty is the intended state:
 #: an entry is a visible decision in review, an absent entry is the omission
