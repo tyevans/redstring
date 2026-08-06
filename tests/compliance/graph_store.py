@@ -67,6 +67,7 @@ from redstring.domain.alias import Alias
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import MissingEntityError
 from redstring.domain.relationship import Relationship
+from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.ports.graph_store import GraphStore
 from tests.compliance import strategies as gen
 
@@ -167,6 +168,57 @@ class GraphStoreCompliance:
         async with self._store() as store:
             await store.upsert_entities([entity])
             assert await store.get_entity(entity.id, entity.tenant_id) == entity
+
+    async def test_a_temporal_extent_round_trips_field_for_field(self, store: GraphStore) -> None:
+        """Every field of `Entity.temporal`, by example rather than by sampler.
+
+        The round-trip properties above *do* cover `temporal` -- `entities()`
+        draws one about half the time -- but only when the sampler happens to,
+        and `max_examples` here is environment-tunable and lowered to 5 by
+        mutation runs. So an adapter that dropped the field could pass a whole
+        run, which is what BACKLOG B53 is about: the Neo4j adapter stores it as
+        `temporal_json` and is correct by accident of implementation rather
+        than by contract.
+
+        Every field is set to a *distinct*, non-default value. An extent
+        carrying only `start_date` cannot tell "stored the extent" from
+        "stored the start date", and `precision` in particular is the one an
+        adapter flattening to a timestamp column would silently lose -- which
+        is exactly the field `domain/interval.py` needs to widen a year into a
+        range.
+        """
+        tenant = uuid4()
+        extent = TemporalExtent(
+            start_date=datetime(2023, 3, 1, 12, 30, tzinfo=UTC),
+            end_date=datetime(2024, 7, 4, 9, 15, tzinfo=UTC),
+            precision=DatePrecision.MONTH,
+            uncertainty=UncertaintyMarker.CIRCA,
+            original_text="circa March 2023 to July 2024",
+            sequence_position=7,
+            publication_date=datetime(2025, 1, 2, tzinfo=UTC),
+        )
+        entity = _example_entity(tenant=tenant, temporal=extent)
+
+        await store.upsert_entity(entity)
+        stored = await store.get_entity(entity.id, tenant)
+
+        assert stored is not None
+        assert stored.temporal == extent
+
+    async def test_an_entity_with_no_temporal_extent_round_trips_as_none(
+        self, store: GraphStore
+    ) -> None:
+        """The other half, and not a formality: an adapter that materialised an
+        empty `TemporalExtent()` where the caller wrote `None` would satisfy
+        the test above and change what `Entity.is_temporal` answers."""
+        tenant = uuid4()
+        entity = _example_entity(tenant=tenant)
+
+        await store.upsert_entity(entity)
+        stored = await store.get_entity(entity.id, tenant)
+
+        assert stored is not None
+        assert stored.temporal is None
 
     # ------------------------------------------------------------------
     # Property 2 -- idempotency

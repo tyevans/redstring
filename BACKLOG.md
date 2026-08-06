@@ -246,38 +246,31 @@ the model says.
 - **It does not settle ADR 0011.** It can show that off-schema extraction got
   worse; it cannot show that constraining to the schema would be better.
 
-### B53. `Entity.temporal` round-trips through Neo4j but no shared test says so
+### B53. `Entity.temporal`'s storage shape is settled with B48, not before
 
-**Rewritten in slice 11; the previous version of this entry was false.** It
-claimed the Neo4j adapter "does not store or index `Entity.temporal`" and that
-every temporal query would answer `[]` in production. Checked against the live
-Neo4j container in slice 11:
+**The missing test is written.** `tests/compliance/graph_store.py` now asserts
+that a fully-populated `TemporalExtent` round-trips field for field, and that
+an entity with no extent comes back with `None` rather than an empty one --
+both by example rather than by sampler, since `entities()` draws a temporal
+only about half the time and `max_examples` is environment-tunable and lowered
+to 5 by mutation runs. Proved able to fail by making the in-memory adapter drop
+the field. Every adapter is now held to it, which was the point of putting it
+in the shared suite.
 
-```
-ROUND TRIPS EXACTLY: True
-temporal query hits: ['Ada']
-```
+The original entry's storage claim was **false** and was corrected in slice 11:
+the Neo4j adapter does encode `temporal` as `temporal_json`, and
+`TemporalQuery.entities_in_interval` returns the entity, including the
+precision-widening case. *That claim survived two slices because it was
+plausible and nobody ran it. It took ninety seconds to check.*
 
-The adapter encodes `temporal` as `temporal_json` alongside `properties` and
-`external_ids`, and `TemporalQuery.entities_in_interval` returns the entity —
-including the precision-widening case, a YEAR-precision `2023` matching a
-June-July 2023 interval, which exercises both the JSON round-trip and
-`domain/interval.py`.
-
-**What is actually missing is the test.** `tests/compliance/graph_store.py`
-contains no assertion about `temporal` at all, so the storage above is correct
-by accident of implementation rather than by contract, and a future adapter can
-drop the field and pass the suite. Close it in the shared suite — a round-trip
-assertion there covers every adapter at once, which is the point of having one.
-
-**The indexing half of the original entry stands.** `temporal` is a JSON blob,
-so it cannot serve an indexed range prefilter, and that interacts with B48:
-flattening `TemporalExtent` into node properties would make B48's prefilter
-possible, while the JSON blob makes it impossible. Do not change the storage
-shape without settling B48 at the same time.
-
-*The lesson is worth more than the entry: this claim survived two slices
-because it was plausible and nobody ran it. It took ninety seconds to check.*
+**What remains open is the indexing half, and it is a joint decision with
+B48.** `temporal` is a JSON blob, so it cannot serve an indexed range
+prefilter. Flattening `TemporalExtent` into node properties would make B48's
+prefilter possible; the blob makes it impossible. Do not change the storage
+shape without settling B48 at the same time -- and note that the round-trip
+test above is now what would catch a flattening that loses `precision`, which
+is the field `domain/interval.py` needs and the one a timestamp column would
+silently drop.
 
 ### B10a. The Cypher-executing half of the Neo4j adapter is not in the gate
 
