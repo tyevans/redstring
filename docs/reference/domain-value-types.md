@@ -1092,8 +1092,8 @@ into itself asserts nothing, and would make alias resolution a fixed point
 that never terminates in the useful direction. `resolve_canonical` on
 `GraphStore` refuses to merge *into* an alias, which is what stops longer
 cycles and is reported as `AliasCycleError`; this validator is what stops the
-degenerate one-element case at construction. See
-AliasCycleError.
+degenerate one-element case at construction. `AliasCycleError` is the error
+that reports the longer case; it is exported, so a caller can name it.
 
 Three rules the type conspicuously does **not** enforce:
 
@@ -1108,3 +1108,130 @@ Three rules the type conspicuously does **not** enforce:
 - **No chain rule.** Nothing here prevents an `Alias` whose
   `canonical_entity_id` is itself some other alias's `alias_entity_id`.
   Resolution is transitive at the port, and cycle detection lives there.
+
+## Temporal value types
+
+`temporal.py`: one model and two enums, all three exported. `TemporalExtent`
+is the type `Entity.temporal` holds, and it is the answer to "when did this
+happen, and how confidently do we know".
+
+**All seven fields are optional and default to `None`**, which is unusual
+enough on this page to state first: an extent carrying nothing is legal, and
+`is_empty` is how you ask. `Entity.temporal` is itself `None` when extraction
+found no date, so a caller sees "no extent" and "an empty extent" as different
+values — see [`is_empty`](#derived-is_empty-and-has_range) for why the second
+exists at all.
+
+### Fields and defaults
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `start_date` | `datetime \| None` | `None` | timezone-required |
+| `end_date` | `datetime \| None` | `None` | timezone-required; must be `>= start_date` |
+| `precision` | `DatePrecision \| None` | `None` | how much of the date is meant |
+| `uncertainty` | `UncertaintyMarker \| None` | `None` | how the source hedged |
+| `original_text` | `str \| None` | `None` | the phrase this was read from |
+| `sequence_position` | `int \| None` | `None` | must be `>= 0` |
+| `publication_date` | `datetime \| None` | `None` | timezone-required |
+
+`original_text` is the field to keep populated. It is what
+`render_temporal` has to reconstruct when it goes the other way, and it is the
+only record of what the model actually saw — a `TemporalExtent` for 1815 does
+not say whether the document wrote "1815", "the mid-1810s" or "circa 1815",
+and the last two are different claims that the `uncertainty` marker only
+partly captures.
+
+`sequence_position` is for narrative order where no date exists at all — "the
+third thing that happens" — and is deliberately not a date. Nothing in this
+package orders by it; it is carried for a caller who has a use for it.
+
+`publication_date` is the vantage point a *relative* expression was read
+against, not a property of the event. It is the same value
+`parse_temporal(..., reference_date=...)` takes, kept on the extent so that
+"last year" remains interpretable after the document that said it is out of
+scope.
+
+### DatePrecision members
+
+`YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE` — a `str` enum, so the value is the
+lowercase name and it serialises as text.
+
+**Precision is a claim about the source, not about the stored value.** A
+`start_date` is always a full `datetime`; `precision = YEAR` means only the
+year part was stated and the rest is padding. Two consequences worth knowing
+before comparing extents:
+
+- **A padded field is not a measurement.** `datetime(2023, 1, 1)` with
+  `precision = YEAR` does not assert January, and code that compares months
+  across two extents of differing precision is comparing one real number with
+  one arbitrary one. `interval.py` exists for this: it widens an extent to the
+  bounds its precision actually supports before relating two of them.
+- **There is no `DECADE` or `CENTURY`**, though the parser reads both. "The
+  1810s" and "the 19th century" become a *range* at `YEAR` precision rather
+  than a coarser precision value, which keeps the enum a statement about
+  calendar fields and puts the width in the dates where arithmetic can reach
+  it.
+
+### UncertaintyMarker members
+
+`EXACT`, `APPROXIMATE`, `CIRCA`, `BEFORE`, `AFTER`, `INFERRED`.
+
+These are **not ordered and not a confidence scale**, and nothing in the
+package treats them as one. `BEFORE` and `AFTER` are directional claims about
+a boundary rather than degrees of doubt, so any code sorting or thresholding
+this enum has mistaken it for `Entity.confidence`, which is the bounded float
+that does mean that (see
+[Confidence and score fields](#confidence-and-score-fields-are-bounded-0010-inclusive)).
+
+`INFERRED` is the one a caller sets rather than the parser: it marks an extent
+worked out from context rather than read from the text.
+
+### Validation: timezones, ordering, and a non-negative position
+
+**1. Every datetime must be timezone-aware.** `start_date`, `end_date` and
+`publication_date`, by the rule stated once under
+[Every datetime field is timezone-required](#every-datetime-field-is-timezone-required).
+Any offset is accepted and nothing normalizes to UTC.
+
+**2. `end_date` must be `>= start_date`.** A `model_validator`, since it spans
+two fields, and it is skipped when either is `None` — an extent with one
+endpoint is legal and common. Note that **equality is permitted**: an extent
+whose endpoints coincide is an instant, not an error.
+
+Do not confuse that with what `interval.py` produces. `widen(moment,
+precision)` returns the first instant *after* the unit containing `moment` —
+half-open, deliberately, so that no comparison has to know whether the store
+underneath counts in microseconds or nanoseconds. So a widened one-day extent
+has endpoints one day apart rather than coinciding, and a coincident pair here
+is a caller's instant rather than a parsed unit.
+
+**3. `sequence_position` must be `>= 0`.** Position, not offset; a negative
+one has no reading.
+
+Two rules it does **not** enforce, both deliberate:
+
+- **`precision` is not checked against the dates.** Nothing stops
+  `precision = MINUTE` on a date whose time is midnight, because midnight is a
+  real minute and the type cannot tell a padded field from a measured one.
+  That is what `original_text` is for.
+- **`uncertainty` is not checked against the range.** `BEFORE` with both
+  endpoints set is not rejected; the marker describes the source's hedge and
+  the dates describe the extent, and a caller combining them is doing
+  interpretation the domain does not own.
+
+### Derived: `is_empty` and `has_range`
+
+`is_empty` is `True` when **all seven** fields are `None` — not when the dates
+are. An extent carrying only `original_text` is not empty, which is the point:
+it records that the document said something temporal that could not be parsed,
+and discarding it would lose the only evidence that there was anything to
+read.
+
+`has_range` is `True` only when *both* `start_date` and `end_date` are set. A
+one-sided extent is not a range, and code that treats a `None` endpoint as
+"open" has to say which direction it means — `interval.py` does, and is where
+that decision lives.
+
+`Entity.is_temporal` composes with these: it is `True` when `temporal` is not
+`None` **and** not empty, so an entity carrying an empty extent reads as
+untemporal, which is the answer a caller wants.

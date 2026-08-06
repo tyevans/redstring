@@ -1211,14 +1211,18 @@ not renamed headings — **most pointed at sections that exist nowhere in the
 docs.** Both pages were written against an outline, and the outline is still
 visible in the links while the content was never filled in.
 
-`reference/domain-value-types.md` has 22 headings and covers `Entity`,
-`Relationship`, `SourceDocument` and `Alias`. It linked to, and does not
-contain, sections on: temporal value types, temporal intervals,
-`SimilarityFeatures`, `VectorMatch.score`, `normalize_name`,
-`blocking_keys_for`, `RelationshipRedirection`, `AliasCycleError`,
-`AmbiguousReferenceDateError`, and a "what is public" summary. Its own module
-map table lists `temporal.py`, `temporal_parsing.py`, `interval.py` and
-`merge_strategy.py` as things the page covers.
+`reference/domain-value-types.md` covers `Entity`, `Relationship`,
+`SourceDocument`, `Alias` and — **new** — temporal value types
+(`TemporalExtent`, `DatePrecision`, `UncertaintyMarker`). Still promised by
+its module-map table and still absent: temporal parsing, temporal intervals,
+merge strategies, `SimilarityFeatures`, the vector types, `blocking_keys_for`,
+`normalize_name`, `RelationshipRedirection` and the error types.
+
+Writing the temporal section produced one wrong claim that only checking
+caught — that a widened one-day extent has coincident endpoints. `widen`
+returns the first instant *after* the unit, half-open on purpose, so it does
+not. **Write these against the code and then run the code**; the section is
+otherwise a plausible paragraph about arithmetic nobody re-derived.
 
 `reference/domain-schema-yaml.md` **has its relationship-type section now**,
 written against the code: `id` normalization, the description bounds, the two
