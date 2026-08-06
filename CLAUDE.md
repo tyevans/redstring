@@ -178,7 +178,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape sixteen times,
+  testing the difference.** This project has hit the same shape eighteen times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -199,6 +199,8 @@ reading the code:
   | an expectation written in terms of the constant under test (`start + INSTANT`) | *any* value of that constant, including one that makes the interval empty |
   | asserting only the *precision* of a parsed date, never where it lands | every wrong arithmetic — "Q3" moving to January, April or August all keep MONTH precision |
   | intervals whose bounds never *coincide* | direction derived from a sort — the shorter of two extents sharing a lower bound sorts first, and its edge is silently dropped |
+  | only the **19th** century, whose base 1800 shares no set bit with 1, 33, 34, 66, 67 or 100 | `+` written as `\|` or `^` — the same number at that base, and eleven mutants unkillable until a case used the 20th |
+  | a *month range* whose endpoints differ | `end < start` widened to `<=` — "1900-1900" becomes unparseable and every other range still works |
 
   The interval row was the campaign's only Critical, and its lesson is
   structural rather than about inputs: **an invariant that holds because of an
@@ -224,7 +226,17 @@ reading the code:
   expect, and assert every claim the function makes rather than the one that
   was convenient.
 
-  **Four of the sixteen rows are identity-vs-equality**, and they are the
+  **The century row is the one to read if you think you know this list.**
+  It is not an interned string or a cached small int — it is a *bit pattern*
+  in the most natural example anyone would pick. `(century - 1) * 100` for the
+  19th century is 1800, and 1800 shares no set bit with any constant in the
+  table beside it, so `base + k`, `base | k` and `base ^ k` are the same
+  number and `century - 1` equals `century ^ 1` for any odd century. A library
+  that reads historical text will reach for the 19th century every time. The
+  lesson generalises past bits: **when a test's example is the one the domain
+  makes obvious, ask what that example is quietly making true.**
+
+  **Four of the eighteen rows are identity-vs-equality**, and they are the
   ones to expect rather than to be surprised by. Three fired because the test
   value sat inside a CPython cache — interned strings, cached small ints, and
   `len()` on a short collection returning that same cached int. Test numeric
