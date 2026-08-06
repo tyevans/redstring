@@ -372,12 +372,11 @@ Relationship 'observed_at' references unknown source type: 'falt'.
 Valid types: ['fault', 'site']
 ```
 
-Entries are normalized before that check, but by a *shorter* rule than an id:
-lowercase, strip whitespace, and turn spaces and hyphens into underscores.
-Repeated underscores are not collapsed and surrounding ones are not stripped.
-So an entity type written `__site__` stores as `site` while a reference written
-`__site__` stays `__site__` and fails to load. Write both the declaration and
-every reference in normalized form and the difference never arises.
+Entries are normalized before that check by the same rule an id is, so a
+reference written `__site__` finds an entity type written `__site__` — both
+are `site` by the time they are compared. Until recently the reference list
+used a shorter rule and that pair failed to load, which is why the sections
+below are emphatic about writing both in normalized form.
 
 A type may of course appear on both ends — `co_occurs_with` above joins two
 faults — and one end may list several types, as `literature_fiction`'s `rules`
@@ -667,34 +666,31 @@ The error message names both forms — `Entity type ID must be a valid
 identifier: '2nd stage' -> '2nd_stage'` — so you can see what the normalizer
 made of what you wrote.
 
-Three things this rule does *not* do, all of which can bite:
+Two things this rule does *not* do:
 
 - **Duplicate ids are not rejected.** Declaring `Site` and `site` as separate
   entity types gives you two types both stored as `site`; the load succeeds,
   the prompt lists the type twice, and `get_entity_type` returns the first.
   Nothing in the model checks for this — check it yourself.
-- **The reference lists normalize by a *shorter* rule.** Entries in
-  `valid_source_types` / `valid_target_types` are only lowercased, stripped,
-  and have spaces and hyphens turned into underscores. Runs of underscores are
-  not collapsed and surrounding ones are not stripped, so an entity type
-  written `__site__` stores as `site` while a reference written `__site__`
-  stays `__site__` and fails the cross-check below. They are not required to
-  be identifiers either — the check that catches a malformed entry is the
-  cross-reference against declared entity types, nothing else.
-- **The lookup helpers normalize by a shorter rule still.** `get_entity_type`,
-  `get_relationship_type`, `is_valid_entity_type`, `is_valid_relationship_type`
-  and the `is_valid_source` / `is_valid_target` endpoint checks only lowercase
-  and strip the argument you pass. `get_property` does the space-and-hyphen
-  replacement as well, but no collapsing. So a type stored as `access_road`
-  is *not* found by `get_entity_type("Access Road")`, and a legal endpoint
-  handed to `validate_relationship` in unnormalized form reads as invalid.
+- **Reference entries are not required to be identifiers.** `normalize_type_id`
+  is applied to entries in `valid_source_types` / `valid_target_types`, but
+  `normalize_identifier`'s rejection is not: the check that catches a
+  malformed entry is the cross-reference against declared entity types,
+  nothing else.
 
-Write every id in its normalized form, in the declaration and in every
-reference. That is the one habit that makes all three of the above
-unreachable: the prompt, the cross-reference check and the lookup helpers each
-apply a *different* amount of normalization, and they agree only on input that
-was already normalized. A schema written in mixed case reads as one thing and
-behaves as another.
+**Everywhere else, one rule.** Declarations, reference lists and every lookup
+helper — `get_entity_type`, `get_relationship_type`, `is_valid_entity_type`,
+`is_valid_relationship_type`, `get_property`, and the `is_valid_source` /
+`is_valid_target` endpoint checks — run their argument through the same
+`normalize_type_id`, so a type stored as `access_road` is found by
+`get_entity_type("Access Road")` and a legal endpoint handed to
+`validate_relationship` unnormalized reads as valid.
+
+It is worth knowing that this was three rules of decreasing strength until
+recently, agreeing only on input that was already normalized (BACKLOG B75).
+Writing every id in its normalized form was the habit that made the
+disagreement unreachable, and it is still the one that makes a schema read the
+way it behaves — but it is no longer load-bearing.
 
 ### At least one entity type and one relationship type; at most 10 examples
 
@@ -807,13 +803,11 @@ schema, and there is no way to extend one — copy the bundled file and edit it
 
 Five details of this check:
 
-- **It runs against normalized ids on both sides.** The declared ids were
-  normalized by the full rule (underscore collapsing, leading and trailing
-  underscores stripped); the references were normalized by the *shorter* rule
-  (lowercase, strip, spaces and hyphens to underscores). So an entity type
-  written `__site__` is stored as `site` while a reference written `__site__`
-  stays `__site__` and fails here, quoting a value you did not type. Writing
-  both in normalized form makes the difference unreachable — see
+- **It runs against normalized ids on both sides, by the same rule.** Declared
+  ids and references both go through `normalize_type_id`, so `__site__` on
+  either side is `site` here. The two used to differ — the reference list did
+  not collapse or strip underscores — and this check was where the mismatch
+  surfaced, quoting a value you did not type. See
   [Ids and property names](#ids-and-property-names-are-normalized-and-must-be-valid-identifiers).
 - **An empty-string entry is skipped, not rejected.** `valid_source_types:
   ['']` loads, and constrains nothing at all: the check ignores falsy entries,

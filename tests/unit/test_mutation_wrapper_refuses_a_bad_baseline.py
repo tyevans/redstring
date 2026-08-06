@@ -15,6 +15,7 @@ would not reach the interesting case at all.
 from __future__ import annotations
 
 import importlib.util
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -122,3 +123,66 @@ class TestTheBaselineCommandComesFromTheToolsOwnConfig:
         mut = mutation.baseline_command("mutmut")
 
         assert cosmic != mut
+
+
+def _session(tmp_path, rows):
+    """A session file holding just the columns `timeout_verdict` reads.
+
+    Built rather than fixtured from a real run: a real one is hundreds of
+    megabytes and takes hours, and the interesting shapes -- all timeouts, a
+    quarter timeouts -- are the ones a healthy run will not produce on demand.
+    """
+    path = tmp_path / "session.sqlite"
+    connection = sqlite3.connect(path)
+    with connection:
+        connection.execute("CREATE TABLE work_results (test_outcome TEXT, output TEXT)")
+        connection.executemany("INSERT INTO work_results VALUES (?, ?)", rows)
+    connection.close()
+    return path
+
+
+class TestItRefusesAResultWhoseKillsAreTimeouts:
+    """cosmic-ray records a timeout as `KILLED` and `cr-report` does not say so.
+
+    Both shapes below are transcribed from real sessions in this repository,
+    which is why they are the ones tested: a `widen` session reported 80
+    killed and 0 survivors with **all 80 timed out**, and a `render` session
+    in the same window reported 152 kills of which 132 were timeouts. The
+    baseline check cannot see either -- it runs once, unloaded, and passes.
+    """
+
+    def test_a_session_of_pure_timeouts_is_refused(self, tmp_path):
+        session = _session(tmp_path, [("KILLED", "timeout")] * 80)
+        assert mutation.timeout_verdict(session) is not None
+
+    def test_a_session_mostly_timeouts_is_refused(self, tmp_path):
+        session = _session(
+            tmp_path,
+            [("KILLED", "timeout")] * 132
+            + [("KILLED", "1 failed in 7s")] * 20
+            + [("SURVIVED", "13 passed in 7s")] * 7,
+        )
+        assert mutation.timeout_verdict(session) is not None
+
+    def test_a_clean_session_is_accepted(self, tmp_path):
+        """The periods session, which ran on an idle machine: no timeouts."""
+        session = _session(
+            tmp_path,
+            [("KILLED", "1 failed in 7s")] * 148 + [("SURVIVED", "13 passed in 7s")] * 28,
+        )
+        assert mutation.timeout_verdict(session) is None
+
+    def test_a_few_timeouts_among_real_kills_are_accepted(self, tmp_path):
+        """A timeout is a legitimate way to catch a mutant -- an infinite loop
+        is a real defect. The refusal is about a run *dominated* by them, so a
+        handful must not trip it or the guard becomes noise and gets removed.
+        """
+        session = _session(
+            tmp_path,
+            [("KILLED", "timeout")] * 3 + [("KILLED", "1 failed in 7s")] * 100,
+        )
+        assert mutation.timeout_verdict(session) is None
+
+    def test_an_empty_session_is_refused(self, tmp_path):
+        """Zero results and zero survivors read identically in `cr-report`."""
+        assert mutation.timeout_verdict(_session(tmp_path, [])) is not None

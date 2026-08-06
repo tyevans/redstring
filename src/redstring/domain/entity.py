@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -12,7 +12,7 @@ from redstring.domain.json_safety import Passthrough, reject_unstorable_text
 from redstring.domain.temporal import TemporalExtent
 
 
-class ExtractionMethod(str, Enum):
+class ExtractionMethod(StrEnum):
     """How the entity was derived — not which vendor answered.
 
     Vendor identity is adapter detail and belongs in `Entity.model`, which

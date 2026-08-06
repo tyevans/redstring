@@ -415,7 +415,7 @@ Notes on the ones whose type does not tell the whole story:
 
 ### ExtractionMethod members
 
-`ExtractionMethod` is declared `class ExtractionMethod(str, Enum)`, so every
+`ExtractionMethod` is declared `class ExtractionMethod(StrEnum)`, so every
 member *is* a `str`: `ExtractionMethod.LLM == "llm"` is `True`, the member can
 be used anywhere a string is expected, and pydantic serializes it as its
 value. It is exported from `redstring` alongside `Entity` — see

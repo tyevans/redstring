@@ -432,7 +432,7 @@ the same hazard [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-f
 describes from the other direction: a command that bypasses the configured
 scope is measuring something other than the gate.
 
-The rule selection, the single `UP042` ignore, the test-only per-file ignores
+The rule selection, the now-empty `ignore` list, the test-only per-file ignores
 and the banned-API entries are covered in the ruff sections below.
 
 ### `ruff format --force-exclude`
@@ -716,41 +716,39 @@ inline:
 - **`ERA`** — commented-out code is the one finding on this list with no
   runtime consequence and the longest half-life. Git holds the old version.
 
-### The single `ignore`: `UP042`
+### `ignore` is empty
 
-`ignore` has exactly one entry, and it is a *deferral with a stated reason*,
-not a disagreement with the rule:
+`ignore` carries no entries. The last one was `UP042`, and how it left is the
+part worth keeping.
 
-```toml
-ignore = [
-    "UP042",
-]
-```
-
-UP042 wants `class X(str, Enum)` rewritten as `enum.StrEnum`. That is a
+UP042 wants `class X(str, Enum)` rewritten as `enum.StrEnum`, which is a
 behaviour change wearing a style fix's clothing: `str(X.A)` goes from `"X.A"`
-to `"a"`, so every f-string, log line and serialised value holding a member
-changes silently, and nothing about the rewrite fails a type check. The
-`(str, Enum)` idiom is used at multiple sites across the package, which makes
-the migration a single deliberate change made with tests — not something
-`ruff check --fix` should apply file by file while you are committing an
-unrelated edit.
+to `"a"`, and nothing about the rewrite fails a type check. That made it a
+deliberate migration rather than something `ruff check --fix` should apply
+file by file while you commit an unrelated edit — so it was ignored globally,
+with the reason stated inline, until someone made the change.
 
-Two things follow from that framing:
+The migration was made against a test rather than against the linter.
+`tests/unit/test_enum_values_are_a_wire_format.py` writes out every member of
+every string enum in the package with the exact string it serialises as —
+typed out, not derived, since an expectation written as
+`{m.name: m.value for m in E}` is true for every spelling including a wrong
+one. The values are what reach a Neo4j property and an event payload;
+`str(X.A)` is what UP042 changes, and nothing is allowed to depend on it. With
+the values pinned, the rewrite is checkable: if the wire format had moved, the
+suite would have said so.
 
-- **The ignore is global, not per-file.** It belongs in `ignore` rather than
-  `per-file-ignores` because it is not an exemption for legacy code — it
-  applies to a new enum written today, for the same reason.
-- **It is the only entry.** The legacy per-file exemption lists are empty and
-  the mypy `exclude` key is deleted (see
-  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
-  so `UP042` is the whole of what this project declines to enforce on `src/`.
-  A second entry appearing here is a visible decision in review rather than an
-  edit to an existing list.
+Two things generalise from it:
 
-When the migration happens, deleting the entry and running the configured gate
-is the measurement that counts — a `--select UP042` run *through* the ignore
-cannot report a finding whatever the code says.
+- **Delete the entry and run the configured gate.** A `--select UP042` run
+  *through* the ignore could not have reported a finding whatever the code
+  said — see
+  [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md).
+- **The list is kept, empty, rather than deleted.** An `ignore` over nothing
+  still says "this project ignores no rule", and adding an entry is then a
+  visible decision in review. That is the opposite call from the mypy
+  `exclude` key, which was deleted — an *exclusion* over an empty set excludes
+  nothing, and a staleness guard written over it would pass vacuously.
 
 ## ruff per-file-ignores and banned-api
 

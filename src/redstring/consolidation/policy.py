@@ -40,7 +40,7 @@ refuses all-zero weights to avoid.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -66,7 +66,7 @@ HIGH_SIMILARITY = 0.92
 LOW_SIMILARITY = 0.75
 
 
-class MergeDecision(str, Enum):
+class MergeDecision(StrEnum):
     """What the policy says to do with one candidate pair."""
 
     MERGE = "merge"
