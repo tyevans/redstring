@@ -249,6 +249,25 @@ class TestRelationships:
         assert edge.target_entity_id == by_name["Charles Babbage"]
         assert edge.relationship_type == "WORKED_WITH"
 
+    def test_an_edge_records_which_document_stated_it(self):
+        """Provenance on the edge, not only on its endpoints.
+
+        Asserted against a *second* document as well, because `SOURCE` is the
+        only source id most of this file uses -- an implementation that hard
+        coded it, or that read the source from an endpoint entity, would agree
+        with a one-document assertion.
+        """
+        extraction = Extraction(
+            entities=[entity("Ada Lovelace"), entity("Charles Babbage")],
+            relationships=[link("Ada Lovelace", "Charles Babbage")],
+        )
+
+        [here] = mapped(extraction).relationships
+        [elsewhere] = mapped(extraction, source="doc-2").relationships
+
+        assert here.source_id == SOURCE
+        assert elsewhere.source_id == "doc-2"
+
     def test_an_endpoint_is_matched_the_way_identity_is_and_not_by_exact_text(self):
         """The model routinely spells the endpoint differently from the entity.
 

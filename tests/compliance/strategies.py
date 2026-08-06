@@ -159,6 +159,7 @@ def relationships(
         source_entity_id=source_entity_id,
         target_entity_id=target_entity_id,
         relationship_type=draw(relationship_types),
+        source_id=draw(st.none() | text(min_size=1, max_size=12)),
         properties=draw(property_dicts),
         confidence=draw(confidences),
     )

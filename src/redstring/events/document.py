@@ -111,6 +111,24 @@ class DocumentExtracted(TenantDomainEvent):
                 f"from; found source_id {sorted(map(str, strays))} in an event for "
                 f"{self.source_id!r}"
             )
+        # The same rule for relationships, with one difference that is not
+        # cosmetic: `None` passes here and is rejected above. A relationship's
+        # `source_id` was added after this event shipped, so every edge in an
+        # existing log has none -- and this validator runs on **replay**, so
+        # rejecting the absent case would make already-written history
+        # unreadable. An edge naming a *different* document is still the
+        # provenance error the entity check exists for.
+        foreign = {
+            r.source_id
+            for r in self.relationships
+            if r.source_id is not None and r.source_id != self.source_id
+        }
+        if foreign:
+            raise ValueError(
+                f"relationships must be attributed to the document they were "
+                f"extracted from; found source_id {sorted(map(str, foreign))} in an "
+                f"event for {self.source_id!r}"
+            )
         return self
 
 

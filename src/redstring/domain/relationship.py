@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from redstring.domain.ids import EntityId, RelationshipId, TenantId
+from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.json_safety import Passthrough, reject_unstorable_text
 
 
@@ -18,10 +18,23 @@ class Relationship(BaseModel):
     source_entity_id: EntityId
     target_entity_id: EntityId
     relationship_type: str
+    #: Which document stated this edge, matching `Entity.source_id`.
+    #:
+    #: Optional for the reason `Entity`'s is: this reaches the event log, and
+    #: an event written before the field existed replays without it. `None`
+    #: therefore means "not recorded", never "no document".
+    #:
+    #: There is deliberately no `source_text` beside it. `Entity` has one
+    #: because the extraction schema asks the model for it;
+    #: `ExtractedRelationship` has no span field, so a `source_text` here
+    #: could only be reconstructed or paraphrased -- and a paraphrase in a
+    #: field named for a quotation reads as evidence while being generation.
+    #: See BACKLOG B76 for what asking for it would cost.
+    source_id: SourceId | None = None
     properties: dict[str, Any] = {}
     confidence: float
 
-    @field_validator("relationship_type", "properties")
+    @field_validator("relationship_type", "source_id", "properties")
     @classmethod
     def _reject_unstorable_in_free_form_text(cls, value: Passthrough) -> Passthrough:
         """No field reaching the event log may carry text that cannot be

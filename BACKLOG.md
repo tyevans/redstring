@@ -940,6 +940,72 @@ Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
 
+### B76. A relationship says which document stated it, not which sentence
+
+**Half closed.** `Relationship.source_id` exists and `map_extraction` fills
+it, so "which document stated this edge" is answerable and the endpoints are
+no longer better provenanced than the edge between them. Reported downstream
+(research-team); it is the sharper form of an entry this file carried as B20,
+deleted in the slice 1 scope cut (`7083e71`) without being fixed. Do not
+re-close this one that way either.
+
+**What is left is `source_text`, and it is not the same size of change.**
+`Entity.source_text` exists because `ExtractedEntity` asks the model for it.
+`ExtractedRelationship` (`extraction/schema.py:84`) has four fields and no
+span, so the text is not dropped in mapping — it is never requested. Adding
+it means:
+
+- a field on the extraction schema, which changes every prompt's output shape
+  and costs tokens on every extraction, for every caller, whether or not they
+  want spans;
+- an accuracy run to answer the question that decides the whole thing —
+  whether the model returns a **quoted** span or a paraphrase. A paraphrase in
+  a field named for a quotation is worse than an empty field: it reads as
+  evidence and is generation. `tests/accuracy/` is where that gets measured,
+  and nothing else can answer it.
+
+If it lands, it is optional like every other field reaching the event log, and
+`DocumentExtracted`'s rule 4 shows the shape the compatibility question takes.
+
+A cheaper alternative that was **not** taken and should be weighed first: a
+caller who wants the sentence can already store the chunk and index it by
+`source_id`. That gets a paragraph rather than a span, and it costs the
+library nothing.
+
+### B77. `build_graph` has no progress callback, and bulk ingest is opaque
+
+Reported downstream (research-team), and the older, vaguer form of this was
+B16 — deleted in `7ef7a03` along with `models/` rather than closed. Same
+caution as B76: the entry went, the gap did not.
+
+`build_graph` (`composition.py:166`) is one `await` that chunks a document,
+makes one model call per chunk, merges, projects, and returns a
+`GraphBuildReport`. A caller ingesting a corpus sees nothing until the
+document is done, and the downstream UI streams token-level deltas
+everywhere else, so this is the one blocking box in it.
+
+**The shape is not obvious and that is why this is deferred rather than
+done.** Three candidates:
+
+- **A callback** — `on_progress: Callable[[BuildProgress], None] | None`.
+  Cheapest, and it has the failure mode a callback always has: it runs inside
+  the extraction loop, so a caller that blocks in it blocks extraction, and a
+  caller that raises in it kills a run that was otherwise fine. If this is the
+  choice, the callback's exceptions must be swallowed and the contract must
+  say so — progress reporting must not be able to fail an ingest.
+- **An async generator** — `build_graph_streaming(...)` yielding progress and
+  finally the report. Composes with an async UI without the reentrancy
+  problem, and costs a second entry point on the public surface, which
+  `__all__` makes a visible decision (ADR 0006).
+- **An `asyncio.Queue` the caller passes in.** Decouples cleanly, and pushes
+  lifecycle onto the caller.
+
+Whatever it yields must be *chunk* granularity, not token: this library never
+holds the token stream — `LlmProvider.extract` returns a parsed object — so
+promising anything finer would be a promise the port cannot keep. Chunks
+completed out of chunks total, plus the phase (extracting / merging /
+projecting), is what is actually knowable here.
+
 ### B58. If this library ever encrypts, it needs a port -- not the file that was deleted
 
 Slice 10 deleted `encryption.py` (467 lines, 127 statements, 0% coverage, no

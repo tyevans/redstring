@@ -29,6 +29,24 @@ def test_minimal_construction():
     assert rel.properties == {}
 
 
+def test_provenance_is_absent_until_it_is_given():
+    """The default is executed here rather than through a factory that fills
+    every field: `_relationship` deliberately omits `source_id`, so this is
+    the model's own default and not one restated in a helper."""
+    assert _relationship().source_id is None
+    assert _relationship(source_id="doc-1").source_id == "doc-1"
+
+
+@pytest.mark.parametrize("bad", ["doc\x00-1", "doc\ud800-1"])
+def test_provenance_cannot_carry_text_a_store_will_refuse(bad):
+    """`source_id` is free-form text reaching the event log, so it is subject
+    to the same rejection as every other free-form field.
+    `test_text_rejection_covers_every_field.py` proves the *list* is complete;
+    this proves this field's entry in it works."""
+    with pytest.raises(ValidationError):
+        _relationship(source_id=bad)
+
+
 def test_self_loop_is_rejected():
     entity_id = uuid4()
     with pytest.raises(ValidationError):

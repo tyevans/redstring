@@ -12,6 +12,10 @@ wheels/
 # Tooling
 .pytest_cache/
 .ruff_cache/
+# The pre-commit mypy hook writes this, and it is the one tool cache the list
+# was missing -- so `git add -A` after a hook run stages sixteen multi-megabyte
+# `.db` files and `check-added-large-files` refuses the commit.
+.mypy_cache/
 .coverage
 .coverage.*
 coverage.xml

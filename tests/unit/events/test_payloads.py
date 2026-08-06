@@ -116,6 +116,25 @@ class TestDocumentExtracted:
         with pytest.raises(ValidationError, match="attributed to the document"):
             _extracted(tenant_id, entities=[_entity(tenant_id, source_id=other_source)])
 
+    @pytest.mark.parametrize("other_source", OTHER_SOURCES)
+    def test_relationships_attributed_to_another_document_are_rejected(self, other_source):
+        tenant_id = uuid4()
+        with pytest.raises(ValidationError, match="relationships must be attributed"):
+            _extracted(tenant_id, relationships=[_relationship(tenant_id, source_id=other_source)])
+
+    def test_a_relationship_with_no_provenance_is_still_a_legal_event(self):
+        """Not laxness -- history. `Relationship.source_id` was added after
+        this event shipped, so every edge in an existing log has none, and
+        this validator runs on replay. Rejecting the absent case would make
+        already-written events unreadable rather than catch anything.
+
+        `_relationship` omits `source_id`, so this is the shape a real replay
+        of an old event produces rather than one written to pass.
+        """
+        tenant_id = uuid4()
+        event = _extracted(tenant_id, relationships=[_relationship(tenant_id)])
+        assert event.relationships[0].source_id is None
+
     def test_the_document_a_carrier_names_is_the_one_it_is_appended_to(self):
         """`source_id` is on the event as well as implied by its stream.
 
