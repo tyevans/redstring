@@ -13,8 +13,7 @@ The log itself is `poisoned_log` in `conftest.py` -- it is shared with
 from __future__ import annotations
 
 import pytest
-
-from redstring.projections import project
+from eventsource.application.projections import replay
 
 from .conftest import POISON_TENANT_ID, append_document, poison_entity
 
@@ -22,7 +21,7 @@ from .conftest import POISON_TENANT_ID, append_document, poison_entity
 class TestAPoisonEventDoesNotWedgeTheProjection:
     async def test_the_events_after_it_are_still_applied(self, poisoned_log):
         rig, entities = poisoned_log
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
 
         assert report.applied == 2
         assert report.failed == 1
@@ -34,7 +33,7 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
         """`failed` counting up is not enough on its own. An operator needs the
         event itself to decide whether to fix the data and replay it."""
         rig, _ = poisoned_log
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
 
         (entry,) = await rig.dlq.get_failed_events()
         assert entry.event_type == "DocumentExtracted"
@@ -48,7 +47,7 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
         the day it stops being true, this says so.
         """
         rig, entities = poisoned_log
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
 
         shape = await rig.shape([POISON_TENANT_ID])
         assert str(entities[1].id) in shape[str(POISON_TENANT_ID)]["entity_ids"]
@@ -59,8 +58,8 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
         document that holds it was folded -- replaying the whole log applies
         the previously poisoned event with no special handling."""
         rig, _entities = poisoned_log
-        await project(rig.event_store, rig.projections)
-        assert (await project(rig.event_store, rig.projections)).failed == 1
+        await replay(rig.event_store, rig.projections)
+        assert (await replay(rig.event_store, rig.projections)).failed == 1
 
         edge = None
         async for envelope in rig.event_store.read_all():
@@ -74,7 +73,7 @@ class TestAPoisonEventDoesNotWedgeTheProjection:
             poison_entity("doc-4", "Missing").model_copy(update={"id": edge.target_entity_id})
         )
 
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         assert report.failed == 0
         shape = await rig.shape([POISON_TENANT_ID])
         assert str(edge.id) in shape[str(POISON_TENANT_ID)]["edges"]

@@ -130,7 +130,7 @@ What that means when you upgrade:
   defining module is `redstring.events.merge`. Either path is internal;
   neither is guaranteed.
 - **The half of this guide that touches exported names is the stable half.**
-  `GraphProjection`, `project`, `Entity`, `Alias`, `Relationship`,
+  `GraphProjection`, `replay`, `Entity`, `Alias`, `Relationship`,
   `MissingEntityError` and `AliasCycleError` are all exported. So Step 6 —
   folding a merge event through the projection — rests on the supported
   surface even though Step 3 does not.
@@ -1178,7 +1178,7 @@ entity instead of quietly undoing the merge. Skipping the fold therefore costs
 more than one merge: it leaves the resolution table that protects every future
 extraction unwritten.
 
-### Doing this with an event store and `project`, versus folding the returned event directly
+### Doing this with an event store and `replay`, versus folding the returned event directly
 
 Both are supported and they differ in what happens when something goes wrong.
 
@@ -1198,21 +1198,23 @@ yourself.
 log anyway:
 
 ```python
-from redstring import GraphProjection, project
+from eventsource import replay
+
+from redstring import GraphProjection
 
 projection = GraphProjection(graph_store, checkpoint_repo=checkpoints, dlq_repo=dlq)
-report = await project(event_store, [projection])
+report = await replay(event_store, [projection])
 assert report.failed == 0
 ```
 
-`project` reads the global feed from a position, folds every event into every
+`replay` reads the global feed from a position, folds every event into every
 projection, and returns a `ReplayReport` of `applied`, `failed` and
 `last_position`. It is the shape this project's own consolidation tests use,
 and it buys three things the direct call does not:
 
 - **A checkpoint**, so the next call resumes rather than refolding, and a crash
   between the append and the fold is recoverable without bookkeeping of yours.
-- **A DLQ.** A failing event is recorded and `project` carries on, so one
+- **A DLQ.** A failing event is recorded and `replay` carries on, so one
   poison event does not deny the projection every event after it.
   `report.failed` is a *count* rather than a flag, precisely so "some failed"
   cannot be read as "none did" by a truthiness check — assert on it.

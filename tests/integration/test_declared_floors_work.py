@@ -6,8 +6,8 @@ which means every run resolves to the *newest* version the constraint permits.
 The floor is therefore the one point in the range that is never exercised, and
 a floor that is too low is invisible by construction.
 
-It was too low. `0.1.0` shipped declaring `eventsource-py>=0.9.1` while
-`projections/base.py` forwards `retry_policy` and `tracer` to
+It was too low. `0.1.0` shipped declaring `eventsource-py>=0.9.1` while this
+package's own `projections/base.py` forwarded `retry_policy` and `tracer` to
 `DeclarativeProjection.__init__`, which gained them in 0.10.0. A resolver
 picking the low end got `TypeError: unexpected keyword argument 'retry_policy'`
 on the first projection it built. **Not at import** — so a smoke test that
@@ -63,6 +63,13 @@ def test_the_declared_eventsource_floor_can_build_a_projection(tmp_path: Path):
     `GraphProjection` is built with the arguments `StoreProjection.__init__`
     forwards, because forwarding is where the incompatibility lives — a
     default-argument construction would pass against 0.9.1 and prove nothing.
+
+    `StoreProjection` is eventsource's own since 0.12.0, so the forwarding it
+    does is no longer this package's to get wrong. What the construction now
+    measures is that the declared floor has the class at all, under the name
+    `redstring.projections` imports it by, and that its `ProjectionOptions`
+    still accepts every option named here — which is the floor claim that can
+    still be false.
     """
     floor = _declared_floor("eventsource-py")
     venv = tmp_path / "floor"

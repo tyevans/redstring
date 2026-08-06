@@ -1815,6 +1815,11 @@ anything the library means to tell you.
 `ValueError` rather than `RedstringError`, because it is raised by a pure
 parsing function about its own argument.
 
+`ReplayFailedError` used to be in the table below. It is `eventsource`'s since
+0.12.0, rooted in its `ProjectionError` — the right root, because what
+happened is that a projection failed to process an event. Catch it from there;
+`except RedstringError` does not cover a strict rebuild's stop.
+
 | Error | Raised when |
 |---|---|
 | `MissingEntityError` | writing a relationship whose endpoint the tenant does not have |
@@ -1830,7 +1835,6 @@ parsing function about its own argument.
 | `MergeIntoAliasError` | the merge target is itself already an alias |
 | `DoubleMergeError` | an entity in this merge has already been merged elsewhere |
 | `UnknownMergeError` | no merge in effect matches the event id an undo names |
-| `ReplayFailedError` | a projection rejected an event under `project(strict=True)` |
 
 Two groupings are load-bearing rather than tidy. **`RefusedCompletionError`
 must be distinguishable from `EmptyCompletionError`** — a refusal is a

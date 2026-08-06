@@ -86,13 +86,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_OID, uuid5
 
-from eventsource.application.projections import handles
+from eventsource.application.projections import StoreProjection, handles
 
 from redstring.domain.alias import Alias
 from redstring.events.document import DocumentExtracted
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.ports.graph_store import GraphStore
-from redstring.projections.base import StoreProjection
 
 if TYPE_CHECKING:
     from uuid import UUID

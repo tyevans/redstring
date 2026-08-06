@@ -38,9 +38,8 @@ from contextlib import suppress
 
 import pytest
 from eventsource.adapters.memory import InMemorySnapshotStore
+from eventsource.application.projections import replay
 from hypothesis import given, settings
-
-from redstring.projections import project
 
 from .conftest import fresh_rig
 from .log_builder import DocumentSpec, Scenario, build_log, scenarios
@@ -146,9 +145,9 @@ async def _deliver_twice(rig):
     async for envelope in rig.event_store.read_all():
         for projection in rig.projections:
             for _ in range(2):
-                # Same contract as `project`: a poison event is recorded in the
+                # Same contract as `replay`: a poison event is recorded in the
                 # DLQ and does not stop the replay. Inlined rather than reusing
-                # `project` because the double delivery is this helper's point.
+                # `replay` because the double delivery is this helper's point.
                 with suppress(Exception):
                     await projection.handle(envelope.event)
 
@@ -160,14 +159,14 @@ class TestTheFoldIsCorrect:
     @REPLAY_SETTINGS
     async def test_the_projected_graph_matches_the_oracle(self, scenario):
         rig, built = await _built(scenario)
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         assert report.failed == 0
         assert await rig.shape(built.tenant_ids) == built.expected_shape()
 
     @pytest.mark.parametrize("scenario", PINNED.values(), ids=PINNED.keys())
     async def test_the_pinned_cases_match_the_oracle(self, scenario):
         rig, built = await _built(scenario)
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         assert report.failed == 0
         assert await rig.dlq.get_failed_events() == []
         assert await rig.shape(built.tenant_ids) == built.expected_shape()
@@ -179,11 +178,11 @@ class TestReplayEquivalence:
     async def test_a_wiped_store_replays_to_the_same_state(self, scenario):
         rig, built = await _built(scenario)
 
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
         live = await rig.dump(built.tenant_ids)
 
         await _wipe(rig, built.tenant_ids)
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
 
         assert await rig.dump(built.tenant_ids) == live
 
@@ -194,7 +193,7 @@ class TestReplayEquivalence:
         replaces, which a single clean replay cannot distinguish."""
         rig, built = await _built(scenario)
 
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
         once = await rig.dump(built.tenant_ids)
 
         await _wipe(rig, built.tenant_ids)
@@ -210,9 +209,9 @@ class TestReplayEquivalence:
         rather than double every edge."""
         rig, built = await _built(scenario)
 
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
         live = await rig.dump(built.tenant_ids)
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
 
         assert await rig.dump(built.tenant_ids) == live
 
@@ -223,15 +222,15 @@ class TestPinnedBoundaries:
 
     async def test_a_wiped_store_replays_to_the_same_state(self, scenario):
         rig, built = await _built(scenario)
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
         live = await rig.dump(built.tenant_ids)
         await _wipe(rig, built.tenant_ids)
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
         assert await rig.dump(built.tenant_ids) == live
 
     async def test_at_least_once_delivery_changes_nothing(self, scenario):
         rig, built = await _built(scenario)
-        await project(rig.event_store, rig.projections)
+        await replay(rig.event_store, rig.projections)
         once = await rig.dump(built.tenant_ids)
         await _wipe(rig, built.tenant_ids)
         await _deliver_twice(rig)
@@ -241,10 +240,10 @@ class TestPinnedBoundaries:
 class TestReplayFromNothing:
     async def test_an_empty_log_projects_to_empty_stores(self, rig):
         """Genuinely nothing: no events, no prior run, no state left by an
-        earlier phase. This is what would catch a `project` whose loop never
+        earlier phase. This is what would catch a `replay` whose loop never
         ran and whose report was fabricated.
         """
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         assert report.applied == 0
         assert report.failed == 0
         assert report.last_position is None
@@ -256,7 +255,7 @@ class TestReplayFromNothing:
         this schema is a whole document.
         """
         rig, built = await _built(SINGLE)
-        report = await project(rig.event_store, rig.projections)
+        report = await replay(rig.event_store, rig.projections)
         assert report.applied == 2  # DocumentExtracted, then EntitiesEmbedded
         shape = await rig.shape(built.tenant_ids)
         assert len(shape[str(built.tenant_ids[0])]["entity_ids"]) == 1
@@ -266,8 +265,8 @@ class TestReplayFromNothing:
         """`from_position` is exclusive, so resuming from the position of the
         last event applied is a no-op rather than a re-application of it."""
         rig, _ = await _built(SINGLE)
-        first = await project(rig.event_store, rig.projections)
-        resumed = await project(rig.event_store, rig.projections, from_position=first.last_position)
+        first = await replay(rig.event_store, rig.projections)
+        resumed = await replay(rig.event_store, rig.projections, from_position=first.last_position)
         assert resumed.applied == 0
         assert resumed.last_position is None
 
@@ -283,11 +282,11 @@ class TestTheReplayIsBounded:
     async def test_a_feed_that_will_not_end_fails_instead_of_hanging(self):
         rig, _ = await _built(SINGLE)
         with pytest.raises(RuntimeError, match="cursor is probably not advancing"):
-            await project(rig.event_store, rig.projections, max_events=1)
+            await replay(rig.event_store, rig.projections, max_events=1)
 
     async def test_a_log_exactly_at_the_bound_is_not_rejected(self):
         """Off-by-one: the bound is the number of events allowed, not the
         number after which reading stops."""
         rig, _ = await _built(SINGLE)
-        report = await project(rig.event_store, rig.projections, max_events=2)
+        report = await replay(rig.event_store, rig.projections, max_events=2)
         assert report.applied == 2

@@ -26,6 +26,7 @@ from eventsource.adapters.memory import (
     InMemoryEventStore,
     InMemorySnapshotStore,
 )
+from eventsource.application.projections import replay
 
 from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import AdjudicationBatch, Adjudicator
@@ -33,7 +34,7 @@ from redstring.consolidation.service import ConsolidationService
 from redstring.domain.blocking import blocking_keys_for
 from redstring.events.merge import EntitiesMerged
 from redstring.graph.adapters.memory import InMemoryGraphStore
-from redstring.projections import GraphProjection, project
+from redstring.projections import GraphProjection
 
 from .conftest import entity
 from .test_policy import FakeProvider, _verdict
@@ -74,7 +75,7 @@ class Rig:
         return [envelope.event async for envelope in self.event_store.read_all()]
 
     async def catch_up(self):
-        report = await project(self.event_store, [self.projection])
+        report = await replay(self.event_store, [self.projection])
         assert report.failed == 0
 
 

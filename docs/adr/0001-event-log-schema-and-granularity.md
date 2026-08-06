@@ -375,6 +375,15 @@ what a caller does with them.
 
 ### `validate_on_save=True`, `enforce_on_load` deliberately off
 
+> **Renamed upstream.** `eventsource-py` 0.12.0 renamed `enforce_on_load` to
+> `require_tenant_context` (its ADR 0057), for exactly the reason this section
+> spends four paragraphs on: the old name promised a filter and imposed a
+> precondition. There is no alias — `enforce_on_load=` raises `TypeError`.
+> Nothing below changes in substance; the flag is still off, still at the
+> library default, and still for the reason given. Read the old name as the
+> new one throughout, and note that the argument here was one of the two
+> downstream reports the rename cites.
+
 Both constructors call `TenantAwareRepository(...)` with no keyword arguments,
 so both knobs sit at the library's defaults: `validate_on_save=True`,
 `enforce_on_load=False`. Only one of those is a decision -- the save side is

@@ -2,7 +2,16 @@
 
 ## Status
 
-Accepted.
+**Superseded by [ADR 0020](0020-the-replay-driver-goes-upstream.md).** Every
+decision below still holds; none of them is held *here* any more.
+`eventsource-py` 0.12.0 upstreamed this driver (its ADR 0054) along with the
+`aggregate_type` scoping this record left open (its ADR 0052), so
+`projections/replay.py` is deleted and the five names it put in `__all__` are
+gone from the surface. Read this for the reasoning — it is what the upstream
+records are arguing with — and ADR 0020 for what is true now, including the
+two places where upstream's version is not a transcription of this one.
+
+Accepted (superseded).
 
 Relates to [ADR 0006](0006-the-public-surface-is-gated.md), which settles that
 `__all__` is the whole promise — it **stands**; this adds four names to it

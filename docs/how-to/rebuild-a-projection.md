@@ -1,7 +1,7 @@
 # Rebuild a projection from the event log
 
 Rebuild a `GraphStore` or `VectorStore` from scratch by replaying the global
-event feed through `project`. Use this when a read model is wrong, stale, or
+event feed through `replay`. Use this when a read model is wrong, stale, or
 built by an older version of the fold — the log is the write model, and the
 stores are derived and disposable.
 
@@ -11,19 +11,26 @@ You need an event store that exposes a `GlobalEventFeed` (`read_all`), the
 stores you want to rebuild, and — strongly recommended — a `DLQRepository` so
 events that fail to apply are recoverable rather than merely counted.
 
-Everything you need is exported from the package root:
+The projections are exported from the package root; the driver is
+`eventsource`'s:
 
 ```python
-from redstring import GraphProjection, ReplayReport, VectorProjection, project
+from eventsource import ReplayReport, replay
+
+from redstring import GraphProjection, VectorProjection
 ```
 
-Everything else is `eventsource`'s, not this package's. `project`'s signature
-names those types directly — `GlobalEventFeed` (the `feed` argument),
-`EventSubscriber` (what a projection is, as far as `project` is concerned) and
-`Position` — as do the projection constructors, with `ProjectionCheckpoints`
-and `DLQRepository`. Import them from `eventsource`: `redstring.__all__` is
-the whole promise this package makes, and it deliberately does not re-export
-another library's ports.
+`replay` was exported from `redstring` until `eventsource-py` 0.12.0
+upstreamed it (its ADR 0054). It is not re-exported here, for the reason the
+rest of this paragraph gives.
+
+Everything else is `eventsource`'s too. `replay`'s signature names those types
+directly — `GlobalEventFeed` (the `feed` argument), `EventSubscriber` (what a
+projection is, as far as `replay` is concerned) and `Position` — as do the
+projection constructors, with `ProjectionCheckpoints` and `DLQRepository`
+arriving as `ProjectionOptions`. Import them from `eventsource`:
+`redstring.__all__` is the whole promise this package makes, and it
+deliberately does not re-export another library's ports or its functions.
 
 For live catch-up rather than a rebuild, see
 [Drive projections from an event store](drive-projections-from-an-event-store.md).
@@ -44,17 +51,17 @@ model and folds the whole log back in from position zero. Reach for one when
   that already exists.
 
 **If the projection is merely behind, do not rebuild.** Catch-up is the same
-`project` call with `from_position` set to where you stopped:
+`replay` call with `from_position` set to where you stopped:
 
 ```python
-report = await project(event_store, projections, from_position=previous.last_position)
+report = await replay(event_store, projections, from_position=previous.last_position)
 ```
 
 A rebuild over a large log costs the whole log; a catch-up costs the tail. The
 result is identical either way, because both folds are the same upserts and
 idempotent deletes — so the choice is about time, not about correctness.
 
-`project` never consults a checkpoint. It starts wherever `from_position`
+`replay` never consults a checkpoint. It starts wherever `from_position`
 says, which for a rebuild is the default `None`. That is the property that
 makes a rebuild simple — there is no checkpoint to reset first — and it is
 also the thing to be careful about, because **the checkpoint and the position
@@ -65,9 +72,9 @@ are two different mechanisms and one is not usable as the other**:
 | Belongs to | one projection | the feed |
 | Lives in | a `ProjectionCheckpoints` repository | `ReplayReport.last_position` |
 | Holds | the last applied `event_id` and its type | an opaque feed cursor |
-| Read by | `projection.get_checkpoint()`, live subscription runners | `project(..., from_position=...)` |
+| Read by | `projection.get_checkpoint()`, live subscription runners | `replay(..., from_position=...)` |
 
-So a catch-up driven by `project` resumes from a `last_position` **you** kept,
+So a catch-up driven by `replay` resumes from a `last_position` **you** kept,
 not from `get_checkpoint()` — the checkpoint is an event id and `from_position`
 wants a `Position`. If you want catch-up you do not have to carry state for,
 that is a subscription runner's job rather than this recipe's; see
@@ -119,7 +126,7 @@ trust.
 succeeds.** The base class clears the projection's checkpoint *before* calling
 `_truncate_read_models`, so a `reset()` that raises has still discarded the
 checkpoint if you passed a `checkpoint_repo`. That is harmless for a rebuild —
-you were about to fold the whole log in anyway, and `project` never consults a
+you were about to fold the whole log in anyway, and `replay` never consults a
 checkpoint (see the previous section) — but do not read the `NotImplementedError`
 as "nothing happened".
 
@@ -154,19 +161,25 @@ vector_projection = VectorProjection(
 )
 ```
 
-The store is the only argument this package adds. Everything after it is the
-parent projection constructor, spelled out rather than forwarded through
-`**kwargs`, so `checkpoint_repo`, `dlq_repo`, `enable_tracing`, `retry_policy`,
-`tracer` and `tenant_filter` are all reachable and all typed. The last three
-are **keyword-only**; `checkpoint_repo`, `dlq_repo` and `enable_tracing` are
-positional-or-keyword, and passing them positionally is a way to get
-`enable_tracing` where you meant `retry_policy` — name them.
+The store is the only positional argument. Everything after it is the parent
+projection constructor, forwarded as `**options: Unpack[ProjectionOptions]`
+— `eventsource`'s `TypedDict` naming that option set once — so
+`checkpoint_repo`, `dlq_repo`, `enable_tracing`, `retry_policy`, `tracer` and
+`tenant_filter` are all reachable and all typed, which `**kwargs: Any` would
+not have been.
+
+**All six are keyword-only.** This package used to spell the parameters out
+itself, and three of them were positional-or-keyword as a result; since
+`eventsource-py` 0.12.0's `StoreProjection` (its ADR 0055) they are not.
+`GraphProjection(store, checkpoints)` now raises `TypeError` rather than
+quietly landing in `checkpoint_repo` — which is the better failure, given the
+adjacent way to get `enable_tracing` where you meant `retry_policy`.
 
 ### Pass `dlq_repo`, or a poison event is a number and nothing else
 
 `dlq_repo` is optional and defaults to `None`, which is the wrong default for a
 rebuild. Without it a permanent failure is logged at critical and re-raised;
-`project` catches it and increments `failed`, and the event itself is gone as
+`replay` catches it and increments `failed`, and the event itself is gone as
 far as your process is concerned. You would know *how many* events did not land
 and nothing about *which*. With a repository, each failure is a `DLQEntry`
 carrying `event_id`, `event_type`, the serialized `event_data`,
@@ -182,7 +195,7 @@ every entry.
 
 ### `checkpoint_repo` is optional, and a rebuild does not read it
 
-`project` starts wherever `from_position` says and never consults a checkpoint,
+`replay` starts wherever `from_position` says and never consults a checkpoint,
 so a rebuild works fine with `checkpoint_repo=None`. Pass one anyway if a live
 subscription runner will take over afterwards: the projections write
 checkpoints as they go, and the rebuild leaves them pointing at the last event
@@ -245,20 +258,20 @@ processes everything, which is what a full rebuild wants.
 `enable_tracing` defaults to `False` and is ignored when you pass a `tracer`
 explicitly.
 
-## Step 3: Run `project` over the global feed
+## Step 3: Run `replay` over the global feed
 
 ```python
-report = await project(event_store, [graph_projection, vector_projection])
+report = await replay(event_store, [graph_projection, vector_projection])
 ```
 
-That is the whole rebuild. `project` reads the feed with
+That is the whole rebuild. `replay` reads the feed with
 `read_all(from_position)` and delivers every envelope's event to every
 projection you passed, in log order, one event at a time — projection order
 within an event follows the sequence you passed, so nothing here parallelises
 and nothing reorders.
 
 The default `from_position=None` means from the very beginning, which is what a
-rebuild wants. There is nothing else to reset first: `project` never reads a
+rebuild wants. There is nothing else to reset first: `replay` never reads a
 checkpoint (see "When a rebuild is the right move" above), so the projections'
 existing checkpoints do not have to be cleared and will simply be overwritten
 as the fold advances.
@@ -281,7 +294,7 @@ tolerated.
 
 Two consequences worth having straight before you read the report:
 
-- **An ignored event still counts as `applied`.** `project` counts an event as
+- **An ignored event still counts as `applied`.** `replay` counts an event as
   applied when no projection rejected it, so an event nothing folded is
   applied, not skipped. `applied` measures delivery, not writes.
 - **Both projections checkpoint on the last event of the log**, not on the last
@@ -293,13 +306,13 @@ Two consequences worth having straight before you read the report:
 
 ### A poison event does not stop the run
 
-By the time `project` sees an exception, the projection base class has already
+By the time `replay` sees an exception, the projection base class has already
 retried it under the `retry_policy` and written a `DLQEntry` if you passed a
 `dlq_repo` (Step 2) — then re-raised. That re-raise exists for *live*
 subscriptions, where stopping is right because checkpointing past a failure
 loses the event. A rebuild wants the opposite: the failure is already recorded,
 and stopping would let one bad event deny the projection every event after it.
-So `project` catches, increments `failed`, and continues to the next event.
+So `replay` catches, increments `failed`, and continues to the next event.
 
 The catch is deliberately unnarrowed — a projection may raise anything, and
 "this event did not apply" is the only distinction a rebuild can act on. Two
@@ -308,7 +321,7 @@ things follow:
 - **A failure is counted once per event**, however many projections rejected
   it, so `applied + failed` is the number of events read.
 - **A rejecting projection does not stop its siblings** from seeing that same
-  event: `project` finishes the projection loop before recording the failure.
+  event: `replay` finishes the projection loop before recording the failure.
 
 A failed event can still have written part of its state — the graph fold writes
 entities and then relationships, so a `MissingEntityError` on an edge leaves
@@ -318,9 +331,9 @@ the fixed event is idempotent, which is exactly what makes the DLQ replayable
 
 ### Watch the run, don't just wait for it
 
-`project` returns nothing until the feed ends, so a rebuild over a large log is
+`replay` returns nothing until the feed ends, so a rebuild over a large log is
 silent for its duration. If you want progress, get it from the projections
-rather than from `project`: with a `checkpoint_repo`, `get_checkpoint()` and
+rather than from `replay`: with a `checkpoint_repo`, `get_checkpoint()` and
 `get_lag_metrics()` are live during the fold. Failures are visible the same
 way — `dlq.get_projection_failure_counts()` climbs while the run is still
 going, so you can tell a slow rebuild from one quietly DLQ-ing everything
@@ -333,7 +346,7 @@ instead of once, see
 
 ## Step 4: Read the `ReplayReport`
 
-`project` returns one frozen dataclass, and it is the only thing it returns:
+`replay` returns one frozen dataclass, and it is the only thing it returns:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -373,7 +386,7 @@ class ReplayReport:
 The first check after a rebuild is `failed`:
 
 ```python
-report = await project(event_store, [graph_projection, vector_projection])
+report = await replay(event_store, [graph_projection, vector_projection])
 if report.failed:
     ...  # Step 5: the events are in the DLQ
 ```
@@ -396,7 +409,7 @@ unhappy (Step 2).
 Pass it straight back to continue where the run stopped:
 
 ```python
-report = await project(event_store, projections, from_position=previous.last_position)
+report = await replay(event_store, projections, from_position=previous.last_position)
 ```
 
 Two consequences, both of which surprise people:
@@ -413,7 +426,7 @@ Two consequences, both of which surprise people:
 Because failure still advances the position, a run that reports
 `failed > 0` and a `last_position` at the end of the log has read the whole log
 and left the failures in the DLQ. There is no partial-run position to recover
-from: `project` only returns after the feed ends, and if it raised instead
+from: `replay` only returns after the feed ends, and if it raised instead
 (see "Bounding the run with `max_events`") there is no report at all — the last
 position reached is in the `RuntimeError` message.
 
@@ -500,7 +513,7 @@ The two failures a rebuild actually produces:
 ### Re-run the whole log rather than replaying single entries
 
 The DLQ is not a graveyard, and there is no per-entry replay to reach for here.
-Once the cause is fixed, run `project` over the whole log again: every write in
+Once the cause is fixed, run `replay` over the whole log again: every write in
 both folds is an upsert or an idempotent delete, so the events that already
 landed land identically and the previously poisoned one now applies. That is
 the same property that makes the rebuild restartable at all (Step 4), and it is
@@ -528,7 +541,7 @@ everything already resolved, including a moment ago.
 ### If you rebuilt without a `dlq_repo`
 
 There is nothing to inspect. The failures were logged at critical by the
-projection before `project` counted them, so the log is the only record: grep
+projection before `replay` counted them, so the log is the only record: grep
 for `sent to DLQ` and `failed permanently` alongside the event ids. Add a
 `dlq_repo` (Step 2) and re-run — a rebuild is cheap compared with reconstructing
 which events were poisoned from a log file.
@@ -545,11 +558,11 @@ Sometimes you do not want the whole log: a rebuild that died halfway, or a
 catch-up over the tail. Pass `from_position`:
 
 ```python
-report = await project(event_store, projections, from_position=previous.last_position)
+report = await replay(event_store, projections, from_position=previous.last_position)
 ```
 
 `from_position` is **exclusive**, and it is exclusive because `read_all` is —
-`project` hands the value straight to `feed.read_all(from_position)` and adds
+`replay` hands the value straight to `feed.read_all(from_position)` and adds
 no arithmetic of its own. The event *at* that position is not re-delivered.
 
 Two consequences, in the order they bite:
@@ -566,7 +579,7 @@ Two consequences, in the order they bite:
 ### Resume from a position you kept, not from a checkpoint
 
 `from_position` wants a `Position`; `get_checkpoint()` returns an event id
-string. They are not interchangeable, and `project` never reads a checkpoint
+string. They are not interchangeable, and `replay` never reads a checkpoint
 (see "When a rebuild is the right move"). The only `Position` on offer is
 `ReplayReport.last_position` from a previous call, so a resumable rebuild means
 keeping that value somewhere outside the process. If you would rather not carry
@@ -609,7 +622,7 @@ deployment**. In both, a run that dropped every event still returns a report
 and exits successfully, and `failed` is a number nobody read.
 
 ```python
-report = await project(event_store, projections, strict=True)
+report = await replay(event_store, projections, strict=True)
 # redstring.ReplayFailedError: GraphProjection rejected DocumentExtracted
 # at <Position>: entity ... does not exist in tenant ...
 ```
@@ -636,11 +649,11 @@ rebuild this page is otherwise about.
 
 ## Bounding the run with `max_events`
 
-`project` reads at most `max_events` events and raises when the feed keeps
+`replay` reads at most `max_events` events and raises when the feed keeps
 going past it:
 
 ```python
-report = await project(event_store, projections, max_events=50_000)
+report = await replay(event_store, projections, max_events=50_000)
 # RuntimeError: replay read more than 50000 events without the feed ending;
 # the adapter's cursor is probably not advancing (last position: <Position>)
 ```
@@ -652,7 +665,7 @@ is how you fold a subset (see the previous section).
 
 ### Why the bound exists at all
 
-The loop's exit condition is adapter-supplied. `project` iterates
+The loop's exit condition is adapter-supplied. `replay` iterates
 `feed.read_all(from_position)` until it stops yielding, so a cursor that fails
 to advance yields forever and the rebuild **hangs**. A hang is worse than a
 failure: in CI it reads as infrastructure trouble and gets retried rather than
@@ -673,7 +686,7 @@ off-by-one — refusing a log exactly the size of its bound — is pinned by
 
 ### When it raises there is no report
 
-The `RuntimeError` propagates out of `project`, so you get no `ReplayReport`
+The `RuntimeError` propagates out of `replay`, so you get no `ReplayReport`
 and therefore no `last_position` to resume from — the last position reached is
 in the exception message and nowhere else. Everything folded before the raise
 **stayed folded**: the projections were called event by event and nothing is
@@ -692,14 +705,14 @@ seconds rather than at ten million.
 
 ## Rebuilding only one of the two projections
 
-`project` takes any sequence of subscribers, so pass just the one you are
+`replay` takes any sequence of subscribers, so pass just the one you are
 rebuilding:
 
 ```python
 for tenant_id in tenant_ids:
     await vector_store.delete_by_tenant(tenant_id)
 
-report = await project(event_store, [vector_projection])
+report = await replay(event_store, [vector_projection])
 ```
 
 Wipe only the store belonging to that projection. Deleting the other tenant's
@@ -721,7 +734,7 @@ Delivering the whole feed to a single projection is correct rather than merely
 tolerated: everything it has no handler for is ignored (Step 3), so a
 single-projection rebuild reports nearly the whole log as `applied` while
 writing only its own events. Do not try to pre-filter the feed to "just the
-events this fold wants" — there is no argument to `project` for it, and the
+events this fold wants" — there is no argument to `replay` for it, and the
 projection already does exactly that.
 
 ### What still holds even though the folds are disjoint
@@ -778,7 +791,7 @@ still full of stale entities.
 **Check the checkpoint before you retry.** `reset()` clears the projection's
 checkpoint *before* calling `_truncate_read_models`, so the raise leaves the
 checkpoint already gone if you passed a `checkpoint_repo`. Harmless for a
-rebuild — `project` never reads one — but do not read the exception as
+rebuild — `replay` never reads one — but do not read the exception as
 "nothing happened" (Step 1).
 
 ### `RuntimeError: replay read more than N events`
@@ -801,7 +814,7 @@ distinguishes them:
   bound only makes the failure take longer.
 
 The position printed is the last one *recorded*, which is the event before the
-one that tripped the bound; `project` checks the count before assigning the new
+one that tripped the bound; `replay` checks the count before assigning the new
 position. Treat it as "roughly where reading got to", not as a resume point.
 
 **There is no `ReplayReport` when this raises**, so there is no
@@ -842,7 +855,7 @@ Two things about the partial state it leaves:
   before assuming it is.
 
 The fix is not to hand-apply the event. Correct whatever produced the ordering
-or the missing entity, then run `project` over the whole log again: every write
+or the missing entity, then run `replay` over the whole log again: every write
 in both folds is an upsert or an idempotent delete, so the events that already
 landed land identically and the poisoned one now applies.
 
