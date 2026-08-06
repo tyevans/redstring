@@ -30,6 +30,7 @@ losing a whole mutation run to.
 from __future__ import annotations
 
 import ast
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -211,3 +212,83 @@ def test_belongs_to_does_not_match_by_bare_prefix():
     assert not belongs_to("redistribute", "redis")
     assert not belongs_to("neo4jsonschema", "neo4j")
     assert not belongs_to("redstring.ports.cache", "redis")
+
+
+#: Third-party packages any module under `src/` may import.
+#:
+#: The complement of `CONFINEMENTS`: these are the dependencies with no single
+#: home because the library is built on them everywhere. Keeping the list here
+#: rather than in a `Confinement` with `directory="."` is deliberate -- a
+#: confinement to the whole tree confines nothing, and would make the
+#: both-directions guards above pass vacuously.
+ALLOWED_EVERYWHERE = frozenset(
+    {
+        "pydantic",
+        "eventsource",
+        "jellyfish",
+        "yaml",
+        "dateparser",
+        "dateutil",
+    }
+)
+
+
+def third_party_roots() -> set[str]:
+    """Top-level packages `src/` imports that are neither stdlib nor our own."""
+    roots: set[str] = set()
+    for path in python_files_under(SOURCE_ROOT):
+        for module in imported_modules(path):
+            top = module.split(".")[0]
+            if top in sys.stdlib_module_names or top == "redstring" or top.startswith("_"):
+                continue
+            roots.add(top)
+    return roots
+
+
+def test_every_third_party_import_is_accounted_for():
+    """The gap `CONFINEMENTS` cannot see: a **fifth** library with no row.
+
+    Each row above is guarded in both directions, so the rows that exist
+    cannot rot. Nothing catches an import of something nobody listed --
+    `uv add --optional graph some-driver`, import it from `composition.py`,
+    and this file stays green, because it only knows what someone wrote in it.
+    That is the same two-declaration-sites shape the module exists to fix, one
+    level up (BACKLOG B71).
+
+    Derived from the tree rather than from `pyproject.toml`, deliberately.
+    The optional-dependency tables name *distributions* (`langchain-openai`),
+    not import names (`langchain_openai`), and the mapping between them is
+    only discoverable from installed metadata -- which needs the extra
+    installed, the exact condition a `--extra dev` sync silently breaks. This
+    needs nothing installed and answers the question that matters: is there an
+    import here that no rule covers?
+
+    A new dependency is then a deliberate choice between two lines: a
+    `Confinement` row if it belongs in one place, or an `ALLOWED_EVERYWHERE`
+    entry if it genuinely does not.
+    """
+    confined = {package for confinement in CONFINEMENTS for package in confinement.packages}
+    unaccounted = {
+        root
+        for root in third_party_roots()
+        if root not in ALLOWED_EVERYWHERE
+        and not any(belongs_to(root, package) for package in confined)
+    }
+
+    assert not unaccounted, (
+        f"third-party packages imported under src/ with no rule about them: "
+        f"{sorted(unaccounted)}. Add a `Confinement` row if the import belongs "
+        f"in one directory, or an `ALLOWED_EVERYWHERE` entry if it does not -- "
+        f"but decide, rather than leaving the suite silent about it."
+    )
+
+
+def test_the_detector_finds_third_party_imports():
+    """A checker over an empty set passes vacuously, and this one would: if
+    `third_party_roots` stopped finding anything -- a stdlib-detection change,
+    a wrong `SOURCE_ROOT` -- the assertion above would go quiet while looking
+    exactly as green."""
+    roots = third_party_roots()
+
+    assert "pydantic" in roots
+    assert len(roots) >= 5

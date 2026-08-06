@@ -1364,36 +1364,29 @@ The cap also moved to `<0.12`, tested against 0.11.0; the floor deliberately
 did **not** move with it, because a floor states what the library needs and
 nothing here needs anything 0.11.0 added.
 
-### B71. The confined-dependency table is hand-kept, so a new driver is silent
+### B71. Confining a *fifth* library — closed by the cheap 80%, and what is left
 
-`tests/unit/test_dependencies_stay_confined.py` carries `CONFINEMENTS`, four
-rows naming a third-party client and the one directory it may be imported
-from. Every row is guarded in both directions — a row whose directory has
-stopped importing its library fails, and a leak outside it fails — so the rows
-that *exist* cannot rot.
+**Closed as the entry proposed.**
+`tests/unit/test_dependencies_stay_confined.py::test_every_third_party_import_is_accounted_for`
+walks `src/`, collects every top-level import that is neither stdlib nor
+first-party, and fails on any not covered by a `CONFINEMENTS` row or by the
+new `ALLOWED_EVERYWHERE` set. Adding an unlisted client is now a red test
+naming it, rather than a green suite. Proved by importing `httpx` from
+`composition.py` and watching it fail.
 
-**What nothing catches is a fifth library with no row at all.** Add
-`uv add --optional graph some-driver`, import it from `composition.py`, and the
-suite stays green: the file only knows about what someone listed. That is
-`recurring-defects.md` §2 — the set of confined dependencies is declared in two
-places (`pyproject.toml`'s optional-dependency tables and this tuple) with
-nothing failing when they disagree — and it is the same shape the test itself
-exists to fix, one level up.
+`ALLOWED_EVERYWHERE` is the complement of the confinements: dependencies with
+no single home because the library is built on them everywhere. It is
+deliberately *not* a `Confinement` with `directory="."` — a confinement to the
+whole tree confines nothing, and would make that row's two direction-guards
+pass vacuously.
 
-The reason it was left: deriving the list from `pyproject.toml` is not the
-one-liner it looks like. `[project.optional-dependencies]` names
-*distributions* (`langchain-openai`, `neo4j`), not import names
-(`langchain_openai`, `neo4j`), and the mapping between them is only
-discoverable from installed package metadata (`importlib.metadata.packages_distributions()`),
-which needs the extra installed — the condition `--all-extras` exists to
-guarantee and that CLAUDE.md records losing a mutation run to. It also has no
-opinion about *which* directory a given distribution belongs in, so the
-directory column stays hand-written regardless; the derivable part is only
-"every optional distribution has a row", which is the half that matters.
-
-A cheaper 80% is a test asserting the set of top-level packages imported
-anywhere under `src/` and not in the stdlib and not first-party is a subset of
-the union of the table's `packages` plus a small allowed-everywhere set
-(`pydantic`, `eventsource`, `jellyfish`, `yaml`). That needs no metadata and
-fails the day an unlisted client appears. Worth doing before the fifth adapter,
-not after.
+**What is still not derived, and why that is the right trade.** The set of
+optional distributions in `pyproject.toml` is not checked against the table.
+Doing so means mapping distribution names (`langchain-openai`) to import names
+(`langchain_openai`), which is only discoverable from installed metadata —
+needing the extra installed, the exact condition a `--extra dev` sync silently
+breaks, and therefore a check that would fail for environmental reasons in the
+one situation it most needs to be believed. The new test needs nothing
+installed. It answers "is there an import here that no rule covers", which is
+the half that matters; the other half is "is there a declared extra nobody
+imports", which is a packaging tidiness question rather than a leak.
