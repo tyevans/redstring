@@ -512,6 +512,18 @@ class TestCenturyPortions:
             ("early 19th century", 1801, 1833),
             ("mid 19th century", 1834, 1866),
             ("late 19th century", 1867, 1900),
+            # **The 19th century cannot test this arithmetic at all**, which
+            # is why the 20th is here. Its base is `(19 - 1) * 100 = 1800`,
+            # and 1800 shares no set bit with 1, 33, 34, 66, 67 or 100 -- so
+            # `base + k`, `base | k` and `base ^ k` are the *same number* for
+            # every constant in the table, and `century - 1` equals
+            # `century ^ 1` for any odd century. Eleven mutants over these
+            # four lines survived on the three cases above and die on the
+            # three below, where the base is 1900 and every one of those
+            # coincidences breaks.
+            ("early 20th century", 1901, 1933),
+            ("mid 20th century", 1934, 1966),
+            ("late 20th century", 1967, 2000),
         ],
     )
     def test_a_third_of_a_century(self, text, first, last):
@@ -520,6 +532,29 @@ class TestCenturyPortions:
         assert parsed.start_date == utc(first, 1, 1)
         assert parsed.end_date == utc(last, 1, 1)
         assert parsed.uncertainty is UncertaintyMarker.APPROXIMATE
+
+    def test_a_portion_of_the_first_century_is_still_a_portion(self):
+        """The boundary the `century < 1` guard names, on the branch it guards.
+
+        Every other case here is a century well above 1, so widening the guard
+        to `century < 2` rejected "early 1st century" and nothing noticed -- a
+        surviving mutant, and the reason a guard naming a specific value needs
+        that value written down rather than sampled around.
+
+        Note that it has to be a *portion*. Plain "1st century" is matched by
+        `_CENTURY` and never reaches this guard at all, so a test using it
+        passes against the mutant -- which is what the first draft of this
+        test did.
+        """
+        parsed = parse_temporal("early 1st century", reference_date=REF)
+        assert parsed is not None
+        assert parsed.start_date == utc(1, 1, 1)
+        assert parsed.end_date == utc(33, 1, 1)
+
+    def test_a_zeroth_century_is_not_a_century(self):
+        """The other side of the same guard: there is no year zero, so this is
+        a typo rather than a date, and the portion branch says so."""
+        assert parse_temporal("early 0th century", reference_date=REF) is None
 
     def test_the_portions_partition_the_century_without_gaps_or_overlap(self):
         spans = [

@@ -349,13 +349,13 @@ env KG_COMPLIANCE_MAX_EXAMPLES=5 ./.venv/bin/pytest -x -q --no-header -p no:rand
 The `-m integration` is required — `addopts` deselects it otherwise, and the
 run then silently mutates code no test executes, which is how B10a happened.
 
-### B54. `temporal_parsing.py`'s mutants: 268 run, 582 still unrun
+### B54. `temporal_parsing.py`'s mutants: 444 run, 406 still unrun
 
 **Progress, with the mechanism now in the tree.** Slice 8 ran the precision
-logic (57 of 850). The range and partial-date region (lines 207-320, 268
-mutants) has now been run too, and it found a real defect. 582 remain: the
-period/century parsing, `parse_temporal` itself, `render_temporal` and
-`widen`.
+logic (57 of 850). Two scoped sessions have since run the range and
+partial-date region (268 mutants) and the period/century region (176), and
+**each found something**. 406 remain: `parse_temporal` itself,
+`render_temporal`, `widen`, and the absolute/natural strategies.
 
 **Run one with the wrapper**, which makes this affordable and is why the
 remainder is now a matter of time rather than of design:
@@ -376,7 +376,7 @@ region, because the distribution is not the one the module's sections suggest:
 
 | Region | Lines | Mutants | Status |
 |---|---|---|---|
-| periods / centuries | 321-362 | 207 | unrun |
+| periods / centuries | 321-362 | 176 | **run** |
 | ranges | 207-273 | 160 | **run** |
 | `render_temporal` | 530-574 | 126 | unrun |
 | `widen` | 575-599 | 113 | unrun |
@@ -424,10 +424,37 @@ text and the table's intent was plainly to accept it — with
 `test_every_spelling_the_table_maps_is_one_the_pattern_accepts` as the gate,
 proved red by reverting the pattern.
 
-**What to expect from the remaining 582.** The two runs so far have found one
-real defect each, both in arithmetic that a test happened to exercise at a
-value where the wrong answer coincided with the right one. `widen` and
-`render_temporal` are the same shape and are jointly 239 mutants.
+**The period/century run: 176 mutants, 28 survivors, all classified.**
+
+- **11 equivalent by construction** — the `_Parsed | None` return annotation
+  again.
+- **2 equivalent, and worth understanding rather than pattern-matching** —
+  `base + 1` rewritten as `base | 1` and `base ^ 1`. `base` is
+  `(century - 1) * 100`, always a multiple of 100 and therefore always even,
+  so bit 0 is clear and all three spellings agree for *every* century. Not
+  "equivalent on the inputs we test": equivalent, full stop.
+- **15 test gaps, now closed.** Four on the `century < 1` guard and eleven on
+  the portion arithmetic.
+
+**The century arithmetic could not be tested at the 19th century at all**, and
+that is the finding worth carrying. `(19 - 1) * 100` is 1800, which shares no
+set bit with 1, 33, 34, 66, 67 or 100 — so `base + k`, `base | k` and
+`base ^ k` are *the same number* for every constant in the table. And
+`century - 1` equals `century ^ 1` for any odd century. Every existing case
+used the 19th century, which is the natural example for a library that reads
+historical text, and it made eleven mutants unkillable. The 20th century
+(base 1900) breaks every one of those coincidences.
+
+The guard needed its own boundary: `century < 1` widened to `< 2` rejects
+"early 1st century", and the first version of that test used plain
+"1st century" — which `_CENTURY` matches and which never reaches the guard at
+all, so it passed against the mutant. **A boundary test has to reach the
+branch the boundary is in.**
+
+**What to expect from the remaining 406.** Three regions run, three findings,
+all of the same shape: arithmetic exercised at exactly one value, where a
+wrong implementation happens to agree. `widen` and `render_temporal` are 239
+mutants of precisely that kind.
 
 ### B10i. The `EXPLAIN` tests run against an empty database and do not pin the negative
 
