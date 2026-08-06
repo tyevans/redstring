@@ -1110,8 +1110,22 @@ exclude_dirs = ["tests", ".venv", "build", "dist"]
 
 No `skips`, no `tests`, no `targets`, and no severity or confidence floor — so
 bandit runs its **default profile in full** over whatever it decides to scan,
-and reports every finding at every severity. There is not one `# nosec` comment
-anywhere in `src/` or `tests/`.
+and reports every finding at every severity.
+
+**Suppression is per-line, names its test id, and is checked.** There is no
+`skips` list and no per-file ignore; a suppression is a `# nosec B608` on the
+line that provokes it, with the reasoning inline.
+`tests/unit/test_nosec_markers_are_live.py` runs the configured bandit with
+`--ignore-nosec` and fails both ways — a marker on a line bandit no longer
+reports, and a finding on a line with no marker. Running bandit *normally* to
+check this would report nothing at the suppressed lines by construction, which
+is the same trap as measuring a ruff exemption through the exemption.
+
+That gate scans `src/redstring/` **and `scripts/`**, because the hook's
+`exclude` is only `^tests/` — so a script is subject to the gate and its
+markers rot the same way. Extending it turned up four unsuppressed findings in
+`scripts/coverage_ratchet.py`, which would have failed the hook the next time
+anyone touched that file.
 
 The hook is the fourth of the six `local` hooks:
 

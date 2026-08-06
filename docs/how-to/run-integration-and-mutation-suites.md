@@ -974,7 +974,22 @@ that is the entire reason
 place.** cosmic-ray edits your tracked source, runs the suite, and writes the
 file back — so an interrupted session leaves a mutant behind in a file git
 considers yours. Run it from a `git worktree` or a fresh clone, never from the
-checkout you are editing:
+checkout you are editing.
+
+**`scripts/mutation.py` does all of this**, and is the recommended path:
+
+```
+uv run python scripts/mutation.py cosmic-ray
+```
+
+It creates `.mutation/worktree`, **resets it to the current `HEAD`** on every
+run, syncs `--all-extras`, runs Step 1 there, and only then inits and execs.
+The reset is not tidiness: a reused worktree left at a previous `HEAD` mutates
+code that is not the code you are asking about and reports survivors against
+tests that have since changed — a result wrong in a way that looks exactly
+like a result.
+
+By hand, if you want to watch it:
 
 ```
 git worktree add ../redstring-mutation
@@ -1003,6 +1018,52 @@ uv run cr-report session.sqlite
 large the job is before committing to it. `exec` is resumable against the same
 `session.sqlite`, so an interrupted run continues rather than starting over,
 and `cr-report` can be read against a partial session.
+
+#### Scoping a module too big to mutate whole
+
+`domain/temporal_parsing.py` has **850 mutants**, and against the default
+`test-command` each costs about seventy seconds — the file carries two
+hypothesis properties at 300 examples and a `dateparser` import. Seventeen
+hours. That is why 793 of them had never been run (**B54**).
+
+The fix is two narrowings that have to agree with each other:
+
+```
+uv run python scripts/mutation.py cosmic-ray \
+    --config cosmic-ray-ranges.toml --rows 207:320 --session ranges.sqlite
+```
+
+- **`--config`** points at a session whose `test-command` runs only the test
+  classes covering the region. The wrapper takes its *baseline* from that same
+  file, so the narrower command is proved green before anything is mutated —
+  which is the reason the baseline is read from config rather than restated in
+  the script.
+- **`--rows FIRST:LAST`** deletes every mutant outside those source lines from
+  the initialised session. cosmic-ray has no line filter, so this is the only
+  way to aim one, and it is required rather than optional: without it the
+  session runs all 850 against a command covering some of them, and everything
+  outside the region survives for a reason that says nothing about the code.
+
+**Pick the region by counting mutants, not by reading the module.** The
+distribution is not the one the section headings suggest:
+
+| Region | Lines | Mutants |
+|---|---|---|
+| periods / centuries | 321–362 | 207 |
+| ranges | 207–273 | 160 |
+| `render_temporal` | 530–574 | 126 |
+| `widen` | 575–599 | 113 |
+| partial dates | 274–320 | 108 |
+| `parse_temporal` | 462–529 | 73 |
+| absolute / natural | 389–461 | 44 |
+| **uncertainty + marker stripping** | 124–206 | **3** |
+
+B54 named the uncertainty patterns first among what was unrun. They are three
+mutants, because cosmic-ray mutates *operators* and that region is a table of
+compiled regexes. A session aimed there would have finished in a minute having
+proved almost nothing. (Line numbers decay; re-derive with
+`SELECT start_pos_row, count(*) FROM mutation_specs GROUP BY 1` after an
+`init`.)
 
 The config it reads is four lines and each is worth knowing:
 
