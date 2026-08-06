@@ -852,6 +852,78 @@ Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
 
+### B76. `Relationship` carries no provenance, and the model is never asked for any
+
+Reported downstream (research-team), and it is the sharper form of an entry
+this file used to carry as B20 — deleted in the slice 1 scope cut (`7083e71`)
+without being fixed, so the deferral record was lost while the gap stayed.
+Do not re-close it that way.
+
+`Entity` has `source_id` and `source_text` (`domain/entity.py:51`).
+`Relationship` has neither (`domain/relationship.py:13`): id, tenant, two
+endpoints, type, properties, confidence. Instructional and procedural claims
+are overwhelmingly *relational*, so the half of the graph carrying the most
+content is the half with no route back to the text that stated it. A
+downstream corpus layer cannot backfill it — the span is known only at
+extraction time.
+
+**It is two changes, and only the second is a design question.**
+
+- `source_id` is free. `_build_relationships` already takes `source_id`
+  (`extraction/mapping.py:329`) and uses it to derive endpoint ids; it simply
+  is not put on the edge. Adding it is a field with a value already in scope.
+- `source_text` is not free, because **nothing asks the model for it.**
+  `ExtractedRelationship` (`extraction/schema.py:84`) has four fields and no
+  span, so the text is not merely dropped in mapping — it was never
+  requested. Adding a field to the extraction schema changes every prompt's
+  output shape and costs tokens on every extraction, and the accuracy suite
+  is what would say whether the model returns a *quoted span* or a
+  paraphrase. A paraphrased "source_text" is worse than none: it reads as
+  evidence and is generation.
+
+Both fields must be optional on `Relationship` for the reason `Entity`'s are:
+they reach the event log, and an event written before the field existed
+replays without it.
+
+The order to do this in is `source_id` first — it is small, it is honest, and
+it answers "which document stated this edge", which is most of what the
+downstream ask needs. Treat the span as a separate decision with an accuracy
+run behind it.
+
+### B77. `build_graph` has no progress callback, and bulk ingest is opaque
+
+Reported downstream (research-team), and the older, vaguer form of this was
+B16 — deleted in `7ef7a03` along with `models/` rather than closed. Same
+caution as B76: the entry went, the gap did not.
+
+`build_graph` (`composition.py:166`) is one `await` that chunks a document,
+makes one model call per chunk, merges, projects, and returns a
+`GraphBuildReport`. A caller ingesting a corpus sees nothing until the
+document is done, and the downstream UI streams token-level deltas
+everywhere else, so this is the one blocking box in it.
+
+**The shape is not obvious and that is why this is deferred rather than
+done.** Three candidates:
+
+- **A callback** — `on_progress: Callable[[BuildProgress], None] | None`.
+  Cheapest, and it has the failure mode a callback always has: it runs inside
+  the extraction loop, so a caller that blocks in it blocks extraction, and a
+  caller that raises in it kills a run that was otherwise fine. If this is the
+  choice, the callback's exceptions must be swallowed and the contract must
+  say so — progress reporting must not be able to fail an ingest.
+- **An async generator** — `build_graph_streaming(...)` yielding progress and
+  finally the report. Composes with an async UI without the reentrancy
+  problem, and costs a second entry point on the public surface, which
+  `__all__` makes a visible decision (ADR 0006).
+- **An `asyncio.Queue` the caller passes in.** Decouples cleanly, and pushes
+  lifecycle onto the caller.
+
+Whatever it yields must be *chunk* granularity, not token: this library never
+holds the token stream — `LlmProvider.extract` returns a parsed object — so
+promising anything finer would be a promise the port cannot keep. Chunks
+completed out of chunks total, plus the phase (extracting / merging /
+projecting), is what is actually knowable here.
+
 ### B58. If this library ever encrypts, it needs a port -- not the file that was deleted
 
 Slice 10 deleted `encryption.py` (467 lines, 127 statements, 0% coverage, no
