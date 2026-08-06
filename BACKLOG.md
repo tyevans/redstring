@@ -194,9 +194,11 @@ nothing will ever remove -- a worse failure than a loud one. Callers wipe with
 `delete_by_tenant(tenant_id)` per tenant, which is what the replay tests do.
 
 The real fix is a `rebuild(tenant_id)` entry point on the projection that
-wipes and replays one tenant, which needs a tenant-filtered feed read
-(`FeedReadOptions.tenant_id` already exists) and belongs with whatever slice
-first needs to rebuild a single tenant in anger.
+wipes and replays one tenant. **The read half of that now exists** —
+`project(..., tenant_id=...)` (B68) — so what is left is the wipe: a caller
+still has to call `delete_by_tenant` on both stores itself, which is what the
+replay tests do. Composing the two is what `rebuild` would be, and it belongs
+with whatever slice first needs it in anger.
 
 ---
 
@@ -1287,7 +1289,7 @@ and watching it fail.
 Nothing gates the *wrong claim* except running the code while you write the
 paragraph, which is the habit to keep.
 
-### B72. `is_valid_source` normalizes differently from the loader that filled the list
+### B75. `is_valid_source` normalizes differently from the loader that filled the list
 
 `extraction/domains/models.py`. `RelationshipTypeSchema.normalize_type_lists`
 stores `valid_source_types` / `valid_target_types` lowercased, stripped, with
@@ -1343,16 +1345,50 @@ maintains an unresolved set from `DocumentExtracted` and `EntitiesMerged`, or a
 store-level query over "entities with no alias and no merge event". Both are
 real designs; neither is a field.
 
-### B68. `project()` cannot scope to a stream or category
+### B68. `project()` scopes by tenant, not by stream or category
 
-Reported downstream, who are using `tenant_filter` as the workaround. A shared
-event store replays every foreign event through every projection, which is
-correctness-neutral and cost-linear in other people's traffic. The workaround
-is real but is a filter applied after delivery, not a narrower subscription.
+**Half fixed.** `project(..., tenant_id=...)` forwards
+`FeedReadOptions(tenant_id=...)`, which the eventsource adapters push into the
+query, so a shared store rebuilds one tenant with an indexed read instead of
+scanning every other tenant's events and discarding them in Python. That is
+the case downstream actually had, and tenant is what this library models end
+to end.
 
-Whether this is redstring's to fix depends on what `eventsource-py` exposes —
-check before designing, because a scoped subscription in the library that
-filters client-side is the same cost with more code.
+**Category scoping is still open and is a different question.**
+`GlobalEventFeed` has no `read_category`; `EventStore` does, and taking it
+would mean `project` accepting a narrower port than the one it documents, or
+accepting both and branching. Neither is obviously right, and nobody has asked
+for it — a caller wanting one stream can pass `from_position` and a tenant.
+Do not add it speculatively; the reason to wait is that the branch would be
+untestable against the in-memory feed without also deciding what happens when
+both `tenant_id` and `categories` are given.
+
+The remaining cost is that `tenant_id` is a *read* filter only. A projection
+constructed with `tenant_filter` still applies its own filter after delivery,
+so a caller who sets both pays for one and gets no benefit from the other.
+That is harmless and slightly confusing; `docs/how-to/drive-projections-from-an-event-store.md`
+says which to reach for.
+
+### B73. `ReplayReport.failures` is unbounded, and holds live tracebacks
+
+`projections/replay.py` appends a `ReplayFailure` per rejection with no cap,
+and each holds the exception object — so its `__traceback__` and every frame's
+locals stay reachable for the length of the call. `MAX_EVENTS_PER_REPLAY`
+bounds the *loop* at ten million; it does not bound this.
+
+Deliberate rather than overlooked, and the reasoning is why it was not simply
+capped. A cap silently truncating the list reproduces the exact defect this
+field was added to fix — an operator told "3 failed" who cannot reach the
+third. The honest shapes are a cap that *says* it truncated (a
+`failures_truncated: int` on the report), or streaming failures to a callback
+instead of accumulating them. Both are API decisions, and neither is worth
+making before someone has a replay that actually fails at that scale: a
+rebuild dropping a hundred thousand events has a problem the report is not
+going to solve.
+
+The practical bound today is that a failure only lands here after the
+projection base class has already retried it and written it to the DLQ, so a
+run failing at that volume is slow long before it is large.
 
 ### B70. `eventsource-py` floor was too low, and the library was published with it
 
@@ -1417,3 +1453,39 @@ one situation it most needs to be believed. The new test needs nothing
 installed. It answers "is there an import here that no rule covers", which is
 the half that matters; the other half is "is there a declared extra nobody
 imports", which is a packaging tidiness question rather than a leak.
+
+### B72. A failed `verify` is unrecoverable, because the tag is spent
+
+`verify` runs after `publish-pypi`, and v0.2.0 showed what happens when it
+fails on a *good* release: the artifact is on PyPI, correct and attested, and
+the workflow is red. **Re-running it cannot help.** PyPI never permits reusing
+a filename, so the publish step fails on a second attempt no matter what, and
+the only ways back to green are pushing a new version or leaving a red run
+next to a good release.
+
+The retry-and-refresh fix makes the false failure much less likely without
+changing that: any *other* failure in `verify` — a genuinely broken wheel, a
+dependency that will not resolve, a smoke test that catches something real —
+lands in the same unrecoverable place, and those are the cases where you most
+want to act rather than shrug.
+
+Three shapes worth weighing, none obviously right:
+
+- **Split `verify` into its own `workflow_dispatch` workflow** taking a
+  version, so it is re-runnable against an already-published artifact. Cheap,
+  and it makes the check *more* useful — you can run it against any past
+  release, which is the only way to notice an artifact that rotted because a
+  dependency yanked a version.
+- **Keep it in the pipeline but `continue-on-error`,** with a separate
+  notification. Turns a blocking red into an advisory one, which is honest
+  about what it can do post-publish; the risk is that an advisory failure is
+  one nobody reads.
+- **Move the smoke test before publish,** against the built wheel from
+  `build`. `tests/integration/test_wheel_contents.py` already does much of
+  this. It cannot check the thing `verify` exists to check — that the *index*
+  serves an installable artifact — so this narrows the gate rather than
+  moving it.
+
+The first is probably right, and the reason to write it down rather than do it
+now is that it is a change to the release pipeline made immediately after a
+release, which is the worst time to touch one.

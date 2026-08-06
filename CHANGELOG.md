@@ -14,6 +14,41 @@ under **Removed** or **Changed**. See
 
 ## [Unreleased]
 
+### Added
+
+- **`project` can scope its read to one tenant.** `project(..., tenant_id=...)`
+  forwards `FeedReadOptions(tenant_id=...)` to the feed, which the eventsource
+  adapters push into the query. Rebuilding one tenant out of a shared store is
+  now an indexed read rather than a full scan filtered in Python. Scoping with
+  `tenant_filter` on the projection still works and still costs the whole read
+  — it drops foreign events after delivery.
+
+- **`ReplayReport.failures` names the events a replay dropped.** One
+  `ReplayFailure` per rejection, carrying `position`, `event_type`, the
+  rejecting projection's class name, and `error` — the exception object itself,
+  not a message. Previously the exception was discarded and `failed` was a bare
+  count, which is safe and gives an operator no path from "3 events failed" to
+  the poison event.
+
+- **`project(..., strict=True)`** raises `ReplayFailedError` on the first
+  rejection instead of recording it and carrying on. The error carries the same
+  `ReplayFailure` and sets the original exception as its `__cause__`.
+
+- **`replay`, an alias export for `project`.** Callers whose own vocabulary has
+  a *project* noun can import the alias; it is the same function object.
+
+Exported: `ReplayFailure`, `ReplayFailedError`, `replay`. See
+[ADR 0018](https://github.com/tyevans/redstring/blob/main/docs/adr/0018-a-replay-report-carries-its-failures.md).
+
+### Changed
+
+- **`ReplayReport.failed` is now a property derived from `failures`**, and the
+  constructor takes no `failed=` argument. Reading `report.failed` is
+  unchanged and means the same thing (events at least one projection rejected,
+  counted once per event); constructing a report with `failed=` now raises
+  `TypeError`. `failures` has one entry per *rejection*, so an event both folds
+  rejected counts once in `failed` and twice in `failures`.
+
 ## [0.2.0] - 2026-08-05
 
 ### Added

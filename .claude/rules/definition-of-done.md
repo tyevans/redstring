@@ -88,7 +88,8 @@ know what is already decided, so here is the set, by what each one settles:
 | [`0015` consolidation gets a composed entry point](../../docs/adr/0015-consolidation-gets-a-composed-entry-point.md) | Consolidation's entry point, and why an absent graph signal stopped meaning zero. |
 | [`0016` `GraphStore` is five capabilities](../../docs/adr/0016-graph-store-is-five-capabilities.md) | The port is five capability protocols, composed, rather than one flat interface. |
 | [`0017` the embedding provider port](../../docs/adr/0017-the-embedding-provider-port.md) | `EmbeddingProvider` is a port and declares its own dimension. |
-| [`0018` batch relationship writes are atomic](../../docs/adr/0018-batch-relationship-writes-are-atomic.md) | `upsert_relationships` is all-or-nothing; what the two adapters disagreed about before, and what a new backend now owes. |
+| [`0018` a replay report carries its failures](../../docs/adr/0018-a-replay-report-carries-its-failures.md) | What a `ReplayReport` names about the events it dropped, and that a replay's read can be scoped to one tenant. |
+| [`0019` batch relationship writes are atomic](../../docs/adr/0019-batch-relationship-writes-are-atomic.md) | `upsert_relationships` is all-or-nothing; what the two adapters disagreed about before, and what a new backend now owes. |
 
 Anything touching an event payload, a store port, consolidation, temporal
 relations, or `__all__` has a related ADR by construction — say for each one

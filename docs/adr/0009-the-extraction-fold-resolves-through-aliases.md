@@ -329,7 +329,7 @@ individually idempotent, so a retry converges on the same final state instead
 of needing a rollback the `GraphStore` interface does not offer.
 
 That promise has since been **strengthened to all-or-nothing**
-([`0018`](0018-batch-relationship-writes-are-atomic.md)), because the two
+([`0019`](0019-batch-relationship-writes-are-atomic.md)), because the two
 adapters never agreed on it. The argument above is unaffected and slightly
 strengthened: it rests on per-element idempotency making a retry converge
 without a rollback, which is still true, and there is now less to converge

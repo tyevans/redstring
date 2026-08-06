@@ -66,11 +66,10 @@ could not be caught without a dotted import.
   `RelationshipTypeSchema`, `PropertySchema` and `ConfidenceThresholds`.
 - **Pieces, for callers who want the steps rather than the whole.**
   `ExtractionPipeline` (`PipelineResult`, `DEFAULT_SYSTEM_PROMPT`),
-  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`, `project`,
-  `ReplayReport`, and `Document` with `document_stream` to address it.
-  `project(strict=True)` raises `ReplayFailedError` rather than counting a
-  rejection, for the caller who would rather have no rebuild than a partial
-  one.
+  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`, `project`
+  (aliased `replay`, for callers whose own vocabulary has a *project* noun),
+  `ReplayReport`/`ReplayFailure`, and `Document` with `document_stream` to
+  address it.
 - **Errors.** `RedstringError` and everything under it that a caller can
   reach: `LlmProviderError` and its three shapes, `MissingEntityError`,
   `AliasCycleError`, `DimensionMismatchError`, `PartialExtractionError`,
@@ -141,7 +140,6 @@ from redstring.domain.exceptions import (
     MissingEntityError,
     RedstringError,
     RefusedCompletionError,
-    ReplayFailedError,
     UnknownDomainError,
     UnknownMergeError,
 )
@@ -187,7 +185,15 @@ from redstring.ports.graph_store import (
 )
 from redstring.ports.llm_provider import LlmProvider
 from redstring.ports.vector_store import VectorStore
-from redstring.projections import GraphProjection, ReplayReport, VectorProjection, project
+from redstring.projections import (
+    GraphProjection,
+    ReplayFailedError,
+    ReplayFailure,
+    ReplayReport,
+    VectorProjection,
+    project,
+    replay,
+)
 from redstring.temporal.inference import InferredRelation, infer_relations
 from redstring.temporal.query import CursorStalledError, TemporalQuery
 from redstring.vector.adapters.memory import InMemoryVectorStore
@@ -261,6 +267,7 @@ __all__ = [
     "RelationshipStore",
     "RelationshipTypeSchema",
     "ReplayFailedError",
+    "ReplayFailure",
     "ReplayReport",
     "Response",
     "ScoredCandidate",
@@ -287,4 +294,5 @@ __all__ = [
     "load_schema_from_file",
     "load_schema_from_string",
     "project",
+    "replay",
 ]

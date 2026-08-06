@@ -9,6 +9,7 @@ test, which would make the test worthless.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import uuid4
 
 import pytest
 from eventsource.adapters.memory import (
@@ -18,7 +19,13 @@ from eventsource.adapters.memory import (
 )
 from eventsource.application.projections.retry import ExponentialBackoffRetryPolicy
 from eventsource.application.subscriptions.retry import RetryConfig
+from eventsource.domain.tenant_context import tenant_scope
+from eventsource.ports.positions import ExpectedVersion
 
+from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.relationship import Relationship
+from redstring.events import DocumentExtracted
+from redstring.events.streams import document_stream
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.projections import GraphProjection, VectorProjection
 from redstring.vector.adapters.memory import InMemoryVectorStore
@@ -177,3 +184,75 @@ async def dump_shape(graph_store, vector_store, tenant_ids):
             "vectors": vectors,
         }
     return shape
+
+
+# --- The poisoned log ------------------------------------------------------
+#
+# Shared by `test_poison_events.py` (what the fold does with it) and
+# `test_replay_failures.py` (what the report says about it). One definition
+# because two would drift, and the tests would then disagree about which
+# document is the poison.
+
+POISON_TENANT_ID = uuid4()
+POISON_MODEL = "ollama/qwen3.6-27b"
+
+
+def poison_entity(source_id, name):
+    return Entity(
+        id=uuid4(),
+        tenant_id=POISON_TENANT_ID,
+        name=name,
+        normalized_name=name.lower(),
+        entity_type="thing",
+        source_id=source_id,
+        extraction_method=ExtractionMethod.PATTERN,
+        confidence=0.5,
+    )
+
+
+async def append_document(event_store, source_id, entities, relationships):
+    stream = document_stream(tenant_id=POISON_TENANT_ID, source_id=source_id)
+    async with tenant_scope(POISON_TENANT_ID):
+        await event_store.append(
+            stream,
+            [
+                DocumentExtracted(
+                    aggregate_id=stream.aggregate_id,
+                    tenant_id=POISON_TENANT_ID,
+                    source_id=source_id,
+                    model_version=POISON_MODEL,
+                    entities=entities,
+                    relationships=relationships,
+                )
+            ],
+            ExpectedVersion.no_stream(),
+        )
+
+
+@pytest.fixture
+async def poisoned_log(rig):
+    """Three documents: good, poison, good. The poison is in the middle so a
+    projection that stopped on it would visibly drop the third."""
+    first = poison_entity("doc-1", "Ada")
+    await append_document(rig.event_store, "doc-1", [first], [])
+
+    dangling = poison_entity("doc-2", "Grace")
+    await append_document(
+        rig.event_store,
+        "doc-2",
+        [dangling],
+        [
+            Relationship(
+                id=uuid4(),
+                tenant_id=POISON_TENANT_ID,
+                source_entity_id=dangling.id,
+                target_entity_id=uuid4(),  # never extracted by any document
+                relationship_type="knows",
+                confidence=0.5,
+            )
+        ],
+    )
+
+    last = poison_entity("doc-3", "Barbara")
+    await append_document(rig.event_store, "doc-3", [last], [])
+    return rig, [first, dangling, last]

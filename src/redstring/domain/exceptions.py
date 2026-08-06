@@ -207,25 +207,3 @@ class UnknownMergeError(ConsolidationInvariantError):
     def __init__(self, *, merge_event_id: UUID) -> None:
         self.merge_event_id = merge_event_id
         super().__init__(f"no merge in effect with event id {merge_event_id}")
-
-
-class ReplayFailedError(RedstringError):
-    """A projection rejected an event during a `project(strict=True)` replay.
-
-    Carries the event that failed, not merely a count. A rebuild that stops
-    is only useful if it says what stopped it: "replay failed, 1 event
-    rejected" is the same silent-partial-rebuild problem in a louder voice,
-    and the position is what makes the offending record findable in the log.
-
-    The rejecting exception is the `__cause__`, so a caller reading a
-    traceback sees why rather than only what.
-    """
-
-    def __init__(self, *, event: object, position: object, projection: object) -> None:
-        self.event = event
-        self.position = position
-        self.projection = projection
-        super().__init__(
-            f"{type(projection).__name__} rejected {type(event).__name__} "
-            f"at position {position}; replay stopped because strict=True"
-        )

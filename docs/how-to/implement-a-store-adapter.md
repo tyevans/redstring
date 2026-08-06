@@ -178,7 +178,7 @@ blocking-key reads. Two behaviours are easy to miss on a first pass:
   trips would be the expensive way to write it, and the in-memory adapter
   makes two passes. This used to be the opposite, and the weaker promise is
   what let those two adapters differ in a way nothing asserted; see
-  [ADR 0018](../adr/0018-batch-relationship-writes-are-atomic.md). Do not make
+  [ADR 0019](../adr/0019-batch-relationship-writes-are-atomic.md). Do not make
   your adapter more permissive than the port — an adapter that accepts a
   dangling edge is useless as a reference, because tests written against it
   pass there and fail on Neo4j.

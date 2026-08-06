@@ -1,4 +1,4 @@
-# ADR 0018: Batch relationship writes are atomic
+# ADR 0019: Batch relationship writes are atomic
 
 ## Status
 
