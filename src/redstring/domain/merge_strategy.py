@@ -29,7 +29,7 @@ would answer a different question in a way no caller could detect.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 _B28 = (
@@ -39,7 +39,7 @@ _B28 = (
 )
 
 
-class PropertyMergeStrategy(str, Enum):
+class PropertyMergeStrategy(StrEnum):
     """How to reconcile one property across the entities a merge combines."""
 
     PREFER_CANONICAL = "prefer_canonical"

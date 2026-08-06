@@ -77,7 +77,7 @@ cannot make it if they never meet.
 from __future__ import annotations
 
 import unicodedata
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import jellyfish
@@ -104,7 +104,7 @@ _TYPE = "t:"
 _SOUNDEX = "s:"
 
 
-class BlockingKeyStrategy(str, Enum):
+class BlockingKeyStrategy(StrEnum):
     """The three key functions. Each maps an entity to at most one key."""
 
     PREFIX = "prefix"

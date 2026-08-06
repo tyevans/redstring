@@ -1,0 +1,30 @@
+# A **scoped** cosmic-ray session: `render_temporal` and `widen`.
+#
+#   uv run python scripts/mutation.py cosmic-ray \
+#       --config cosmic-ray-render.toml --rows 530:599 --session render.sqlite
+#
+# The two functions are 239 of `temporal_parsing.py`'s 850 mutants -- the
+# largest unrun region by some margin, and the one BACKLOG B54 predicts will
+# be the same shape as the three findings before it: arithmetic exercised at
+# exactly one value, where a wrong implementation happens to agree.
+#
+# The classes named below are the ones that reach them. `TestProperties`
+# carries the round-trip property, which is what `render_temporal` exists for
+# at all -- and it is the reason this command is not narrowed further: a
+# render mutant that survives the examples is exactly what the property is
+# supposed to catch. Against the full file a mutant costs ~70s; scoped, ~7s.
+
+[cosmic-ray]
+module-path = "src/redstring/domain/temporal_parsing.py"
+# 120s, not 30. cosmic-ray records a timeout as KILLED and `cr-report` does
+# not distinguish it, so a timeout that is really "the machine was busy"
+# reports as a caught mutant. At 30s against a ~7s baseline, a concurrent test
+# suite was enough to time out 132 of 159 mutants in one session and all 80 in
+# another -- both read as clean runs. `scripts/mutation.py` now refuses a
+# result whose kills are mostly timeouts; this is the other half of that fix.
+timeout = 120.0
+test-command = "uv run pytest -x -q --no-header -p no:randomly tests/unit/domain/test_temporal_parsing.py -k 'TestWiden or TestRenderDeclines or TestProperties or TestPrecision'"
+excluded-modules = []
+
+[cosmic-ray.distributor]
+name = "local"

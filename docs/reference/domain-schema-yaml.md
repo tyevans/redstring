@@ -428,7 +428,8 @@ checked and are not:
 ### Reading the loaded object
 
 The root model exposes six helpers over these fields, all normalizing their
-argument with `.lower().strip()` before comparing:
+argument with `normalize_type_id` — the same rule that produced the stored
+ids — before comparing:
 
 ```python
 schema.get_entity_type_ids()  # ['dish', 'ingredient']
@@ -1580,11 +1581,13 @@ three edges:
 - **`get_entity_type_ids()` returns the normalized forms.** Writing
   `id: Plot Point` means the prompt says `plot_point` and every lookup key is
   `plot_point`.
-- **`DomainSchema.get_entity_type` normalizes case and whitespace only.** It
-  compares `entity_type.lower().strip()` against the stored ids, so
-  `get_entity_type("Character")` works and `get_entity_type("Plot Point")`
-  returns `None` even though `id: Plot Point` is what you wrote. The lookup is
-  weaker than the validator, deliberately or not — pass the normalized form.
+- **`DomainSchema.get_entity_type` normalizes exactly as the validator does.**
+  It runs `normalize_type_id` on its argument, so `get_entity_type("Character")`
+  and `get_entity_type("Plot Point")` both find what `id: Plot Point` stored.
+  Every lookup on this model shares that one function — the same is true of
+  `get_relationship_type`, `is_valid_entity_type` and
+  `is_valid_relationship_type`. It was not: they lowercased and stripped only,
+  so the id you wrote did not find itself (BACKLOG B75, now closed).
 - **The endpoint lists normalize the same way.** `normalize_type_lists` on
   `RelationshipTypeSchema` applies the identical rewriting to every entry of
   `valid_source_types` and `valid_target_types`, so `valid_source_types:
@@ -1831,15 +1834,11 @@ extracted dict yourself.
 #### Looking one up
 
 `EntityTypeSchema.get_property(name)` is the only accessor, returning a
-`PropertySchema` or `None`. It normalizes its argument with
-`.lower().strip().replace(" ", "_").replace("-", "_")`, so
-`get_property("Return Type")` and `get_property("return-type")` both find
-`return_type`. It stops short of the two later steps the `name` validator
-performs — collapsing repeated underscores and stripping the edges — so a
-property stored as `return_type` is not found by `get_property("__return__type__")`
-even though `name: __return__type__` in the file would have been stored as
-`return_type`. Duplicate names are not rejected; `get_property` returns the
-first match, scanning in declaration order.
+`PropertySchema` or `None`. It normalizes its argument with `normalize_type_id`
+— the same function the `name` validator uses — so `get_property("Return
+Type")`, `get_property("return-type")` and `get_property("__return__type__")`
+all find `return_type`. Duplicate names are not rejected; `get_property`
+returns the first match, scanning in declaration order.
 
 #### What the bundled schemas do
 
@@ -2113,14 +2112,11 @@ dict at the call site.
 ### Looking one up
 
 `EntityTypeSchema.get_property(name)` is the only accessor. It normalizes its
-argument with `.lower().strip().replace(" ", "_").replace("-", "_")` — so
-`get_property("Return Type")` and `get_property("return-type")` both find
-`return_type` — but stops short of the two remaining steps the `name` validator
-performs, collapsing repeated underscores and stripping the edges. A property
-stored as `return_type` is therefore *not* found by
-`get_property("__return__type__")`, even though `name: __return__type__` in the
-file would have been stored as `return_type`. Duplicate names are not rejected
-by anything; `get_property` returns the first match in declaration order.
+argument with `normalize_type_id`, the same function the `name` validator runs,
+so `get_property("Return Type")`, `get_property("return-type")` and
+`get_property("__return__type__")` all find `return_type`. Duplicate names are
+not rejected by anything; `get_property` returns the first match in declaration
+order.
 
 ### What the bundled schemas do
 
@@ -2234,23 +2230,23 @@ and the `is_valid_source` / `is_valid_target` helpers on this model are
 available for a caller who wants to check an edge, and nothing in the
 extraction path calls them.
 
-**`is_valid_source` normalizes differently from the loader, and the mismatch
-is observable.** The loader replaces spaces and hyphens with underscores; the
-lookup only lowercases and strips, so the string you wrote in the YAML does not
-match itself:
+**They normalize their argument the same way the loader normalized the list**,
+through the module's one `normalize_type_id`, so the string you wrote in the
+YAML matches itself:
 
 ```python
 schema = RelationshipTypeSchema(id="loves", description="…", valid_source_types=["Main Character"])
 schema.valid_source_types  # ['main_character']
-schema.is_valid_source("Main Character")  # False
+schema.is_valid_source("Main Character")  # True
 schema.is_valid_source("main_character")  # True
 ```
 
-Entity type ids are themselves normalized on load, so a caller passing an
-`EntityTypeSchema.id` is unaffected. A caller passing an `Entity.entity_type`
-— free-form text straight from the model, where "Main Character" is an
-ordinary answer — gets the wrong result. Recorded rather than fixed here
-because this page is documentation; see `BACKLOG.md`.
+That is worth stating because it was not true: the lookup lowercased and
+stripped only, so `is_valid_source("Main Character")` answered `False` against
+a list built from that exact string. A caller passing an `EntityTypeSchema.id`
+never saw it, since those are normalized on load; a caller passing an
+`Entity.entity_type` — free-form text straight from the model, where "Main
+Character" is an ordinary answer — got the wrong result every time.
 
 ### `bidirectional` is a prompt hint, not a graph property
 

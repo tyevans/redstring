@@ -211,15 +211,16 @@ select = [
     "TC",     # flake8-type-checking
     "TID",    # flake8-tidy-imports
 ]
-ignore = [
-    # UP042 wants `class X(str, Enum)` rewritten as `enum.StrEnum`. That is a
-    # behaviour change, not a style fix: `str(X.A)` goes from "X.A" to "a",
-    # which silently alters every f-string and log line holding a member. The
-    # `(str, Enum)` idiom is used at 33 sites here, so this is a deliberate
-    # migration to make wholesale with tests, not a drive-by autofix.
-    "UP042",
-]
-
+# Kept, and empty: this project ignores no rule on `src/`. The last entry was
+# `UP042` (rewrite `class X(str, Enum)` as `enum.StrEnum`), removed when the
+# migration was made -- see `tests/unit/test_enum_values_are_a_wire_format.py`,
+# which pins the values that must *not* move while `str(X.A)` does.
+#
+# Empty rather than deleted, unlike mypy's `exclude`: an empty `ignore` still
+# states the position, so adding an entry is a visible decision in review. An
+# *exclusion* over an empty set excludes nothing, which is why that one went.
+# See `docs/adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md`.
+ignore = []
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
     "B011",

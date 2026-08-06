@@ -49,7 +49,7 @@ cases would otherwise start failing spontaneously in the year 2200.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from redstring.domain.temporal_parsing import widen
@@ -77,7 +77,7 @@ class Bounds(NamedTuple):
     upper: datetime | None
 
 
-class TemporalRelation(str, Enum):
+class TemporalRelation(StrEnum):
     """How the first extent stands to the second.
 
     Deliberately coarser than Allen's thirteen relations. `meets`,

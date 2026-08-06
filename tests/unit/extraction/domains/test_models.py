@@ -333,6 +333,57 @@ class TestRelationshipTypeSchema:
         assert rt.is_valid_target("protocol") is True
         assert rt.is_valid_target("class") is False
 
+    @pytest.mark.parametrize(
+        "written",
+        [
+            "Main Character",
+            "  Main Character  ",
+            "Main-Character",
+            "Main--Character",
+            "MAIN_CHARACTER",
+            "_main_character_",
+        ],
+        ids=["spaces", "padded", "hyphen", "double_hyphen", "shouting", "underscored"],
+    )
+    def test_a_type_written_one_way_validates_against_itself(self, written):
+        """The constraint list and the lookup normalize with the *same* rule.
+
+        This is the test BACKLOG B75 said no existing one performed, and it is
+        the whole shape of the defect: every case here passed the string the
+        schema was *built with*, which is the one string a caller has in hand,
+        and `is_valid_source` answered `False` for four of the six. The list
+        was stored collapsed and stripped; the lookup only lowercased and
+        stripped whitespace, so the value did not match itself.
+
+        Entity type *ids* are normalized on load, so a caller passing an
+        `EntityTypeSchema.id` never saw it. The caller who did is one passing
+        an `Entity.entity_type` -- free-form text from the model, where "Main
+        Character" is an ordinary answer -- through
+        `DomainSchema.validate_relationship`.
+        """
+        rt = RelationshipTypeSchema(
+            id="loves",
+            description="Romantic love",
+            valid_source_types=[written],
+            valid_target_types=[written],
+        )
+        assert rt.is_valid_source(written) is True
+        assert rt.is_valid_target(written) is True
+
+    def test_a_constraint_agrees_with_the_entity_type_id_it_names(self):
+        """The list holds *references* to `EntityTypeSchema.id`, and a
+        reference that normalizes differently from its referent points at
+        nothing. Before the shared normalizer these produced `main_character`
+        and `main__character` from the same source text."""
+        entity_type = EntityTypeSchema(id="Main--Character", description="A person")
+        rt = RelationshipTypeSchema(
+            id="loves",
+            description="Romantic love",
+            valid_source_types=["Main--Character"],
+        )
+        assert rt.valid_source_types == [entity_type.id]
+        assert rt.is_valid_source(entity_type.id) is True
+
     def test_bidirectional_flag(self):
         """Test bidirectional flag."""
         rt = RelationshipTypeSchema(
@@ -431,6 +482,37 @@ class TestDomainSchema:
             ],
             extraction_prompt_template="Extract entities from: {content}",
         )
+
+    @pytest.mark.parametrize(
+        "written",
+        ["Plot Point", "plot-point", "  Plot  Point  ", "__plot_point__"],
+        ids=["spaces", "hyphen", "padded", "underscored"],
+    )
+    def test_an_entity_type_is_found_by_the_id_it_was_declared_with(self, written):
+        """The second instance of B75, found by grepping for it rather than by
+        another report -- `get_entity_type`, `get_relationship_type`,
+        `is_valid_entity_type` and `is_valid_relationship_type` all normalized
+        their argument with `.lower().strip()` while the id they search was
+        stored fully normalized.
+
+        The reference page documented it as "the lookup is weaker than the
+        validator, deliberately or not", which is the shape worth noticing:
+        two normalizers, no mechanism that fails when they disagree, and a doc
+        sentence standing in for the test.
+        """
+        schema = DomainSchema(
+            domain_id="literature_fiction",
+            display_name="Literature & Fiction",
+            description="Novels",
+            entity_types=[EntityTypeSchema(id=written, description="A beat in the plot")],
+            relationship_types=[RelationshipTypeSchema(id=written, description="Follows on")],
+            extraction_prompt_template="Extract entities from: {content}",
+        )
+
+        assert schema.get_entity_type(written) is not None
+        assert schema.get_relationship_type(written) is not None
+        assert schema.is_valid_entity_type(written) is True
+        assert schema.is_valid_relationship_type(written) is True
 
     def test_valid_domain_schema(self, valid_domain_schema):
         """Test creating a valid domain schema."""

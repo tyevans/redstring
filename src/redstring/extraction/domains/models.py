@@ -45,6 +45,46 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+def normalize_type_id(value: str) -> str:
+    """The one spelling rule for an entity type, relationship type or property id.
+
+    Lowercase, stripped, spaces and hyphens as underscores, runs of underscores
+    collapsed, none leading or trailing.
+
+    **One function because it is one fact.** It was six spellings, in three
+    strengths, and the disagreement was reachable: `valid_source_types` was
+    normalized without the collapse or the strip, while the `EntityTypeSchema.id`
+    it is supposed to reference was normalized with both -- so a YAML naming
+    "Main--Character" in both places produced `main_character` on one side and
+    `main__character` on the other and never matched. `is_valid_source` was
+    weaker still, `.lower().strip()` only, so it did not even match the list it
+    was searching (BACKLOG B75).
+
+    Raises nothing: a *lookup* for an id no schema could hold should answer no,
+    not raise. `normalize_identifier` is the validating form, for the fields
+    whose value becomes an id.
+    """
+    normalized = value.lower().strip().replace(" ", "_").replace("-", "_")
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    return normalized.strip("_")
+
+
+def normalize_identifier(value: str, what: str) -> str:
+    """`normalize_type_id`, rejecting a result that cannot be an identifier.
+
+    `what` names the field in the message -- these reach a user editing YAML,
+    and "cannot be empty after normalization" is only actionable if it says
+    which of the three it was.
+    """
+    normalized = normalize_type_id(value)
+    if not normalized:
+        raise ValueError(f"{what} cannot be empty after normalization: '{value}'")
+    if not normalized.isidentifier():
+        raise ValueError(f"{what} must be a valid identifier: '{value}' -> '{normalized}'")
+    return normalized
+
+
 class PropertySchema(BaseModel):
     """Schema for an entity property.
 
@@ -101,18 +141,7 @@ class PropertySchema(BaseModel):
         Raises:
             ValueError: If the normalized name is not a valid identifier
         """
-        # Normalize to lowercase with underscores
-        normalized = v.lower().strip().replace(" ", "_").replace("-", "_")
-        # Remove consecutive underscores
-        while "__" in normalized:
-            normalized = normalized.replace("__", "_")
-        # Strip leading/trailing underscores
-        normalized = normalized.strip("_")
-        if not normalized:
-            raise ValueError(f"Property name cannot be empty after normalization: '{v}'")
-        if not normalized.isidentifier():
-            raise ValueError(f"Property name must be a valid identifier: '{v}' -> '{normalized}'")
-        return normalized
+        return normalize_identifier(v, "Property name")
 
 
 class EntityTypeSchema(BaseModel):
@@ -176,15 +205,7 @@ class EntityTypeSchema(BaseModel):
         Raises:
             ValueError: If the normalized ID is not a valid identifier
         """
-        normalized = v.lower().strip().replace(" ", "_").replace("-", "_")
-        while "__" in normalized:
-            normalized = normalized.replace("__", "_")
-        normalized = normalized.strip("_")
-        if not normalized:
-            raise ValueError(f"Entity type ID cannot be empty after normalization: '{v}'")
-        if not normalized.isidentifier():
-            raise ValueError(f"Entity type ID must be a valid identifier: '{v}' -> '{normalized}'")
-        return normalized
+        return normalize_identifier(v, "Entity type ID")
 
     @field_validator("examples")
     @classmethod
@@ -213,7 +234,7 @@ class EntityTypeSchema(BaseModel):
         Returns:
             PropertySchema if found, None otherwise
         """
-        normalized_name = name.lower().strip().replace(" ", "_").replace("-", "_")
+        normalized_name = normalize_type_id(name)
         for prop in self.properties:
             if prop.name == normalized_name:
                 return prop
@@ -283,17 +304,7 @@ class RelationshipTypeSchema(BaseModel):
         Raises:
             ValueError: If the normalized ID is not a valid identifier
         """
-        normalized = v.lower().strip().replace(" ", "_").replace("-", "_")
-        while "__" in normalized:
-            normalized = normalized.replace("__", "_")
-        normalized = normalized.strip("_")
-        if not normalized:
-            raise ValueError(f"Relationship type ID cannot be empty after normalization: '{v}'")
-        if not normalized.isidentifier():
-            raise ValueError(
-                f"Relationship type ID must be a valid identifier: '{v}' -> '{normalized}'"
-            )
-        return normalized
+        return normalize_identifier(v, "Relationship type ID")
 
     @field_validator("valid_source_types", "valid_target_types")
     @classmethod
@@ -306,7 +317,7 @@ class RelationshipTypeSchema(BaseModel):
         Returns:
             Normalized list of entity type IDs
         """
-        return [t.lower().strip().replace(" ", "_").replace("-", "_") for t in v]
+        return [normalize_type_id(t) for t in v]
 
     def is_valid_source(self, entity_type: str) -> bool:
         """Check if an entity type is a valid source for this relationship.
@@ -319,7 +330,7 @@ class RelationshipTypeSchema(BaseModel):
         """
         if not self.valid_source_types:
             return True
-        normalized = entity_type.lower().strip()
+        normalized = normalize_type_id(entity_type)
         return normalized in self.valid_source_types
 
     def is_valid_target(self, entity_type: str) -> bool:
@@ -333,7 +344,7 @@ class RelationshipTypeSchema(BaseModel):
         """
         if not self.valid_target_types:
             return True
-        normalized = entity_type.lower().strip()
+        normalized = normalize_type_id(entity_type)
         return normalized in self.valid_target_types
 
 
@@ -494,7 +505,7 @@ class DomainSchema(BaseModel):
         Returns:
             EntityTypeSchema if found, None otherwise
         """
-        normalized = type_id.lower().strip()
+        normalized = normalize_type_id(type_id)
         for et in self.entity_types:
             if et.id == normalized:
                 return et
@@ -509,7 +520,7 @@ class DomainSchema(BaseModel):
         Returns:
             RelationshipTypeSchema if found, None otherwise
         """
-        normalized = type_id.lower().strip()
+        normalized = normalize_type_id(type_id)
         for rt in self.relationship_types:
             if rt.id == normalized:
                 return rt
@@ -526,7 +537,7 @@ class DomainSchema(BaseModel):
         Returns:
             True if the type is valid for this domain, False otherwise
         """
-        normalized = type_id.lower().strip()
+        normalized = normalize_type_id(type_id)
         return normalized in self.get_entity_type_ids() or normalized == "custom"
 
     def is_valid_relationship_type(self, type_id: str) -> bool:
@@ -540,7 +551,7 @@ class DomainSchema(BaseModel):
         Returns:
             True if the type is valid for this domain, False otherwise
         """
-        normalized = type_id.lower().strip()
+        normalized = normalize_type_id(type_id)
         return normalized in self.get_relationship_type_ids() or normalized == "related_to"
 
     def validate_relationship(
@@ -565,7 +576,7 @@ class DomainSchema(BaseModel):
             Tuple of (is_valid, error_message). error_message is None if valid.
         """
         rt = self.get_relationship_type(relationship_type)
-        if rt is None and relationship_type.lower() != "related_to":
+        if rt is None and normalize_type_id(relationship_type) != "related_to":
             return (
                 False,
                 f"Unknown relationship type: '{relationship_type}'",

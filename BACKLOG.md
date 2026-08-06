@@ -34,7 +34,7 @@ module that exists), and delete the entry in the same commit.
 
 ## State of the tree
 
-The default gate collects **1995 tests**, plus **245 `integration` tests** and
+The default gate collects **2209 tests**, plus **250 `integration` tests** and
 **4 `accuracy` tests** — against a real Neo4j (slices 4, 7), real pgvector
 (slice 5), a live `qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`), and a built
 wheel (slice 10). The first two need `docker-compose.test.yml`. Both extra
@@ -43,7 +43,7 @@ how to run it. What the accuracy suite can and cannot tell you is B12.
 
 **The gate is green.** Verified under its own conditions
 (`uv run python scripts/coverage_ratchet.py`, which is `pytest -q -n auto
---cov`): **1995 passed**, no failures. The hypothesis deadline flake that made
+--cov`): **2209 passed**, no failures. The hypothesis deadline flake that made
 this paragraph say otherwise was fixed at the class level rather than the
 instance — `tests/conftest.py` now registers a suite-wide `deadline=None`
 profile, and `tests/unit/test_hypothesis_deadline_policy.py` fails if a
@@ -351,86 +351,99 @@ env KG_COMPLIANCE_MAX_EXAMPLES=5 ./.venv/bin/pytest -x -q --no-header -p no:rand
 The `-m integration` is required — `addopts` deselects it otherwise, and the
 run then silently mutates code no test executes, which is how B10a happened.
 
-### B54. `temporal_parsing.py`'s mutants: 444 run, 406 still unrun
+### B54. `temporal_parsing.py`'s mutants: 391 verified, 459 not
 
-**Progress, with the mechanism now in the tree.** Slice 8 ran the precision
-logic (57 of 850). Two scoped sessions have since run the range and
-partial-date region (268 mutants) and the period/century region (176), and
-**each found something**. 406 remain: `parse_temporal` itself,
-`render_temporal`, `widen`, and the absolute/natural strategies.
+**Progress, with the mechanism in the tree.** Slice 8 ran the precision logic.
+Four scoped sessions have since run the range and partial-date region, the
+period/century region, all of `render_temporal`, and the first third of
+`widen` -- and **each found something**. What remains is `parse_temporal`, the
+absolute/natural strategies, most of `widen`, and a band nobody has looked at.
 
 **Run one with the wrapper**, which makes this affordable and is why the
-remainder is now a matter of time rather than of design:
+remainder is a matter of time rather than of design:
 
 ```
 uv run python scripts/mutation.py cosmic-ray \
-    --config cosmic-ray-ranges.toml --rows 207:320 --session ranges.sqlite
+    --config cosmic-ray-render.toml --rows 600:609 --session widen.sqlite
 ```
 
 `--config` narrows the `test-command` (and the baseline with it, so the
 narrower command is proved green first); `--rows` deletes the mutants outside
 the region, since cosmic-ray has no line filter. Against the default command a
-mutant costs ~70s and the whole module is seventeen hours; scoped, the 268
-took about ninety minutes.
+mutant costs ~70s and the whole module is seventeen hours; scoped to the
+render/widen classes it is ~7s, and 159 mutants took about two hours on a
+machine also running the test suite.
 
-**Where the mutants actually are.** This is the part to read before picking a
-region, because the distribution is not the one the module's sections suggest:
+**Where the mutants actually are.** Re-measured from a fresh
+`cosmic-ray init` at the commit that closed the render region -- the previous
+version of this table was measured before the file moved, and its line ranges
+had drifted far enough to matter. A `--rows 530:599` run aimed at
+"`render_temporal` and `widen`" got all of the first and **a third** of the
+second, because `widen` now ends at 609 rather than 599. Re-measure the bands
+before choosing one; do not trust the numbers below to survive an edit to the
+module.
 
 | Region | Lines | Mutants | Status |
 |---|---|---|---|
 | periods / centuries | 321-362 | 176 | **run** |
-| ranges | 207-273 | 160 | **run** |
-| `render_temporal` | 530-574 | 126 | unrun |
-| `widen` | 575-599 | 113 | unrun |
-| partial dates | 274-320 | 108 | **run** |
-| `parse_temporal` | 462-529 | 73 | unrun |
-| absolute / natural | 389-461 | 44 | unrun |
-| uncertainty + stripping | 124-206 | 3 | run |
+| ranges | 207-273 | 161 | **run** |
+| `render_temporal` | 530-586 | 126 | 27 verified, **99 timed out** |
+| `widen` | 587-609 | 113 | 33 timed out, **80 unrun** |
+| `parse_temporal` | 462-529 | 77 | unrun |
+| partial dates | 274-320 | 71 | **run** |
+| unnamed band | 363-388 | 68 | **unrun, and never named** |
+| absolute / natural | 389-461 | 42 | unrun |
+| header / imports | 1-123 | 14 | unrun |
+| uncertainty + stripping | 124-206 | 2 | run |
 
-The last row corrects this entry's own premise: it named the uncertainty
-patterns first among what was unrun, and they are **three mutants**, because
-cosmic-ray mutates operators and that region is a table of compiled regexes.
-A session aimed there would have finished in a minute having proved nothing.
+Two rows correct this entry's own premises. The last is the older correction:
+it once named the uncertainty patterns first among what was unrun, and they
+are **two mutants**, because cosmic-ray mutates operators and that region is a
+table of compiled regexes. The **unnamed band** is the newer one -- 68
+mutants, eighth of ten regions by size, that no version of this table has ever
+listed. It was invisible because the bands were written from the module's
+section headings rather than from the measurement, so a region between two
+headings had nowhere to appear.
 
-**The run: 268 mutants, 22 survivors, all classified.**
+**The range run: 268 mutants, 22 survivors, all classified.**
 
-- **16 equivalent by construction** — `_Parsed | None` in two return
+- **16 equivalent by construction** -- `_Parsed | None` in two return
   annotations, rewritten as `+`, `%`, `^`, `**` and so on. PEP 563 makes
   annotations strings that are never evaluated; unkillable here and anywhere.
-- **1 equivalent** — `name != "September"` as `is not`, over month names that
+- **1 equivalent** -- `name != "September"` as `is not`, over month names that
   are module-level literals and therefore interned. It is CLAUDE.md's row-one
   trap sitting in the tree, equivalent only because every operand is a
   literal, and it would stop being equivalent the moment a spelling arrived
   from anywhere else.
-- **4 test gaps, now closed** — a year range and a month range with *equal*
+- **4 test gaps, now closed** -- a year range and a month range with *equal*
   endpoints (`end < start` widened to `<=` returned `None` and nothing
   noticed), and a quarter range *starting* at Q3 or Q4. The last is the
   instructive one: `(first - 1) * 3 + 1` and `(first >> 1) * 3 + 1` agree for
   Q1 and Q2 and differ for Q3 and Q4, and the existing cases were `Q1-Q2` and
-  `Q2-Q4` — so the range's *end* was covered at Q4 while its *start* was
+  `Q2-Q4` -- so the range's *end* was covered at Q4 while its *start* was
   blind, which reading the parameters does not reveal.
-- **1 real defect, fixed** — see below.
+- **1 real defect, fixed** -- see below.
 
 **The defect: `_MONTH_NUMBERS` carried a spelling `_MONTH` could not produce.**
 The spelling table has exactly one conditional, whose entire purpose is to add
 "Sept" for September. The `_MONTH` pattern accepted `Sep(?:tember)?` and not
-"Sept", so that entry was **unreachable** — "Sept 2024" fell through every
+"Sept", so that entry was **unreachable** -- "Sept 2024" fell through every
 pattern to `dateparser`, resolved differently against the two probe dates, and
 raised `AmbiguousReferenceDateError` instead of parsing. Two declarations of
 one fact with nothing failing while they disagreed, and it could only have
 been found this way: mutating the branch changed nothing observable, because
 no input reached it.
 
-Fixed in the pattern rather than by deleting the entry — "Sept" is ordinary
-text and the table's intent was plainly to accept it — with
+Fixed in the pattern rather than by deleting the entry -- "Sept" is ordinary
+text and the table's intent was plainly to accept it -- with
 `test_every_spelling_the_table_maps_is_one_the_pattern_accepts` as the gate,
 proved red by reverting the pattern.
 
 **The period/century run: 176 mutants, 28 survivors, all classified.**
 
-- **11 equivalent by construction** — the `_Parsed | None` return annotation
+- **11 equivalent by construction** -- the `_Parsed | None` return annotation
   again.
-- **2 equivalent, and worth understanding rather than pattern-matching** —
+- **2 equivalent, and worth understanding rather than pattern-matching** --
   `base + 1` rewritten as `base | 1` and `base ^ 1`. `base` is
   `(century - 1) * 100`, always a multiple of 100 and therefore always even,
   so bit 0 is clear and all three spellings agree for *every* century. Not
@@ -440,7 +453,7 @@ proved red by reverting the pattern.
 
 **The century arithmetic could not be tested at the 19th century at all**, and
 that is the finding worth carrying. `(19 - 1) * 100` is 1800, which shares no
-set bit with 1, 33, 34, 66, 67 or 100 — so `base + k`, `base | k` and
+set bit with 1, 33, 34, 66, 67 or 100 -- so `base + k`, `base | k` and
 `base ^ k` are *the same number* for every constant in the table. And
 `century - 1` equals `century ^ 1` for any odd century. Every existing case
 used the 19th century, which is the natural example for a library that reads
@@ -449,14 +462,89 @@ historical text, and it made eleven mutants unkillable. The 20th century
 
 The guard needed its own boundary: `century < 1` widened to `< 2` rejects
 "early 1st century", and the first version of that test used plain
-"1st century" — which `_CENTURY` matches and which never reaches the guard at
+"1st century" -- which `_CENTURY` matches and which never reaches the guard at
 all, so it passed against the mutant. **A boundary test has to reach the
 branch the boundary is in.**
 
-**What to expect from the remaining 406.** Three regions run, three findings,
-all of the same shape: arithmetic exercised at exactly one value, where a
-wrong implementation happens to agree. `widen` and `render_temporal` are 239
-mutants of precisely that kind.
+**The render run: 159 mutants, 7 survivors, all classified.** The smallest
+survivor count of the four, and the classification is most of the value.
+
+- **4 equivalent by construction** -- the `str | None` return annotation on
+  `render_temporal`, the PEP 563 shape again.
+- **1 equivalent, and provably so** -- `start != datetime(start.year,
+  start.month, start.day, ...)` rewritten as `>`. The two differ only where
+  `start` is *below* the midnight of its own date, which no datetime is.
+- **1 equivalent for the declared type** -- `precision is DatePrecision.YEAR`
+  as `==`. Enum identity and equality agree; the two would part only for an
+  argument the annotation forbids.
+- **1 test gap, now closed** -- and it is CLAUDE.md's row about intervals
+  whose bounds never coincide, second instance, in a different module.
+
+**The gap: `end.year <= start.year` survived being rewritten as `is`.**
+`TestRenderDeclines` *does* carry a year-range case, `2023-01-01` to
+`2023-06-01` -- but June 1 is not the first of its year, so the *first* clause
+of the `or` answers and the comparison is never what decides. Identity is
+false for every distinct `int` object, so under the mutant `"2023-2023"`
+rendered as a range the parser then refuses to read back. Closed with a
+coincident-endpoint case, proved by hand-applying the mutant under
+`PYTHONDONTWRITEBYTECODE=1`.
+
+Note what is *not* testable there: `TemporalExtent` rejects `end < start` at
+construction, so the `<` half of `<=` is unreachable and a coincident case is
+the whole of what an assertion can reach.
+
+**212 of the mutants counted as "run" above were timeouts, and are not.**
+The `render` session recorded 152 kills of which **132 were timeouts**, and
+the `widen` session recorded 80 kills of which **all 80** were. cosmic-ray
+records a timeout as `KILLED` and `cr-report` does not distinguish it, so both
+read as clean runs -- "0 survivors" out of 80 is the shape this file's whole
+mutation section is about, arrived at by a third route the baseline check
+cannot see.
+
+The cause was machine load: these ran alongside several other projects' test
+suites, at a load average of ~100 on 16 cores, and the config allowed 30s per
+mutant. A hand-applied mutant from the timed-out set fails with a `TypeError`
+in the **first second** and still would have timed out, because the rest of
+the command could not finish in 30s under that load -- so the honest reading
+is that most of the 212 were probably killed on the merits and none of them
+can be shown to have been.
+
+**Not re-run, deliberately.** A re-run on the same machine produces another
+set of results nobody can trust, and `timeout` is now 120s against a
+measurement taken under load rather than a clean one. Re-run both regions
+when the machine is quiet, and set the timeout from a measurement taken
+there:
+
+```
+uv run python scripts/mutation.py cosmic-ray \
+    --config cosmic-ray-render.toml --rows 530:599 --session render.sqlite
+uv run python scripts/mutation.py cosmic-ray \
+    --config cosmic-ray-render.toml --rows 600:609 --session widen.sqlite
+```
+
+`scripts/mutation.py` now refuses a session whose kills are mostly timeouts,
+so a repeat announces itself rather than reading as a clean sweep. The two
+sessions above are what proved that guard fires; `periods.sqlite`, run on an
+idle machine, has zero timeouts and is what proved it does not fire on a good
+run.
+
+The 7 render survivors are **not** affected -- they ran the suite and passed,
+which is what a survivor is. The classification and the fix stand; the
+coverage claim does not.
+
+**The century tail (363-369) was never mutated at all, and its test could not
+have killed anything there.** `test_a_century_is_a_range` used one input,
+"19th century" -- the exact case CLAUDE.md's bit-pattern row says cannot
+distinguish that arithmetic, in the same file where `TestCenturyPortions`
+carries twelve lines of comment explaining why. One lesson, two call sites,
+applied to one. A 20th-century case is now in, proved by hand-applying
+`(century - 1)` as `(century ^ 1)`: the 20th fails, the 19th passes. The 68
+mutants there still want a session.
+
+**What to expect from the remaining 247.** Four regions run, four findings,
+all the same shape: arithmetic or a comparison exercised at exactly one value,
+where a wrong implementation happens to agree. `widen`'s remaining 80 are
+precisely that kind, and the unnamed 363-388 band has never been looked at.
 
 ### B10i. The `EXPLAIN` tests run against an empty database and do not pin the negative
 
@@ -1155,26 +1243,6 @@ run rather than whether they exist: B10a, B10f, B10m.
 
 ## 6. Tooling, packaging and hygiene
 
-### B18. `UP042` is ignored project-wide
-
-Rewriting `class X(str, Enum)` as `enum.StrEnum` changes `str(X.A)` from
-`"X.A"` to `"a"`, silently altering every f-string and log line holding a
-member. This is a behaviour migration to make wholesale with tests, not a
-drive-by autofix. Rationale is recorded in `pyproject.toml`.
-
-**The idiom appears at 8 sites, not the 33 this entry claimed** (re-counted in
-slice 11; the 33 was measured before slices 6-10 deleted most of the
-codebase). The eight are `BlockingKeyStrategy`, `DatePrecision`,
-`UncertaintyMarker`, `PropertyMergeStrategy`, `MergeDecision`, `CircuitState`,
-`TemporalRelation` and `ExtractionMethod` — every one of them in `domain/`
-except `MergeDecision` and `CircuitState`.
-
-At eight sites this is now a genuinely small job, and the reason to do it is
-sharper than tidiness: **several of these are persisted in event payloads**, so
-their `str()` form is a wire format. Doing the migration deliberately, with a
-test pinning the serialised value of each member before and after, is cheap
-now and gets more expensive with every event written.
-
 ### B42. `ANN401` is silenced on `domain/merge_strategy.py::resolve`
 
 Three `# noqa: ANN401` on `resolve` and `_union`. Silencing is correct here
@@ -1235,13 +1303,15 @@ re-extraction of a changed document does — accumulates one node per distinct
 key ever seen, and only a full tenant wipe clears them. An orphan matches
 nothing, so no read is wrong; it is a growth problem, not a correctness one.
 
-ADR 0003's "The trap this decision creates" section states "Orphaned
+**The ADR half of this is closed.** It used to claim the opposite -- "orphaned
 `:BlockingKey` nodes are cleaned up because an orphan matches nothing and
-leaving it would be a slow leak." **That sentence does not describe the
-code.** Either the reap was intended and dropped, or the sentence was written
-about `delete_by_tenant` and reads as if it were about the upsert path.
+leaving it would be a slow leak" -- describing code that has never existed.
+ADR 0003 now carries a section headed "Orphaned `:BlockingKey` nodes are NOT
+reaped on upsert", which says so and says the earlier revision was wrong. What
+is left below is the leak itself, not a disagreement between the ADR and the
+tree.
 
-Deferred rather than fixed because the size of the leak is unmeasured: nobody
+Still deferred because the size of the leak is unmeasured: nobody
 has run a churning-key workload against the Neo4j container, and the obvious
 fix (a `WHERE NOT EXISTS { (k)<-[:BLOCKED_BY]-() } DELETE k` pass after the
 delete statement) adds a third statement to every batch upsert, whose write
@@ -1288,46 +1358,6 @@ and watching it fail.
 
 Nothing gates the *wrong claim* except running the code while you write the
 paragraph, which is the habit to keep.
-
-### B75. `is_valid_source` normalizes differently from the loader that filled the list
-
-`extraction/domains/models.py`. `RelationshipTypeSchema.normalize_type_lists`
-stores `valid_source_types` / `valid_target_types` lowercased, stripped, with
-spaces and hyphens turned into underscores. `is_valid_source` and
-`is_valid_target` normalize the argument with **`.lower().strip()` only**, so
-the string that was written in the YAML does not match itself:
-
-```python
-schema = RelationshipTypeSchema(
-    id="loves", description="...", valid_source_types=["Main Character"]
-)
-schema.valid_source_types  # ['main_character']
-schema.is_valid_source("Main Character")  # False
-schema.is_valid_source("main_character")  # True
-```
-
-Recurring-defect §2 exactly: one fact -- "how an entity type id is spelled" --
-with two normalizers and nothing that fails when they disagree.
-
-**Who is actually hurt.** Entity type *ids* are normalized on load, so a
-caller passing an `EntityTypeSchema.id` is fine, and that is what the bundled
-schemas and every test do. The caller who is not fine is one passing an
-`Entity.entity_type`, which is free-form text straight from the model where
-"Main Character" is an ordinary answer -- and `DomainSchema.validate_relationship`
-is a public helper that invites exactly that.
-
-**Not fixed on the spot because it is a behaviour change on a public helper,
-not a typo.** Sharing one normalizer makes calls that return `False` today
-start returning `True`, which is the intended answer but is still a change a
-caller could be relying on. The fix is to lift the loader's transform into a
-named function in the same module and call it from both -- there is no case
-for two -- and to add the test that would have caught it: assert
-`is_valid_source(x)` for the *same string* `x` that was passed to the
-constructor, which no current test does.
-
-Found while writing the relationship-type section of
-`reference/domain-schema-yaml.md` (B65), and documented there as observable
-behaviour rather than left for the next reader to trip over.
 
 ### B67. No way to find entities that were never consolidated
 

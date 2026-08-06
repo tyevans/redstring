@@ -456,7 +456,7 @@ Two adjacent traps make the scoped form worse than merely uninformative here:
   cannot report the `RET` and `ERA` findings that were also under the
   extraction entry, so even a correctly-unexempted scoped run answers a
   narrower question than the gate does. The configured gate selects the
-  project's full rule set and ignores only `UP042`.
+  project's full rule set and ignores nothing.
 
 ### Why naming files on the mypy command line answers a different question
 
