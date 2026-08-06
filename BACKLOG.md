@@ -1217,8 +1217,8 @@ visible in the links while the content was never filled in.
 (`VectorRecord`, `VectorMatch`, `cosine_score`, `has_zero_norm`, the score
 scale and the metadata rule). Still promised by its module-map table and still
 absent: temporal parsing, temporal intervals, merge strategies,
-`SimilarityFeatures`, `blocking_keys_for`, `normalize_name`,
-`RelationshipRedirection` and the error types.
+`SimilarityFeatures`, `RelationshipRedirection` and the error types.
+`normalize_name` and the blocking keys are written.
 
 Writing the temporal section produced one wrong claim that only checking
 caught — that a widened one-day extent has coincident endpoints. `widen`

@@ -1352,3 +1352,95 @@ The rule lives in `domain/json_safety.py` and is shared with `Entity` and
 the value would make every round-trip contract in this repository a lie, and a
 caller with unstorable text has a bug upstream that is better surfaced than
 smoothed over.
+
+## Name normalization
+
+`normalization.py` holds one function.
+
+`normalize_name(name)` **casefolds, strips, and collapses internal whitespace
+runs to a single space.** It never raises, and it returns a `str` for any
+`str`.
+
+Hyphens and underscores are **left untouched**, and that is the entire design
+decision. This is an *identity* concern: `normalize_name` feeds
+`entity_id_for`, so two names it maps together become one entity. Collapsing
+`"foo bar"` and `"foo-bar"` would silently merge two things a document
+distinguished, and no later step could tell they had been merged.
+
+The slug-producing normalizer in `extraction/domains/models.py` — which *does*
+turn spaces and hyphens into underscores — answers a different question: what
+is this type's identifier in a schema file. Do not reach for one where the
+other belongs. Blocking is the third case again: `prefix_key` normalizes for
+*grouping*, where being lossy is the point, and it calls this function rather
+than a looser one because a key must not depend on which extractor wrote
+`Entity.normalized_name`.
+
+Note the asymmetry with `Entity.normalized_name`: the field is whatever the
+extractor put there, and every key function re-normalizes rather than trusting
+it.
+
+## Blocking keys
+
+`blocking.py`: three key functions, an enum naming them, and
+`blocking_keys_for` to apply a set of them.
+
+**Blocking decides which entities are worth comparing at all.** Comparing
+every pair of a tenant's entities is quadratic and unaffordable past a few
+thousand, so each entity carries a small set of deliberately lossy keys and
+only entities sharing a key are ever scored against each other.
+
+**Keys are computed here and stored on the entity.**
+`GraphStore.find_by_blocking_key` looks them up and computes nothing, which is
+what keeps this pure domain logic rather than one strategy per backend.
+
+### The three key functions
+
+| Function | Namespace | Returns |
+|---|---|---|
+| `prefix_key(entity)` | `p:` | first `PREFIX_LENGTH` (5) characters of the normalized name |
+| `entity_type_key(entity)` | `t:` | the normalized entity type — **always** present |
+| `soundex_key(entity)` | `s:` | phonetic code, or `None` |
+
+`BlockingKeyStrategy` names the three (`PREFIX`, `ENTITY_TYPE`, `SOUNDEX`) and
+`DEFAULT_STRATEGIES` is all of them, because they fail differently: a prefix
+catches "Ada Lovelace" against "Ada Lovelace, Countess" and misses
+"A. Lovelace"; soundex catches spelling variants and misses abbreviations; the
+type key catches nothing on its own and is what stops an entity from being
+unblockable.
+
+There is no `TRIGRAM`. It was never a key function — approximate matching is
+`VectorStore.search`, and an adapter with a native fuzzy index may serve it
+faster, but nothing may depend on it having one.
+
+### Namespacing is not decoration
+
+`"person"` as an entity type and `"person"` as a five-character name prefix
+are different claims. Un-namespaced, `"Personal Data"` would block with every
+person in the tenant — a block big enough to undo the point of blocking. Hence
+`p:`, `t:`, `s:`, and hence no key is ever just its namespace.
+
+### Why a soundex key can be absent
+
+`soundex_key` returns `None` for a name with no ASCII letters. This is a
+correction rather than defensiveness: `jellyfish.soundex` refuses nothing and
+produces nonsense instead — `"2024"` and `"2007"` both code `2000`, so every
+year lands in one block. An oversized block puts the quadratic back, which is
+the one failure blocking cannot survive. So the name is reduced to its ASCII
+letters first, and a name with none gets no soundex key rather than a junk
+one.
+
+**Accents are folded, not discarded**, and the difference is the point of the
+reduction. Dropping non-ASCII characters loses a *coded* letter whenever the
+accent sits on a consonant: "Muñoz" becomes "muoz" and codes `M200` while
+"Munoz" codes `M520`, so two spellings of one name could never share a block.
+NFKD splits the character into base letter plus combining mark, the letter
+survives, and only the mark is dropped. An accented *vowel* hides this
+entirely, since soundex ignores vowels after the first letter — which is why
+the test for it uses a consonant.
+
+### `blocking_keys_for`
+
+Returns a `frozenset`, matching `Entity.blocking_keys`: the keys are a set of
+claims and their order means nothing. **Absent keys are dropped rather than
+represented**, so the result can be empty — but only if `ENTITY_TYPE` was left
+out of the strategies, since that one always produces a key.
