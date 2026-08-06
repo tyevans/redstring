@@ -17,9 +17,20 @@ are cited by name in about twenty-eight files under `src/` and `tests/`, so
 renumbering means editing shipped source for a cosmetic gain that the section
 headings already deliver. Treat a number as a stable handle and nothing more.
 
-**Closed entries are deleted, and tracked code still cites eight of them.**
-`docs/plans/ring-migration.md` indexes B10b, B10d, B26, B33, B34, B40, B55 and B56 —
-what each was and where its reasoning lives now — so those pointers resolve.
+**Closed entries are deleted, and a closed entry's *lesson* is moved rather
+than dropped.** `docs/plans/ring-migration.md` indexes B10b, B10d, B26, B33,
+B34, B40, B55 and B56 — what each was and where its reasoning lives now — so
+those pointers resolve. Later closures whose lesson was a recurring defect are
+in `.claude/rules/recurring-defects.md` under "Local instances", which is
+where a future author will actually meet them; a file about open work is not
+a place anyone reads for them.
+
+**A "— closed" heading is a deferral, not a closure.** Five entries carried
+one, several for two slices, and the effect was a file whose length overstated
+what was outstanding. When you close an entry: move any lesson to its home,
+repoint the citations (the deletions that prompted this rule left six, one of
+which was actively *wrong* — a how-to still telling a reader to build a test
+module that exists), and delete the entry in the same commit.
 
 ## State of the tree
 
@@ -267,47 +278,6 @@ shape without settling B48 at the same time.
 
 *The lesson is worth more than the entry: this claim survived two slices
 because it was plausible and nobody ran it. It took ninety seconds to check.*
-
-### B41. `RedisCache` compliance — closed, and it found a bug
-
-**Closed.** `tests/integration/llm/test_redis_cache.py` runs
-`CacheCompliance` against a real Redis (`docker-compose.test.yml`, port 6381,
-in CI's integration job). 26 tests; every adapter of every port in this
-repository is now held to its port's contract.
-
-The entry predicted what it would find and was right about one of them.
-`ZADD` member uniqueness: **two hits recorded at the same instant collapsed
-into one**, so `count_hits` under-reported exactly when a burst is what a
-caller is trying to detect.
-
-The interesting part is that the bug was *guarded against*, in a comment
-directly above it:
-
-```python
-# The member must be unique or two hits at the same instant
-# collapse into one, which under-counts exactly when a burst is
-# what the caller is trying to detect.
-pipe.zadd(window, {f"{at!r}:{id(self):x}": at})
-```
-
-The comment is correct and the code under it does not do what the comment
-says. `id(self)` is the *cache object's* address — constant for its whole
-life — so it distinguished two `RedisCache` instances and never two hits,
-which is the only thing it was there for. Across processes it is worse than
-useless: an address can collide outright between two callers sharing one
-Redis.
-
-`MemoryCache` cannot exhibit this at all, because it appends to a list. That
-is the "in-memory reference more forgiving than the real backend" failure the
-compliance directory exists to prevent — demonstrated, at last, by the one
-adapter that had been excused from the suite written about it.
-
-Fixed with `uuid4().hex`. Proved by restoring `id(self)` and watching the
-same test fail.
-
-**B38 is now unblocked.** The `redis<6` cap was justified by absence of
-evidence; there is now a suite that can supply some. Widening it means
-running these 26 tests against a redis 6/7/8 client and reading the result.
 
 ### B10a. The Cypher-executing half of the Neo4j adapter is not in the gate
 
@@ -911,7 +881,8 @@ verified resolvable in slice 11**:
   Caching a query result is the caller's policy — it depends on the caller's
   read/write ratio and staleness tolerance, neither of which this library can
   know. Note that its 512-line test file was ~90% `unittest.mock` against a
-  fake Redis, which is the shape B41 already records as worthless.
+  fake Redis, which is the shape `recurring-defects.md` (g) records as
+  worthless.
 
 ### B49. The temporal parser dropped confidence, parse method and named eras
 
@@ -1123,113 +1094,14 @@ merging in `consolidation/`, timelines in `temporal/`.
 | `Cache` | `MemoryCache`, default gate | Redis, `-m integration` (slice 11) |
 | `LlmProvider` | `FakeLlmProvider`, default gate | live model, `-m integration` (slice 6) |
 
-Every port now has both tiers; the `Cache` row was the last gap and B41 closed
-it in slice 11. What remains is structural — about *how* the integration suites
+Every port now has both tiers; the `Cache` row was the last gap, closed in
+slice 11 by running `CacheCompliance` against a real Redis -- which promptly
+found a bug (`recurring-defects.md` (g)). What remains is structural — about *how* the integration suites
 run rather than whether they exist: B10a, B10f, B10m.
 
 ---
 
 ## 6. Tooling, packaging and hygiene
-
-### B60. Packaging metadata beyond the licence — closed
-
-**Done.** `[project.urls]` (Homepage, Documentation, Repository, Issues,
-Changelog), `keywords`, `maintainers`, and eleven trove `classifiers`
-including `Typing :: Typed` and `Development Status :: 4 - Beta`. The licence
-half was already done and is verified in the built artifact rather than the
-config: the wheel carries `License-Expression: MIT` and ships the file at
-`dist-info/licenses/LICENSE`.
-
-`Typing :: Typed` was a **false claim when it was written**, which is why it
-came with `src/redstring/py.typed` and a test. PEP 561 says a type checker
-ignores a dependency's annotations entirely unless the installed package
-carries that marker, so `mypy --strict` over the whole package bought
-downstream callers nothing: `redstring` resolved as `Any` for all of them.
-Nothing in this repo could notice, because every test imports from `src/`
-where annotations are read directly. `tests/integration/test_wheel_contents.py`
-now asserts the marker is present in an installed wheel, and was proved red
-by removing it.
-
-B61's dependency narrowing is done too, and it was the item genuinely
-cheaper before a release than after: `dependencies` is published metadata for
-0.1.0, and narrowing it in 0.2 would break anyone who had installed under the
-wider set. Every backend is behind an extra now. A CHANGELOG is B22, also
-closed.
-
-### B38. The `redis` pin and `eventsource-py[all]` — closed
-
-**Closed by measurement, in the order B41 set up.** The `redis` extra is
-`>=5.3,<9`, and the cap moved because four client majors were run against
-`CacheCompliance` on a real Redis rather than argued about:
-
-| Client | Result |
-|---|---|
-| 5.3.1 | 26 passed |
-| 6.4.0 | 26 passed |
-| 7.4.1 | 26 passed |
-| 8.1.0 | 26 passed |
-
-Including `test_a_value_comes_back_as_str_not_bytes`, which is the assertion
-this adapter could most plausibly have failed across a major and the reason
-the suite exists.
-
-The conflict this entry was originally about is gone with it.
-`eventsource-py[all]>=0.9.1` requires `redis>=8.0,<9.0`, which `<6` excluded
-outright; the two now resolve together, verified by locking a throwaway
-project that depends on both rather than by reading the ranges.
-
-Two things that did **not** change, and should not be assumed to have:
-
-- **The `eventsource-py<0.11` cap stays.** It is about that library being
-  pre-1.0 with an API that changed wholesale between 0.5 and 0.9, and has
-  nothing to do with redis.
-- **There is still no `eventsourcing` extra**, because there is nothing to
-  put in one: the event store, bus, projections and aggregates are all in
-  eventsource's base package. That only changes if a Kafka, RabbitMQ or
-  PostgreSQL event-store backend is wanted here, each of which lives behind
-  an extra of its own.
-
-### B22. There is no CHANGELOG, and no published documentation — closed
-
-**Both exist.** `CHANGELOG.md` in Keep a Changelog format with a `0.1.0`
-section, and a mkdocs-material site at <https://tyevans.github.io/redstring>
-deployed from `main`.
-
-The entry below is kept for one paragraph of its reasoning, which turned out
-to be wrong in an instructive way. It argued against a doc site on the
-grounds that "right now every reader is also a contributor", and that a
-second audience was what would justify one. That was a fair reading of the
-audience and a wrong reading of what a site is *for*: `mkdocs build --strict`
-found 43 inbound ADR links pointing at files that had not existed for
-slices, 71 in-page anchors that resolved nowhere, and 35 links out of `docs/`
-that could not work in both a checkout and a site. Every one of those was
-already broken for the contributor-readers the entry had in mind.
-
-**The site's first value was as a gate, not as a publication.** Prose is the
-last thing in this repository with no failing test, and that — not a second
-audience — is the argument that should have carried it.
-
-### B22 (original entry). There is no CHANGELOG, and no published documentation
-
-**Rewritten in slice 11.** The previous version said "no `docs/` beyond
-`docs/plans/` and an empty `docs/adrs/`, no ADRs, no mkdocs, no CHANGELOG" and
-claimed the ring migration would create "ADR 0001 and a CHANGELOG with the
-breaking-path entries". The ADRs exist — there are six, plus
-`docs/plans/ring-migration.md`, `docs/history/` and `docs/examples/`. **The CHANGELOG
-was never written**, and that half of the claim was simply false for ten
-slices.
-
-What is actually missing:
-
-- **A CHANGELOG.** This matters more than it did, because `0.1.0` is
-  unreleased and the whole migration is one breaking change from whatever
-  callers existed. Keep-a-Changelog format; the first entry writes itself from
-  `docs/plans/ring-migration.md`'s deletion table.
-- **Published docs.** No mkdocs, no rendered API reference. The README plus the
-  `__init__` docstring plus `docs/examples/build_a_graph.py` is the whole user-
-  facing surface, and for a library this size that may be the right amount —
-  do not add a doc site reflexively. What would justify one is a second
-  audience: right now every reader is also a contributor.
 
 ### B18. `UP042` is ignored project-wide
 
@@ -1377,48 +1249,6 @@ link nobody can follow is also a claim nobody re-checks.
 Picking this up means writing the missing sections against the code, not
 against the old outline — the outline is three slices stale and was wrong at
 least once.
-
-### B66. `EmbeddingProvider` — built, and what it deliberately does not do
-
-**Closed.** `ports/embedding_provider.py`, two adapters, a compliance suite,
-and `build_graph` wiring that populates a `VectorStore`. See
-`docs/adr/0017-the-embedding-provider-port.md` for the decisions.
-
-Two things the work turned up that the entry did not predict.
-
-**`VectorProjection` and `Document.record_embeddings` already existed and
-neither had a caller.** The event, the aggregate command and the projection
-were all written when `EntitiesEmbedded` was designed, and nothing ever emitted
-one — `recurring-defects.md` §3 sitting in the tree for six slices while the
-port it served looked complete. The wiring is therefore mostly *calling* code
-that was already there, which is why it is small.
-
-**A test asserted the wrong thing and failed, correctly.** `build_graph`
-constructs a fresh `Document` per call, so `record_embeddings`' repeat
-suppression is unreachable through it: re-running embeds again and reports the
-full count. The first draft of `GraphBuildReport.embedded`'s docstring claimed
-the opposite. Both are corrected, and the dead branch in `_embed_entities` is
-named as dead rather than left to be rediscovered.
-
-What is **not** built, and is the obvious next work:
-
-- **No chunk-level or document-level embedding.** Entity *names* are embedded,
-  whole. Retrieval over document text is a different feature over the same
-  port.
-- **Vectors go stale on merge.** A consolidated entity keeps the vector of its
-  pre-merge name until something re-embeds it. Related to B67 and not solved by
-  either.
-- ~~No integration test against a live embeddings endpoint.~~ **Done, and it
-  immediately earned its keep.** `tests/integration/llm/test_live_embeddings.py`
-  runs the whole compliance body against a real server. Its first run failed
-  two clauses -- not because the adapter was wrong, but because the *contract*
-  was: it asserted `==` for determinism and for positional order, which passed
-  against a hash and a stub and which no real backend can satisfy. Batch
-  composition changes floating-point accumulation by up to `4e-3` per
-  component. Ordering was fine (cosine 0.9996 matched against 0.27 mismatched);
-  the equality was not. Fixed by comparing with cosine above a stated threshold
-  plus a check that mismatched pairs fall below it -- tolerance alone is not a
-  test, because every vector is somewhat similar to every other.
 
 ### B72. `is_valid_source` normalizes differently from the loader that filled the list
 

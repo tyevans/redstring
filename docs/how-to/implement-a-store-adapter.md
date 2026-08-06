@@ -681,16 +681,21 @@ something unnumeric raises `ValueError` — because Redis raises there, and
 silently resetting to `1` would hide a caller that had mixed `set` and
 `increment` as a failure count that quietly restarts.
 
-If you are writing the Redis-side subclass, note that it does not yet exist:
-**`RedisCache` is the only `Cache` adapter with no run of the compliance suite
-behind it** (BACKLOG **B41**). Everything above was reasoned about and coded
-for in that adapter and none of it is verified against a real server. The
-entry says what to build — `tests/integration/llm/test_redis_cache.py`
-subclassing `CacheCompliance`, a `cache` fixture pointing at a `redis` service
-in `docker-compose.test.yml`, a skip probe that round-trips a key rather than
-opening a socket, and a per-xdist-worker key prefix so two workers do not share
-a keyspace. That is the same shape step 4 describes for the two integration
-store adapters.
+The Redis-side subclass **exists**: `tests/integration/llm/test_redis_cache.py`
+runs `CacheCompliance` against a real Redis from `docker-compose.test.yml`,
+with a skip probe that round-trips a key rather than opening a socket and a
+per-xdist-worker key prefix so two workers do not share a keyspace. That is
+the same shape step 4 describes for the two integration store adapters.
+
+**It is worth knowing what that run found on its first pass**, because it is
+the argument for every sentence above. `RedisCache` had been the one adapter
+excused from its port's shared suite, and it recorded a rate-limit hit with a
+member keyed on `id(self)` — the cache object's address, constant for its
+whole life — under a comment correctly stating that the member had to be
+unique per *hit* or two hits at the same instant would collapse into one.
+They did, so `count_hits` under-reported exactly when a burst is what a caller
+is trying to detect. `MemoryCache` cannot exhibit it at all, because it
+appends to a list. See `.claude/rules/recurring-defects.md` (g).
 
 #### Time is a caller-supplied argument (`at=`, `since=`), never a sleep
 

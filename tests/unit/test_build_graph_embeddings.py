@@ -1,7 +1,7 @@
 """`build_graph` populating a `VectorStore`, and refusing to half-do it.
 
 Before this, **nothing in the library could put a vector in a `VectorStore`**
-(`BACKLOG.md` B66, reported downstream). `VectorProjection` and
+(reported downstream). `VectorProjection` and
 `Document.record_embeddings` both existed and neither had a caller — the
 inert-code shape from `recurring-defects.md` §3, sitting in the tree for six
 slices while the port it served looked complete.

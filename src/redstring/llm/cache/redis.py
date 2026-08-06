@@ -137,7 +137,7 @@ class RedisCache:
             # hits, which is the only thing it was there to do. The comment
             # above was already correct and the code under it was not;
             # `CacheCompliance` had simply never been run against this
-            # adapter (BACKLOG B41), and `MemoryCache` cannot exhibit the bug
+            # adapter, and `MemoryCache` cannot exhibit the bug
             # because it appends to a list.
             #
             # `id()` would have been wrong across processes as well: it is a
