@@ -792,7 +792,7 @@ It is a table, one row per confined library:
 
 **A new adapter with a new driver adds a row**, and that is the whole edit —
 the three checks below are parametrised over the table. Until the row exists,
-nothing stops the driver appearing in `composition.py`.
+nothing stops the driver appearing in `composition/`.
 
 `test_nothing_outside_the_permitted_directory_imports_it` walks every `.py`
 under `src/redstring/` except those beneath the row's directory, parses each
@@ -855,7 +855,7 @@ edit at all.
 
 A passing check you have never seen fail is not yet evidence, so all three
 kinds were watched failing on purpose before this was believed: a planted
-`import neo4j` in `composition.py`, a row pointed at a directory that does not
+`import neo4j` in `composition/`, a row pointed at a directory that does not
 exist, and a row pointed at a real directory that does not import its library.
 See [quality gates](../reference/quality-gates.md).
 

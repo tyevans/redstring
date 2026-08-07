@@ -153,7 +153,7 @@ or `neo4j` import appearing where it should not.
 `tests/unit/test_dependencies_stay_confined.py` is what covers that: a table of
 four confined libraries and the one directory each may be imported from. **Add
 a row when you add a client** — it is the only thing keeping the driver out of
-`composition.py`.
+`composition/`.
 
 ## Architecture decisions
 

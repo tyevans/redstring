@@ -53,8 +53,8 @@ recorded in `redstring.projections`, reasoned about rather than measured, for
 the same reason `document_stream` is.
 
 `typing.get_type_hints` raises `NameError` on exactly the modules this matters
-most for -- `composition.py` holds all eight of its annotation imports that
-way. Parsing the module instead means a `TYPE_CHECKING`-only import is
+most for -- `composition/build_graph.py` holds all eight of its annotation
+imports that way. Parsing the module instead means a `TYPE_CHECKING`-only import is
 resolved as readily as a runtime one, which is the point: a caller reading the
 signature does not care which kind it was.
 """

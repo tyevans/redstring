@@ -1302,8 +1302,9 @@ container*, which is why the entries are bare (`domain`, not
 `redstring.domain`). One container, one package.
 
 A layer may be a subpackage or a plain module — `composition` is
-`src/redstring/composition.py`, a single file, and sits on the top layer on
-its own.
+`src/redstring/composition/`, a package of two modules, and sits on the top
+layer on its own. It was a single file until `retrieval` joined `build_graph`
+there.
 
 ### `exhaustive = true`
 
@@ -1364,11 +1365,13 @@ is the dependency direction and not a diagram of "importance".
 comments are load-bearing rather than decorative — several of them record why
 a *plausible* alternative placement is wrong:
 
-- **`composition` is the top layer and holds one module.** `extraction` may
-  not import `projections` — that separation is what stops a store reference
-  growing back into the pipeline — and yet something has to hold both, or the
-  library ships two halves and a diagram. `build_graph` is that something. A
-  second module wanting in here should have to say what it composes.
+- **`composition` is the top layer, and each module in it names the pair of
+  layers it joins.** `build_graph` joins `extraction` and `projections`: that
+  separation is what stops a store reference growing back into the pipeline,
+  and yet something has to hold both, or the library ships two halves and a
+  diagram. `retrieval` joins `vector`, `graph` and `llm`, three siblings
+  forbidden from importing each other. A third module wanting in here should
+  have to say what it composes.
 - **`llm` is a sibling of `extraction`, not beneath it.** Siblings may not
   import each other, so extraction can reach only `ports.llm_provider`.
   Putting `llm` on a lower layer would let extraction import the LangChain
