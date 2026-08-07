@@ -46,6 +46,33 @@ order-independent and idempotent, both proved by property tests, so nothing
 about correctness depends on the sequence -- but the reference deployment is a
 single-GPU llama.cpp server that processes one request at a time, and firing
 ten concurrent requests at it converts a queue into ten timeouts.
+
+## The chunking is carried out, not stored
+
+`PipelineResult` gains the passages themselves and the signature they were
+produced under. This module still writes to nothing: the passages are payload
+on the way to `Document.record_chunking`, exactly as the entities are payload
+on the way to `record_extraction`, and `redstring.projections.chunk` is what
+puts them in a `ChunkStore`.
+
+**Which chunk produced which entity is captured before the merge, and there
+is no other place it could be.** `merge_extractions` folds every chunk's
+`MappedExtraction` into one and the chunk boundary is gone after it -- by
+design, since deduplicating what overlapping windows both reported is the
+whole point. But each chunk's ids are in hand *at the moment its answer is
+mapped*, one loop iteration earlier, so nothing about `merging.py` or
+`mapping.py` had to change: the links are read off `map_extraction`'s return
+value in the loop that already exists.
+
+A chunk whose model call failed under `skip_failed_chunks` is still recorded
+as a passage, with no entity links. The corpus is meant to be a faithful
+split of the document -- a hole in it is a passage that can never be
+retrieved -- and the alternative reading of an empty `entity_ids` is the one
+`StoredChunk` explicitly refuses to support.
+
+The signature is `f"{chunker_type}:{digest}:{model_version}"`. The trailing
+model version is what keeps this path's key space distinct from
+`index_documents`'s; see `redstring.aggregates.document`.
 """
 
 from __future__ import annotations
@@ -54,14 +81,16 @@ from typing import TYPE_CHECKING, Final, NamedTuple
 
 from redstring.domain.exceptions import LlmProviderError, RedstringError
 from redstring.extraction.chunkers import SlidingWindowChunker
+from redstring.extraction.corpus import chunking_digest, stored_chunks
 from redstring.extraction.mapping import MappedExtraction, map_extraction
 from redstring.extraction.merging import merge_extractions
 from redstring.extraction.schema import Extraction
 
 if TYPE_CHECKING:
     from redstring.aggregates.document import Document
+    from redstring.domain.chunk import StoredChunk
     from redstring.domain.entity import Entity
-    from redstring.domain.ids import TenantId
+    from redstring.domain.ids import EntityId, TenantId
     from redstring.domain.relationship import Relationship
     from redstring.domain.source import SourceDocument
     from redstring.events.document import DocumentExtracted
@@ -135,6 +164,22 @@ class PipelineResult(NamedTuple):
     #: means nothing at all was extracted, which reads very differently from
     #: one bad chunk in fifty.
     total_chunks: int = 0
+    #: The passages themselves, each carrying the ids of the entities *that*
+    #: passage produced. Payload for `Document.record_chunking`; nothing here
+    #: writes them anywhere.
+    #:
+    #: A tuple rather than a list, because a `NamedTuple` field's default is
+    #: shared by every instance that takes it and a mutable one would be a
+    #: default every caller could append to.
+    #:
+    #: Shorter than `total_chunks` when the document repeats a passage
+    #: verbatim: two identical chunks are one content-addressed id. See
+    #: `redstring.extraction.corpus.stored_chunks`.
+    chunks: tuple[StoredChunk, ...] = ()
+    #: What `Document.record_chunking` keys idempotency on for this run.
+    #: Carries the model version, so an extraction and a bare indexing of one
+    #: document never suppress each other.
+    chunking_signature: str = ""
 
 
 class ExtractionPipeline:
@@ -196,14 +241,22 @@ class ExtractionPipeline:
         Returns:
             A `PipelineResult`. Entities are deduplicated across chunks;
             `failed_chunks` and the four `MappedExtraction` counters say what
-            did not survive.
+            did not survive. `chunks` carries the passages, each with the ids
+            of the entities it produced, and `chunking_signature` is the key
+            `Document.record_chunking` refuses a repeat under.
 
         Raises:
             LlmProviderError: A chunk's model call failed and
                 `skip_failed_chunks` is off.
         """
-        chunks = self._chunker.chunk(document.text).chunks
+        chunking = self._chunker.chunk(document.text)
+        chunks = chunking.chunks
         parts: list[MappedExtraction] = []
+        # Keyed on `chunk_index` rather than on position in `parts`, because a
+        # failed chunk is skipped and every later chunk's position would then
+        # be off by the number that failed before it -- attributing chunk
+        # four's entities to chunk three.
+        found_by_index: dict[int, list[EntityId]] = {}
         failed = 0
 
         for chunk in chunks:
@@ -216,17 +269,27 @@ class ExtractionPipeline:
                     raise
                 failed += 1
                 continue
-            parts.append(
-                map_extraction(
-                    answer,
-                    tenant_id=tenant_id,
-                    source_id=document.id,
-                    model=self._provider.model,
-                    reference_date=document.published_at,
-                )
+            mapped = map_extraction(
+                answer,
+                tenant_id=tenant_id,
+                source_id=document.id,
+                model=self._provider.model,
+                reference_date=document.published_at,
             )
+            parts.append(mapped)
+            # Here and not after the fold: `merge_extractions` deduplicates
+            # across chunks and has no reason to remember which one reported
+            # what. This is the last moment the answer and the chunk that
+            # produced it are both in hand.
+            found_by_index[chunk.chunk_index] = [entity.id for entity in mapped.entities]
 
         merged = merge_extractions(parts)
+        passages = stored_chunks(
+            chunking,
+            tenant_id=tenant_id,
+            source_id=document.id,
+            entity_ids_by_index=found_by_index,
+        )
         return PipelineResult(
             entities=merged.entities,
             relationships=merged.relationships,
@@ -236,6 +299,10 @@ class ExtractionPipeline:
             undatable_relative=merged.undatable_relative,
             failed_chunks=failed,
             total_chunks=len(chunks),
+            chunks=tuple(passages),
+            chunking_signature=(
+                f"{self._chunker.chunker_type}:{chunking_digest(chunking)}:{self._provider.model}"
+            ),
         )
 
     async def record(

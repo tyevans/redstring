@@ -50,8 +50,8 @@ could not be caught without a dotted import.
   `TenantId` and `SourceId` are the id vocabulary -- the first three are
   `UUID`, the last is `str`. `ChunkId` joins them for a stored passage, and
   is a `str`: a chunk is identified by the digest of its source and its text.
-- **Ports.** `GraphStore`, `VectorStore`, `LlmProvider`, `EmbeddingProvider`,
-  `Chunker`. Implement
+- **Ports.** `GraphStore`, `VectorStore`, `ChunkStore`, `LlmProvider`,
+  `EmbeddingProvider`, `Chunker`. Implement
   one to plug in a backend of your own; the compliance suite in
   `tests/compliance` is what says whether you got it right.
 - **Adapters.** `InMemoryGraphStore` and `InMemoryVectorStore` are complete
@@ -186,6 +186,7 @@ from redstring.extraction.protocols import Chunker
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
+from redstring.ports.chunk_store import ChunkStore
 from redstring.ports.embedding_provider import EmbeddingProvider
 from redstring.ports.graph_store import (
     AliasStore,
@@ -219,6 +220,7 @@ __all__ = [
     "Chunk",
     "ChunkId",
     "ChunkSizeError",
+    "ChunkStore",
     "Chunker",
     "ChunkerError",
     "ChunkingError",

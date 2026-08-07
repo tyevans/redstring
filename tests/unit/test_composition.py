@@ -25,6 +25,7 @@ from redstring import (
     build_graph,
     domain_system_prompt,
 )
+from redstring.chunks.adapters.memory import InMemoryChunkStore  # exported in Task 10
 from redstring.domain.exceptions import LlmProviderError
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, PartialExtractionError
 
@@ -348,3 +349,79 @@ class TestAPartialExtractionIsRefusedBeforeAnythingIsWritten:
                 store=InMemoryGraphStore(),
                 tenant_id=TENANT_ID,
             )
+
+
+class TestTheCorpusIsOptionalAndSeparate:
+    """`chunks=` maintains a `ChunkStore` beside the graph, or nothing does.
+
+    `InMemoryChunkStore` is the same adapter the port-compliance suite runs
+    against, not a spy: what these assert is what a Postgres corpus would
+    hold.
+    """
+
+    async def test_build_graph_without_a_chunk_store_still_builds_the_graph(self) -> None:
+        report = await build_graph(
+            document(),
+            provider=CountingProvider(),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+        )
+
+        assert report.entities == 2
+        assert report.chunks_written == 0
+        # Not the same field wired twice: the document was split into
+        # something, and none of it was stored.
+        assert report.total_chunks == 1
+
+    async def test_build_graph_with_a_chunk_store_populates_it(self) -> None:
+        graph = InMemoryGraphStore()
+        corpus = InMemoryChunkStore()
+
+        report = await build_graph(
+            document(),
+            provider=CountingProvider(),
+            store=graph,
+            tenant_id=TENANT_ID,
+            chunks=corpus,
+        )
+
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert report.chunks_written == len(stored) == 1
+        assert [chunk.text for chunk in stored] == [document().text]
+        # The passages hold the ids the graph holds -- the link is only worth
+        # anything if it resolves on the other side.
+        in_graph = {entity.id for entity in await graph.find_entities(TENANT_ID)}
+        linked = {entity_id for chunk in stored for entity_id in chunk.entity_ids}
+        assert linked
+        assert linked <= in_graph
+
+    async def test_a_multi_chunk_document_stores_every_passage(self) -> None:
+        """One passage would satisfy the test above and hide a fold that keeps
+        only the last chunk."""
+        corpus = InMemoryChunkStore()
+        long_document = SourceDocument(id="doc-1", text="Ada Lovelace worked. " * 200)
+
+        report = await build_graph(
+            long_document,
+            provider=CountingProvider(),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            chunks=corpus,
+        )
+
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert report.total_chunks > 1
+        assert report.chunks_written == len(stored) == report.total_chunks
+
+    async def test_the_corpus_is_scoped_to_the_tenant_that_built_it(self) -> None:
+        corpus = InMemoryChunkStore()
+
+        await build_graph(
+            document(),
+            provider=CountingProvider(),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            chunks=corpus,
+        )
+
+        assert await corpus.get_by_source("doc-1", uuid4()) == []

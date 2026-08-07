@@ -17,7 +17,11 @@ from uuid import uuid4
 import pytest
 
 from redstring.aggregates.document import Document
-from redstring.domain.exceptions import EmptyCompletionError, MalformedCompletionError
+from redstring.domain.exceptions import (
+    EmptyCompletionError,
+    LlmProviderError,
+    MalformedCompletionError,
+)
 from redstring.domain.source import SourceDocument
 from redstring.events import DocumentExtracted
 from redstring.events.streams import document_stream
@@ -404,3 +408,183 @@ class TestRecordRefusesAResultFromAnotherDocument:
             )
             is not None
         )
+
+
+class TestTheChunkingIsCarriedOut:
+    """The passages, and which entities each one produced.
+
+    `merge_extractions` folds the chunk boundary away, so every assertion here
+    is about something captured one loop iteration earlier. The documents are
+    built so that each chunk names a *different* entity: a payload attaching
+    every entity to every chunk satisfies "some chunk has some entities" and
+    fails these.
+    """
+
+    async def test_an_extracted_chunk_records_the_entities_it_produced(self, tenant_id):
+        text = "Ada Lovelace. " * 12 + "Charles Babbage. " * 12
+        pipeline = ExtractionPipeline(
+            FakeLlmProvider(
+                by_substring={
+                    "Ada Lovelace": payload("Ada Lovelace"),
+                    "Charles Babbage": payload("Charles Babbage"),
+                }
+            ),
+            chunker=small_chunker(),
+        )
+
+        result = await pipeline.extract(document(text), tenant_id)
+
+        by_id = {entity.id: entity.name for entity in result.entities}
+        named = [{by_id[entity_id] for entity_id in chunk.entity_ids} for chunk in result.chunks]
+        # The *mapping*. A chunk may only be credited with a name its own text
+        # spells -- which is what a payload attaching every entity to every
+        # chunk violates, on every chunk that names only one of them.
+        for chunk, names in zip(result.chunks, named, strict=True):
+            assert names <= {name for name in by_id.values() if name in chunk.text}
+        # And both names really were credited to *some* chunk, so the check
+        # above is not satisfied by attaching nothing to anything.
+        assert {"Ada Lovelace"} in named
+        assert {"Charles Babbage"} in named
+
+    async def test_the_two_entities_really_did_come_from_different_chunks(self, tenant_id):
+        """Guards the test above, which proves nothing if every chunk holds both."""
+        chunks = small_chunker().chunk("Ada Lovelace. " * 12 + "Charles Babbage. " * 12).chunks
+
+        assert any("Ada Lovelace" in c.text and "Charles Babbage" not in c.text for c in chunks)
+        assert any("Charles Babbage" in c.text and "Ada Lovelace" not in c.text for c in chunks)
+
+    async def test_a_chunk_that_produced_no_entities_records_an_empty_list(self, tenant_id):
+        """A barren chunk *followed by* a productive one, so an early exit differs.
+
+        Stopping at the first chunk with nothing in it would leave the later
+        chunk's entities unattributed, and on a document whose empty chunk is
+        last that is indistinguishable from correct.
+        """
+        text = "The weather was fine. " * 8 + "Ada Lovelace. " * 12
+        pipeline = ExtractionPipeline(
+            FakeLlmProvider(
+                by_substring={"Ada Lovelace": payload("Ada Lovelace")},
+                # An answer naming nothing, not `EMPTY` -- that is an empty
+                # *completion*, which is a provider failure and raises.
+                default=payload(),
+            ),
+            chunker=small_chunker(),
+        )
+
+        result = await pipeline.extract(document(text), tenant_id)
+
+        barren = [c for c in result.chunks if "Ada Lovelace" not in c.text]
+        productive = [c for c in result.chunks if "Ada Lovelace" in c.text]
+        assert barren
+        assert productive
+        assert all(chunk.entity_ids == [] for chunk in barren)
+        assert all(chunk.entity_ids for chunk in productive)
+
+    async def test_a_failed_chunk_is_still_stored_as_a_passage_with_no_links(self, tenant_id):
+        """The corpus is a faithful split, so a model failure is not a hole in it.
+
+        The failing chunk is not the last one: a loop that abandoned the
+        chunking on the first failure would still produce a complete-looking
+        result if the failure came at the end.
+        """
+        text = "The weather was fine. " * 8 + "Ada Lovelace. " * 12
+        pipeline = ExtractionPipeline(
+            FailOnSubstring("weather", payload("Ada Lovelace")),
+            chunker=small_chunker(),
+            skip_failed_chunks=True,
+        )
+
+        result = await pipeline.extract(document(text), tenant_id)
+
+        assert result.failed_chunks
+        assert len(result.chunks) == result.total_chunks
+        assert any(chunk.entity_ids for chunk in result.chunks)
+        assert all(chunk.entity_ids == [] for chunk in result.chunks if "weather" in chunk.text)
+
+    async def test_every_passage_carries_the_document_and_the_tenant(self, tenant_id):
+        pipeline = ExtractionPipeline(FakeLlmProvider(script=[payload("Ada Lovelace")]))
+
+        result = await pipeline.extract(document("Ada Lovelace.", "essay-9"), tenant_id)
+
+        assert [(c.source_id, c.tenant_id) for c in result.chunks] == [("essay-9", tenant_id)]
+
+    async def test_the_signature_carries_the_model_version(self, tenant_id):
+        """What keeps this path's key space out of `index_documents`'s.
+
+        Asserted as a suffix on the literal model string rather than by
+        rebuilding the signature from the pipeline, which would be true for
+        any signature the pipeline happened to produce.
+        """
+        pipeline = ExtractionPipeline(
+            FakeLlmProvider(model="fake/v7", script=[payload("Ada Lovelace")])
+        )
+
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+
+        assert result.chunking_signature.endswith(":fake/v7")
+        assert result.chunking_signature.startswith("sliding_window:")
+        assert result.chunking_signature.count(":") == 2
+
+    async def test_a_different_split_produces_a_different_signature(self, tenant_id):
+        """Chunker settings are not on the `Chunker` protocol, so the digest is
+        over the split. Two sizes that really do split differently must differ."""
+        text = "Ada Lovelace. " * 12
+        answer = FakeLlmProvider(by_substring={"Ada": payload("Ada Lovelace")})
+
+        one = await ExtractionPipeline(answer).extract(document(text), tenant_id)
+        many = await ExtractionPipeline(answer, chunker=small_chunker()).extract(
+            document(text), tenant_id
+        )
+
+        assert one.total_chunks != many.total_chunks
+        assert one.chunking_signature != many.chunking_signature
+
+    async def test_the_same_document_chunked_the_same_way_signs_the_same(self, tenant_id):
+        text = "Ada Lovelace. " * 12
+        answer = FakeLlmProvider(by_substring={"Ada": payload("Ada Lovelace")})
+
+        first = await ExtractionPipeline(answer, chunker=small_chunker()).extract(
+            document(text), tenant_id
+        )
+        second = await ExtractionPipeline(answer, chunker=small_chunker()).extract(
+            document(text), tenant_id
+        )
+
+        assert first.chunking_signature == second.chunking_signature
+
+    async def test_a_repeated_passage_becomes_one_content_addressed_row(self, tenant_id):
+        """Two identical chunks share one id, so passing both would drop one
+        silently -- and which one depends on the adapter's write order."""
+        pipeline = ExtractionPipeline(
+            FakeLlmProvider(by_substring={"Ada": payload("Ada Lovelace")}),
+            chunker=SlidingWindowChunker(
+                default_chunk_size=14, default_overlap=0, min_chunk_size=1
+            ),
+        )
+
+        result = await pipeline.extract(document("Ada Lovelace. " * 4), tenant_id)
+
+        assert result.total_chunks > len(result.chunks)
+        assert len({chunk.id for chunk in result.chunks}) == len(result.chunks)
+
+
+class FailOnSubstring:
+    """A real provider that refuses the chunks holding `marker`.
+
+    `FakeLlmProvider` has no way to fail on some chunks and answer others, and
+    a test that failed *every* chunk could not tell "the failure was skipped"
+    from "nothing was ever asked".
+    """
+
+    def __init__(self, marker: str, answer: dict) -> None:
+        self._marker = marker
+        self._inner = FakeLlmProvider(by_substring={}, default=answer)
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
+
+    async def extract(self, text, schema, *, system_prompt=None):
+        if self._marker in text:
+            raise LlmProviderError("the server said no", model=self.model)
+        return await self._inner.extract(text, schema, system_prompt=system_prompt)

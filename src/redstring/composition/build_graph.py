@@ -66,6 +66,7 @@ from redstring.events.streams import document_stream
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
+from redstring.projections.chunk import ChunkProjection
 from redstring.projections.graph import GraphProjection
 from redstring.projections.vector import VectorProjection
 
@@ -83,7 +84,9 @@ if TYPE_CHECKING:
     from redstring.events.document import DocumentExtracted
     from redstring.events.merge import EntitiesMerged, MergeUndone
     from redstring.extraction.domains.models import DomainSchema
+    from redstring.extraction.pipeline import PipelineResult
     from redstring.extraction.protocols import Chunker
+    from redstring.ports.chunk_store import ChunkStore
     from redstring.ports.embedding_provider import EmbeddingProvider
     from redstring.ports.graph_store import GraphStore
     from redstring.ports.llm_provider import LlmProvider
@@ -161,6 +164,13 @@ class GraphBuildReport:
     #: `upsert_many` is idempotent, so the second run rewrites identical
     #: vectors. It costs an embedding call, not correctness.
     embedded: int = 0
+    #: Passages written to a `ChunkStore`, and **zero when no chunk store was
+    #: given** -- which is the default, so a caller who wants a corpus has to
+    #: ask for one. Distinct from `total_chunks`, which counts what the
+    #: document was split into whether or not anything stored it, and which
+    #: is larger when a document repeats a passage verbatim (two identical
+    #: chunks share one content-addressed id).
+    chunks_written: int = 0
 
 
 async def build_graph(
@@ -175,6 +185,7 @@ async def build_graph(
     allow_partial: bool = False,
     embedding_provider: EmbeddingProvider | None = None,
     vector_store: VectorStore | None = None,
+    chunks: ChunkStore | None = None,
 ) -> GraphBuildReport:
     """Extract `document` and write the result into `store`.
 
@@ -199,6 +210,13 @@ async def build_graph(
             with `vector_store`.
         vector_store: Where the vectors land. Must be given together with
             `embedding_provider`.
+        chunks: A corpus to keep in step, so each passage of the document is
+            stored alongside the ids of the entities it produced. Omitting it
+            means "do not maintain a corpus" -- unlike the embedding pair,
+            there is no second argument it has to arrive with and no
+            half-configured state to refuse, so `None` is not an error and
+            neither is a document that chunks to something while this is
+            `None`.
         skip_failed_chunks: Continue past a chunk whose model call failed.
         allow_partial: Record a result that has failed chunks in it. Off by
             default, because recording a partial extraction marks this model
@@ -245,6 +263,11 @@ async def build_graph(
         aggregate, document, tenant_id, allow_partial=allow_partial, result=result
     )
 
+    # Recorded whether or not the extraction was: the two are separate key
+    # spaces on the aggregate, and a document already extracted under this
+    # model has still been split into the passages a corpus wants.
+    chunks_written = await _record_chunking(aggregate, document, tenant_id, result, chunks)
+
     embedded = 0
     if event is not None:
         await GraphProjection(store).handle(event)
@@ -268,7 +291,43 @@ async def build_graph(
         total_chunks=result.total_chunks,
         unresolved_relationships=result.unresolved_relationships,
         embedded=embedded,
+        chunks_written=chunks_written,
     )
+
+
+async def _record_chunking(
+    aggregate: Document,
+    document: SourceDocument,
+    tenant_id: TenantId,
+    result: PipelineResult,
+    store: ChunkStore | None,
+) -> int:
+    """Emit the chunking and fold it into `store`. Returns what was written.
+
+    The aggregate is asked for the event even when there is no store, so the
+    two arms differ only in whether a projection runs. Doing it the other way
+    -- skipping `record_chunking` when `store is None` -- would make the
+    aggregate's recorded history depend on which read models a caller happened
+    to wire up, and a caller who later added a chunk store would find the
+    chunking already marked done.
+
+    `event is None` is a repeat under this signature. It is unreachable from
+    `build_graph` for the same reason `record_embeddings`' is -- a fresh
+    aggregate per call -- and reachable immediately for a caller that loads
+    one from a log, which is why the branch is here rather than asserted away.
+    """
+    event = aggregate.record_chunking(
+        tenant_id=tenant_id,
+        source_id=document.id,
+        chunking_signature=result.chunking_signature,
+        chunks=result.chunks,
+    )
+    if store is None:
+        return 0
+    if event is None:  # pragma: no cover -- see docstring
+        return 0
+    await ChunkProjection(store).handle(event)
+    return len(event.chunks)
 
 
 def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorStore | None) -> None:
