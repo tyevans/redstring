@@ -36,7 +36,7 @@ plain Postgres, which is the only thing it asks of a deployment.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 import pytest
@@ -117,6 +117,21 @@ async def pool() -> AsyncIterator[asyncpg.Pool[Any]]:
         await connected.close()
 
 
+async def _columns(pool: asyncpg.Pool[Any], table: str) -> list[tuple[str, str, str | None]]:
+    """One table's column list, as `(name, type, default)` in ordinal order.
+
+    The default is included because `entity_ids uuid[] NOT NULL DEFAULT '{}'`
+    and the same column without a default are two different schemas that carry
+    the same name and type.
+    """
+    rows = await pool.fetch(
+        "SELECT column_name, data_type, column_default FROM information_schema.columns "
+        "WHERE table_name = $1 ORDER BY ordinal_position",
+        table,
+    )
+    return [(row["column_name"], row["data_type"], row["column_default"]) for row in rows]
+
+
 async def _truncate(pool: asyncpg.Pool[Any]) -> None:
     """Empty this worker's table.
 
@@ -189,6 +204,26 @@ class TestPostgresChunkStoreSpecifics:
         written = ChunkStoreCompliance._chunk(tenant, "doc-1", "a passage", chunk_index=0)
         await fresh.upsert_many([written])
         assert await fresh.get(written.id, tenant) == written
+
+        # And the table the other 53 tests use matches what the adapter
+        # *currently* declares. This half is about the harness, not the DDL,
+        # and without it the module has a standing false-green: `_schema_ready`
+        # is a module-level global and the DDL is `CREATE TABLE IF NOT
+        # EXISTS`, so a change to the column list or a column type has no
+        # effect on any run until someone drops the worker table by hand. A
+        # sabotage touching only the DDL would leave the whole suite green and
+        # the schema change invisible.
+        #
+        # Compared rather than silently repaired with a `DROP TABLE`: dropping
+        # would make a stale table a thing that quietly heals, and the failure
+        # a developer needs to see is "your table predates this schema" --
+        # which is also the machine-versus-CI disagreement this catches.
+        assert await _columns(pool, table) == await _columns(pool, TABLE), (
+            f"{TABLE} does not match the schema {type(fresh).__name__} now "
+            f"declares. `CREATE TABLE IF NOT EXISTS` cannot migrate it, so "
+            f"every other test in this module is running against a stale "
+            f"table. Drop it: DROP TABLE {TABLE};"
+        )
 
         await pool.execute(f"DROP TABLE {table}")
 
@@ -276,6 +311,67 @@ class TestPostgresChunkStoreSpecifics:
         assert conditions, f"no index condition at all:\n{plan}"
         assert "tenant_id" in conditions[0]
         assert "source_id" in conditions[0]
+
+    async def test_the_order_by_alone_produces_the_tie_break(self, pool: asyncpg.Pool[Any]) -> None:
+        """The total order is guaranteed **twice**, so neither guarantee is
+        falsifiable by any other test in this repository.
+
+        `get_by_source` says `ORDER BY chunk_index ASC, id ASC` *and* the
+        covering index `(tenant_id, source_id, chunk_index, id)` supplies that
+        order to the planner. Deleting `, id ASC` leaves all 54 tests green,
+        including the compliance tie-break case -- and truncating the index to
+        `(tenant_id, source_id, chunk_index)` with the clause shortened makes
+        that case fail, which is what proves the survivor is not equivalent.
+        Whichever mechanism a future author removes, the suite stays green on
+        the other.
+
+        So this one takes the index away. With `enable_indexscan` and
+        `enable_bitmapscan` off the planner must sequentially scan, and the
+        only thing that can produce the order is the clause. The plan is
+        asserted too: without that, a version of this test where the settings
+        silently failed to apply would be the original unfalsifiable test
+        again, wearing a longer docstring.
+
+        The input is the compliance suite's tie-break shape -- two chunks
+        sharing `chunk_index=3`, and a third at index 0 holding the id that
+        sorts *last*, so `(chunk_index, id)` and `id` alone disagree.
+        """
+        # A single connection, because `SET` is per-session and a pool hands
+        # out whichever connection is free. The adapter only reaches for
+        # `fetch`/`fetchrow`/`fetchval`/`execute` on the paths used here, all
+        # of which a Connection has with the same signatures.
+        async with pool.acquire() as connection:
+            await connection.execute(f"TRUNCATE {TABLE}")
+            await connection.execute("SET enable_indexscan = off")
+            await connection.execute("SET enable_bitmapscan = off")
+            store = PostgresChunkStore(cast("asyncpg.Pool[Any]", connection), table=TABLE)
+
+            tenant = uuid4()
+            low_tie = ChunkStoreCompliance._chunk(tenant, "doc-1", "passage gamma", chunk_index=3)
+            high_tie = ChunkStoreCompliance._chunk(tenant, "doc-1", "passage alpha", chunk_index=3)
+            leader = ChunkStoreCompliance._chunk(tenant, "doc-1", "passage beta", chunk_index=0)
+            assert low_tie.id < high_tie.id < leader.id
+            await store.upsert_many([high_tie, low_tie, leader])
+
+            plan = "\n".join(
+                row["QUERY PLAN"]
+                for row in await connection.fetch(
+                    "EXPLAIN (ANALYZE false, COSTS false) "
+                    f"SELECT * FROM {TABLE} WHERE tenant_id = $1 AND source_id = $2 "
+                    "ORDER BY chunk_index ASC, id ASC",
+                    tenant,
+                    "doc-1",
+                )
+            )
+            assert "Seq Scan" in plan, (
+                f"the index is still serving this query, so the ORDER BY is "
+                f"still unobservable:\n{plan}"
+            )
+            assert "Sort" in plan, f"nothing is sorting, so nothing is ordering:\n{plan}"
+
+            found = await store.get_by_source("doc-1", tenant)
+
+        assert [chunk.id for chunk in found] == [leader.id, low_tie.id, high_tie.id]
 
     # ------------------------------------------------------------------
     # Round-trip cost

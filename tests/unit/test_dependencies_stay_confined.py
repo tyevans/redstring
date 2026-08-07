@@ -108,6 +108,15 @@ PERMITTED_DIRECTORIES = [
     for directory in confinement.directories
 ]
 
+#: Ids for the pairs above. Written out rather than derived per argument: a
+#: per-argument `ids` callable sees the `Confinement` and the directory
+#: separately, and the obvious one blanks the object, leaving `[-vector/adapters]`
+#: with no clue which library the row is about.
+PERMITTED_DIRECTORY_IDS = [
+    f"{'/'.join(confinement.packages)} -> {directory}"
+    for confinement, directory in PERMITTED_DIRECTORIES
+]
+
 
 def imported_modules(source: Path) -> set[str]:
     """Every module name `source` imports, by any syntax and at any depth."""
@@ -165,7 +174,7 @@ def test_the_walk_finds_the_library():
 @pytest.mark.parametrize(
     ("confinement", "directory"),
     PERMITTED_DIRECTORIES,
-    ids=lambda value: value if isinstance(value, str) else "",
+    ids=PERMITTED_DIRECTORY_IDS,
 )
 def test_the_permitted_directory_exists(confinement: Confinement, directory: str):
     """A directory that is not there excludes nothing, and the leak check
@@ -179,7 +188,7 @@ def test_the_permitted_directory_exists(confinement: Confinement, directory: str
 @pytest.mark.parametrize(
     ("confinement", "directory"),
     PERMITTED_DIRECTORIES,
-    ids=lambda value: value if isinstance(value, str) else "",
+    ids=PERMITTED_DIRECTORY_IDS,
 )
 def test_the_permitted_directory_really_does_import_it(confinement: Confinement, directory: str):
     """The staleness guard CLAUDE.md requires of every exemption list.
