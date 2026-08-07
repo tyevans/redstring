@@ -606,6 +606,35 @@ case with `min_score` set before touching it, and make the assertion count
 occurrences of the operator so a rewrite that claims to evaluate it once has
 to prove it.
 
+### B80. `PROPERTY_WEIGHT = 0.6` is a judgement, and nothing in the repo can settle it
+
+`src/redstring/domain/lexical.py` scores a query against an entity's name, its
+`normalized_name`, and each string value in `properties` — the last multiplied
+by `PROPERTY_WEIGHT = 0.6`. The *shape* is defensible and tested: a name is
+what an entity is, a property is something recorded about it, so a property
+match is weaker evidence and must score below the same match on the name.
+`test_a_property_can_match_but_scores_below_the_same_match_on_the_name` pins
+that ordering.
+
+**The number is not tested and cannot be, here.** Any value in `(0, 1)` passes
+every test in `tests/unit/domain/test_lexical.py`, because the tests assert the
+ordering and the bound, which is all that is knowable without graded data.
+0.6 was chosen, not measured.
+
+Why it was not settled now rather than deferred: the only graded corpus in the
+repo is `tests/accuracy/`, and it grades **extraction** over five hand-graded
+documents. Fitting a retrieval weight against it would be worse than leaving
+the guess visible — five documents cannot separate 0.5 from 0.7, and a number
+carrying a fitted provenance invites the next author to trust it in a way the
+bare guess does not.
+
+What would settle it: a graded *retrieval* corpus — queries paired with the
+entities that should come back, ranked — of a size where nDCG@10 separates
+candidate weights beyond noise. That is the same corpus B81 needs, so the two
+should be picked up together; building it once answers both. Until then, treat
+0.6 as a placeholder with a test-pinned ordering around it, and do not tune it
+against anything smaller.
+
 ---
 
 ## 3. Performance and scale
