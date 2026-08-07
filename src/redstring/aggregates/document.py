@@ -30,13 +30,17 @@ name, and the two namespaces do overlap in practice.
 composes rather than one the aggregate derives, because the two write paths
 compose it differently on purpose:
 
-- `index_documents` emits `f"{method}:{params_digest}"`.
-- The extraction pipeline emits `f"{method}:{params_digest}:{model_version}"`.
+- `index_documents` emits `f"{method}:{split_digest}"`.
+- The extraction pipeline emits `f"{method}:{split_digest}:{model_version}"`.
 
 Indexing a document and later extracting it therefore produces two different
 signatures, so both are recorded and the extraction -- whose chunks carry
-`entity_ids` -- lands last and wins. A retry of either is a no-op, and
-re-chunking under new settings changes `params_digest` and is recorded.
+`entity_ids` -- lands last and wins. A retry of either is a no-op. The digest
+is over the split actually produced, not over chunker settings, so a
+re-chunk under new settings is recorded only when it produces a different
+split -- settings that happen to yield an identical split are, by design, the
+same chunking. See `docs/adr/0023-the-chunk-corpus.md` for why the digest is
+computed this way and not over settings.
 
 The signature is a third key space, not a share of either existing one:
 `"v1"` is a plausible chunking signature *and* a plausible model version, and

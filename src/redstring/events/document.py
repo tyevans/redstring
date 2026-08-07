@@ -35,8 +35,8 @@ rather than a second write of the same entities.
 
 `DocumentChunked` is keyed on `chunking_signature`, a string its emitter
 composes, and the two write paths compose it differently on purpose:
-`index_documents` emits `f"{method}:{params_digest}"` and the extraction
-pipeline emits `f"{method}:{params_digest}:{model_version}"`. Indexing a
+`index_documents` emits `f"{method}:{split_digest}"` and the extraction
+pipeline emits `f"{method}:{split_digest}:{model_version}"`. Indexing a
 document and later extracting it therefore produces two different signatures,
 so both are recorded and the extraction -- which carries `entity_ids` -- lands
 last and wins.
