@@ -9,6 +9,9 @@ composes. There are two:
 - `retrieval` composes `EmbeddingProvider` + `VectorStore` + `GraphStore`.
   `vector` and `graph` are siblings that may not import each other and
   neither may import `llm`, so no sibling can hold all three.
+- `index_documents` composes `Chunker` + `ChunkStore` -- the same
+  `extraction` + `projections` pair `build_graph` names, so it is admitted by
+  the argument already recorded rather than by a new one.
 
 This was one module until retrieval arrived; see the ADR amending 0007.
 
@@ -25,6 +28,9 @@ function, and a later `import redstring.composition.build_graph` finds the
 module already in `sys.modules` and does not re-bind. Renaming the submodule to
 un-shadow it would break the public import path this package exists to
 preserve.
+
+`index_documents` is the same shape for the same reason, and the same import
+order settles it.
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ from redstring.composition.build_graph import (
     GraphBuildReport,
     build_graph,
 )
+from redstring.composition.index_documents import IndexReport, index_documents
 from redstring.composition.retrieval import Retriever
 
 __all__ = [
@@ -45,6 +52,8 @@ __all__ = [
     "ConsolidationReport",
     "Consolidator",
     "GraphBuildReport",
+    "IndexReport",
     "Retriever",
     "build_graph",
+    "index_documents",
 ]
