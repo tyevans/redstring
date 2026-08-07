@@ -16,7 +16,10 @@ from redstring.domain.blocking import (
     blocking_keys_for,
     entity_type_key,
     prefix_key,
+    prefix_key_for_name,
+    query_blocking_keys,
     soundex_key,
+    soundex_key_for_name,
 )
 from redstring.domain.entity import Entity, ExtractionMethod
 
@@ -270,3 +273,46 @@ class TestUnknownStrategy:
         extraction time on some tenant's document."""
         with pytest.raises(KeyError):
             blocking_keys_for(_entity("Ada"), ["not-a-strategy"])  # type: ignore[list-item]
+
+
+class TestQueryBlockingKeys:
+    def test_prefix_key_for_name_agrees_with_the_entity_form(self) -> None:
+        """The two spellings are one function; a copy is how they drift."""
+        entity = _entity("Ada Lovelace")
+        assert prefix_key_for_name("Ada Lovelace") == prefix_key(entity)
+
+    def test_soundex_key_for_name_agrees_with_the_entity_form(self) -> None:
+        entity = _entity("Ada Lovelace")
+        assert soundex_key_for_name("Ada Lovelace") == soundex_key(entity)
+
+    def test_soundex_key_for_name_is_none_when_nothing_can_be_coded(self) -> None:
+        """Same empty case as the entity form: digits code to nothing."""
+        assert soundex_key_for_name("12345") is None
+
+    def test_query_blocking_keys_carries_prefix_and_soundex(self) -> None:
+        keys = query_blocking_keys("Ada Lovelace")
+        assert prefix_key_for_name("Ada Lovelace") in keys
+        assert soundex_key_for_name("Ada Lovelace") in keys
+
+    def test_query_blocking_keys_never_carries_a_type_key(self) -> None:
+        """A type key blocks an entire type -- often the whole tenant.
+
+        The type key exists so an entity is never unblockable. As a *query*
+        key it is the opposite: it matches every entity of that type, so
+        candidate generation would degrade into a full scan the moment a
+        query happened to share a type. `entity_types` is applied as a
+        filter, not as a key.
+        """
+        keys = query_blocking_keys("Ada Lovelace")
+        assert not any(key.startswith("t:") for key in keys)
+
+    def test_query_blocking_keys_drops_an_absent_soundex(self) -> None:
+        """A query that codes to nothing yields the prefix key alone, not a
+        None."""
+        assert query_blocking_keys("12345") == [prefix_key_for_name("12345")]
+
+    def test_query_blocking_keys_has_no_duplicates(self) -> None:
+        """`find_by_blocking_keys` keys its result by key; a repeat is a
+        wasted query."""
+        keys = query_blocking_keys("Ada Lovelace")
+        assert len(keys) == len(set(keys))
