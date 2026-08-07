@@ -7,6 +7,14 @@ The library **never fetches content** — document sourcing is a different
 problem set — and extraction **writes to no store**: it emits events, and
 projections do the writing.
 
+**"Never fetches" is not "never stores", and the two have been conflated.**
+ADR 0022 argued the lexical channel could not be a term-weighted ranker partly
+because "this library stores no text", which was true as a description of what
+had been built and was never a decision anyone made. Retaining caller-supplied
+passages is compatible with both rules above: the caller still supplies every
+byte, and a projection still does every write. The rule that binds is about
+*sourcing* — redstring does not go out and get things.
+
 ## Rules
 
 Conventions and workflow rules live in `.claude/rules/`:
