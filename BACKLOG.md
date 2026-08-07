@@ -635,6 +635,65 @@ should be picked up together; building it once answers both. Until then, treat
 0.6 as a placeholder with a test-pinned ordering around it, and do not tune it
 against anything smaller.
 
+### B81. No retrieval accuracy suite exists, so "hybrid beats semantic" is an argument
+
+`tests/accuracy/` measures **extraction** — precision, recall and F1 over five
+hand-graded documents, scoring whether the right entities came out of a
+document. Nothing measures retrieval. So the claim the whole hybrid design
+rests on — that fusing a lexical channel with the semantic one returns better
+results than the semantic one alone — is currently reasoning, not a result.
+
+What *is* tested is that the machinery is correct:
+`tests/unit/composition/test_retrieval.py` pins filter-before-k, the dangling
+skip, tenant isolation, the modes, and the component scores.
+`tests/unit/domain/test_fusion.py` pins the fusion arithmetic. None of that is
+evidence about ranking quality, and it cannot be — `FakeEmbeddingProvider`'s
+vectors come from a hash, so two texts about the same subject are as far apart
+as two unrelated ones. **Every retrieval test in the gate is structural by
+construction.**
+
+What it needs: queries paired with the entities that should come back, ranked,
+over a corpus big enough for nDCG@10 to separate configurations beyond noise;
+and a live embeddings endpoint, so it belongs under `-m accuracy` beside the
+extraction suite rather than in the commit gate. Reuse the split that suite
+already proved — a pure scorer in the gate, the model-dependent half behind
+the marker — and prove the harness before believing a number, because a
+retrieval scorer fails silently in the same two directions (measuring nothing
+reports 0 and reads as a bad model; scoring the corpus against itself reports
+1 and reads as a good one).
+
+This is the same corpus B80 needs to settle `PROPERTY_WEIGHT`. Build it once
+and both close.
+
+### B82. Two composition points refuse a dimension mismatch with different exception types
+
+`Retriever.__init__` (`src/redstring/composition/retrieval.py`) raises
+`DimensionMismatchError` when the embedding provider and the vector store
+disagree on width. `build_graph`'s `_check_embedding_wiring`
+(`src/redstring/composition/build_graph.py`) raises **`ValueError`** for the
+same condition. `DimensionMismatchError` extends `RedstringError`, which
+extends `Exception` — it is **not** a `ValueError` subclass, so neither
+`except` catches the other.
+
+That is recurring-defects §1 at the composition layer: one rule, two
+implementations, no mechanism that fails when they disagree. A caller wiring
+both and writing one `except` around the configuration step catches one and
+crashes on the other.
+
+Deliberately not resolved on the spot, because it is not a free change. The
+two are not quite the same check: `build_graph` takes the provider and store
+as *optional* and its `ValueError` covers a second case — one supplied without
+the other — which `Retriever` cannot have, since all three collaborators are
+required. So "make them agree" is really two decisions: whether the
+half-configured case and the mismatched-dimension case should share a type at
+all, and which type the dimension case gets. Changing `build_graph`'s to
+`DimensionMismatchError` is the better answer on the merits and is a
+**breaking change** for anyone catching `ValueError` today, which is why it
+wants a version bump rather than a quiet edit.
+
+`tests/unit/test_build_graph_embeddings.py` asserts the `ValueError` and would
+need updating with it.
+
 ---
 
 ## 3. Performance and scale

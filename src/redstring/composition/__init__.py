@@ -37,6 +37,7 @@ from redstring.composition.build_graph import (
     GraphBuildReport,
     build_graph,
 )
+from redstring.composition.retrieval import Retriever
 
 __all__ = [
     "AUTO",
@@ -44,5 +45,6 @@ __all__ = [
     "ConsolidationReport",
     "Consolidator",
     "GraphBuildReport",
+    "Retriever",
     "build_graph",
 ]
