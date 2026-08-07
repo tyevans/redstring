@@ -16,6 +16,13 @@ from a concrete goal rather than from a concept — for the concepts, see
   limiting, circuit breaking, and caching, all composed over the `Cache` port
   so a single process and a fleet behave the same way.
 
+## Search and read
+
+- [**Retrieve entities**](retrieve-entities.md) — a query string to ranked
+  entities, fusing a semantic channel over the vector store with a lexical
+  one over blocking keys. Read it for what the two score scales mean and for
+  the recall blocking costs you.
+
 ## Keep the graph honest
 
 - [**Consolidate duplicate entities**](consolidate-duplicate-entities.md) —

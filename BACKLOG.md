@@ -1425,6 +1425,51 @@ slice 11 by running `CacheCompliance` against a real Redis -- which promptly
 found a bug (`recurring-defects.md` (g)). What remains is structural — about *how* the integration suites
 run rather than whether they exist: B10a, B10f, B10m.
 
+### B83. The lexical retrieval channel does not consult aliases
+
+`Retriever`'s lexical channel generates candidates with
+`GraphStore.find_by_blocking_keys` and scores them against
+`Entity.name`, `Entity.normalized_name` and the string values in
+`Entity.properties`. **An `Alias` is none of those.** Alias-ness is an edge,
+not a field on `Entity` (see
+`docs/adr/0002-two-store-ports.md`), so a query matching an alias name
+retrieves nothing today even though the store knows the alias exists.
+
+The surface to build on is already there and is exercised:
+`GraphStore.find_aliases(canonical_entity_id, tenant_id)` and
+`resolve_entity_ids(entity_ids, tenant_id)`, both on the `AliasStore`
+capability, both covered by `GraphStoreCompliance`.
+
+**Why it was deferred rather than added.** The blocking side is easy — alias
+names could carry blocking keys and enter the candidate set. What is *not*
+decided is what a match on an alias should **return**, and the answer is not
+obvious:
+
+- Returning the **alias entity** is literally what matched, and it is
+  usually not what the caller wants — they searched for a name and want the
+  thing it names.
+- Returning the **canonical** entity is what they want, and it makes the
+  result inconsistent with the query in a way the caller cannot see: the
+  returned `Entity.name` is not the string that matched, so a UI highlighting
+  the match has nothing to highlight, and two aliases of one canonical
+  collapse into a single result whose `lexical` score belongs to neither name.
+- Returning **both** doubles some results and needs a rule for ranking a
+  canonical against its own alias.
+
+That is `domain.preference`'s territory —
+`docs/adr/0010-one-total-order-for-preference.md` settles which mapping of a
+thing survives, and this is the same question asked at read time rather than
+at merge time. Deciding it inside the retrieval work would have meant either
+extending that total order or growing a second one beside it, which is exactly
+the "second entity-id scheme gets born" shape the layer contract is arranged
+to prevent.
+
+So: settle the return semantics first, ideally as an amendment to 0010,
+*then* wire the candidates. Whichever way it goes, `ScoredEntity` probably
+needs a field naming the string that actually matched — without it the caller
+cannot tell an alias hit from a name hit, and that is the distinction the
+whole question turns on.
+
 ---
 
 ## 6. Tooling, packaging and hygiene

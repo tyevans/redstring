@@ -1,6 +1,11 @@
 # ADR 0007: `composition` is the only top layer, and `build_graph` writes without a log
 
-**Status:** accepted, slice 10 of the ring migration.
+**Status:** accepted, slice 10 of the ring migration. Amended by
+[`0021` `composition` holds a second module](0021-composition-holds-a-second-module.md),
+which admits `retrieval` beside `build_graph` on the argument this document's
+own admission test asks for. Decision 1 below — that the layer holds exactly
+one module — is superseded in fact; the reasoning that produced it stands and
+is what the second module was tested against.
 
 **Why this is an ADR:** three decisions in `src/redstring/composition.py` look
 like conveniences and are not. A layer holding one module reads like
