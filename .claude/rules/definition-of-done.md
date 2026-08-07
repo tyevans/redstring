@@ -121,11 +121,11 @@ often:
   | `tests/compliance/vector_store.py` (`VectorStoreCompliance`) | `VectorStore` | `tests/unit/vector/test_memory_store.py`, `tests/integration/vector/test_pgvector_store.py` |
   | `tests/compliance/chunk_store.py` (`ChunkStoreCompliance`) | `ChunkStore` | `tests/unit/chunks/test_memory_store.py` |
   | `tests/compliance/cache.py` (`CacheCompliance`) | `Cache` | `tests/unit/llm/test_memory_cache.py`, `tests/integration/llm/test_redis_cache.py` |
-  | `tests/compliance/embedding_provider.py` (`EmbeddingProviderCompliance`) | `EmbeddingProvider` | `tests/unit/llm/test_fake_embedding_provider.py` |
+  | `tests/compliance/embedding_provider.py` (`EmbeddingProviderCompliance`) | `EmbeddingProvider` | `tests/unit/llm/test_fake_embedding_provider.py`, `tests/unit/llm/test_langchain_embedding_provider.py`, `tests/integration/llm/test_live_embeddings.py` |
 
   An adapter opts in by subclassing and supplying one hook (`new_store` for
-  the store suites, a `cache` fixture for `CacheCompliance`); the suite is
-  then run **unchanged**. Editing the shared body to make one adapter pass is
+  the store suites, a `cache` or `provider` fixture for the other two); the
+  suite is then run **unchanged**. Editing the shared body to make one adapter pass is
   the defect, not the fix — if the port genuinely permits both behaviours,
   say so in the port and state the weaker contract for everyone.
 

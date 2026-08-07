@@ -504,14 +504,24 @@ class ChunkStoreCompliance:
     # ------------------------------------------------------------------
 
     async def test_get_by_source_orders_by_chunk_index(self, store: ChunkStore) -> None:
-        """Written out of order, read back in index order."""
+        """Written out of order, read back in index order.
+
+        **`chunk_index` 10 is here on purpose, and it is the whole test.**
+        Every other index in this suite is a single digit, and on single
+        digits a numeric sort and a lexical one are the same function -- so
+        `sort(key=lambda c: (str(c.chunk_index), c.id))` passes without it.
+        That is not a hypothetical mutant: an adapter storing `chunk_index` in
+        a text column returns chunk 10 before chunk 2, which is a real
+        Postgres schema mistake and a silently reordered document.
+        """
         tenant = uuid4()
-        chunks = [self._chunk(tenant, "doc-1", f"passage {i}", chunk_index=i) for i in range(5)]
-        await store.upsert_many([chunks[3], chunks[0], chunks[4], chunks[1], chunks[2]])
+        indices = [0, 1, 2, 3, 4, 10]
+        chunks = [self._chunk(tenant, "doc-1", f"passage {i}", chunk_index=i) for i in indices]
+        await store.upsert_many([chunks[5], chunks[3], chunks[0], chunks[4], chunks[1], chunks[2]])
 
         found = await store.get_by_source("doc-1", tenant)
 
-        assert [chunk.chunk_index for chunk in found] == [0, 1, 2, 3, 4]
+        assert [chunk.chunk_index for chunk in found] == indices
         assert [chunk.id for chunk in found] == [chunk.id for chunk in chunks]
 
     async def test_get_by_source_orders_two_chunks_sharing_an_index_by_id(
@@ -528,16 +538,26 @@ class ChunkStoreCompliance:
         The two tied chunks are written **higher id first**, because a stable
         sort on `chunk_index` alone preserves insertion order and would
         otherwise agree with the contract by accident.
+
+        The texts are chosen so that the tied pair sorts by `id` in the
+        *opposite* order to how it sorts by `text`. Ids are hashes of the
+        text, so any pair picked for readability sorts about half the time the
+        same way its texts do -- and while it does,
+        `sort(key=(chunk_index, text))` is indistinguishable from the
+        contract. Pinning the tie-break to a *field* takes a case where the
+        candidate fields disagree.
         """
         tenant = uuid4()
-        texts = ["alpha passage", "beta passage", "gamma passage"]
-        by_id = sorted(texts, key=lambda text: chunk_id("doc-1", text))
+        # Ids ascend gamma < alpha < beta; texts ascend alpha < beta < gamma.
+        low_tie = self._chunk(tenant, "doc-1", "passage gamma", chunk_index=3)
+        high_tie = self._chunk(tenant, "doc-1", "passage alpha", chunk_index=3)
         # The largest id takes index 0, so `(chunk_index, id)` and `id` alone
         # disagree; the two smaller ids share index 3.
-        leader = self._chunk(tenant, "doc-1", by_id[2], chunk_index=0)
-        low_tie = self._chunk(tenant, "doc-1", by_id[0], chunk_index=3)
-        high_tie = self._chunk(tenant, "doc-1", by_id[1], chunk_index=3)
+        leader = self._chunk(tenant, "doc-1", "passage beta", chunk_index=0)
         assert low_tie.id < high_tie.id < leader.id
+        # ... and the tied pair's texts run the other way, which is what makes
+        # `text` a distinguishable wrong answer rather than a coincident one.
+        assert high_tie.text < low_tie.text
 
         await store.upsert_many([high_tie, low_tie, leader])
 
@@ -712,8 +732,13 @@ class ChunkStoreCompliance:
 
     async def test_delete_by_tenant_touches_no_other_tenant(self, store: ChunkStore) -> None:
         doomed, spared = uuid4(), uuid4()
+        # **Three chunks over two sources**, so the count cannot be mistaken
+        # for a count of distinct sources -- with one chunk per source the two
+        # numbers agree, which is `recurring-defects.md` §3's "four counters
+        # summed to the same number".
         theirs = [
             self._chunk(doomed, "doc-1", "one", chunk_index=0),
+            self._chunk(doomed, "doc-1", "one more", chunk_index=1),
             self._chunk(doomed, "doc-2", "two", chunk_index=0),
         ]
         ours = [
@@ -722,7 +747,7 @@ class ChunkStoreCompliance:
         ]
         await store.upsert_many([*theirs, *ours])
 
-        assert await store.delete_by_tenant(doomed) == 2
+        assert await store.delete_by_tenant(doomed) == 3
 
         for chunk in theirs:
             assert await store.get(chunk.id, doomed) is None

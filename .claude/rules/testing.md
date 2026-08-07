@@ -78,6 +78,7 @@ name, and for the in-memory adapters that happens in these files:
 | `tests/unit/vector/test_memory_store.py` | `TestMemoryVectorStore` | `VectorStoreCompliance` |
 | `tests/unit/chunks/test_memory_store.py` | `TestMemoryChunkStore` | `ChunkStoreCompliance` |
 | `tests/unit/llm/test_memory_cache.py` | `TestMemoryCache` | `CacheCompliance` |
+| `tests/unit/llm/test_fake_embedding_provider.py` | `TestFakeEmbeddingProvider` | `EmbeddingProviderCompliance` |
 
 Each is a two-line class: the subclass plus whatever the contract requires it
 to supply. The integration tree does the same thing for the real backends
@@ -101,6 +102,7 @@ Contract classes and their generators, and no tests of its own:
 | `vector_store.py` | `VectorStoreCompliance` — the `VectorStore` contract |
 | `chunk_store.py` | `ChunkStoreCompliance` — the `ChunkStore` contract |
 | `cache.py` | `CacheCompliance` — the `Cache` contract |
+| `embedding_provider.py` | `EmbeddingProviderCompliance` — the `EmbeddingProvider` contract |
 | `strategies.py` | hypothesis strategies for the domain types those use |
 | `__init__.py` | package marker |
 
@@ -332,6 +334,7 @@ own test module under a `Test*` name:
 | `VectorStoreCompliance` | `async new_store()` (+ `dispose()`), may override `DIMENSION` | `TestMemoryVectorStore`, `TestPgVectorStore` |
 | `ChunkStoreCompliance` | `async new_store()` (+ `dispose()`) | `TestMemoryChunkStore` |
 | `CacheCompliance` | a `cache` fixture | `TestMemoryCache` |
+| `EmbeddingProviderCompliance` | a `provider` fixture | `TestFakeEmbeddingProvider`, `TestLangChainEmbeddingProvider`, `TestLiveEmbeddings` |
 
 The subclass is the whole opt-in — usually two lines:
 
