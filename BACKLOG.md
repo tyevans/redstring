@@ -694,6 +694,16 @@ wants a version bump rather than a quiet edit.
 `tests/unit/test_build_graph_embeddings.py` asserts the `ValueError` and would
 need updating with it.
 
+**The divergence has no failing test, which is the part that will bite.**
+Nothing anywhere asserts that the composition points agree, so a third one
+picking a third type would be caught by nobody — the two existing tests each
+assert their own entry point's behaviour, which is §1's silent-divergence
+shape exactly. Closing this properly is therefore not just an edit: it is a
+test asserting that *every* composition point refuses a mismatch with the same
+type, which is currently red and cannot be added until the fix lands. Write
+that test first when picking this up; it is the thing that stops the entry
+being re-opened by a fourth caller in a year.
+
 ---
 
 ## 3. Performance and scale
