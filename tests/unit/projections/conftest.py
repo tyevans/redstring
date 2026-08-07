@@ -191,10 +191,11 @@ async def dump_shape(graph_store, vector_store, chunk_store, tenant_ids):
 
     `dump_stores` compares a projection against *itself* after a replay, so it
     keeps every field. This one is compared against `BuiltLog.expected_shape`,
-    which knows which entities exist, where each edge points, and what each
-    vector is -- and deliberately not the rest, because an oracle that
-    restated every field of every payload would just be a second copy of the
-    fold.
+    which knows which entities exist, where each edge points, what each
+    vector is, and which chunk ids each source holds in what order -- and
+    deliberately not the rest, because an oracle that restated every field of
+    every payload would just be a second copy of the fold. Notably, it does
+    not pin `StoredChunk.entity_ids` -- see BACKLOG B90.
     """
     shape = {}
     for tenant_id in sorted(tenant_ids, key=str):

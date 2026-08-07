@@ -224,6 +224,16 @@ class TestChunking:
         assert self._chunk_it(rehydrated, tenant_id) is None
         assert rehydrated.uncommitted_events == []
 
+    def test_chunks_defaults_to_empty_when_omitted(self, document, tenant_id):
+        """No test above exercises `chunks`' default -- every call through
+        `_chunk_it` passes it explicitly, including the empty-tuple case,
+        which builds `chunks=[]` rather than omitting the argument."""
+        event = document.record_chunking(
+            tenant_id=tenant_id, source_id=SOURCE_ID, chunking_signature=SIGNATURE
+        )
+        assert isinstance(event, DocumentChunked)
+        assert event.chunks == []
+
     def test_a_signature_built_at_runtime_is_still_the_same_signature(self, document, tenant_id):
         """CPython interns literals, so a membership test written with `is`
         would pass on every literal in this file and fail on the signature a
