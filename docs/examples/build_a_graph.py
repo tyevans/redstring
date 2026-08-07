@@ -20,11 +20,13 @@ from uuid import uuid4
 from redstring import (
     FakeEmbeddingProvider,
     FakeLlmProvider,
+    InMemoryChunkStore,
     InMemoryGraphStore,
     InMemoryVectorStore,
     Retriever,
     SourceDocument,
     build_graph,
+    index_documents,
 )
 
 #: What the model "finds" in the text below. A real provider reads the text.
@@ -49,8 +51,8 @@ ANSWER = {
 }
 
 
-async def main() -> tuple[list[str], list[str], list[str]]:
-    """Extract one document into a graph, then query and search it."""
+async def main() -> tuple[list[str], list[str], list[str], list[str]]:
+    """Extract one document into a graph, then query, search and index."""
     tenant_id = uuid4()
     store = InMemoryGraphStore()
     embeddings = FakeEmbeddingProvider()
@@ -78,11 +80,21 @@ async def main() -> tuple[list[str], list[str], list[str]]:
     retriever = Retriever(embeddings=embeddings, vectors=vectors, graph=store)
     found = await retriever.retrieve("Charles Babage", tenant_id, k=3)
 
+    # A second document, kept as passages and never shown to a model. It costs
+    # no tokens, and its chunks carry no `entity_ids` -- which means "no
+    # entities were extracted from this passage", not "extraction is pending".
+    corpus = InMemoryChunkStore()
+    memo = SourceDocument(id="engine-memo", text="The Analytical Engine was never completed.")
+    indexed = await index_documents([memo], store=corpus, tenant_id=tenant_id)
+    passages = await corpus.get_by_source(memo.id, tenant_id)
+
     print(f"{report.entities} entities, {report.relationships} relationships")
+    print(f"{indexed.documents_indexed} documents indexed, {indexed.chunks_written} passages")
     return (
         sorted(entity.name for entity in people),
         sorted(entity.name for entity in neighbours),
         [match.entity.name for match in found.matches],
+        [chunk.text for chunk in passages if not chunk.entity_ids],
     )
 
 

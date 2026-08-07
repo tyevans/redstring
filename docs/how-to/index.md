@@ -40,6 +40,9 @@ from a concrete goal rather than from a concept — for the concepts, see
   what to do instead of `build_graph` when you have a real event store.
 - [**Rebuild a projection**](rebuild-a-projection.md) — wipe and replay, which
   is the payoff for extraction writing to no store.
+- [**Index documents without extracting them**](index-documents.md) — build a
+  corpus of passages with no model call, what an empty `entity_ids` means, and
+  the extract-then-index case that is lossy.
 - [**Use the pgvector store**](use-the-pgvector-store.md) — schema, the score
   expression, and why there is deliberately no ANN index.
 - [**Implement a store adapter**](implement-a-store-adapter.md) — writing a

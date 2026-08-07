@@ -10,6 +10,14 @@ are what a query looks for candidates under.
 [`0012` no ANN index in a multi-tenant vector store](0012-no-ann-index-in-a-multi-tenant-vector-store.md)
 stands and is why the semantic channel is exact.
 
+Amended by [`0023` the chunk corpus](0023-the-chunk-corpus.md). The premise
+"this library stores no text" no longer holds — a `ChunkStore` retains the
+passages a document was split into. The **decision below stands unchanged**:
+the lexical channel is still a field-weighted string similarity over entity
+names and still not a term-weighted ranker, and a ranker over passages would
+be a different and additional thing rather than a replacement for the one that
+catches `Acme Corp`.
+
 ## Context
 
 A retrieval surface over entities wants two channels, because they fail in

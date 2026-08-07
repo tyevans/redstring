@@ -36,6 +36,10 @@ distinguish it from `EmptyCompletionError`, was raised by exported code and
 could not be caught without a dotted import.
 
 - **Composition.** `build_graph`, `GraphBuildReport`, `AUTO`, `AutoDomain`.
+  `index_documents` and `IndexReport` are the other write path: it splits
+  documents into a `ChunkStore` and asks no model anything, so a corpus is
+  affordable for every document a caller holds and extraction can be paid for
+  over whichever subset is worth it.
 - **Retrieval.** `Retriever` turns a query string into ranked entities,
   fusing a semantic channel over `VectorStore` with a lexical one over
   `GraphStore`'s blocking keys. `RetrievalMode` picks the channels,
@@ -54,7 +58,8 @@ could not be caught without a dotted import.
   `EmbeddingProvider`, `Chunker`. Implement
   one to plug in a backend of your own; the compliance suite in
   `tests/compliance` is what says whether you got it right.
-- **Adapters.** `InMemoryGraphStore` and `InMemoryVectorStore` are complete
+- **Adapters.** `InMemoryGraphStore`, `InMemoryVectorStore` and
+  `InMemoryChunkStore` are complete
   implementations, not test doubles -- suitable for a single-process job.
   `Neo4jGraphStore` and `PgVectorStore` need their extras
   (`redstring[neo4j]`, and `asyncpg`, which is a core dependency).
@@ -73,7 +78,8 @@ could not be caught without a dotted import.
   `RelationshipTypeSchema`, `PropertySchema` and `ConfidenceThresholds`.
 - **Pieces, for callers who want the steps rather than the whole.**
   `ExtractionPipeline` (`PipelineResult`, `DEFAULT_SYSTEM_PROMPT`),
-  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`, and
+  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`,
+  `ChunkProjection`, and
   `Document` with `document_stream` to address it.
 - **Errors.** `RedstringError` and everything under it that a caller can
   reach: `LlmProviderError` and its three shapes, `MissingEntityError`,
@@ -123,14 +129,17 @@ separation is not decoration -- it is why a store can be rebuilt, and
 """
 
 from redstring.aggregates.document import Document
+from redstring.chunks.adapters.memory import InMemoryChunkStore
 from redstring.composition import (
     AUTO,
     AutoDomain,
     ConsolidationReport,
     Consolidator,
     GraphBuildReport,
+    IndexReport,
     Retriever,
     build_graph,
+    index_documents,
 )
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
@@ -198,7 +207,7 @@ from redstring.ports.graph_store import (
 )
 from redstring.ports.llm_provider import LlmProvider
 from redstring.ports.vector_store import VectorStore
-from redstring.projections import GraphProjection, VectorProjection
+from redstring.projections import ChunkProjection, GraphProjection, VectorProjection
 from redstring.temporal.inference import InferredRelation, infer_relations
 from redstring.temporal.query import CursorStalledError, TemporalQuery
 from redstring.vector.adapters.memory import InMemoryVectorStore
@@ -219,6 +228,7 @@ __all__ = [
     "CandidateFinder",
     "Chunk",
     "ChunkId",
+    "ChunkProjection",
     "ChunkSizeError",
     "ChunkStore",
     "Chunker",
@@ -255,8 +265,10 @@ __all__ = [
     "GraphBuildReport",
     "GraphProjection",
     "GraphStore",
+    "InMemoryChunkStore",
     "InMemoryGraphStore",
     "InMemoryVectorStore",
+    "IndexReport",
     "InferredRelation",
     "LlmProvider",
     "LlmProviderError",
@@ -300,6 +312,7 @@ __all__ = [
     "build_graph",
     "document_stream",
     "domain_system_prompt",
+    "index_documents",
     "infer_relations",
     "load_schema_from_file",
     "load_schema_from_string",

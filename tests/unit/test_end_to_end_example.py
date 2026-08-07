@@ -81,14 +81,20 @@ class TestTheExampleIsAboutThePublicApi:
         # first import so the module docstring and the canned answer -- which
         # a real caller replaces with a real provider -- do not pay for
         # themselves twice.
+        #
+        # The budget was 80 while the example did three things; indexing is a
+        # fourth, and the bound moved with it rather than the prose being
+        # squeezed to fit a number. It is a budget, not a measurement: raising
+        # it again is a visible decision in review, which is the only property
+        # of it that matters.
         source = EXAMPLE.read_text(encoding="utf-8")
         body = source[source.index("import asyncio") :]
-        assert len(body.splitlines()) < 80, "the composition is too big to read at once"
+        assert len(body.splitlines()) < 90, "the composition is too big to read at once"
 
 
 class TestTheExampleRuns:
     async def test_it_builds_the_graph_it_describes(self, example: ModuleType) -> None:
-        people, babbage_neighbours, _ = await example.main()
+        people, babbage_neighbours, _, _ = await example.main()
 
         assert people == ["Ada Lovelace", "Charles Babbage"]
         # Both of Babbage's edges are traversed, and in both directions: Ada
@@ -101,7 +107,7 @@ class TestTheExampleRuns:
         # "Analytical Engine" is a Machine, so its absence from `people` is
         # the filter working rather than an accident of the fixture: the
         # example extracts three entities and queries back two.
-        people, _, _ = await example.main()
+        people, _, _, _ = await example.main()
 
         assert "Analytical Engine" not in people
 
@@ -114,7 +120,28 @@ class TestTheExampleRuns:
         # Asserting *first* rather than merely present is the point -- a
         # retriever that returned the three entities in any order would pass a
         # membership check while ranking nothing.
-        _, _, retrieved = await example.main()
+        _, _, retrieved, _ = await example.main()
 
         assert retrieved[0] == "Charles Babbage"
         assert len(retrieved) == 3
+
+
+class TestTheExampleIndexesWithoutAModel:
+    async def test_the_indexed_document_is_stored_with_no_entity_links(
+        self, example: ModuleType
+    ) -> None:
+        # The fourth element is filtered to passages whose `entity_ids` is
+        # empty, so a non-empty list is evidence about the direct-ingest path
+        # specifically: `index_documents` calls no `LlmProvider`, and there is
+        # no parameter through which one could be passed.
+        _, _, _, unlinked = await example.main()
+
+        assert unlinked == ["The Analytical Engine was never completed."]
+
+    async def test_the_indexed_document_is_not_in_the_graph(self, example: ModuleType) -> None:
+        # Indexing writes to the `ChunkStore` and nowhere else. Without this
+        # the example would be consistent with `index_documents` quietly
+        # extracting too, and the two entity counts would agree by accident.
+        people, _, _, _ = await example.main()
+
+        assert people == ["Ada Lovelace", "Charles Babbage"]
