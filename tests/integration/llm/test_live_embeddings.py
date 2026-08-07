@@ -34,6 +34,7 @@ standing example of the weaker check costing eight failures instead of a skip.
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -46,7 +47,7 @@ from tests.compliance.embedding_provider import (
     _cosine,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 BASE_URL = os.environ.get("KG_EMBED_BASE_URL", "http://192.168.1.14:8080/v1")
 MODEL = os.environ.get("KG_EMBED_MODEL", "nomic-embed-text")
@@ -68,14 +69,33 @@ async def _serving() -> bool:
     return len(result) == 1 and len(result[0]) == DIMENSION
 
 
-async def _provider_or_skip() -> LangChainEmbeddingProvider:
-    if not await _serving():
+@pytest.fixture(scope="module")
+def live() -> None:
+    """Probe once per module, not once per test.
+
+    `test_live_endpoint` has always done this and it is why that file skips in
+    seconds. This one probed inside a *function*-scoped fixture, so a dead
+    endpoint was paid for once per test rather than once per module -- and
+    `openai_compatible` passes no timeout, so each probe inherits the openai
+    client's 600s default with two retries. Against `KG_EMBED_BASE_URL`
+    unset and the LAN default unreachable (every CI runner), that turned a
+    15-test skip into the better part of an hour of a job doing nothing.
+
+    Sync, and `asyncio.run` rather than an async module-scoped fixture:
+    `asyncio_default_fixture_loop_scope` is `function`, so an async fixture
+    at module scope would need its own loop scope to match, and the probe has
+    no reason to share a loop with the tests. The provider it builds is
+    discarded -- each test builds its own.
+
+    Bounding the probe itself is the other half and is *not* done here; see
+    BACKLOG B78. One unbounded probe is survivable, thirteen were not.
+    """
+    if not asyncio.run(_serving()):
         pytest.skip(
             f"no embedding model answered at {BASE_URL} (model {MODEL}, "
             f"dimension {DIMENSION}). Set KG_EMBED_BASE_URL, KG_EMBED_MODEL "
             f"and KG_EMBED_DIMENSION."
         )
-    return _provider()
 
 
 class TestLiveEmbeddings(EmbeddingProviderCompliance):
@@ -90,14 +110,14 @@ class TestLiveEmbeddings(EmbeddingProviderCompliance):
     """
 
     @pytest.fixture
-    async def provider(self) -> LangChainEmbeddingProvider:
-        return await _provider_or_skip()
+    def provider(self, live: None) -> LangChainEmbeddingProvider:
+        return _provider()
 
 
 class TestWhatOnlyALiveServerShows:
     @pytest.fixture
-    async def provider(self) -> LangChainEmbeddingProvider:
-        return await _provider_or_skip()
+    def provider(self, live: None) -> LangChainEmbeddingProvider:
+        return _provider()
 
     async def test_batch_composition_perturbs_the_vector_but_not_its_direction(self, provider):
         """The measurement the contract is calibrated against.

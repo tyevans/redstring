@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field
 from redstring.domain.exceptions import EmptyCompletionError
 from redstring.llm.adapters.langchain import LangChainLlmProvider
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 BASE_URL = os.environ.get("KG_LLM_BASE_URL", "http://192.168.1.14:8080/v1")
 MODEL = os.environ.get("KG_LLM_MODEL", "qwen3.6-27b-mtp")

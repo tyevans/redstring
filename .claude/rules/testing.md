@@ -42,7 +42,7 @@ where, against what:
 |---|---|---|
 | `tests/unit/` | yes | nothing external |
 | `tests/compliance/` | **never collected** | imported by unit and integration modules |
-| `tests/integration/` | no (`-m` excludes it) | `docker-compose.test.yml` backends; `llm/` also a live LLM |
+| `tests/integration/` | no (`-m` excludes it) | `docker-compose.test.yml` backends; the `live`-marked subset also an endpoint |
 | `tests/accuracy/` | no (`-m` excludes it) | a live LLM for the test module; `scoring.py`/`corpus.py` need nothing |
 
 `tests/compliance/` is the one that breaks the pattern and the one worth
@@ -155,8 +155,8 @@ that "an event 90 seconds ago" is a number rather than a 90-second test.
 
 `tests/integration/` splits by port — `graph/` (Neo4j), `vector/` (pgvector),
 `llm/` — alongside `test_wheel_contents.py`, which is a
-packaging check rather than a backend one. Only the `llm/` subset needs a live
-model; the rest needs containers.
+packaging check rather than a backend one. Only the `live`-marked subset of
+`llm/` needs an endpoint; the rest needs containers.
 
 `tests/accuracy/` is the only suite that asks whether extraction finds the
 **right** things, as opposed to whether the library is correct about what it
@@ -188,8 +188,9 @@ about a backend at all:
 |---|---|---|
 | `graph/test_neo4j_store.py` | `TestNeo4jStore(GraphStoreCompliance)`, `TestNeo4jSpecifics` | Neo4j from `docker-compose.test.yml` |
 | `vector/test_pgvector_store.py` | `TestPgVectorStore(VectorStoreCompliance)`, `TestPgVectorSpecifics` | Postgres + pgvector from `docker-compose.test.yml` |
-| `llm/test_live_endpoint.py` | the LangChain adapter against a real OpenAI-compatible server | a **live model** |
-| `llm/test_live_pipeline.py` | chunk → extract → merge → emit against that model | a **live model** |
+| `llm/test_live_endpoint.py` | the LangChain adapter against a real OpenAI-compatible server | a **live model** (`live`) |
+| `llm/test_live_pipeline.py` | chunk → extract → merge → emit against that model | a **live model** (`live`) |
+| `llm/test_live_embeddings.py` | `EmbeddingProviderCompliance` against a real embeddings server, and the cosine tolerance it calibrates | a **live embeddings endpoint** (`live`) |
 | `test_wheel_contents.py` | `uv build` → throwaway venv → render all six bundled domains | `uv`, no backend |
 
 Every module carries `pytestmark = pytest.mark.integration`, and `addopts`
@@ -212,13 +213,19 @@ with no arguments succeeds against the bootstrap server before `POSTGRES_DB`
 exists. There is no `apoc`: the Neo4j adapter is plain Cypher, and requiring a
 plugin would narrow which managed offerings can host this library.
 
-**Only the `llm/` subset needs a live LLM**, and it is not in the compose
-file — point it at whatever you are running with `KG_LLM_BASE_URL` and
-`KG_LLM_MODEL`:
+**Only the three `live`-marked modules need an endpoint**, and it is not in the
+compose file — point them at whatever you are running:
 
 ```bash
-KG_LLM_BASE_URL=http://host:8080/v1 uv run pytest -m integration tests/integration/llm/
+KG_LLM_BASE_URL=http://host:8080/v1 \
+KG_EMBED_BASE_URL=http://host:8080/v1 \
+  uv run pytest -m live
 ```
+
+`test_redis_cache.py` and `test_langchain_embedding_factory.py` share that
+directory because `RedisCache` and the embedding adapter live under `llm/`;
+they need the container and nothing respectively, which is why the marker and
+not the path is what selects.
 
 The two store subdirectories need only containers, and
 `test_wheel_contents.py` needs neither. It is marked
@@ -488,6 +495,7 @@ real work:
 | Marker | Applied to | Status |
 |---|---|---|
 | `integration` | every module under `tests/integration/` | **load-bearing** — it is what keeps real backends out of the commit gate |
+| `live` | the three `tests/integration/llm/test_live_*.py` modules, alongside `integration` | **load-bearing** — it is what keeps CI out of a 90-minute wait on an endpoint it will never have |
 | `unit` | seven tests in `tests/unit/test_jellyfish_import.py` | decorative; nothing selects on it |
 | `accuracy` | `tests/accuracy/test_extraction_accuracy.py` | **load-bearing** — keeps a live-model suite out of the commit gate |
 | `slow` | nothing | declared and unused |
@@ -525,6 +533,43 @@ Three things follow that are easy to get wrong:
   anything — the default run is "everything not deselected", so an unmarked
   test in `tests/unit/` is already in the gate. The seven existing uses are
   historical.
+
+### `live` separates *unrun* from *unrunnable*
+
+`integration` answers "does this need something the commit gate should not
+start". `live` answers a narrower question CI has to ask separately: **can this
+environment ever satisfy it?** A GitHub runner starts Neo4j, pgvector and Redis
+from `docker-compose.test.yml` happily, and will never have a model server. So
+the three `test_live_*.py` modules carry both markers and CI selects:
+
+```bash
+uv run pytest -m "integration and not live" --cov-fail-under=0
+```
+
+while a developer with an endpoint still gets them from a plain
+`-m integration`. That asymmetry is the whole design — the tests run where
+they can run, and are named where they cannot.
+
+**Selecting them in CI anyway was not free, which is the lesson.** It cost
+~90 minutes per run for a day, and it never showed up as a failure: the
+probes point at a LAN default an Azure runner blackholes rather than refuses,
+so each one skipped only after its client's timeout, and the job went green.
+Every CI run from `317e7a5` onward took ~1h35m, the successful ones included.
+A test that cannot pass here and skips *slowly* is worse than one that fails —
+it reads as slow infrastructure, and the natural response to slow
+infrastructure is to wait.
+
+Two things follow for a new suite needing an endpoint:
+
+- **Mark it `live` as well as `integration`.** Path does not select, and
+  neither does intent.
+- **Probe once per module, and bound the probe.** `test_live_embeddings`
+  probed inside a function-scoped fixture, so a dead endpoint was paid for
+  once per test — 13 times — and `openai_compatible` passes no timeout, so
+  each probe inherited the openai client's 600 s default with two retries.
+  `test_live_endpoint` has always used a module-scoped `live` fixture over an
+  `httpx.post` with an explicit `timeout=180.0`, which is why it skipped in
+  seconds while its neighbour did not. Copy that shape.
 
 **`slow` names nothing, and that is the state to resolve rather than preserve.**
 It has never been applied; adding a test that deserves it is fine, but do not
@@ -905,8 +950,11 @@ Three constraints, each argued above rather than here:
   `[tool.coverage.run] parallel = true` is set, so combine two runs instead:
   `coverage run -m pytest`, `coverage run -m pytest -m integration`,
   `coverage combine`.
-- **The `llm/` subset needs a live model**, pointed at with `KG_LLM_BASE_URL`
-  and `KG_LLM_MODEL`; the rest needs only the containers.
+- **The `live` subset needs a model**, pointed at with `KG_LLM_BASE_URL` /
+  `KG_LLM_MODEL` and `KG_EMBED_BASE_URL` / `KG_EMBED_MODEL`; the rest of
+  `llm/` needs only the Redis container. CI drops them with
+  `-m "integration and not live"` — see *`live` separates unrun from
+  unrunnable* above before adding a suite that needs an endpoint.
 
 The accuracy suite needs a live model and is selected the same way:
 

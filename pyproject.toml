@@ -345,6 +345,12 @@ markers = [
     "unit: unit tests",
     "integration: integration tests",
     "accuracy: extraction accuracy tests",
+    # Narrower than `integration`: a container CI can start, an inference
+    # endpoint it cannot. Every `live` test is also `integration`, so the
+    # commit gate never sees one either way -- the marker exists so CI can
+    # run `-m "integration and not live"` and skip the probes instead of
+    # waiting out their timeouts against an address that does not answer.
+    "live: needs an LLM or embeddings endpoint, which no CI runner has",
     "slow: tests that take a long time to run",
 ]
 

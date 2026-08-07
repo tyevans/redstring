@@ -71,8 +71,15 @@ settings.register_profile(
 
 settings.load_profile("default")
 
-#: Markers `addopts` deselects, and the command that runs each.
+#: Markers that keep a test out of a run, and the command that runs each.
+#:
+#: **Order is precedence, because the loop below breaks on the first match and
+#: a test may carry two of these.** Every `live` test is also `integration`, so
+#: listing `integration` first would report all three `test_live_*.py` modules
+#: under a command that does not actually run them without an endpoint. Most
+#: specific first; add a new marker above the ones it implies.
 _DESELECTED_MARKERS = {
+    "live": "uv run pytest -m live    # needs KG_LLM_BASE_URL / KG_EMBED_BASE_URL",
     "integration": "uv run pytest -m integration    # needs docker-compose.test.yml",
     "accuracy": "uv run pytest -m accuracy tests/accuracy/    # needs a live LLM",
 }

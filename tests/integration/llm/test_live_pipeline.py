@@ -28,7 +28,7 @@ from redstring.extraction.pipeline import ExtractionPipeline
 from redstring.llm.adapters.langchain import LangChainLlmProvider
 from tests.integration.llm.test_live_endpoint import BASE_URL, MODEL, serving
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 PASSAGE = (
     "Ada Lovelace was an English mathematician. She worked with Charles "
