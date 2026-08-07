@@ -88,7 +88,7 @@ class TestTheExampleIsAboutThePublicApi:
 
 class TestTheExampleRuns:
     async def test_it_builds_the_graph_it_describes(self, example: ModuleType) -> None:
-        people, babbage_neighbours = await example.main()
+        people, babbage_neighbours, _ = await example.main()
 
         assert people == ["Ada Lovelace", "Charles Babbage"]
         # Both of Babbage's edges are traversed, and in both directions: Ada
@@ -101,6 +101,20 @@ class TestTheExampleRuns:
         # "Analytical Engine" is a Machine, so its absence from `people` is
         # the filter working rather than an accident of the fixture: the
         # example extracts three entities and queries back two.
-        people, _ = await example.main()
+        people, _, _ = await example.main()
 
         assert "Analytical Engine" not in people
+
+    async def test_the_misspelled_query_retrieves_the_name_it_meant(
+        self, example: ModuleType
+    ) -> None:
+        # "Charles Babage" is not any stored name, so this is the lexical
+        # channel doing the work the example claims it does: the query shares
+        # a blocking key with "Charles Babbage" and scores highest against it.
+        # Asserting *first* rather than merely present is the point -- a
+        # retriever that returned the three entities in any order would pass a
+        # membership check while ranking nothing.
+        _, _, retrieved = await example.main()
+
+        assert retrieved[0] == "Charles Babbage"
+        assert len(retrieved) == 3

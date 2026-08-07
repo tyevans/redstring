@@ -36,6 +36,12 @@ distinguish it from `EmptyCompletionError`, was raised by exported code and
 could not be caught without a dotted import.
 
 - **Composition.** `build_graph`, `GraphBuildReport`, `AUTO`, `AutoDomain`.
+- **Retrieval.** `Retriever` turns a query string into ranked entities,
+  fusing a semantic channel over `VectorStore` with a lexical one over
+  `GraphStore`'s blocking keys. `RetrievalMode` picks the channels,
+  `RetrievalResult` and `ScoredEntity` are what comes back. Note the
+  scale: `ScoredEntity.score` is a fused *rank* score, ordinal and
+  unbounded, and is not on `VectorMatch`'s 0..1.
 - **What you put in.** `SourceDocument`.
 - **What comes out.** `Entity`, `Relationship`, `Alias`, `ExtractionMethod`,
   `TemporalExtent` (with `DatePrecision` and `UncertaintyMarker`),
@@ -122,6 +128,7 @@ from redstring.composition import (
     ConsolidationReport,
     Consolidator,
     GraphBuildReport,
+    Retriever,
     build_graph,
 )
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
@@ -148,6 +155,7 @@ from redstring.domain.exceptions import (
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.interval import Bounds, TemporalRelation
 from redstring.domain.relationship import Relationship
+from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
 from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
 from redstring.domain.source import SourceDocument
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
@@ -261,7 +269,11 @@ __all__ = [
     "RelationshipStore",
     "RelationshipTypeSchema",
     "Response",
+    "RetrievalMode",
+    "RetrievalResult",
+    "Retriever",
     "ScoredCandidate",
+    "ScoredEntity",
     "SimilarityFeatures",
     "SourceDocument",
     "SourceId",
