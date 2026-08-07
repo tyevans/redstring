@@ -192,6 +192,7 @@ about a backend at all:
 |---|---|---|
 | `graph/test_neo4j_store.py` | `TestNeo4jStore(GraphStoreCompliance)`, `TestNeo4jSpecifics` | Neo4j from `docker-compose.test.yml` |
 | `vector/test_pgvector_store.py` | `TestPgVectorStore(VectorStoreCompliance)`, `TestPgVectorSpecifics` | Postgres + pgvector from `docker-compose.test.yml` |
+| `chunks/test_postgres_store.py` | `TestPostgresChunkStore(ChunkStoreCompliance)`, `TestPostgresChunkStoreSpecifics` | Postgres from `docker-compose.test.yml` (no extension) |
 | `llm/test_live_endpoint.py` | the LangChain adapter against a real OpenAI-compatible server | a **live model** (`live`) |
 | `llm/test_live_pipeline.py` | chunk → extract → merge → emit against that model | a **live model** (`live`) |
 | `llm/test_live_embeddings.py` | `EmbeddingProviderCompliance` against a real embeddings server, and the cosine tolerance it calibrates | a **live embeddings endpoint** (`live`) |
@@ -332,7 +333,7 @@ own test module under a `Test*` name:
 |---|---|---|
 | `GraphStoreCompliance` | `async new_store()` (+ `dispose()` if it owns a connection) | `TestMemoryStore`, `TestNeo4jStore` |
 | `VectorStoreCompliance` | `async new_store()` (+ `dispose()`), may override `DIMENSION` | `TestMemoryVectorStore`, `TestPgVectorStore` |
-| `ChunkStoreCompliance` | `async new_store()` (+ `dispose()`) | `TestMemoryChunkStore` |
+| `ChunkStoreCompliance` | `async new_store()` (+ `dispose()`) | `TestMemoryChunkStore`, `TestPostgresChunkStore` |
 | `CacheCompliance` | a `cache` fixture | `TestMemoryCache` |
 | `EmbeddingProviderCompliance` | a `provider` fixture | `TestFakeEmbeddingProvider`, `TestLangChainEmbeddingProvider`, `TestLiveEmbeddings` |
 

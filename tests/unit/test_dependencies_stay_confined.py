@@ -1,4 +1,4 @@
-"""Each third-party client lives in one directory, and this is what says so.
+"""Each third-party client lives in the directories named here, and nowhere else.
 
 Every port here exists so that a breaking change in someone else's library
 touches one file. That guarantee is a single `import` away from being false,
@@ -33,31 +33,42 @@ import ast
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "redstring"
 
 
 @dataclass(frozen=True)
 class Confinement:
-    """One library, the one directory allowed to know it exists, and the port.
+    """One library, the directories allowed to know it exists, and the port.
 
     `port` is not used by any assertion -- it is in the failure message,
     because the useful thing to tell someone who has just leaked an import is
     where the seam they should have used lives.
+
+    `directories` is plural because `asyncpg` genuinely backs two ports: the
+    pgvector `VectorStore` and the Postgres `ChunkStore` are two adapters of
+    two different ports that happen to share a driver. Listing both is weaker
+    than one directory and much stronger than nothing -- and **every named
+    directory is guarded in both directions**, so a second entry that stops
+    importing the library fails rather than quietly widening the first.
     """
 
     packages: tuple[str, ...]
-    directory: str
+    directories: tuple[str, ...]
     port: str
 
     @property
-    def permitted(self) -> Path:
-        return SOURCE_ROOT / Path(self.directory)
+    def permitted(self) -> tuple[Path, ...]:
+        return tuple(SOURCE_ROOT / Path(directory) for directory in self.directories)
 
     def __str__(self) -> str:
-        return f"{'/'.join(self.packages)} -> {self.directory}"
+        return f"{'/'.join(self.packages)} -> {','.join(self.directories)}"
 
 
 #: Every third-party client the architecture deliberately keeps in one place.
@@ -68,25 +79,34 @@ class Confinement:
 CONFINEMENTS = (
     Confinement(
         packages=("langchain", "openai"),
-        directory="llm/adapters",
+        directories=("llm/adapters",),
         port="redstring.ports.llm_provider / redstring.ports.embedding_provider",
     ),
     Confinement(
         packages=("neo4j",),
-        directory="graph/adapters",
+        directories=("graph/adapters",),
         port="redstring.ports.graph_store",
     ),
     Confinement(
         packages=("asyncpg",),
-        directory="vector/adapters",
-        port="redstring.ports.vector_store",
+        directories=("vector/adapters", "chunks/adapters"),
+        port="redstring.ports.vector_store / redstring.ports.chunk_store",
     ),
     Confinement(
         packages=("redis",),
-        directory="llm/cache",
+        directories=("llm/cache",),
         port="redstring.ports.cache",
     ),
 )
+
+#: Every `(confinement, directory)` pair, for the two guards that are about one
+#: directory at a time. Flattened rather than looped inside a test so that a
+#: single rotten entry names itself in the pytest id.
+PERMITTED_DIRECTORIES = [
+    (confinement, directory)
+    for confinement in CONFINEMENTS
+    for directory in confinement.directories
+]
 
 
 def imported_modules(source: Path) -> set[str]:
@@ -122,8 +142,12 @@ def python_files_under(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*.py") if "__pycache__" not in path.parts)
 
 
-def files_outside(permitted: Path) -> list[Path]:
-    return [path for path in python_files_under(SOURCE_ROOT) if permitted not in path.parents]
+def files_outside(permitted: Sequence[Path]) -> list[Path]:
+    return [
+        path
+        for path in python_files_under(SOURCE_ROOT)
+        if not any(directory in path.parents for directory in permitted)
+    ]
 
 
 def test_the_walk_finds_the_library():
@@ -138,19 +162,26 @@ def test_the_walk_finds_the_library():
     assert SOURCE_ROOT / "ports" / "llm_provider.py" in files
 
 
-@pytest.mark.parametrize("confinement", CONFINEMENTS, ids=str)
-def test_the_permitted_directory_exists(confinement: Confinement):
+@pytest.mark.parametrize(
+    ("confinement", "directory"),
+    PERMITTED_DIRECTORIES,
+    ids=lambda value: value if isinstance(value, str) else "",
+)
+def test_the_permitted_directory_exists(confinement: Confinement, directory: str):
     """A directory that is not there excludes nothing, and the leak check
     below would still pass -- while silently no longer exempting the one place
     the import belongs."""
-    assert confinement.permitted.is_dir(), (
-        f"{confinement.directory} does not exist, so the exemption for "
-        f"{confinement.packages} matches nothing"
+    assert (SOURCE_ROOT / directory).is_dir(), (
+        f"{directory} does not exist, so the exemption for {confinement.packages} matches nothing"
     )
 
 
-@pytest.mark.parametrize("confinement", CONFINEMENTS, ids=str)
-def test_the_permitted_directory_really_does_import_it(confinement: Confinement):
+@pytest.mark.parametrize(
+    ("confinement", "directory"),
+    PERMITTED_DIRECTORIES,
+    ids=lambda value: value if isinstance(value, str) else "",
+)
+def test_the_permitted_directory_really_does_import_it(confinement: Confinement, directory: str):
     """The staleness guard CLAUDE.md requires of every exemption list.
 
     An entry naming a library nobody imports any more passes forever and
@@ -158,10 +189,14 @@ def test_the_permitted_directory_really_does_import_it(confinement: Confinement)
     a visible decision rather than a silently-inert rule -- the same reason
     `pyproject.toml`'s per-file ignores are now empty rather than carrying
     deleted paths.
+
+    Run per *directory*, not per row: a row naming two directories where only
+    one still imports the library would otherwise pass, and the dead half
+    would go on exempting a directory nobody was watching.
     """
     importers = {
         path.relative_to(SOURCE_ROOT)
-        for path in python_files_under(confinement.permitted)
+        for path in python_files_under(SOURCE_ROOT / directory)
         if any(
             belongs_to(module, package)
             for module in imported_modules(path)
@@ -170,7 +205,7 @@ def test_the_permitted_directory_really_does_import_it(confinement: Confinement)
     }
 
     assert importers, (
-        f"nothing under {confinement.directory} imports any of "
+        f"nothing under {directory} imports any of "
         f"{confinement.packages}. Either the adapter moved -- in which case "
         f"this entry now exempts the wrong directory -- or the dependency is "
         f"gone and the entry should be deleted."
@@ -192,8 +227,8 @@ def test_nothing_outside_the_permitted_directory_imports_it(confinement: Confine
 
     assert offenders == {}, (
         f"{'/'.join(confinement.packages)} must not be imported outside "
-        f"redstring/{confinement.directory}/; found {offenders}. Put the "
-        f"dependency behind {confinement.port}."
+        f"{', '.join(f'redstring/{d}/' for d in confinement.directories)}; found "
+        f"{offenders}. Put the dependency behind {confinement.port}."
     )
 
 
@@ -218,7 +253,7 @@ def test_belongs_to_does_not_match_by_bare_prefix():
 #:
 #: The complement of `CONFINEMENTS`: these are the dependencies with no single
 #: home because the library is built on them everywhere. Keeping the list here
-#: rather than in a `Confinement` with `directory="."` is deliberate -- a
+#: rather than in a `Confinement` with `directories=(".",)` is deliberate -- a
 #: confinement to the whole tree confines nothing, and would make the
 #: both-directions guards above pass vacuously.
 ALLOWED_EVERYWHERE = frozenset(

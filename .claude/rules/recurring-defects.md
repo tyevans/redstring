@@ -49,7 +49,7 @@ that must be interchangeable —
 |---|---|
 | `ports/graph_store.py` | `graph/adapters/memory.py`, `graph/adapters/neo4j.py` |
 | `ports/vector_store.py` | `vector/adapters/memory.py`, `vector/adapters/pgvector.py` |
-| `ports/chunk_store.py` | `chunks/adapters/memory.py` |
+| `ports/chunk_store.py` | `chunks/adapters/memory.py`, `chunks/adapters/postgres.py` |
 | `ports/cache.py` | `llm/cache/memory.py`, `llm/cache/redis.py` |
 | `ports/llm_provider.py` | `llm/adapters/fake.py`, `llm/adapters/langchain.py` |
 | `ports/embedding_provider.py` | `llm/adapters/fake_embedding.py` |

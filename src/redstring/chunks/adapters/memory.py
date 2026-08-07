@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from redstring.chunks.provenance import reject_foreign_chunks
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -60,17 +62,7 @@ class InMemoryChunkStore:
         tenant_id: TenantId,
         chunks: Sequence[StoredChunk],
     ) -> int:
-        strays = [
-            chunk
-            for chunk in chunks
-            if chunk.source_id != source_id or chunk.tenant_id != tenant_id
-        ]
-        if strays:
-            raise ValueError(
-                f"every chunk must carry source_id={source_id!r} and "
-                f"tenant_id={tenant_id}; found "
-                f"{sorted({(c.source_id, str(c.tenant_id)) for c in strays})}"
-            )
+        reject_foreign_chunks(chunks, source_id, tenant_id)
 
         keep = {chunk.id for chunk in chunks}
         tenant = self._chunks.setdefault(tenant_id, {})

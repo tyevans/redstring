@@ -1484,6 +1484,29 @@ whole question turns on.
 
 ## 6. Tooling, packaging and hygiene
 
+### B87. `PostgresChunkStore` tells callers to install `redstring[pgvector]`
+
+`src/redstring/chunks/adapters/postgres.py::connect` re-raises its guarded
+`import asyncpg` with "install `redstring[pgvector]`, the extra that carries
+it". That extra is named for a *different* port, so the message reads as a
+mistake to anyone who wanted only a chunk store and never a vector one.
+
+Deferred rather than fixed, and the reasoning is the part worth keeping. The
+obvious fix -- `uv add --optional postgres asyncpg` -- creates a second extra
+whose contents are byte-for-byte the first one's single requirement, which is
+`recurring-defects.md` §2: two declaration sites for one fact, with nothing
+failing when they drift (a floor bumped on one and not the other is silent,
+and every caller of the other extra then gets the old asyncpg). Two extras
+naming one dependency also means `all` has to list both or quietly stop
+meaning "everything".
+
+What would make it right is renaming the extra to `postgres` and keeping
+`pgvector` as an alias for one release -- a packaging change with a
+deprecation window, which is more than this adapter should carry. Do it when
+something else touches the extras; until then the message is honest about
+what to install even though the name is wrong about why.
+
+
 ### B42. `ANN401` is silenced on `domain/merge_strategy.py::resolve`
 
 Three `# noqa: ANN401` on `resolve` and `_union`. Silencing is correct here
