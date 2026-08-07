@@ -250,7 +250,7 @@ def test_every_third_party_import_is_accounted_for():
 
     Each row above is guarded in both directions, so the rows that exist
     cannot rot. Nothing catches an import of something nobody listed --
-    `uv add --optional graph some-driver`, import it from `composition.py`,
+    `uv add --optional graph some-driver`, import it from `composition/`,
     and this file stays green, because it only knows what someone wrote in it.
     That is the same two-declaration-sites shape the module exists to fix, one
     level up (BACKLOG B71).

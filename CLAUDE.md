@@ -531,11 +531,18 @@ ports
 domain
 ```
 
-**`composition` is the top layer and holds one module.** `extraction` may not
-import `projections` — that is what keeps a store reference out of the
-pipeline — but something has to hold both or the library ships two halves and
-a diagram. `build_graph` is that something. A second module wanting in here
-should have to say what it composes.
+**`composition` is the top layer, and every module in it names the pair of
+layers it joins.** There are two. `build_graph` joins `extraction` and
+`projections`: extraction may not import projections — that is what keeps a
+store reference out of the pipeline — but something has to hold both or the
+library ships two halves and a diagram. `retrieval` joins `vector`, `graph`
+and `llm`, which are siblings forbidden from importing each other, so no
+sibling can hold all three.
+
+A third module wanting in here should have to say what it composes, and the
+test is about the *pair*: a candidate that cannot name two layers forbidden
+from importing each other is not composing anything, it is a piece of one half
+placed above it for convenience.
 
 `cache`, `config` and `context` left the line in slice 10 with their modules:
 a settings object, a Redis singleton and a re-export shim, none with a caller.

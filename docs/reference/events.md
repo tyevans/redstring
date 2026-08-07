@@ -550,7 +550,8 @@ call site is to derive the stream and take `.aggregate_id` from it:
 aggregate = Document(document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id)
 ```
 
-That is what `build_graph` (`redstring/composition.py`) does for extraction,
+That is what `build_graph` (`redstring/composition/build_graph.py`) does for
+extraction,
 and what `redstring/consolidation/service.py` does with
 `consolidation_stream(tenant_id=tenant_id).aggregate_id` for merge and undo.
 See [aggregates](aggregates.md) for what each one then enforces, and [drive

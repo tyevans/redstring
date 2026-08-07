@@ -406,11 +406,21 @@ type = "layers"
 # relative to the container, which is why they are bare here.
 containers = ["redstring"]
 layers = [
-    # `composition` is the top layer and the only module in it. It exists
-    # because `extraction` may not import `projections` -- that separation is
-    # what stops a store reference growing back into the pipeline -- and yet
-    # something has to hold both, or the library ships two halves and a
-    # diagram. If a second module wants in here, ask what it composes.
+    # `composition` is the top layer. It holds the modules that join two layers
+    # forbidden from importing each other, and each membership has to name the
+    # pair it joins. There are two:
+    #
+    #   - `build_graph` joins `extraction` and `projections`. That separation
+    #     is what stops a store reference growing back into the pipeline, and
+    #     yet something has to hold both, or the library ships two halves and
+    #     a diagram.
+    #   - `retrieval` joins `vector`, `graph` and `llm`. Those are siblings:
+    #     `vector` and `graph` may not import each other and neither may
+    #     import `llm`, so no sibling can hold all three.
+    #
+    # If a third module wants in here, ask what it composes -- a candidate
+    # that cannot name such a pair is a piece of one half placed above it for
+    # convenience. See the ADR amending 0007.
     "composition",
     # `services` was the top layer and is gone as of slice 9. There
     # is no service layer any more: the write model is `aggregates` + `events`,

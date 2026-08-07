@@ -125,7 +125,7 @@ DEFAULT_STRATEGIES = (
 )
 
 
-def prefix_key(entity: Entity) -> str:
+def prefix_key_for_name(name: str) -> str:
     """The first `PREFIX_LENGTH` characters of the normalized name.
 
     Normalized here rather than trusting `Entity.normalized_name`: that field
@@ -135,11 +135,39 @@ def prefix_key(entity: Entity) -> str:
 
     Total, with no empty-name branch. `Entity` rejects a name whose `strip()`
     is falsy and `normalize_name` strips with the same function, so a valid
-    entity cannot normalize to nothing. A guard here would be a branch no
-    input reaches, which is worse than none: it describes a situation that
-    cannot arise, so a reader reasons about the wrong invariant.
+    entity cannot normalize to nothing. A *query* can be blank, and the
+    `Retriever` rejects that before reaching here.
     """
-    return _PREFIX + normalize_name(entity.name)[:PREFIX_LENGTH]
+    return _PREFIX + normalize_name(name)[:PREFIX_LENGTH]
+
+
+def soundex_key_for_name(name: str) -> str | None:
+    """A phonetic code for the name, or `None` when there is nothing to code.
+
+    The name is NFKD-normalized and reduced to its ASCII letters first.
+    `jellyfish.soundex` accepts anything and codes digits, spaces and CJK into
+    keys that collide far too widely -- see the module docstring for the four
+    measured cases, and for why the normalization has to come *before* the
+    filter rather than instead of it.
+
+    The **whole** name is coded, not the first token. Coding "Ada Lovelace" as
+    if it were "Ada" would block it with every Adam and Adams in the tenant,
+    which is the block-too-large failure this file's docstring warns about.
+    """
+    # NFKD first, so an accented letter becomes base + combining mark and the
+    # base survives the ASCII filter. Filtering without it drops the letter.
+    decomposed = unicodedata.normalize("NFKD", normalize_name(name))
+    letters = "".join(
+        character for character in decomposed if character.isascii() and character.isalpha()
+    )
+    if not letters:
+        return None
+    return _SOUNDEX + jellyfish.soundex(letters)
+
+
+def prefix_key(entity: Entity) -> str:
+    """`prefix_key_for_name` of the entity's name. See that function."""
+    return prefix_key_for_name(entity.name)
 
 
 def entity_type_key(entity: Entity) -> str:
@@ -156,27 +184,24 @@ def entity_type_key(entity: Entity) -> str:
 
 
 def soundex_key(entity: Entity) -> str | None:
-    """A phonetic code for the name, or `None` when there is nothing to code.
+    """`soundex_key_for_name` of the entity's name. See that function."""
+    return soundex_key_for_name(entity.name)
 
-    The name is NFKD-normalized and reduced to its ASCII letters first.
-    `jellyfish.soundex` accepts anything and codes digits, spaces and CJK into
-    keys that collide far too widely -- see the module docstring for the four
-    measured cases, and for why the normalization has to come *before* the
-    filter rather than instead of it.
 
-    The **whole** name is coded, not the first token. Coding "Ada Lovelace" as
-    if it were "Ada" would block it with every Adam and Adams in the tenant,
-    which is the block-too-large failure this file's docstring warns about.
+def query_blocking_keys(query: str) -> list[str]:
+    """The keys a free-text query should look for candidates under.
+
+    **Prefix and soundex only, never the type key.** The type key exists so no
+    entity is unblockable; as a query key it matches every entity of that
+    type, which turns candidate generation into a full scan. `entity_types`
+    filters the candidates instead.
+
+    A list rather than a `frozenset` because `find_by_blocking_keys` takes a
+    `Sequence` and keys its result by what it was asked for; ordering is
+    stable so a failing test names the same key twice.
     """
-    # NFKD first, so an accented letter becomes base + combining mark and the
-    # base survives the ASCII filter. Filtering without it drops the letter.
-    decomposed = unicodedata.normalize("NFKD", normalize_name(entity.name))
-    letters = "".join(
-        character for character in decomposed if character.isascii() and character.isalpha()
-    )
-    if not letters:
-        return None
-    return _SOUNDEX + jellyfish.soundex(letters)
+    keys = [prefix_key_for_name(query), soundex_key_for_name(query)]
+    return list(dict.fromkeys(key for key in keys if key is not None))
 
 
 _KEY_FUNCTIONS = {

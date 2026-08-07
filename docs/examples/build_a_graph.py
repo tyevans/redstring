@@ -18,8 +18,11 @@ import asyncio
 from uuid import uuid4
 
 from redstring import (
+    FakeEmbeddingProvider,
     FakeLlmProvider,
     InMemoryGraphStore,
+    InMemoryVectorStore,
+    Retriever,
     SourceDocument,
     build_graph,
 )
@@ -46,10 +49,12 @@ ANSWER = {
 }
 
 
-async def main() -> tuple[list[str], list[str]]:
-    """Extract one document into a graph, then query it. Returns what it found."""
+async def main() -> tuple[list[str], list[str], list[str]]:
+    """Extract one document into a graph, then query and search it."""
     tenant_id = uuid4()
     store = InMemoryGraphStore()
+    embeddings = FakeEmbeddingProvider()
+    vectors = InMemoryVectorStore(dimension=embeddings.dimension)
 
     report = await build_graph(
         SourceDocument(
@@ -59,16 +64,25 @@ async def main() -> tuple[list[str], list[str]]:
         provider=FakeLlmProvider(by_substring={"Ada": ANSWER}),
         store=store,
         tenant_id=tenant_id,
+        embedding_provider=embeddings,
+        vector_store=vectors,
     )
 
     people = await store.find_entities(tenant_id, entity_type="Person")
     babbage = next(entity for entity in people if entity.name == "Charles Babbage")
     neighbours = await store.neighbors(babbage.id, tenant_id)
 
+    # Retrieval over the same two stores. The query is *misspelled*, which is
+    # the case the lexical channel exists for -- it shares a blocking key with
+    # the stored name, and Jaro-Winkler scores it highly.
+    retriever = Retriever(embeddings=embeddings, vectors=vectors, graph=store)
+    found = await retriever.retrieve("Charles Babage", tenant_id, k=3)
+
     print(f"{report.entities} entities, {report.relationships} relationships")
     return (
         sorted(entity.name for entity in people),
         sorted(entity.name for entity in neighbours),
+        [match.entity.name for match in found.matches],
     )
 
 

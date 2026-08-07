@@ -606,6 +606,104 @@ case with `min_score` set before touching it, and make the assertion count
 occurrences of the operator so a rewrite that claims to evaluate it once has
 to prove it.
 
+### B80. `PROPERTY_WEIGHT = 0.6` is a judgement, and nothing in the repo can settle it
+
+`src/redstring/domain/lexical.py` scores a query against an entity's name, its
+`normalized_name`, and each string value in `properties` — the last multiplied
+by `PROPERTY_WEIGHT = 0.6`. The *shape* is defensible and tested: a name is
+what an entity is, a property is something recorded about it, so a property
+match is weaker evidence and must score below the same match on the name.
+`test_a_property_can_match_but_scores_below_the_same_match_on_the_name` pins
+that ordering.
+
+**The number is not tested and cannot be, here.** Any value in `(0, 1)` passes
+every test in `tests/unit/domain/test_lexical.py`, because the tests assert the
+ordering and the bound, which is all that is knowable without graded data.
+0.6 was chosen, not measured.
+
+Why it was not settled now rather than deferred: the only graded corpus in the
+repo is `tests/accuracy/`, and it grades **extraction** over five hand-graded
+documents. Fitting a retrieval weight against it would be worse than leaving
+the guess visible — five documents cannot separate 0.5 from 0.7, and a number
+carrying a fitted provenance invites the next author to trust it in a way the
+bare guess does not.
+
+What would settle it: a graded *retrieval* corpus — queries paired with the
+entities that should come back, ranked — of a size where nDCG@10 separates
+candidate weights beyond noise. That is the same corpus B81 needs, so the two
+should be picked up together; building it once answers both. Until then, treat
+0.6 as a placeholder with a test-pinned ordering around it, and do not tune it
+against anything smaller.
+
+### B81. No retrieval accuracy suite exists, so "hybrid beats semantic" is an argument
+
+`tests/accuracy/` measures **extraction** — precision, recall and F1 over five
+hand-graded documents, scoring whether the right entities came out of a
+document. Nothing measures retrieval. So the claim the whole hybrid design
+rests on — that fusing a lexical channel with the semantic one returns better
+results than the semantic one alone — is currently reasoning, not a result.
+
+What *is* tested is that the machinery is correct:
+`tests/unit/composition/test_retrieval.py` pins filter-before-k, the dangling
+skip, tenant isolation, the modes, and the component scores.
+`tests/unit/domain/test_fusion.py` pins the fusion arithmetic. None of that is
+evidence about ranking quality, and it cannot be — `FakeEmbeddingProvider`'s
+vectors come from a hash, so two texts about the same subject are as far apart
+as two unrelated ones. **Every retrieval test in the gate is structural by
+construction.**
+
+What it needs: queries paired with the entities that should come back, ranked,
+over a corpus big enough for nDCG@10 to separate configurations beyond noise;
+and a live embeddings endpoint, so it belongs under `-m accuracy` beside the
+extraction suite rather than in the commit gate. Reuse the split that suite
+already proved — a pure scorer in the gate, the model-dependent half behind
+the marker — and prove the harness before believing a number, because a
+retrieval scorer fails silently in the same two directions (measuring nothing
+reports 0 and reads as a bad model; scoring the corpus against itself reports
+1 and reads as a good one).
+
+This is the same corpus B80 needs to settle `PROPERTY_WEIGHT`. Build it once
+and both close.
+
+### B82. Two composition points refuse a dimension mismatch with different exception types
+
+`Retriever.__init__` (`src/redstring/composition/retrieval.py`) raises
+`DimensionMismatchError` when the embedding provider and the vector store
+disagree on width. `build_graph`'s `_check_embedding_wiring`
+(`src/redstring/composition/build_graph.py`) raises **`ValueError`** for the
+same condition. `DimensionMismatchError` extends `RedstringError`, which
+extends `Exception` — it is **not** a `ValueError` subclass, so neither
+`except` catches the other.
+
+That is recurring-defects §1 at the composition layer: one rule, two
+implementations, no mechanism that fails when they disagree. A caller wiring
+both and writing one `except` around the configuration step catches one and
+crashes on the other.
+
+Deliberately not resolved on the spot, because it is not a free change. The
+two are not quite the same check: `build_graph` takes the provider and store
+as *optional* and its `ValueError` covers a second case — one supplied without
+the other — which `Retriever` cannot have, since all three collaborators are
+required. So "make them agree" is really two decisions: whether the
+half-configured case and the mismatched-dimension case should share a type at
+all, and which type the dimension case gets. Changing `build_graph`'s to
+`DimensionMismatchError` is the better answer on the merits and is a
+**breaking change** for anyone catching `ValueError` today, which is why it
+wants a version bump rather than a quiet edit.
+
+`tests/unit/test_build_graph_embeddings.py` asserts the `ValueError` and would
+need updating with it.
+
+**The divergence has no failing test, which is the part that will bite.**
+Nothing anywhere asserts that the composition points agree, so a third one
+picking a third type would be caught by nobody — the two existing tests each
+assert their own entry point's behaviour, which is §1's silent-divergence
+shape exactly. Closing this properly is therefore not just an edit: it is a
+test asserting that *every* composition point refuses a mismatch with the same
+type, which is currently red and cannot be added until the fix lands. Write
+that test first when picking this up; it is the thing that stops the entry
+being re-opened by a fourth caller in a year.
+
 ---
 
 ## 3. Performance and scale
@@ -1337,6 +1435,51 @@ slice 11 by running `CacheCompliance` against a real Redis -- which promptly
 found a bug (`recurring-defects.md` (g)). What remains is structural — about *how* the integration suites
 run rather than whether they exist: B10a, B10f, B10m.
 
+### B83. The lexical retrieval channel does not consult aliases
+
+`Retriever`'s lexical channel generates candidates with
+`GraphStore.find_by_blocking_keys` and scores them against
+`Entity.name`, `Entity.normalized_name` and the string values in
+`Entity.properties`. **An `Alias` is none of those.** Alias-ness is an edge,
+not a field on `Entity` (see
+`docs/adr/0002-two-store-ports.md`), so a query matching an alias name
+retrieves nothing today even though the store knows the alias exists.
+
+The surface to build on is already there and is exercised:
+`GraphStore.find_aliases(canonical_entity_id, tenant_id)` and
+`resolve_entity_ids(entity_ids, tenant_id)`, both on the `AliasStore`
+capability, both covered by `GraphStoreCompliance`.
+
+**Why it was deferred rather than added.** The blocking side is easy — alias
+names could carry blocking keys and enter the candidate set. What is *not*
+decided is what a match on an alias should **return**, and the answer is not
+obvious:
+
+- Returning the **alias entity** is literally what matched, and it is
+  usually not what the caller wants — they searched for a name and want the
+  thing it names.
+- Returning the **canonical** entity is what they want, and it makes the
+  result inconsistent with the query in a way the caller cannot see: the
+  returned `Entity.name` is not the string that matched, so a UI highlighting
+  the match has nothing to highlight, and two aliases of one canonical
+  collapse into a single result whose `lexical` score belongs to neither name.
+- Returning **both** doubles some results and needs a rule for ranking a
+  canonical against its own alias.
+
+That is `domain.preference`'s territory —
+`docs/adr/0010-one-total-order-for-preference.md` settles which mapping of a
+thing survives, and this is the same question asked at read time rather than
+at merge time. Deciding it inside the retrieval work would have meant either
+extending that total order or growing a second one beside it, which is exactly
+the "second entity-id scheme gets born" shape the layer contract is arranged
+to prevent.
+
+So: settle the return semantics first, ideally as an amendment to 0010,
+*then* wire the candidates. Whichever way it goes, `ScoredEntity` probably
+needs a field naming the string that actually matched — without it the caller
+cannot tell an alias hit from a name hit, and that is the distinction the
+whole question turns on.
+
 ---
 
 ## 6. Tooling, packaging and hygiene
@@ -1667,3 +1810,70 @@ Note this interacts with `release.yml`, which calls `ci.yml` via
 `workflow_call`: a cap on the reusable workflow's jobs applies to the release
 pipeline too, which is the case where an unbounded hang is most expensive
 (B72 — a failed release consumes the version number).
+
+### B84. `_resolve`'s round-trip saving is an untested optimisation
+
+`src/redstring/composition/retrieval.py:209`. `_resolve` seeds `resolved`
+from the entities the lexical channel already holds, so only the ids it did
+not supply are fetched. The docstring makes that an explicit cost claim ("in
+one round trip for the unknown", "only the ids it did not supply are
+fetched") and no test holds it: replacing that line with `resolved = {}` --
+so every `HYBRID` retrieve issues a `get_entities` round trip it does not
+need -- leaves the retrieval suite **green**, measured. Correct output,
+unverified cost, which is `recurring-defects.md` §3 in its mildest form.
+
+The template is in the same file:
+`test_a_lexical_only_mode_makes_no_embedding_call` wraps the provider in a
+counting subclass, and the file already builds a duck-typed store wrapper
+(`RebuildingGraphStore`) that a `get_entities` counter can copy. Roughly
+eight lines. Left out of the I1--I4 fix wave only because the review scored
+it Minor and the wave was scoped to the four Important findings.
+
+### B85. `entity_types` means two different things on the two retrieval channels
+
+`retrieve`'s docstring says "`entity_types` restricts both channels" without
+qualification. It restricts them differently:
+
+- the **lexical** channel compares `entity.entity_type` from the graph
+  (`src/redstring/composition/retrieval.py:181`);
+- the **semantic** channel filters on the *vector record's*
+  `metadata["entity_type"]`, via `entity_type_of`.
+
+Two consequences, neither documented nor tested. A vector upserted without
+`entity_type` metadata has `entity_type_of(...) is None`, so any non-`None`
+`entity_types` excludes it from the semantic channel even when the graph
+entity carries the wanted type -- and in `HYBRID` the entity still arrives
+lexically, so it *looks* like it works while the semantic contribution is
+silently missing and the rank changes. And the comparison is case-sensitive
+on both sides while `domain/blocking.py`'s `entity_type_key` normalizes, so
+`entity_types=["Person"]` matches nothing here while blocking treats
+`"Person"` and `"person"` as one type.
+
+Both follow from the ports rather than being bugs in the `Retriever`, which
+is why this is a docs-or-semantics decision rather than a fix: either
+qualify the docstring (cheapest, and honest), or normalize the comparison and
+say in `ports/vector_store.py` what a record missing the key means. Do not
+"fix" it by having the semantic channel consult the graph -- that is a second
+round trip per query on the path the vector filter exists to avoid.
+
+### B86. Two retrieval tests pass on the adapter's guarantee rather than the `Retriever`'s
+
+`tests/unit/composition/test_retrieval.py`. Both were asked for by the spec
+and both are worth keeping; what is worth recording is that neither is
+load-bearing as written, so nobody re-derives that later.
+
+- `test_entities_are_compared_by_equality_not_identity` builds a
+  `RebuildingGraphStore` returning equal-but-distinct entities, which is the
+  right construction -- but there is no `is` comparison on an `Entity`
+  anywhere in `Retriever` for it to catch, and it runs in `HYBRID` against an
+  *empty* vector store, so only `find_by_blocking_keys` is rebuilt and
+  `get_entities`'s rebuild path is never exercised. Pointing it at
+  `RetrievalMode.SEMANTIC` (where `_resolve` fetches) would make it mean
+  something, and is a one-line change.
+- `test_mutating_a_result_cannot_change_what_a_later_retrieve_returns` is
+  green because `InMemoryGraphStore` returns deep copies, which
+  `GraphStoreCompliance` already enforces. There is no implementation of
+  `Retriever` that fails it without also failing the compliance suite.
+
+Neither is a defect to fix under time pressure; the entry exists so the next
+reader does not mistake either for evidence about the `Retriever`.
