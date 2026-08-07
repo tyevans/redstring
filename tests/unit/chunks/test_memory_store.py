@@ -1,13 +1,28 @@
-"""`InMemoryChunkStore`: the tests true of this adapter and no other."""
+"""The in-memory `ChunkStore` adapter against the shared compliance suite.
+
+Everything asserted about behaviour lives in `tests.compliance.chunk_store`.
+This module supplies a store and adds only what is specific to *this*
+adapter -- namely that it holds no state outside itself.
+"""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
 from redstring.domain.chunk import StoredChunk
+from tests.compliance.chunk_store import ChunkStoreCompliance
+
+if TYPE_CHECKING:
+    from redstring.ports.chunk_store import ChunkStore
+
+
+class TestMemoryChunkStore(ChunkStoreCompliance):
+    async def new_store(self) -> ChunkStore:
+        return InMemoryChunkStore()
 
 
 @pytest.mark.unit

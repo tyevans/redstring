@@ -42,19 +42,20 @@ in one implementation and a rolling instant in the others; an in-memory
 update that rebuilt its record from scratch and silently dropped a field the
 SQL path preserved through its UPSERT column list.
 
-**Where this lives in redstring:** the four ports, each with two
-implementations that must be interchangeable —
+**Where this lives in redstring:** the ports below, each with implementations
+that must be interchangeable —
 
 | Port | Implementations |
 |---|---|
 | `ports/graph_store.py` | `graph/adapters/memory.py`, `graph/adapters/neo4j.py` |
 | `ports/vector_store.py` | `vector/adapters/memory.py`, `vector/adapters/pgvector.py` |
+| `ports/chunk_store.py` | `chunks/adapters/memory.py` |
 | `ports/cache.py` | `llm/cache/memory.py`, `llm/cache/redis.py` |
 | `ports/llm_provider.py` | `llm/adapters/fake.py`, `llm/adapters/langchain.py` |
 | `ports/embedding_provider.py` | `llm/adapters/fake_embedding.py` |
 
-Four of the five have a shared suite; `llm_provider` does not, so it is the
-one where this shape is currently free to happen. See
+Every one of them has a shared suite except `llm_provider`, so that is the
+port where this shape is currently free to happen. See
 `docs/adr/0002-two-store-ports.md` for why the store ports are two rather than
 one, and `docs/how-to/implement-a-store-adapter.md` for the procedure a third
 implementation follows.

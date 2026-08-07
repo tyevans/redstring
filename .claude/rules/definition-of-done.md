@@ -112,14 +112,14 @@ often:
   test module named after one of them. A test that names a single adapter
   cannot catch the next one, which is the whole defect shape.
 
-  The multi-implementation contracts in this project are the three port
-  compliance suites under `tests/compliance/`, and they are where such a test
-  goes:
+  The multi-implementation contracts in this project are the port compliance
+  suites under `tests/compliance/`, and they are where such a test goes:
 
   | Suite | Port | Implementations that run it |
   |---|---|---|
   | `tests/compliance/graph_store.py` (`GraphStoreCompliance`) | `GraphStore` | `tests/unit/graph/test_memory_store.py`, `tests/integration/graph/test_neo4j_store.py` |
   | `tests/compliance/vector_store.py` (`VectorStoreCompliance`) | `VectorStore` | `tests/unit/vector/test_memory_store.py`, `tests/integration/vector/test_pgvector_store.py` |
+  | `tests/compliance/chunk_store.py` (`ChunkStoreCompliance`) | `ChunkStore` | `tests/unit/chunks/test_memory_store.py` |
   | `tests/compliance/cache.py` (`CacheCompliance`) | `Cache` | `tests/unit/llm/test_memory_cache.py`, `tests/integration/llm/test_redis_cache.py` |
   | `tests/compliance/embedding_provider.py` (`EmbeddingProviderCompliance`) | `EmbeddingProvider` | `tests/unit/llm/test_fake_embedding_provider.py` |
 

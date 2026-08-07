@@ -70,12 +70,13 @@ external, and it is what the pre-commit hook runs.
 
 It is also where each adapter's compliance subclass lives. A contract class in
 `tests/compliance/` is inert until a module here subclasses it under a `Test*`
-name, and for the in-memory adapters that happens in exactly three files:
+name, and for the in-memory adapters that happens in these files:
 
 | File | Subclass | Contract |
 |---|---|---|
 | `tests/unit/graph/test_memory_store.py` | `TestMemoryStore` | `GraphStoreCompliance` |
 | `tests/unit/vector/test_memory_store.py` | `TestMemoryVectorStore` | `VectorStoreCompliance` |
+| `tests/unit/chunks/test_memory_store.py` | `TestMemoryChunkStore` | `ChunkStoreCompliance` |
 | `tests/unit/llm/test_memory_cache.py` | `TestMemoryCache` | `CacheCompliance` |
 
 Each is a two-line class: the subclass plus whatever the contract requires it
@@ -92,12 +93,13 @@ stated about the port itself goes up into `tests/compliance/`.
 
 ### `tests/compliance/`
 
-Five modules and no tests of its own:
+Contract classes and their generators, and no tests of its own:
 
 | Module | Holds |
 |---|---|
 | `graph_store.py` | `GraphStoreCompliance` — the `GraphStore` contract |
 | `vector_store.py` | `VectorStoreCompliance` — the `VectorStore` contract |
+| `chunk_store.py` | `ChunkStoreCompliance` — the `ChunkStore` contract |
 | `cache.py` | `CacheCompliance` — the `Cache` contract |
 | `strategies.py` | hypothesis strategies for the domain types those use |
 | `__init__.py` | package marker |
@@ -320,14 +322,15 @@ the origin of the probe rule now stated for every integration suite here.
 
 ## Port compliance suites
 
-Three contract classes, each in its own module under `tests/compliance/`, each
-made to run by being subclassed from an adapter's own test module under a
-`Test*` name:
+One contract class per port, each in its own module under
+`tests/compliance/`, each made to run by being subclassed from an adapter's
+own test module under a `Test*` name:
 
 | Contract | Adapter supplies | Subclassed by |
 |---|---|---|
 | `GraphStoreCompliance` | `async new_store()` (+ `dispose()` if it owns a connection) | `TestMemoryStore`, `TestNeo4jStore` |
 | `VectorStoreCompliance` | `async new_store()` (+ `dispose()`), may override `DIMENSION` | `TestMemoryVectorStore`, `TestPgVectorStore` |
+| `ChunkStoreCompliance` | `async new_store()` (+ `dispose()`) | `TestMemoryChunkStore` |
 | `CacheCompliance` | a `cache` fixture | `TestMemoryCache` |
 
 The subclass is the whole opt-in — usually two lines:
@@ -414,8 +417,9 @@ See `docs/how-to/implement-a-store-adapter.md` for writing a new subclass and
 
 ### The coverage gate
 
-`tests/unit/graph/test_compliance_coverage.py` and
-`tests/unit/vector/test_compliance_coverage.py` are tests *about* the
+`tests/unit/graph/test_compliance_coverage.py`,
+`tests/unit/vector/test_compliance_coverage.py` and
+`tests/unit/chunks/test_compliance_coverage.py` are tests *about* the
 compliance suites. Each derives the port's read methods by introspection and
 fails when one of them has no mutation-isolation test and no tenant-isolation
 test.
@@ -426,6 +430,7 @@ Derivation is from **return annotations, not names**:
 |---|---|---|
 | `tests/unit/graph/test_compliance_coverage.py` | `GraphStore` | `Entity`, `Relationship` or `Alias` |
 | `tests/unit/vector/test_compliance_coverage.py` | `VectorStore` | `VectorRecord` or `VectorMatch` |
+| `tests/unit/chunks/test_compliance_coverage.py` | `ChunkStore` | `StoredChunk` |
 
 `_mentions` recurses through `typing.get_args`, so `list[Entity]` and
 `dict[str, list[Entity]]` both count. `delete_relationship() -> bool` and the
