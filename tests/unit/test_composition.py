@@ -20,12 +20,12 @@ from redstring import (
     AUTO,
     EMPTY,
     FakeLlmProvider,
+    InMemoryChunkStore,
     InMemoryGraphStore,
     SourceDocument,
     build_graph,
     domain_system_prompt,
 )
-from redstring.chunks.adapters.memory import InMemoryChunkStore  # exported in Task 10
 from redstring.domain.exceptions import LlmProviderError
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, PartialExtractionError
 
