@@ -52,19 +52,19 @@ async def test_every_event_type_is_replayed_by_a_pinned_case(
 def test_every_event_type_has_a_projection_handler(event_type):
     """An event no projection folds is a fact the read models never learn.
 
+    Asked of the rig rather than of a list written here: a hand-kept list
+    needs updating by the same person who forgot to add the projection, and
+    the rig is what every replay test in this suite actually runs.
+
     That is occasionally the right answer -- an event kept purely for audit --
     but never the right *accident*, so it has to be argued for here rather
     than discovered when a query comes back empty.
     """
-    from redstring.graph.adapters.memory import InMemoryGraphStore
-    from redstring.projections import GraphProjection, VectorProjection
-    from redstring.vector.adapters.memory import InMemoryVectorStore
-
     handled: set = set()
-    handled.update(GraphProjection(InMemoryGraphStore()).subscribed_to())
-    handled.update(VectorProjection(InMemoryVectorStore(dimension=4)).subscribed_to())
+    for projection in fresh_rig().projections:
+        handled.update(projection.subscribed_to())
 
     assert event_type in handled, (
-        f"{event_type.__name__} is in KG_EVENT_TYPES but neither projection "
-        f"handles it, so folding the log silently ignores it"
+        f"{event_type.__name__} is in KG_EVENT_TYPES but no projection in the "
+        f"rig handles it, so folding the log silently ignores it"
     )

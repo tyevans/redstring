@@ -45,10 +45,11 @@ could not be caught without a dotted import.
 - **What you put in.** `SourceDocument`.
 - **What comes out.** `Entity`, `Relationship`, `Alias`, `ExtractionMethod`,
   `TemporalExtent` (with `DatePrecision` and `UncertaintyMarker`),
-  `VectorRecord`, `VectorMatch`, and the `DocumentExtracted` and
-  `EntitiesEmbedded` events carrying them. `EntityId`, `RelationshipId`,
+  `VectorRecord`, `VectorMatch`, `StoredChunk`, and the `DocumentExtracted`,
+  `EntitiesEmbedded` and `DocumentChunked` events carrying them. `EntityId`, `RelationshipId`,
   `TenantId` and `SourceId` are the id vocabulary -- the first three are
-  `UUID`, the last is `str`.
+  `UUID`, the last is `str`. `ChunkId` joins them for a stored passage, and
+  is a `str`: a chunk is identified by the digest of its source and its text.
 - **Ports.** `GraphStore`, `VectorStore`, `LlmProvider`, `EmbeddingProvider`,
   `Chunker`. Implement
   one to plug in a backend of your own; the compliance suite in
@@ -134,6 +135,7 @@ from redstring.composition import (
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
 from redstring.domain.alias import Alias
+from redstring.domain.chunk import ChunkId, StoredChunk
 from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import (
@@ -160,7 +162,7 @@ from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
 from redstring.domain.source import SourceDocument
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.domain.vector import VectorMatch, VectorRecord
-from redstring.events.document import DocumentExtracted, EntitiesEmbedded
+from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.events.streams import document_stream
 from redstring.extraction.chunking import Chunk, ChunkingResult
@@ -215,6 +217,7 @@ __all__ = [
     "Bounds",
     "CandidateFinder",
     "Chunk",
+    "ChunkId",
     "ChunkSizeError",
     "Chunker",
     "ChunkerError",
@@ -228,6 +231,7 @@ __all__ = [
     "DatePrecision",
     "DimensionMismatchError",
     "Document",
+    "DocumentChunked",
     "DocumentExtracted",
     "DomainSchema",
     "DoubleMergeError",
@@ -277,6 +281,7 @@ __all__ = [
     "SimilarityFeatures",
     "SourceDocument",
     "SourceId",
+    "StoredChunk",
     "TemporalExtent",
     "TemporalQuery",
     "TemporalRelation",

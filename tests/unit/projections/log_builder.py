@@ -24,6 +24,7 @@ from redstring.aggregates.repositories import (
     consolidation_repository,
     document_repository,
 )
+from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import ConsolidationInvariantError
@@ -31,13 +32,14 @@ from redstring.domain.relationship import Relationship
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import consolidation_stream, document_stream
 
-from .conftest import DIMENSION
+from .conftest import DIMENSION, SOURCE_IDS
 
 MODEL = "ollama/qwen3.6-27b"
 EMBEDDING_MODEL = "ollama/nomic-embed-text"
+CHUNKING_SIGNATURES = ("recursive:abc123", "fixed:def456")
 
 MAX_TENANTS = 2
-MAX_DOCUMENTS = 3
+MAX_DOCUMENTS = len(SOURCE_IDS)
 MAX_ENTITIES_PER_DOCUMENT = 4
 
 
@@ -53,6 +55,11 @@ class DocumentSpec:
     entity_count: int
     edges: tuple[tuple[int, int], ...]
     embedded: bool
+    #: How many chunkings this document records: none, one, or a re-chunk on
+    #: top of the first. Two is the case that distinguishes a fold using
+    #: `replace_source` from one that only upserts -- on a single chunking the
+    #: two are the same function.
+    chunkings: int = 0
 
 
 @dataclass(frozen=True)
@@ -98,6 +105,7 @@ def scenarios(draw):
                     (a, b) for a, b in raw_edges if a != b and a < entity_count and b < entity_count
                 ),
                 embedded=draw(st.booleans()),
+                chunkings=draw(st.integers(min_value=0, max_value=2)),
             )
         )
 
@@ -154,6 +162,8 @@ class _TenantMirror:
     entity_ids: list = field(default_factory=list)
     edges: dict = field(default_factory=dict)
     vectors: dict = field(default_factory=dict)
+    #: source id -> the chunk ids that source should hold, in port order.
+    chunks: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -176,6 +186,7 @@ class BuiltLog:
                     for edge in mirror.edges.values()
                 },
                 "vectors": {str(k): v for k, v in mirror.vectors.items()},
+                "chunks": dict(mirror.chunks),
             }
             for tenant_id, mirror in self.expected.items()
         }
@@ -195,6 +206,28 @@ def _entity(tenant_id, tenant: int, document: int, index: int) -> Entity:
     )
 
 
+def _chunks(tenant_id, source_id: str, revision: int) -> list[StoredChunk]:
+    """Two passages, the second of which changes between revisions.
+
+    One text is carried over on a re-chunk and one is replaced, so the
+    expected corpus distinguishes "replaced this source" from both "deleted
+    everything" and "kept everything".
+    """
+    texts = [f"{source_id} opening", f"{source_id} revision {revision}"]
+    return [
+        StoredChunk(
+            id=chunk_id(source_id, text),
+            tenant_id=tenant_id,
+            source_id=source_id,
+            text=text,
+            chunk_index=index,
+            start_char=0,
+            end_char=len(text),
+        )
+        for index, text in enumerate(texts)
+    ]
+
+
 def _vector(index: int) -> list[float]:
     """Non-zero by construction -- `VectorStore` rejects the zero vector."""
     return [1.0 + index, 0.5, 0.25, 0.125]
@@ -209,10 +242,11 @@ async def build_log(event_store, snapshot_store, scenario: Scenario) -> BuiltLog
 
     for spec in scenario.documents:
         tenant_id = tenant_ids[spec.tenant]
-        source_id = f"doc-{spec.index}"
+        source_id = SOURCE_IDS[spec.index]
         entities = [
             _entity(tenant_id, spec.tenant, spec.index, i) for i in range(spec.entity_count)
         ]
+        chunkings = [_chunks(tenant_id, source_id, revision) for revision in range(spec.chunkings)]
         relationships = [
             Relationship(
                 id=_uuid(f"rel/{spec.tenant}/{spec.index}/{a}-{b}"),
@@ -251,6 +285,13 @@ async def build_log(event_store, snapshot_store, scenario: Scenario) -> BuiltLog
                         for i, entity in enumerate(entities)
                     ],
                 )
+            for revision, chunks in enumerate(chunkings):
+                aggregate.record_chunking(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    chunking_signature=CHUNKING_SIGNATURES[revision],
+                    chunks=chunks,
+                )
             await documents.save(aggregate)
 
         mirror = mirrors[spec.tenant]
@@ -259,6 +300,11 @@ async def build_log(event_store, snapshot_store, scenario: Scenario) -> BuiltLog
         if spec.embedded:
             for i, entity in enumerate(entities):
                 mirror.vectors[entity.id] = _vector(i)[:DIMENSION]
+        if chunkings:
+            # Last chunking wins, and the earlier one's unshared passage is an
+            # orphan the fold must have deleted -- which is the whole reason
+            # `replace_source` is one port method.
+            mirror.chunks[source_id] = [chunk.id for chunk in chunkings[-1]]
 
     merge_event_ids: list = []
     for tenant, canonical_index, absorbed_index in scenario.merges:

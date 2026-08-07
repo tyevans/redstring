@@ -100,6 +100,27 @@ TWO_TENANTS = Scenario(
     ),
 )
 
+#: A document chunked twice, so the second fold has an orphan to delete. On a
+#: single chunking `replace_source` and a bare `upsert_many` are the same
+#: function, which is why the pinned case re-chunks rather than chunks.
+RE_CHUNKED = Scenario(
+    tenant_count=1,
+    documents=(
+        DocumentSpec(tenant=0, index=0, entity_count=1, edges=(), embedded=False, chunkings=2),
+    ),
+)
+
+#: Two tenants chunking the *same* source. Content-addressed ids collide
+#: across tenants by construction, so this is where a fold keyed on the id
+#: alone would let one tenant's re-chunk delete the other's passages.
+TWO_TENANTS_CHUNKED = Scenario(
+    tenant_count=2,
+    documents=(
+        DocumentSpec(tenant=0, index=0, entity_count=1, edges=(), embedded=False, chunkings=1),
+        DocumentSpec(tenant=1, index=0, entity_count=1, edges=(), embedded=False, chunkings=2),
+    ),
+)
+
 PINNED = {
     "empty": EMPTY,
     "single": SINGLE,
@@ -108,6 +129,8 @@ PINNED = {
     "undo": WITH_UNDO,
     "undo-of-dropping-merge": UNDO_OF_DROPPING_MERGE,
     "two-tenants": TWO_TENANTS,
+    "re-chunked": RE_CHUNKED,
+    "two-tenants-chunked": TWO_TENANTS_CHUNKED,
 }
 
 
@@ -129,8 +152,15 @@ async def _wipe(rig, tenant_ids):
     for tenant_id in tenant_ids:
         await rig.graph_store.delete_by_tenant(tenant_id)
         await rig.vector_store.delete_by_tenant(tenant_id)
+        await rig.chunk_store.delete_by_tenant(tenant_id)
     assert await rig.dump(tenant_ids) == {
-        str(tenant_id): {"entities": [], "relationships": [], "aliases": [], "vectors": []}
+        str(tenant_id): {
+            "entities": [],
+            "relationships": [],
+            "aliases": [],
+            "vectors": [],
+            "chunks": [],
+        }
         for tenant_id in sorted(tenant_ids, key=str)
     }
 
