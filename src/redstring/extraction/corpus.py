@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from redstring.domain.ids import EntityId, SourceId, TenantId
-    from redstring.extraction.chunking import ChunkingResult
+    from redstring.extraction.chunking import Chunk, ChunkingResult
 
 
 def chunking_digest(result: ChunkingResult) -> str:
@@ -91,24 +91,33 @@ def stored_chunks(
     entity found in either occurrence was found in that text.
     """
     links = entity_ids_by_index if entity_ids_by_index is not None else {}
-    by_id: dict[str, StoredChunk] = {}
+    #: The chunk each id was first seen at, and the union of its links. Both
+    #: are accumulated *before* any `StoredChunk` exists, so nothing here
+    #: mutates a built model -- a `StoredChunk` this function has returned is
+    #: never edited afterwards, and neither is one it is about to return.
+    first: dict[str, Chunk] = {}
+    found: dict[str, list[EntityId]] = {}
 
     for chunk in result.chunks:
         ident = chunk_id(source_id, chunk.text)
-        found = list(links.get(chunk.chunk_index, ()))
-        seen = by_id.get(ident)
-        if seen is None:
-            by_id[ident] = StoredChunk(
-                id=ident,
-                tenant_id=tenant_id,
-                source_id=source_id,
-                text=chunk.text,
-                chunk_index=chunk.chunk_index,
-                start_char=chunk.start_char,
-                end_char=chunk.end_char,
-                entity_ids=found,
-            )
-            continue
-        seen.entity_ids.extend(entity_id for entity_id in found if entity_id not in seen.entity_ids)
+        if ident not in first:
+            first[ident] = chunk
+            found[ident] = []
+        seen = found[ident]
+        seen.extend(
+            entity_id for entity_id in links.get(chunk.chunk_index, ()) if entity_id not in seen
+        )
 
-    return list(by_id.values())
+    return [
+        StoredChunk(
+            id=ident,
+            tenant_id=tenant_id,
+            source_id=source_id,
+            text=chunk.text,
+            chunk_index=chunk.chunk_index,
+            start_char=chunk.start_char,
+            end_char=chunk.end_char,
+            entity_ids=found[ident],
+        )
+        for ident, chunk in first.items()
+    ]

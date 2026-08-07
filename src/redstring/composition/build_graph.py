@@ -36,9 +36,18 @@ stating plainly rather than discovering:
 - **There is no log to rebuild from.** A store rebuilt from nothing is a store
   restored from backup.
 
-A caller who wants either appends `report.event` to an `EventStore` and drives
-`redstring.projections.project` over the feed. `report.event` is returned for
-precisely that, and it is the same object the projection just consumed.
+**Both are removed by passing `event_store`**, which loads the aggregate from
+that log and appends to it. That is not merely a convenience: the chunking
+signature's whole design -- two write paths, two key spaces, so that indexing
+a document and later extracting it does not suppress the entity links -- is
+only *observable* across calls that share aggregate state. Without a log there
+is no state and no refusal, so nothing behavioural can distinguish the design
+from its opposite. See `index_documents`.
+
+A caller who wants a log without this parameter appends `report.event` to an
+`EventStore` themselves and drives `redstring.projections.project` over the
+feed. `report.event` is returned for precisely that, and it is the same object
+the projection just consumed.
 
 ## `domain=AUTO` costs an extra model call, and says so
 
@@ -55,8 +64,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from eventsource.adapters.memory import InMemoryEventStore, InMemorySnapshotStore
+from eventsource.domain.tenant_context import tenant_scope
 
 from redstring.aggregates.document import Document
+from redstring.aggregates.repositories import document_repository
 from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.consolidation.service import ConsolidationService
@@ -74,6 +85,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from uuid import UUID
 
+    from eventsource.application.aggregates.tenant_repository import TenantAwareRepository
     from eventsource.ports.snapshots import SnapshotStore
     from eventsource.ports.store import AggregateStore
 
@@ -84,7 +96,6 @@ if TYPE_CHECKING:
     from redstring.events.document import DocumentExtracted
     from redstring.events.merge import EntitiesMerged, MergeUndone
     from redstring.extraction.domains.models import DomainSchema
-    from redstring.extraction.pipeline import PipelineResult
     from redstring.extraction.protocols import Chunker
     from redstring.ports.chunk_store import ChunkStore
     from redstring.ports.embedding_provider import EmbeddingProvider
@@ -186,6 +197,7 @@ async def build_graph(
     embedding_provider: EmbeddingProvider | None = None,
     vector_store: VectorStore | None = None,
     chunks: ChunkStore | None = None,
+    event_store: AggregateStore | None = None,
 ) -> GraphBuildReport:
     """Extract `document` and write the result into `store`.
 
@@ -217,6 +229,24 @@ async def build_graph(
             half-configured state to refuse, so `None` is not an error and
             neither is a document that chunks to something while this is
             `None`.
+        event_store: Where this run's events are appended, so the aggregate's
+            idempotence survives the call. Without one -- the default, and the
+            shape this function has always had -- a fresh aggregate is built
+            each time and every refusal it could make is unreachable. With
+            one, a second `build_graph` for the same document under the same
+            model returns `event is None` and a repeat chunking returns
+            `chunks_written == 0`.
+
+            **This is what makes the two write paths' key spaces observable.**
+            Indexing a document with `index_documents` and then extracting it
+            over the same log is the case the signatures are composed
+            differently for: they differ, so the extraction's chunking is
+            recorded and its entity links survive. Were the signatures equal,
+            the extraction would read as a repeat and the links would be
+            silently dropped -- which is exactly what
+            `tests/unit/composition/test_index_documents.py::TestTheTwoOrderings`
+            now fails on, rather than the string-shape assertion that used to
+            be the only thing holding it.
         skip_failed_chunks: Continue past a chunk whose model call failed.
         allow_partial: Record a result that has failed chunks in it. Off by
             default, because recording a partial extraction marks this model
@@ -225,9 +255,9 @@ async def build_graph(
 
     Returns:
         A `GraphBuildReport`. `report.event is None` means this document was
-        already extracted under this model on *this aggregate*, which given
-        the fresh-aggregate-per-call shape above only happens if you pass the
-        same one twice.
+        already extracted under this model on *this aggregate* -- which
+        without an `event_store` cannot happen, since each call builds a fresh
+        one, and with an `event_store` is the ordinary outcome of a re-run.
 
     Raises:
         ValueError: One of `embedding_provider` and `vector_store` was given
@@ -252,7 +282,13 @@ async def build_graph(
         system_prompt=system_prompt,
         skip_failed_chunks=skip_failed_chunks,
     )
-    aggregate = Document(document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id)
+    stream = document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id
+    repository = document_repository(event_store) if event_store is not None else None
+    if repository is None:
+        aggregate = Document(stream)
+    else:
+        async with tenant_scope(tenant_id):
+            aggregate = await repository.load_or_create(stream)
 
     # Extracted once and handed to `record`, which would otherwise extract
     # again -- see the `result` parameter there. `record` asks the aggregate
@@ -266,7 +302,21 @@ async def build_graph(
     # Recorded whether or not the extraction was: the two are separate key
     # spaces on the aggregate, and a document already extracted under this
     # model has still been split into the passages a corpus wants.
-    chunks_written = await _record_chunking(aggregate, document, tenant_id, result, chunks)
+    chunk_event = aggregate.record_chunking(
+        tenant_id=tenant_id,
+        source_id=document.id,
+        chunking_signature=result.chunking_signature,
+        chunks=result.chunks,
+    )
+    # The log before the read models, when there is a log: a crash between the
+    # two leaves an event a replay will apply, whereas projecting first and
+    # crashing leaves read models holding what nothing accounts for.
+    await _persist(repository, aggregate, tenant_id)
+
+    chunks_written = 0
+    if chunk_event is not None and chunks is not None:
+        await ChunkProjection(chunks).handle(chunk_event)
+        chunks_written = len(chunk_event.chunks)
 
     embedded = 0
     if event is not None:
@@ -280,6 +330,7 @@ async def build_graph(
                 provider=embedding_provider,
                 vector_store=vector_store,
             )
+            await _persist(repository, aggregate, tenant_id)
 
     return GraphBuildReport(
         event=event,
@@ -295,39 +346,22 @@ async def build_graph(
     )
 
 
-async def _record_chunking(
+async def _persist(
+    repository: TenantAwareRepository[Document] | None,
     aggregate: Document,
-    document: SourceDocument,
     tenant_id: TenantId,
-    result: PipelineResult,
-    store: ChunkStore | None,
-) -> int:
-    """Emit the chunking and fold it into `store`. Returns what was written.
+) -> None:
+    """Append whatever the aggregate has emitted, when there is a log to append to.
 
-    The aggregate is asked for the event even when there is no store, so the
-    two arms differ only in whether a projection runs. Doing it the other way
-    -- skipping `record_chunking` when `store is None` -- would make the
-    aggregate's recorded history depend on which read models a caller happened
-    to wire up, and a caller who later added a chunk store would find the
-    chunking already marked done.
-
-    `event is None` is a repeat under this signature. It is unreachable from
-    `build_graph` for the same reason `record_embeddings`' is -- a fresh
-    aggregate per call -- and reachable immediately for a caller that loads
-    one from a log, which is why the branch is here rather than asserted away.
+    A no-op without an `event_store`, which is the default and the shape
+    `build_graph` has always had. `TenantAwareRepository.save` raises outside a
+    `tenant_scope`, so the scope is entered here rather than being a
+    precondition on the caller.
     """
-    event = aggregate.record_chunking(
-        tenant_id=tenant_id,
-        source_id=document.id,
-        chunking_signature=result.chunking_signature,
-        chunks=result.chunks,
-    )
-    if store is None:
-        return 0
-    if event is None:  # pragma: no cover -- see docstring
-        return 0
-    await ChunkProjection(store).handle(event)
-    return len(event.chunks)
+    if repository is None:
+        return
+    async with tenant_scope(tenant_id):
+        await repository.save(aggregate)
 
 
 def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorStore | None) -> None:

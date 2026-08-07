@@ -87,12 +87,13 @@ class TestThereIsNoModel:
 
 
 class TestRepeats:
-    async def test_indexing_the_same_document_twice_is_a_no_op(self) -> None:
+    async def test_indexing_the_same_document_twice_over_one_log_is_a_no_op(self) -> None:
         """Same chunker settings, same signature, nothing emitted the second time.
 
-        The two calls share an event store, which is what carries the
-        aggregate's recorded signatures between them. Without one the refusal
-        has no state to live in -- see the module docstring.
+        Named for the log because the log is what makes it true. The two calls
+        share an event store, which is what carries the aggregate's recorded
+        signatures between them; without one the refusal has no state to live
+        in, which the test below pins rather than leaving to the docstring.
         """
         corpus = InMemoryChunkStore()
         log = InMemoryEventStore()
@@ -110,6 +111,25 @@ class TestRepeats:
         assert second.documents_skipped == 1
         assert second.chunks_written == 0
         # And the corpus is unchanged rather than emptied.
+        assert len(await corpus.get_by_source("doc-1", TENANT_ID)) == first.chunks_written
+
+    async def test_without_a_log_a_repeat_is_re_indexed_rather_than_skipped(self) -> None:
+        """What the default actually guarantees, asserted rather than described.
+
+        The corpus is unharmed -- content-addressed rows are rewritten
+        identically -- but the *report* says the work was new, so
+        `documents_indexed` cannot be read as "work that needed doing". A
+        docstring saying so is not a test; this is.
+        """
+        corpus = InMemoryChunkStore()
+
+        first = await index_documents([long_document()], store=corpus, tenant_id=TENANT_ID)
+        second = await index_documents([long_document()], store=corpus, tenant_id=TENANT_ID)
+
+        assert second.documents_indexed == 1
+        assert second.documents_skipped == 0
+        assert second.chunks_written == first.chunks_written
+        # Rewritten, not duplicated.
         assert len(await corpus.get_by_source("doc-1", TENANT_ID)) == first.chunks_written
 
     async def test_a_document_listed_twice_in_one_call_is_indexed_once(self) -> None:
@@ -165,24 +185,75 @@ class TestRepeats:
 
 
 class TestTheTwoOrderings:
-    """Index-then-extract keeps the links; extract-then-index drops them."""
+    """Index-then-extract keeps the links; extract-then-index drops them.
+
+    **Every test here shares one event store between the two calls, and that
+    is what gives them teeth.** The signatures are two key spaces so that a
+    repeat is refused in one and not the other, and a refusal lives in the
+    aggregate's state -- so with a fresh aggregate per call there is no
+    refusal to observe and these assertions hold for a *unified* signature
+    too. That was the gap: the design's central claim rested on one
+    string-shape assertion about `":{model_version}"`, which a future author
+    unifying the two signatures would have deleted as redundant.
+    """
 
     async def test_extracting_after_indexing_preserves_the_entity_links(self) -> None:
         corpus = InMemoryChunkStore()
         graph = InMemoryGraphStore()
+        log = InMemoryEventStore()
 
-        await index_documents([document()], store=corpus, tenant_id=TENANT_ID)
-        await build_graph(
+        await index_documents([document()], store=corpus, tenant_id=TENANT_ID, event_store=log)
+        report = await build_graph(
             document(),
             provider=FakeLlmProvider(by_substring={}, default=ADA),
             store=graph,
             tenant_id=TENANT_ID,
             chunks=corpus,
+            event_store=log,
         )
 
+        # The extraction's chunking was *recorded*, not refused as a repeat.
+        # Unify the two signatures and this is 0, and everything below it is
+        # an assertion about an empty set.
+        assert report.chunks_written == 1
         stored = await corpus.get_by_source("doc-1", TENANT_ID)
         linked = {entity_id for chunk in stored for entity_id in chunk.entity_ids}
         assert linked == {entity.id for entity in await graph.find_entities(TENANT_ID)}
+        assert linked
+
+    async def test_a_repeat_of_the_same_path_over_one_log_is_refused(self) -> None:
+        """The other half of the key-space claim: a repeat *is* suppressed.
+
+        Without this, "the signatures differ" would be satisfied by a
+        signature that differs from everything, including itself.
+        """
+        corpus = InMemoryChunkStore()
+        log = InMemoryEventStore()
+        provider = FakeLlmProvider(by_substring={}, default=ADA)
+
+        first = await build_graph(
+            document(),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            chunks=corpus,
+            event_store=log,
+        )
+        second = await build_graph(
+            document(),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            chunks=corpus,
+            event_store=log,
+        )
+
+        assert first.chunks_written == 1
+        assert second.chunks_written == 0
+        assert second.event is None
+        # And the links the first run wrote are still there.
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert all(chunk.entity_ids for chunk in stored)
 
     async def test_indexing_after_extracting_discards_the_entity_links(self) -> None:
         """Documented behaviour, not an accident.
@@ -194,6 +265,7 @@ class TestTheTwoOrderings:
         """
         corpus = InMemoryChunkStore()
         graph = InMemoryGraphStore()
+        log = InMemoryEventStore()
 
         await build_graph(
             document(),
@@ -201,11 +273,17 @@ class TestTheTwoOrderings:
             store=graph,
             tenant_id=TENANT_ID,
             chunks=corpus,
+            event_store=log,
         )
         before = await corpus.get_by_source("doc-1", TENANT_ID)
-        await index_documents([document()], store=corpus, tenant_id=TENANT_ID)
+        report = await index_documents(
+            [document()], store=corpus, tenant_id=TENANT_ID, event_store=log
+        )
         after = await corpus.get_by_source("doc-1", TENANT_ID)
 
+        # The indexing was *recorded* -- so the loss is the design's stated
+        # cost, not a repeat being suppressed by accident.
+        assert report.documents_indexed == 1
         assert any(chunk.entity_ids for chunk in before)
         assert [chunk.id for chunk in after] == [chunk.id for chunk in before]
         assert all(chunk.entity_ids == [] for chunk in after)

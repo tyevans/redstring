@@ -34,22 +34,30 @@ second write would read as a repeat and emit nothing, so indexing a document
 before extracting it would drop every entity link the extraction found and
 report success.
 
-## Idempotence needs a log, and by default there is not one
+## Idempotence needs a log, and the default does not have one
+
+**Without `event_store`, re-indexing a document is not suppressed.** That is
+the whole of what the default guarantees, and it is narrower than "indexing is
+idempotent" sounds:
+
+| | repeat within one call | repeat across calls |
+|---|---|---|
+| no `event_store` | skipped | **re-indexed**, counted as `documents_indexed` |
+| `event_store` given | skipped | skipped |
 
 `Document.record_chunking` refuses a signature the aggregate has already
 recorded, and that refusal lives in the aggregate's *state*. With no
-`event_store` this function creates an in-memory one per call, so:
+`event_store` this function creates an in-memory one per call, so the second
+call rebuilds the aggregate from nothing and there is no recorded signature
+for it to refuse against.
 
-- **within one call**, a document listed twice is indexed once;
-- **across calls**, it is not -- the second call rebuilds the aggregate from
-  nothing and re-emits.
-
-Re-emitting is harmless to the corpus (the chunks are content-addressed, so
-`replace_source` writes the identical rows) and visible in the report, which
-counts it as indexed rather than skipped. Pass an `event_store` to make the
-suppression real and to have a log the corpus can be rebuilt from. This is
-the same trade `build_graph` makes, and it is stated here rather than
-discovered.
+The consequence is a cost rather than a corruption: the chunks are
+content-addressed, so `replace_source` writes the identical rows and the
+corpus is unchanged. What is lost is the *report* -- a re-run reports every
+document as newly indexed, so `documents_indexed` cannot be read as "work that
+needed doing". Pass an `event_store` to make the suppression real and to have
+a log the corpus can be rebuilt from. This is the same trade `build_graph`
+makes, and it is stated here rather than discovered.
 """
 
 from __future__ import annotations
@@ -90,11 +98,13 @@ class IndexReport:
     #: documents. `test_the_report_counts_documents_and_chunks_separately`
     #: uses documents that split.
     chunks_written: int
-    #: Documents already chunked under this signature, so nothing was
-    #: emitted for them. Zero without an `event_store`, except for a document
-    #: listed twice in one call. Not a failure count -- a repeat is the
-    #: expected outcome of re-running an index over a corpus that has not
-    #: changed.
+    #: Documents already chunked under this signature, so nothing was emitted
+    #: for them. Not a failure count -- a repeat is the expected outcome of
+    #: re-running an index over a corpus that has not changed.
+    #:
+    #: **Without an `event_store` this counts only repeats within the one
+    #: call.** A document indexed by an earlier call is counted as newly
+    #: indexed, because there is no recorded signature to refuse it against.
     documents_skipped: int
 
 
@@ -116,8 +126,8 @@ async def index_documents(
         chunker: How to split. A `SlidingWindowChunker` with its own defaults
             when None, matching `ExtractionPipeline`.
         event_store: Where the chunkings are recorded. An `InMemoryEventStore`
-            per call when omitted -- see the module docstring on what that
-            costs idempotence.
+            per call when omitted, which suppresses a repeat *within* the call
+            and not across calls -- see the module docstring's table.
 
     Returns:
         An `IndexReport`.
