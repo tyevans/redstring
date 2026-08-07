@@ -10,11 +10,13 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
+from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.domain.vector import VectorRecord
 from redstring.events import (
+    DocumentChunked,
     DocumentExtracted,
     EntitiesEmbedded,
     EntitiesMerged,
@@ -90,6 +92,33 @@ def _merged(tenant_id, **overrides):
     return EntitiesMerged(**fields)
 
 
+def _chunk(tenant_id, **overrides):
+    text = overrides.pop("text", "Ada Lovelace wrote the first program.")
+    source_id = overrides.pop("source_id", SOURCE_ID)
+    fields = {
+        "id": chunk_id(source_id, text),
+        "tenant_id": tenant_id,
+        "source_id": source_id,
+        "text": text,
+        "chunk_index": 0,
+        "start_char": 0,
+        "end_char": len(text),
+    }
+    fields.update(overrides)
+    return StoredChunk(**fields)
+
+
+def _chunked(tenant_id, **overrides):
+    fields = {
+        "aggregate_id": uuid4(),
+        "tenant_id": tenant_id,
+        "source_id": SOURCE_ID,
+        "chunking_signature": "recursive:abc123",
+    }
+    fields.update(overrides)
+    return DocumentChunked(**fields)
+
+
 class TestDocumentExtracted:
     def test_an_empty_extraction_is_a_legitimate_event(self):
         """A document yielding nothing is a fact worth recording, and making it
@@ -145,6 +174,46 @@ class TestDocumentExtracted:
         tenant_id = uuid4()
         event = _extracted(tenant_id, entities=[_entity(tenant_id)])
         assert event.entities[0].source_id == event.source_id
+
+
+class TestDocumentChunked:
+    @pytest.mark.parametrize("other", OTHER_TENANTS, ids=TENANT_IDS)
+    def test_chunks_of_another_tenant_are_rejected(self, other):
+        """`_reject_foreign_tenants`. The projection writes each chunk under
+        its own `tenant_id`, so this is the one place the two can still be
+        compared -- and the two others bracket the pivot because the check is
+        a `!=` that a mutant rewrites as an ordered comparison."""
+        with pytest.raises(ValidationError, match="chunks carries tenants"):
+            _chunked(PIVOT_TENANT, chunks=[_chunk(other)])
+
+    @pytest.mark.parametrize("other_source", OTHER_SOURCES)
+    def test_chunks_of_another_document_are_rejected(self, other_source):
+        """Same rule the entity check enforces, and for the same reason: the
+        projection scopes its `replace_source` to the *event's* source, so a
+        stray chunk would be written under a provenance it does not have."""
+        tenant_id = uuid4()
+        with pytest.raises(ValidationError, match="attributed to the document"):
+            _chunked(tenant_id, chunks=[_chunk(tenant_id, source_id=other_source)])
+
+    def test_an_empty_chunking_is_a_legitimate_event(self):
+        """A document that chunks to nothing is expressible; the projection
+        needs it to empty a source."""
+        event = _chunked(uuid4())
+        assert event.chunks == []
+
+    def test_the_signature_is_carried_verbatim(self):
+        """The emitter composes it -- `index_documents` and the extraction
+        pipeline compose it differently on purpose -- so the event must not
+        normalise, truncate or re-derive it."""
+        signature = "recursive:abc123:ollama/qwen3.6-27b"
+        assert _chunked(uuid4(), chunking_signature=signature).chunking_signature == signature
+
+    def test_a_chunk_of_this_document_and_tenant_is_accepted(self):
+        """The negative tests above pass on a validator that rejects
+        everything."""
+        tenant_id = uuid4()
+        event = _chunked(tenant_id, chunks=[_chunk(tenant_id)])
+        assert event.chunks[0].source_id == event.source_id
 
 
 class TestEntitiesEmbedded:
@@ -275,6 +344,18 @@ class TestComparisonsAreByValueNotIdentity:
         assert built_at_runtime is not SOURCE_ID
         assert built_at_runtime == SOURCE_ID
         _extracted(tenant_id, entities=[_entity(tenant_id, source_id=built_at_runtime)])
+
+    def test_a_chunk_tenant_that_arrived_as_a_string_is_accepted(self):
+        tenant_id = uuid4()
+        chunk = _chunk(UUID(str(tenant_id)))
+        assert chunk.tenant_id is not tenant_id
+        _chunked(tenant_id, chunks=[chunk])
+
+    def test_a_chunk_source_id_built_at_runtime_is_still_this_document(self):
+        tenant_id = uuid4()
+        built_at_runtime = "".join(["doc", "-", "1"])
+        assert built_at_runtime is not SOURCE_ID
+        _chunked(tenant_id, chunks=[_chunk(tenant_id, source_id=built_at_runtime)])
 
     def test_a_redirection_tenant_that_arrived_as_a_string_is_accepted(self):
         tenant_id = uuid4()

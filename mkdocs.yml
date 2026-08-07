@@ -122,6 +122,7 @@ nav:
           - Use the write model: how-to/use-the-write-model.md
           - Drive projections from an event store: how-to/drive-projections-from-an-event-store.md
           - Rebuild a projection: how-to/rebuild-a-projection.md
+          - Index documents without extracting them: how-to/index-documents.md
           - Use the pgvector store: how-to/use-the-pgvector-store.md
           - Implement a store adapter: how-to/implement-a-store-adapter.md
       - Development:
@@ -158,4 +159,5 @@ nav:
       - "0020 · The replay driver goes upstream": adr/0020-the-replay-driver-goes-upstream.md
       - "0021 · composition holds a second module": adr/0021-composition-holds-a-second-module.md
       - "0022 · The lexical channel is not BM25": adr/0022-the-lexical-channel-is-not-bm25.md
+      - "0023 · The chunk corpus": adr/0023-the-chunk-corpus.md
   - Contributing: contributing.md

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from redstring.events.document import DocumentExtracted, EntitiesEmbedded
+from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.events.streams import (
     CONSOLIDATION_CATEGORY,
@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 
 #: Every event type redstring writes to its log. See the module docstring.
 KG_EVENT_TYPES: tuple[type[TenantDomainEvent], ...] = (
+    DocumentChunked,
     DocumentExtracted,
     EntitiesEmbedded,
     EntitiesMerged,
@@ -53,6 +54,7 @@ __all__ = [
     "CONSOLIDATION_CATEGORY",
     "DOCUMENT_CATEGORY",
     "KG_EVENT_TYPES",
+    "DocumentChunked",
     "DocumentExtracted",
     "EntitiesEmbedded",
     "EntitiesMerged",

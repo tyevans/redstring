@@ -36,9 +36,18 @@ stating plainly rather than discovering:
 - **There is no log to rebuild from.** A store rebuilt from nothing is a store
   restored from backup.
 
-A caller who wants either appends `report.event` to an `EventStore` and drives
-`redstring.projections.project` over the feed. `report.event` is returned for
-precisely that, and it is the same object the projection just consumed.
+**Both are removed by passing `event_store`**, which loads the aggregate from
+that log and appends to it. That is not merely a convenience: the chunking
+signature's whole design -- two write paths, two key spaces, so that indexing
+a document and later extracting it does not suppress the entity links -- is
+only *observable* across calls that share aggregate state. Without a log there
+is no state and no refusal, so nothing behavioural can distinguish the design
+from its opposite. See `index_documents`.
+
+A caller who wants a log without this parameter appends `report.event` to an
+`EventStore` themselves and drives `redstring.projections.project` over the
+feed. `report.event` is returned for precisely that, and it is the same object
+the projection just consumed.
 
 ## `domain=AUTO` costs an extra model call, and says so
 
@@ -55,8 +64,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from eventsource.adapters.memory import InMemoryEventStore, InMemorySnapshotStore
+from eventsource.domain.tenant_context import tenant_scope
 
 from redstring.aggregates.document import Document
+from redstring.aggregates.repositories import document_repository
 from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.consolidation.service import ConsolidationService
@@ -66,6 +77,7 @@ from redstring.events.streams import document_stream
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
+from redstring.projections.chunk import ChunkProjection
 from redstring.projections.graph import GraphProjection
 from redstring.projections.vector import VectorProjection
 
@@ -73,6 +85,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from uuid import UUID
 
+    from eventsource.application.aggregates.tenant_repository import TenantAwareRepository
     from eventsource.ports.snapshots import SnapshotStore
     from eventsource.ports.store import AggregateStore
 
@@ -84,6 +97,7 @@ if TYPE_CHECKING:
     from redstring.events.merge import EntitiesMerged, MergeUndone
     from redstring.extraction.domains.models import DomainSchema
     from redstring.extraction.protocols import Chunker
+    from redstring.ports.chunk_store import ChunkStore
     from redstring.ports.embedding_provider import EmbeddingProvider
     from redstring.ports.graph_store import GraphStore
     from redstring.ports.llm_provider import LlmProvider
@@ -161,6 +175,13 @@ class GraphBuildReport:
     #: `upsert_many` is idempotent, so the second run rewrites identical
     #: vectors. It costs an embedding call, not correctness.
     embedded: int = 0
+    #: Passages written to a `ChunkStore`, and **zero when no chunk store was
+    #: given** -- which is the default, so a caller who wants a corpus has to
+    #: ask for one. Distinct from `total_chunks`, which counts what the
+    #: document was split into whether or not anything stored it, and which
+    #: is larger when a document repeats a passage verbatim (two identical
+    #: chunks share one content-addressed id).
+    chunks_written: int = 0
 
 
 async def build_graph(
@@ -175,6 +196,8 @@ async def build_graph(
     allow_partial: bool = False,
     embedding_provider: EmbeddingProvider | None = None,
     vector_store: VectorStore | None = None,
+    chunks: ChunkStore | None = None,
+    event_store: AggregateStore | None = None,
 ) -> GraphBuildReport:
     """Extract `document` and write the result into `store`.
 
@@ -199,6 +222,41 @@ async def build_graph(
             with `vector_store`.
         vector_store: Where the vectors land. Must be given together with
             `embedding_provider`.
+        chunks: A corpus to keep in step, so each passage of the document is
+            stored alongside the ids of the entities it produced. Omitting it
+            means "do not maintain a corpus" -- unlike the embedding pair,
+            there is no second argument it has to arrive with and no
+            half-configured state to refuse, so `None` is not an error and
+            neither is a document that chunks to something while this is
+            `None`.
+        event_store: Where this run's events are appended, so the aggregate's
+            idempotence survives the call. Without one -- the default, and the
+            shape this function has always had -- a fresh aggregate is built
+            each time and every refusal it could make is unreachable. With
+            one, a second `build_graph` for the same document under the same
+            model returns `event is None` and a repeat chunking returns
+            `chunks_written == 0`.
+
+            **Chunking is recorded whenever this is given, whether or not
+            `chunks` is** -- `record_chunking` runs unconditionally on the
+            aggregate, and only the write into `chunks` is gated on it being
+            given. A caller passing `event_store` for extraction idempotence
+            alone, with no `chunks`, still gets a `DocumentChunked` carrying
+            the document's full text into the log. This is correct and not
+            new: the log is the authority a corpus rebuild replays from, so
+            the event has to exist independently of whether a projection
+            writes it anywhere today.
+
+            **This is what makes the two write paths' key spaces observable.**
+            Indexing a document with `index_documents` and then extracting it
+            over the same log is the case the signatures are composed
+            differently for: they differ, so the extraction's chunking is
+            recorded and its entity links survive. Were the signatures equal,
+            the extraction would read as a repeat and the links would be
+            silently dropped -- which is exactly what
+            `tests/unit/composition/test_index_documents.py::TestTheTwoOrderings`
+            now fails on, rather than the string-shape assertion that used to
+            be the only thing holding it.
         skip_failed_chunks: Continue past a chunk whose model call failed.
         allow_partial: Record a result that has failed chunks in it. Off by
             default, because recording a partial extraction marks this model
@@ -207,9 +265,9 @@ async def build_graph(
 
     Returns:
         A `GraphBuildReport`. `report.event is None` means this document was
-        already extracted under this model on *this aggregate*, which given
-        the fresh-aggregate-per-call shape above only happens if you pass the
-        same one twice.
+        already extracted under this model on *this aggregate* -- which
+        without an `event_store` cannot happen, since each call builds a fresh
+        one, and with an `event_store` is the ordinary outcome of a re-run.
 
     Raises:
         ValueError: One of `embedding_provider` and `vector_store` was given
@@ -234,7 +292,13 @@ async def build_graph(
         system_prompt=system_prompt,
         skip_failed_chunks=skip_failed_chunks,
     )
-    aggregate = Document(document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id)
+    stream = document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id
+    repository = document_repository(event_store) if event_store is not None else None
+    if repository is None:
+        aggregate = Document(stream)
+    else:
+        async with tenant_scope(tenant_id):
+            aggregate = await repository.load_or_create(stream)
 
     # Extracted once and handed to `record`, which would otherwise extract
     # again -- see the `result` parameter there. `record` asks the aggregate
@@ -244,6 +308,25 @@ async def build_graph(
     event = await pipeline.record(
         aggregate, document, tenant_id, allow_partial=allow_partial, result=result
     )
+
+    # Recorded whether or not the extraction was: the two are separate key
+    # spaces on the aggregate, and a document already extracted under this
+    # model has still been split into the passages a corpus wants.
+    chunk_event = aggregate.record_chunking(
+        tenant_id=tenant_id,
+        source_id=document.id,
+        chunking_signature=result.chunking_signature,
+        chunks=result.chunks,
+    )
+    # The log before the read models, when there is a log: a crash between the
+    # two leaves an event a replay will apply, whereas projecting first and
+    # crashing leaves read models holding what nothing accounts for.
+    await _persist(repository, aggregate, tenant_id)
+
+    chunks_written = 0
+    if chunk_event is not None and chunks is not None:
+        await ChunkProjection(chunks).handle(chunk_event)
+        chunks_written = len(chunk_event.chunks)
 
     embedded = 0
     if event is not None:
@@ -257,6 +340,7 @@ async def build_graph(
                 provider=embedding_provider,
                 vector_store=vector_store,
             )
+            await _persist(repository, aggregate, tenant_id)
 
     return GraphBuildReport(
         event=event,
@@ -268,7 +352,26 @@ async def build_graph(
         total_chunks=result.total_chunks,
         unresolved_relationships=result.unresolved_relationships,
         embedded=embedded,
+        chunks_written=chunks_written,
     )
+
+
+async def _persist(
+    repository: TenantAwareRepository[Document] | None,
+    aggregate: Document,
+    tenant_id: TenantId,
+) -> None:
+    """Append whatever the aggregate has emitted, when there is a log to append to.
+
+    A no-op without an `event_store`, which is the default and the shape
+    `build_graph` has always had. `TenantAwareRepository.save` raises outside a
+    `tenant_scope`, so the scope is entered here rather than being a
+    precondition on the caller.
+    """
+    if repository is None:
+        return
+    async with tenant_scope(tenant_id):
+        await repository.save(aggregate)
 
 
 def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorStore | None) -> None:

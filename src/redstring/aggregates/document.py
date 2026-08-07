@@ -23,6 +23,28 @@ recorded; bump the version, which is what a re-run worth recording implies.
 Extraction and embedding keep separate key spaces. Sharing one would let an
 extraction under a model suppress an embedding run under a model of the same
 name, and the two namespaces do overlap in practice.
+
+## Chunking is idempotent per chunking signature, in a third key space
+
+`record_chunking` is keyed on `chunking_signature`, a string the *emitter*
+composes rather than one the aggregate derives, because the two write paths
+compose it differently on purpose:
+
+- `index_documents` emits `f"{method}:{split_digest}"`.
+- The extraction pipeline emits `f"{method}:{split_digest}:{model_version}"`.
+
+Indexing a document and later extracting it therefore produces two different
+signatures, so both are recorded and the extraction -- whose chunks carry
+`entity_ids` -- lands last and wins. A retry of either is a no-op. The digest
+is over the split actually produced, not over chunker settings, so a
+re-chunk under new settings is recorded only when it produces a different
+split -- settings that happen to yield an identical split are, by design, the
+same chunking. See `docs/adr/0023-the-chunk-corpus.md` for why the digest is
+computed this way and not over settings.
+
+The signature is a third key space, not a share of either existing one:
+`"v1"` is a plausible chunking signature *and* a plausible model version, and
+one list would let either suppress the other.
 """
 
 from __future__ import annotations
@@ -32,7 +54,7 @@ from typing import TYPE_CHECKING
 from eventsource.domain.aggregate import AggregateRoot
 from pydantic import BaseModel, Field
 
-from redstring.events.document import DocumentExtracted, EntitiesEmbedded
+from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.streams import DOCUMENT_CATEGORY
 
 if TYPE_CHECKING:
@@ -40,6 +62,7 @@ if TYPE_CHECKING:
 
     from eventsource.domain.event import DomainEvent
 
+    from redstring.domain.chunk import StoredChunk
     from redstring.domain.entity import Entity
     from redstring.domain.ids import SourceId, TenantId
     from redstring.domain.relationship import Relationship
@@ -56,6 +79,7 @@ class DocumentState(BaseModel):
 
     extraction_model_versions: list[str] = Field(default_factory=list)
     embedding_models: list[str] = Field(default_factory=list)
+    chunking_signatures: list[str] = Field(default_factory=list)
 
 
 class Document(AggregateRoot[DocumentState]):
@@ -118,8 +142,33 @@ class Document(AggregateRoot[DocumentState]):
             embeddings=list(embeddings),
         )
 
+    def record_chunking(
+        self,
+        *,
+        tenant_id: TenantId,
+        source_id: SourceId,
+        chunking_signature: str,
+        chunks: Sequence[StoredChunk] = (),
+    ) -> DocumentChunked | None:
+        """Record how this document was split, or `None` if it is a repeat.
+
+        An empty `chunks` is a legitimate chunking: it says this document now
+        has no passages, and the projection needs it to empty a source.
+        """
+        if chunking_signature in self._current.chunking_signatures:
+            return None
+        return self.create_event(
+            DocumentChunked,
+            tenant_id=tenant_id,
+            source_id=source_id,
+            chunking_signature=chunking_signature,
+            chunks=list(chunks),
+        )
+
     def _apply(self, event: DomainEvent) -> None:
         if isinstance(event, DocumentExtracted):
             self._current.extraction_model_versions.append(event.model_version)
         elif isinstance(event, EntitiesEmbedded):
             self._current.embedding_models.append(event.embedding_model)
+        elif isinstance(event, DocumentChunked):
+            self._current.chunking_signatures.append(event.chunking_signature)

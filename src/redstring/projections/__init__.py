@@ -1,8 +1,8 @@
 """Read models derived from the event log.
 
-The event log is the write model; a `GraphStore` and a `VectorStore` are
-projections of it -- derived, disposable, and rebuildable by replay. That
-claim is only worth as much as the test that proves it, which is
+The event log is the write model; a `GraphStore`, a `VectorStore` and a
+`ChunkStore` are projections of it -- derived, disposable, and rebuildable by
+replay. That claim is only worth as much as the test that proves it, which is
 `tests/unit/projections/test_replay_equivalence.py`.
 
 ## The rebuild driver lives upstream now
@@ -32,13 +32,15 @@ the same reason it catches a live projection's.
 `StoreProjection` moved the same way (upstream ADR 0055) and is imported from
 `eventsource.application.projections`. A subclass wanting its own constructor
 parameters forwards the rest with `**options: Unpack[ProjectionOptions]`
-instead of restating them; neither projection here needs one.
+instead of restating them; no projection here needs one.
 """
 
+from redstring.projections.chunk import ChunkProjection
 from redstring.projections.graph import GraphProjection
 from redstring.projections.vector import VectorProjection
 
 __all__ = [
+    "ChunkProjection",
     "GraphProjection",
     "VectorProjection",
 ]

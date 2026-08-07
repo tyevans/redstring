@@ -1030,6 +1030,29 @@ that has nowhere left to go, and small enough movements are now within the
 noise of which branches an xdist run happens to take. Expect to argue a drop
 in the commit message rather than to satisfy the number.
 
+### B90. `dump_shape`'s chunk oracle pins ids and order, not `entity_ids`
+
+`tests/unit/projections/conftest.py::dump_shape` reduces the chunk store to
+`{source_id: [chunk.id, ...]}` per tenant, compared against
+`log_builder.py::BuiltLog.expected_shape`. That pins which passages survive a
+re-chunk and in what order -- and, because chunk ids are content-addressed
+over `(source_id, text)`, the id list also pins the text each chunk holds. It
+does not pin `entity_ids`: a handler that wrote every chunk with
+`entity_ids=[]` would pass every test using this oracle, since nothing
+compares against `StoredChunk.entity_ids` at all.
+
+Add `entity_ids` to both the shape `dump_shape` produces and
+`_TenantMirror.chunks` in `log_builder.py`, which currently records only the
+id list (`log_builder.py:165` onward). The mirror already has what it needs
+per chunk revision (`_chunks` builds each `StoredChunk` with its own
+`entity_ids`); it is the reduction into `expected_shape()` and `dump_shape`
+that drops the field.
+
+Deferred rather than fixed because it surfaced during an unrelated review pass
+and the fix touches the oracle two suites share
+(`test_replay_equivalence.py`-style tests and anything else building a
+`BuiltLog`) -- worth doing deliberately rather than as a drive-by.
+
 ### B78. The embeddings probe is unbounded, and only its *count* was fixed
 
 `tests/integration/llm/test_live_embeddings.py::_serving` reaches the endpoint
@@ -1069,6 +1092,72 @@ failing, because in CI it reads as infrastructure and gets retried.
 Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
+
+### B89. No chunk embeddings and no term-weighted ranker over the corpus — B2
+
+B1 built the corpus and deliberately stopped there:
+`docs/adr/0023-the-chunk-corpus.md`. B2 is chunk embeddings, a real
+term-weighted ranker over the stored passages, a `ScoredChunk`, a
+`retrieve_chunks` entry point, and fusion with the RRF that
+`composition/retrieval.py` already does. None of it exists.
+
+What B1 decided that B2 inherits, and would otherwise have to rediscover:
+
+- **`ChunkStore` has no search or filter method, on purpose.** Adding one to
+  our own port later costs nothing; shipping the wrong one costs an adapter
+  divergence, and every decision a search signature encodes is downstream of
+  what a stored passage is. B2 defines it against a corpus that exists. It
+  goes in `tests/compliance/chunk_store.py` first — a search method landing in
+  one adapter's test module is `recurring-defects.md` §1 exactly.
+- **Chunk ids are content-addressed over `(source_id, text)`**, so a re-chunk
+  produces *new* ids rather than overwriting. A stored embedding therefore
+  never silently describes text that has changed — which is the property that
+  makes chunk embeddings safe to store at all, and it was chosen for this
+  reason before any embedding existed. Do not "simplify" identity to
+  `(source_id, chunk_index)` on the way in.
+- **`replace_source` is one atomic call.** Once document-frequency statistics
+  exist, a split upsert-then-delete would let them be computed over a chunk
+  set that never existed. Any statistic B2 caches has the same requirement:
+  it is invalidated by the same call that replaces the source, not by a
+  second one.
+- **BM25 is still not a name for the entity-name lexical channel.** ADR 0022
+  stands; the term appears nowhere under `src/`, and B2's ranker is a
+  *different and additional* channel over passages, not a replacement for the
+  one that catches `Acme Corp`. Two channels named the same thing is how a
+  caller ends up tuning the wrong one.
+- **`entity_ids` is on the chunk, not in the graph.** A ranked passage is
+  turned into entities by the caller holding both ports. Putting a chunk
+  reference into the graph gives `mapping.py` a second id scheme.
+- **The dimension check has a precedent and a filed disagreement.** B82 —
+  two composition points refuse a dimension mismatch with different exception
+  types — is a third instance waiting to happen the moment chunk embeddings
+  acquire their own composition point.
+
+`PostgresChunkStore` stores no vector column today, so B2 also has a schema
+migration for a table that is already shipped and already has an integration
+suite pinning its DDL.
+
+### B88. `SlidingWindowChunker` is not exported, so tuning the split needs a dotted import
+
+`Chunker` is on the public surface and the bundled implementation is not, so a
+caller who wants anything other than the default window writes
+`from redstring.extraction.chunkers import SlidingWindowChunker` — a dotted
+path into a module `redstring/__init__.py` explicitly says may change in a
+patch release. `docs/how-to/index-documents.md` says so rather than showing the
+import, which is the honest interim but not a fix.
+
+Deferred rather than exported, and the reason is what makes it a decision
+rather than an oversight. Exporting it publishes its constructor —
+`chunk_size` and `overlap_size` — as a supported contract, and those are the
+two settings the chunking signature deliberately *stopped* being computed from
+(`extraction/corpus.py`, and ADR 0023's "the digest is over the split
+produced"). Publishing the parameters right after deciding they are not a
+reliable description of a chunking wants a moment's thought about what the
+supported surface for "split differently" actually is — plausibly a chunker
+protocol a caller implements, which is already exported, rather than ours.
+
+Cheap to fix if the answer is just "export it": one name, and the signature
+gate will name any closure it drags in.
 
 ### B76. A relationship says which document stated it, not which sentence
 
@@ -1483,6 +1572,34 @@ whole question turns on.
 ---
 
 ## 6. Tooling, packaging and hygiene
+
+### B87. `PostgresChunkStore` tells callers to install `redstring[pgvector]`
+
+`src/redstring/chunks/adapters/postgres.py::connect` re-raises its guarded
+`import asyncpg` with "install `redstring[pgvector]`, the extra that carries
+it". That extra is named for a *different* port, so the message reads as a
+mistake to anyone who wanted only a chunk store and never a vector one.
+
+Deferred rather than fixed, and the reasoning is the part worth keeping. The
+obvious fix -- `uv add --optional postgres asyncpg` -- creates a second extra
+whose contents are byte-for-byte the first one's single requirement, which is
+`recurring-defects.md` §2: two declaration sites for one fact, with nothing
+failing when they drift (a floor bumped on one and not the other is silent,
+and every caller of the other extra then gets the old asyncpg). Two extras
+naming one dependency also means `all` has to list both or quietly stop
+meaning "everything".
+
+What would make it right is renaming the extra to `postgres` and keeping
+`pgvector` as an alias for one release -- a packaging change with a
+deprecation window, which is more than this adapter should carry. Do it when
+something else touches the extras; until then the message is honest about
+what to install even though the name is wrong about why.
+
+The same confusion is stated as fact elsewhere: `src/redstring/__init__.py:65`
+calls `asyncpg` "a core dependency" in the module's own reference prose. It is
+not -- it is what the `pgvector` extra installs, same as `neo4j`. Predates this
+branch; fix both when the extras get their proper rename.
+
 
 ### B42. `ANN401` is silenced on `domain/merge_strategy.py::resolve`
 

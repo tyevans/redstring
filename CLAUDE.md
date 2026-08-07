@@ -7,6 +7,14 @@ The library **never fetches content** — document sourcing is a different
 problem set — and extraction **writes to no store**: it emits events, and
 projections do the writing.
 
+**"Never fetches" is not "never stores", and the two have been conflated.**
+ADR 0022 argued the lexical channel could not be a term-weighted ranker partly
+because "this library stores no text", which was true as a description of what
+had been built and was never a decision anyone made. Retaining caller-supplied
+passages is compatible with both rules above: the caller still supplies every
+byte, and a projection still does every write. The rule that binds is about
+*sourcing* — redstring does not go out and get things.
+
 ## Rules
 
 Conventions and workflow rules live in `.claude/rules/`:
@@ -523,7 +531,7 @@ to lowest:
 
 ```
 composition
-extraction : consolidation : temporal : graph : vector : llm   (siblings)
+extraction : consolidation : temporal : chunks : graph : vector : llm  (siblings)
 projections
 aggregates
 events
@@ -574,6 +582,13 @@ load-bearing:
   temptation there is specific: inferred edges would acquire a path into
   `DocumentExtracted`, which is exactly the persistence decision
   `temporal/inference.py` argues against.
+- `chunks` sits beside `graph` and `vector`, never under `extraction`. It
+  holds the adapters for one more projection target and needs nothing from
+  the other two stores; a caller wanting a chunk *and* the entities extracted
+  from it holds both ports, which is the same shape as every other
+  cross-store question here. Under `extraction` it would sit next to
+  `extraction.chunking.Chunk`, a transient split in progress that shares four
+  field names with `domain.chunk.StoredChunk` and no lifetime.
 
 `pyproject.toml` carries the full reasoning inline. Keep this block in step
 with it — a stale layer diagram in binding instructions sends the next author

@@ -36,6 +36,10 @@ distinguish it from `EmptyCompletionError`, was raised by exported code and
 could not be caught without a dotted import.
 
 - **Composition.** `build_graph`, `GraphBuildReport`, `AUTO`, `AutoDomain`.
+  `index_documents` and `IndexReport` are the other write path: it splits
+  documents into a `ChunkStore` and asks no model anything, so a corpus is
+  affordable for every document a caller holds and extraction can be paid for
+  over whichever subset is worth it.
 - **Retrieval.** `Retriever` turns a query string into ranked entities,
   fusing a semantic channel over `VectorStore` with a lexical one over
   `GraphStore`'s blocking keys. `RetrievalMode` picks the channels,
@@ -45,15 +49,17 @@ could not be caught without a dotted import.
 - **What you put in.** `SourceDocument`.
 - **What comes out.** `Entity`, `Relationship`, `Alias`, `ExtractionMethod`,
   `TemporalExtent` (with `DatePrecision` and `UncertaintyMarker`),
-  `VectorRecord`, `VectorMatch`, and the `DocumentExtracted` and
-  `EntitiesEmbedded` events carrying them. `EntityId`, `RelationshipId`,
+  `VectorRecord`, `VectorMatch`, `StoredChunk`, and the `DocumentExtracted`,
+  `EntitiesEmbedded` and `DocumentChunked` events carrying them. `EntityId`, `RelationshipId`,
   `TenantId` and `SourceId` are the id vocabulary -- the first three are
-  `UUID`, the last is `str`.
-- **Ports.** `GraphStore`, `VectorStore`, `LlmProvider`, `EmbeddingProvider`,
-  `Chunker`. Implement
+  `UUID`, the last is `str`. `ChunkId` joins them for a stored passage, and
+  is a `str`: a chunk is identified by the digest of its source and its text.
+- **Ports.** `GraphStore`, `VectorStore`, `ChunkStore`, `LlmProvider`,
+  `EmbeddingProvider`, `Chunker`. Implement
   one to plug in a backend of your own; the compliance suite in
   `tests/compliance` is what says whether you got it right.
-- **Adapters.** `InMemoryGraphStore` and `InMemoryVectorStore` are complete
+- **Adapters.** `InMemoryGraphStore`, `InMemoryVectorStore` and
+  `InMemoryChunkStore` are complete
   implementations, not test doubles -- suitable for a single-process job.
   `Neo4jGraphStore` and `PgVectorStore` need their extras
   (`redstring[neo4j]`, and `asyncpg`, which is a core dependency).
@@ -72,7 +78,8 @@ could not be caught without a dotted import.
   `RelationshipTypeSchema`, `PropertySchema` and `ConfidenceThresholds`.
 - **Pieces, for callers who want the steps rather than the whole.**
   `ExtractionPipeline` (`PipelineResult`, `DEFAULT_SYSTEM_PROMPT`),
-  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`, and
+  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`,
+  `ChunkProjection`, and
   `Document` with `document_stream` to address it.
 - **Errors.** `RedstringError` and everything under it that a caller can
   reach: `LlmProviderError` and its three shapes, `MissingEntityError`,
@@ -122,18 +129,22 @@ separation is not decoration -- it is why a store can be rebuilt, and
 """
 
 from redstring.aggregates.document import Document
+from redstring.chunks.adapters.memory import InMemoryChunkStore
 from redstring.composition import (
     AUTO,
     AutoDomain,
     ConsolidationReport,
     Consolidator,
     GraphBuildReport,
+    IndexReport,
     Retriever,
     build_graph,
+    index_documents,
 )
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
 from redstring.domain.alias import Alias
+from redstring.domain.chunk import ChunkId, StoredChunk
 from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import (
@@ -160,7 +171,7 @@ from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
 from redstring.domain.source import SourceDocument
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.domain.vector import VectorMatch, VectorRecord
-from redstring.events.document import DocumentExtracted, EntitiesEmbedded
+from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.events.streams import document_stream
 from redstring.extraction.chunking import Chunk, ChunkingResult
@@ -184,6 +195,7 @@ from redstring.extraction.protocols import Chunker
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
+from redstring.ports.chunk_store import ChunkStore
 from redstring.ports.embedding_provider import EmbeddingProvider
 from redstring.ports.graph_store import (
     AliasStore,
@@ -195,7 +207,7 @@ from redstring.ports.graph_store import (
 )
 from redstring.ports.llm_provider import LlmProvider
 from redstring.ports.vector_store import VectorStore
-from redstring.projections import GraphProjection, VectorProjection
+from redstring.projections import ChunkProjection, GraphProjection, VectorProjection
 from redstring.temporal.inference import InferredRelation, infer_relations
 from redstring.temporal.query import CursorStalledError, TemporalQuery
 from redstring.vector.adapters.memory import InMemoryVectorStore
@@ -215,7 +227,10 @@ __all__ = [
     "Bounds",
     "CandidateFinder",
     "Chunk",
+    "ChunkId",
+    "ChunkProjection",
     "ChunkSizeError",
+    "ChunkStore",
     "Chunker",
     "ChunkerError",
     "ChunkingError",
@@ -228,6 +243,7 @@ __all__ = [
     "DatePrecision",
     "DimensionMismatchError",
     "Document",
+    "DocumentChunked",
     "DocumentExtracted",
     "DomainSchema",
     "DoubleMergeError",
@@ -249,8 +265,10 @@ __all__ = [
     "GraphBuildReport",
     "GraphProjection",
     "GraphStore",
+    "InMemoryChunkStore",
     "InMemoryGraphStore",
     "InMemoryVectorStore",
+    "IndexReport",
     "InferredRelation",
     "LlmProvider",
     "LlmProviderError",
@@ -277,6 +295,7 @@ __all__ = [
     "SimilarityFeatures",
     "SourceDocument",
     "SourceId",
+    "StoredChunk",
     "TemporalExtent",
     "TemporalQuery",
     "TemporalRelation",
@@ -293,6 +312,7 @@ __all__ = [
     "build_graph",
     "document_stream",
     "domain_system_prompt",
+    "index_documents",
     "infer_relations",
     "load_schema_from_file",
     "load_schema_from_string",
