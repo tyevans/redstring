@@ -132,6 +132,41 @@ async def test_two_tenants_holding_the_same_entity_id_never_cross() -> None:
     assert [match.entity.tenant_id for match in from_right.matches] == [right]
 
 
+async def test_two_tenants_holding_the_same_entity_id_never_cross_in_semantic_mode() -> None:
+    """The same collision, down the one path the test above cannot reach.
+
+    With an empty vector store the semantic ranking is `[]`, the lexical
+    channel supplies the entity, and `_resolve` short-circuits on `known` --
+    so `get_entities` is never called and the one place the `Retriever` hands
+    a store an id it did not itself scope goes untested across tenants. In
+    `SEMANTIC` mode nothing is known, so every id goes through that fetch.
+
+    The names differ so a wrong tenant is visible in the result rather than
+    only in a field the caller might not read.
+    """
+    left, right = uuid4(), uuid4()
+    shared_id = uuid4()
+    graph = InMemoryGraphStore()
+    vectors = InMemoryVectorStore(dimension=DIMENSION)
+    embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
+    on_left = _entity("Ada Lovelace", left, entity_id=shared_id)
+    on_right = _entity("Grace Hopper", right, entity_id=shared_id)
+    for entity in (on_left, on_right):
+        await graph.upsert_entity(entity)
+        await _store_vector(vectors, embeddings, entity)
+
+    retriever = _retriever(graph, vectors, embeddings)
+    from_left = await retriever.retrieve("Ada Lovelace", left, mode=RetrievalMode.SEMANTIC)
+    from_right = await retriever.retrieve("Grace Hopper", right, mode=RetrievalMode.SEMANTIC)
+
+    assert [(m.entity.tenant_id, m.entity.name) for m in from_left.matches] == [
+        (left, "Ada Lovelace")
+    ]
+    assert [(m.entity.tenant_id, m.entity.name) for m in from_right.matches] == [
+        (right, "Grace Hopper")
+    ]
+
+
 # ----------------------------------------------------------------------
 # The two stores lag independently
 # ----------------------------------------------------------------------
@@ -202,7 +237,7 @@ async def test_a_skipped_dangling_match_is_not_backfilled() -> None:
 # ----------------------------------------------------------------------
 
 
-async def test_the_lexical_channel_scores_a_candidate_after_a_zero_scoring_one() -> None:
+async def test_the_lexical_channel_scores_a_candidate_after_a_duplicate_one() -> None:
     """A bad row followed by a good one.
 
     On a one-element remainder `break` and `continue` are the same function,
@@ -212,14 +247,33 @@ async def test_the_lexical_channel_scores_a_candidate_after_a_zero_scoring_one()
     the weak candidate carries both keys and is therefore seen a second time,
     as a duplicate, immediately before the strong candidate in the same group.
     A loop that stopped at that skip would drop the answer.
+
+    The ids are fixed rather than `uuid4()`, and `weak` takes the lower one,
+    because *which* member of a group comes first is adapter-dependent --
+    `InMemoryGraphStore` yields upsert order and `Neo4jStore` yields
+    `ORDER BY e.id`. With `uuid4()` the skipped row precedes the answer only
+    about half the time under the second adapter, so the test's teeth would
+    depend on how the ids happened to sort. `UUID(int=1)` sorts first under
+    *any* permitted group ordering.
+
+    The scores are asserted as well as the order: `weak` is a genuine
+    mid-range Jaro-Winkler match, so a `lexical` field wired to a constant --
+    or to the fused score -- is visible here and nowhere else in this file.
     """
     tenant = uuid4()
     prefix, soundex = prefix_key_for_name("Ada Lovelace"), soundex_key_for_name("Ada Lovelace")
     assert soundex is not None
     assert query_blocking_keys("Ada Lovelace") == [prefix, soundex]
 
-    weak = _entity("Adalbert Zyzzyva", tenant, blocking_keys=frozenset({prefix, soundex}))
-    strong = _entity("Ada Lovelace", tenant, blocking_keys=frozenset({soundex}))
+    weak = _entity(
+        "Adalbert Zyzzyva",
+        tenant,
+        entity_id=UUID(int=1),
+        blocking_keys=frozenset({prefix, soundex}),
+    )
+    strong = _entity(
+        "Ada Lovelace", tenant, entity_id=UUID(int=2), blocking_keys=frozenset({soundex})
+    )
     graph = InMemoryGraphStore()
     await graph.upsert_entity(weak)
     await graph.upsert_entity(strong)
@@ -227,6 +281,42 @@ async def test_the_lexical_channel_scores_a_candidate_after_a_zero_scoring_one()
     result = await _retriever(graph).retrieve("Ada Lovelace", tenant, mode=RetrievalMode.LEXICAL)
 
     assert [match.entity.id for match in result.matches] == [strong.id, weak.id]
+    strong_match, weak_match = result.matches
+    assert strong_match.lexical == pytest.approx(1.0)
+    assert weak_match.lexical is not None
+    assert 0.0 < weak_match.lexical < 1.0
+    assert weak_match.semantic is None
+    assert strong_match.semantic is None
+
+
+async def test_equal_lexical_scores_are_broken_by_ascending_id_not_by_store_order() -> None:
+    """The tie-break `_lexical` restates from `fusion.py`, held to.
+
+    Python's sort is stable, so without the tie-break the winner of a tie is
+    whatever `find_by_blocking_keys` happened to return first -- upsert order
+    in `InMemoryGraphStore`, `ORDER BY e.id` in `Neo4jStore`. Two entities
+    with equal score and `k=1` would then return *different* entities on the
+    two shipped adapters.
+
+    The names are identical so the scores genuinely coincide (a tie-break is
+    unobservable unless the values collide), the ids are fixed, and the
+    higher id is upserted first so store order and the tie-break disagree.
+    """
+    tenant = uuid4()
+    graph = InMemoryGraphStore()
+    later = _entity("Ada Lovelace", tenant, entity_id=UUID(int=2))
+    earlier = _entity("Ada Lovelace", tenant, entity_id=UUID(int=1))
+    await graph.upsert_entity(later)
+    await graph.upsert_entity(earlier)
+    retriever = _retriever(graph)
+
+    both = await retriever.retrieve("Ada Lovelace", tenant, k=2, mode=RetrievalMode.LEXICAL)
+    scores = {match.entity.id: match.lexical for match in both.matches}
+    assert scores[earlier.id] == scores[later.id], "the scores must coincide for a tie to exist"
+
+    result = await retriever.retrieve("Ada Lovelace", tenant, k=1, mode=RetrievalMode.LEXICAL)
+
+    assert [match.entity.id for match in result.matches] == [earlier.id]
 
 
 async def test_entity_types_filters_the_lexical_channel_before_k_is_applied() -> None:
@@ -281,9 +371,15 @@ async def test_a_result_reports_both_component_scores_when_both_channels_ranked(
     result = await _retriever(graph, vectors, embeddings).retrieve("Ada Lovelace", tenant)
 
     [match] = result.matches
-    assert match.semantic is not None
+    # The *values*, not just their presence. `semantic` carrying the fused RRF
+    # contribution instead of the cosine satisfies `Field(ge=0.0, le=1.0)` and
+    # reads as a plausible-but-poor similarity, which is the whole reason the
+    # component scores exist. The query text equals the entity name, so
+    # `FakeEmbeddingProvider` hashes both to the same vector and cosine is 1.0.
+    assert match.semantic == pytest.approx(1.0)
     assert match.lexical == pytest.approx(1.0)
     assert match.score > 0.0
+    assert match.score < 1.0, "the fused score is an RRF contribution, not a similarity"
 
 
 async def test_a_semantic_only_mode_leaves_lexical_none() -> None:

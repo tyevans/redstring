@@ -1800,3 +1800,70 @@ Note this interacts with `release.yml`, which calls `ci.yml` via
 `workflow_call`: a cap on the reusable workflow's jobs applies to the release
 pipeline too, which is the case where an unbounded hang is most expensive
 (B72 — a failed release consumes the version number).
+
+### B84. `_resolve`'s round-trip saving is an untested optimisation
+
+`src/redstring/composition/retrieval.py:209`. `_resolve` seeds `resolved`
+from the entities the lexical channel already holds, so only the ids it did
+not supply are fetched. The docstring makes that an explicit cost claim ("in
+one round trip for the unknown", "only the ids it did not supply are
+fetched") and no test holds it: replacing that line with `resolved = {}` --
+so every `HYBRID` retrieve issues a `get_entities` round trip it does not
+need -- leaves the retrieval suite **green**, measured. Correct output,
+unverified cost, which is `recurring-defects.md` §3 in its mildest form.
+
+The template is in the same file:
+`test_a_lexical_only_mode_makes_no_embedding_call` wraps the provider in a
+counting subclass, and the file already builds a duck-typed store wrapper
+(`RebuildingGraphStore`) that a `get_entities` counter can copy. Roughly
+eight lines. Left out of the I1--I4 fix wave only because the review scored
+it Minor and the wave was scoped to the four Important findings.
+
+### B85. `entity_types` means two different things on the two retrieval channels
+
+`retrieve`'s docstring says "`entity_types` restricts both channels" without
+qualification. It restricts them differently:
+
+- the **lexical** channel compares `entity.entity_type` from the graph
+  (`src/redstring/composition/retrieval.py:181`);
+- the **semantic** channel filters on the *vector record's*
+  `metadata["entity_type"]`, via `entity_type_of`.
+
+Two consequences, neither documented nor tested. A vector upserted without
+`entity_type` metadata has `entity_type_of(...) is None`, so any non-`None`
+`entity_types` excludes it from the semantic channel even when the graph
+entity carries the wanted type -- and in `HYBRID` the entity still arrives
+lexically, so it *looks* like it works while the semantic contribution is
+silently missing and the rank changes. And the comparison is case-sensitive
+on both sides while `domain/blocking.py`'s `entity_type_key` normalizes, so
+`entity_types=["Person"]` matches nothing here while blocking treats
+`"Person"` and `"person"` as one type.
+
+Both follow from the ports rather than being bugs in the `Retriever`, which
+is why this is a docs-or-semantics decision rather than a fix: either
+qualify the docstring (cheapest, and honest), or normalize the comparison and
+say in `ports/vector_store.py` what a record missing the key means. Do not
+"fix" it by having the semantic channel consult the graph -- that is a second
+round trip per query on the path the vector filter exists to avoid.
+
+### B86. Two retrieval tests pass on the adapter's guarantee rather than the `Retriever`'s
+
+`tests/unit/composition/test_retrieval.py`. Both were asked for by the spec
+and both are worth keeping; what is worth recording is that neither is
+load-bearing as written, so nobody re-derives that later.
+
+- `test_entities_are_compared_by_equality_not_identity` builds a
+  `RebuildingGraphStore` returning equal-but-distinct entities, which is the
+  right construction -- but there is no `is` comparison on an `Entity`
+  anywhere in `Retriever` for it to catch, and it runs in `HYBRID` against an
+  *empty* vector store, so only `find_by_blocking_keys` is rebuilt and
+  `get_entities`'s rebuild path is never exercised. Pointing it at
+  `RetrievalMode.SEMANTIC` (where `_resolve` fetches) would make it mean
+  something, and is a one-line change.
+- `test_mutating_a_result_cannot_change_what_a_later_retrieve_returns` is
+  green because `InMemoryGraphStore` returns deep copies, which
+  `GraphStoreCompliance` already enforces. There is no implementation of
+  `Retriever` that fails it without also failing the compliance suite.
+
+Neither is a defect to fix under time pressure; the entry exists so the next
+reader does not mistake either for evidence about the `Retriever`.
