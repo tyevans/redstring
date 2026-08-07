@@ -39,6 +39,7 @@ from redstring.domain.blocking import BlockingKeyStrategy
 from redstring.domain.entity import ExtractionMethod
 from redstring.domain.interval import TemporalRelation
 from redstring.domain.merge_strategy import PropertyMergeStrategy
+from redstring.domain.retrieval import RetrievalMode
 from redstring.domain.temporal import DatePrecision, UncertaintyMarker
 from redstring.llm.circuit_breaker import CircuitState
 
@@ -81,6 +82,18 @@ WIRE_FORMAT: dict[type[enum.Enum], dict[str, str]] = {
         "PREFER_MERGED": "prefer_merged",
         "LATEST": "latest",
         "DEEP_MERGE": "deep_merge",
+    },
+    # Not persisted, unlike its neighbours here: `RetrievalMode` is an argument
+    # to `Retriever.retrieve` and reaches no event payload and no store. It is
+    # pinned anyway because the values are an exported public surface a caller
+    # may pass as bare strings, so changing one breaks callers rather than
+    # stored data. The completeness check below admits no exceptions, which is
+    # the point of it -- an enum arguing its way out is how the table stops
+    # describing the package.
+    RetrievalMode: {
+        "SEMANTIC": "semantic",
+        "LEXICAL": "lexical",
+        "HYBRID": "hybrid",
     },
     TemporalRelation: {
         "BEFORE": "before",
