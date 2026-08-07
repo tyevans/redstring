@@ -445,7 +445,17 @@ layers = [
     # specific -- inferred edges would acquire a path into `DocumentExtracted`,
     # which is exactly the persistence decision `temporal/inference.py` argues
     # against.
-    "extraction : consolidation : temporal : graph : vector : llm",
+    # `chunks` sits beside `graph` and `vector` rather than above or below
+    # either. It holds the adapters for one more projection target -- the
+    # stored passages a document was split into -- needs nothing from the
+    # other two, and neither needs anything from it. A caller wanting a
+    # chunk *and* the entities extracted from it holds both ports, which is
+    # the same shape as every other cross-store question here and the reason
+    # `graph` and `vector` are siblings in the first place. Note it is not
+    # under `extraction`: `extraction.chunking.Chunk` is a transient split in
+    # progress, `domain.chunk.StoredChunk` is a stored record, and the two
+    # share four field names and no lifetime.
+    "extraction : consolidation : temporal : chunks : graph : vector : llm",
     # Projections read the ports and the event schema and write nothing back:
     # nothing below them may import a projection, and they may not import an
     # adapter.
