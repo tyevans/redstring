@@ -237,6 +237,16 @@ async def build_graph(
             model returns `event is None` and a repeat chunking returns
             `chunks_written == 0`.
 
+            **Chunking is recorded whenever this is given, whether or not
+            `chunks` is** -- `record_chunking` runs unconditionally on the
+            aggregate, and only the write into `chunks` is gated on it being
+            given. A caller passing `event_store` for extraction idempotence
+            alone, with no `chunks`, still gets a `DocumentChunked` carrying
+            the document's full text into the log. This is correct and not
+            new: the log is the authority a corpus rebuild replays from, so
+            the event has to exist independently of whether a projection
+            writes it anywhere today.
+
             **This is what makes the two write paths' key spaces observable.**
             Indexing a document with `index_documents` and then extracting it
             over the same log is the case the signatures are composed

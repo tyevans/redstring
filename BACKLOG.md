@@ -1030,6 +1030,29 @@ that has nowhere left to go, and small enough movements are now within the
 noise of which branches an xdist run happens to take. Expect to argue a drop
 in the commit message rather than to satisfy the number.
 
+### B90. `dump_shape`'s chunk oracle pins ids and order, not `entity_ids`
+
+`tests/unit/projections/conftest.py::dump_shape` reduces the chunk store to
+`{source_id: [chunk.id, ...]}` per tenant, compared against
+`log_builder.py::BuiltLog.expected_shape`. That pins which passages survive a
+re-chunk and in what order -- and, because chunk ids are content-addressed
+over `(source_id, text)`, the id list also pins the text each chunk holds. It
+does not pin `entity_ids`: a handler that wrote every chunk with
+`entity_ids=[]` would pass every test using this oracle, since nothing
+compares against `StoredChunk.entity_ids` at all.
+
+Add `entity_ids` to both the shape `dump_shape` produces and
+`_TenantMirror.chunks` in `log_builder.py`, which currently records only the
+id list (`log_builder.py:165` onward). The mirror already has what it needs
+per chunk revision (`_chunks` builds each `StoredChunk` with its own
+`entity_ids`); it is the reduction into `expected_shape()` and `dump_shape`
+that drops the field.
+
+Deferred rather than fixed because it surfaced during an unrelated review pass
+and the fix touches the oracle two suites share
+(`test_replay_equivalence.py`-style tests and anything else building a
+`BuiltLog`) -- worth doing deliberately rather than as a drive-by.
+
 ### B78. The embeddings probe is unbounded, and only its *count* was fixed
 
 `tests/integration/llm/test_live_embeddings.py::_serving` reaches the endpoint
@@ -1571,6 +1594,11 @@ What would make it right is renaming the extra to `postgres` and keeping
 deprecation window, which is more than this adapter should carry. Do it when
 something else touches the extras; until then the message is honest about
 what to install even though the name is wrong about why.
+
+The same confusion is stated as fact elsewhere: `src/redstring/__init__.py:65`
+calls `asyncpg` "a core dependency" in the module's own reference prose. It is
+not -- it is what the `pgvector` extra installs, same as `neo4j`. Predates this
+branch; fix both when the extras get their proper rename.
 
 
 ### B42. `ANN401` is silenced on `domain/merge_strategy.py::resolve`

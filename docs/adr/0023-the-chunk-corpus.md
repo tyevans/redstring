@@ -197,6 +197,17 @@ signatures ever become global — an index of chunkings, a cross-document
 dedupe — every empty document collides at once. Whoever proposes that has to
 solve this first; it is not a latent bug today.
 
+**Passing `event_store` alone, without `chunks`, still writes document text
+into the log.** `record_chunking` runs on the aggregate whenever `event_store`
+is given, independently of whether `chunks` is; only the projection into the
+corpus is gated on `chunks`. A caller who passed `event_store` only for
+extraction idempotence gets a `DocumentChunked` carrying the document's full
+text in every run from then on. This is intentional -- the log has to hold the
+event regardless of whether anything projects it today, or a corpus built
+later by replay would be missing chunkings that predate it -- but it means
+"never fetches" is not "never logs": `event_store` moves document text into
+the caller's log even when `chunks` says "do not maintain a corpus".
+
 **`build_graph` gained an optional `event_store`.** Without it the two write
 paths could not share aggregate state, and the key-space behaviour above was
 untestable: a test that extracts and then indexes needs both paths loading the
