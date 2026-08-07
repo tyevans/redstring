@@ -271,7 +271,16 @@ jobs:
       # - **`--cov-fail-under=0`.** The ratchet is calibrated against the unit
       #   suite; this job measures a partial selection and would always fail
       #   against a whole-suite threshold.
-      - name: pytest -m integration
+      # - **`and not live`.** The three `tests/integration/llm/test_live_*.py`
+      #   modules need an inference endpoint. This job can start a container;
+      #   it cannot start a model server, and it never will -- so those tests
+      #   are not "not run yet", they are unrunnable here. Selecting them
+      #   anyway bought nothing and cost ~90 minutes: each probes a LAN
+      #   default that an Azure runner blackholes rather than refuses, so the
+      #   skip arrived only after the client's timeout. Every CI run since
+      #   317e7a5 took ~1h35m for this reason, the green ones included, which
+      #   is why it read as slow infrastructure rather than as a defect.
+      - name: pytest -m "integration and not live"
         env:
           KG_COMPLIANCE_MAX_EXAMPLES: '10'
           KG_TEST_NEO4J_URI: bolt://localhost:7688
@@ -279,4 +288,4 @@ jobs:
           KG_TEST_NEO4J_PASSWORD: redstring
           KG_TEST_POSTGRES_DSN: postgresql://postgres:redstring@localhost:5434/redstring_test
           KG_TEST_REDIS_URL: redis://localhost:6381/0
-        run: uv run pytest -m integration --cov-fail-under=0
+        run: uv run pytest -m "integration and not live" --cov-fail-under=0

@@ -94,11 +94,19 @@ surprise:
   `--all-extras` the Neo4j, pgvector and Redis suites all import cleanly and
   then skip, because nothing is listening. Part 1 brings the containers up.
 - **A model server.** The `llm` extra installs the LangChain transport, not an
-  endpoint. `test_live_endpoint.py` and `test_live_pipeline.py` probe
-  `KG_LLM_BASE_URL` with a real completion and skip when no model answers.
-  Those two are the only tests in `tests/integration/llm/` that need a model —
-  `test_redis_cache.py` sits in the same directory because `RedisCache` lives
-  under `llm/`, and needs the container rather than the endpoint.
+  endpoint. Three modules need one, and they are exactly the ones marked
+  **`live`**: `test_live_endpoint.py` and `test_live_pipeline.py` probe
+  `KG_LLM_BASE_URL` with a real completion, and `test_live_embeddings.py`
+  probes `KG_EMBED_BASE_URL` by embedding. Each skips when nothing answers.
+  `test_redis_cache.py` and `test_langchain_embedding_factory.py` sit in the
+  same directory because `RedisCache` and the embedding adapter live under
+  `llm/`, and need the container or nothing at all rather than the endpoint.
+
+  **CI runs `-m "integration and not live"`** — a runner can start a
+  container and will never have an inference endpoint, so those 21 tests are
+  unrunnable there rather than merely unrun. Locally the plain `-m
+  integration` below still selects them, which is the point of the split:
+  they run where an endpoint exists and are skipped by name where one cannot.
 
 Verify the sync took before running anything expensive:
 

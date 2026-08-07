@@ -396,7 +396,11 @@ reading the code:
   the test, do not pin the seed.
 - `hypothesis` is available for property-based tests — prefer it wherever a
   property is easier to state than a table of examples.
-- Markers: `unit`, `integration`, `accuracy`.
+- Markers: `unit`, `integration`, `live`, `accuracy`. `live` is a subset of
+  `integration` for the three `tests/integration/llm/test_live_*.py` modules,
+  which need an inference endpoint; CI selects
+  `-m "integration and not live"` because a runner can start a container and
+  never a model server. A local `-m integration` still runs them.
 
 ## Coverage ratchet
 

@@ -932,6 +932,38 @@ that has nowhere left to go, and small enough movements are now within the
 noise of which branches an xdist run happens to take. Expect to argue a drop
 in the commit message rather than to satisfy the number.
 
+### B78. The embeddings probe is unbounded, and only its *count* was fixed
+
+`tests/integration/llm/test_live_embeddings.py::_serving` reaches the endpoint
+through `LangChainEmbeddingProvider.openai_compatible`, which passes **no
+`timeout` and no `max_retries`** to `OpenAIEmbeddings`
+(`src/redstring/llm/adapters/langchain_embedding.py:105`). It therefore
+inherits the openai client's defaults — 600 s, two retries — so a single probe
+against an address that blackholes rather than refuses can take ~30 minutes.
+
+**What was fixed was the multiplier, not the term.** The probe now runs in a
+module-scoped `live` fixture (one call for 13 tests, verified with
+`--setup-show`), and CI selects `-m "integration and not live"` so it never
+runs there at all. What remains: a developer running `-m integration` locally
+with `KG_EMBED_BASE_URL` unset, whose network drops packets to
+`192.168.1.14` instead of refusing them, waits out one unbounded probe with
+no output explaining why.
+
+The fix is a `timeout` (and `max_retries=0`) on the probe's provider — but
+note the shape of the decision, because it is not purely a test change:
+`openai_compatible` is a *public constructor* and exposes neither knob, so
+either the probe stops using it (losing the property the module's docstring
+argues for — that the probe embeds through the real adapter rather than
+listing models, per B12) or the constructor grows a `timeout` parameter, which
+is a change to a shipped signature and wants the argument in
+`recurring-defects.md` §2 about not adding a parameter "for flexibility".
+`test_live_endpoint.serving()` sidesteps this entirely by probing with a raw
+`httpx.post(..., timeout=180.0)` and never touching the adapter; that it is
+allowed to and this one is not is the actual asymmetry to resolve.
+
+Related: CLAUDE.md's standing rule that a test hanging is worse than a test
+failing, because in CI it reads as infrastructure and gets retried.
+
 ---
 
 ## 5. Capabilities deliberately not built, with the route back
@@ -1603,3 +1635,35 @@ Three shapes worth weighing, none obviously right:
 The first is probably right, and the reason to write it down rather than do it
 now is that it is a change to the release pipeline made immediately after a
 release, which is the worst time to touch one.
+
+---
+
+### B79. No workflow job declares `timeout-minutes`, so the ceiling is six hours
+
+Not one job across `ci.yml`, `release.yml` and `docs.yml` sets
+`timeout-minutes`, so every one inherits GitHub's 6-hour default. Verified:
+`grep -n "timeout-minutes" .github/workflows/*.yml` returns nothing.
+
+This was found because it *failed to fire*. The `integration` job spent ~90
+minutes per run waiting out embedding probes against an unreachable address
+(B78) for a full day, on green runs as well as red, and nothing capped it —
+6 hours is far enough above the real ~35-minute cost that the job would have
+had to be an order of magnitude wrong before the default noticed.
+
+The reason to file rather than fix now: **the right number is not obvious and
+a wrong one is worse than none.** The `integration` job's honest duration is
+still being established (it was ~35 min before `317e7a5` and should return to
+roughly that with `-m "integration and not live"` — but that is a prediction,
+not a measurement, and the next run is the first data point). A cap set below
+the real distribution turns a slow-but-fine run into a red X that reads as a
+test failure, which is the same misdiagnosis in the other direction.
+
+So: take two or three runs of the post-fix `integration` job, set the cap at a
+generous multiple of the observed p100, and do the same per job rather than
+one blanket value — `lint` and `import-linter` finish in under a minute and
+want a cap in single digits, where `integration` does not.
+
+Note this interacts with `release.yml`, which calls `ci.yml` via
+`workflow_call`: a cap on the reusable workflow's jobs applies to the release
+pipeline too, which is the case where an unbounded hang is most expensive
+(B72 — a failed release consumes the version number).
