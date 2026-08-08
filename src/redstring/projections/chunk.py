@@ -22,11 +22,16 @@ from __future__ import annotations
 from eventsource.application.projections import StoreProjection, handles
 
 from redstring.events.document import DocumentChunked
-from redstring.ports.chunk_store import ChunkStore
+from redstring.ports.chunk_store import ChunkWriter
 
 
-class ChunkProjection(StoreProjection[ChunkStore]):
-    """Maintains a `ChunkStore` from the event log."""
+class ChunkProjection(StoreProjection[ChunkWriter]):
+    """Maintains a `ChunkStore` from the event log.
+
+    Typed against `ChunkWriter` rather than the whole port: this class calls
+    `replace_source` and nothing else, one of the port's nine methods. Any
+    `ChunkStore` still satisfies it.
+    """
 
     @handles(DocumentChunked)
     async def _apply_chunking(self, _context: object, event: DocumentChunked) -> None:
@@ -35,7 +40,7 @@ class ChunkProjection(StoreProjection[ChunkStore]):
     async def _truncate_read_models(self) -> None:
         """Not supported; see `GraphProjection._truncate_read_models`.
 
-        `ChunkStore.delete_by_tenant` is the only bulk delete the port has,
+        `ChunkPurge.delete_by_tenant` is the only bulk delete the port has,
         for the same reason: nothing here spans tenants.
         """
         raise NotImplementedError(

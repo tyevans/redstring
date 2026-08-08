@@ -60,10 +60,19 @@ could not be caught without a dotted import.
   `TenantId` and `SourceId` are the id vocabulary -- the first three are
   `UUID`, the last is `str`. `ChunkId` joins them for a stored passage, and
   is a `str`: a chunk is identified by the digest of its source and its text.
-- **Ports.** `GraphStore`, `VectorStore`, `ChunkStore`, `LlmProvider`,
-  `EmbeddingProvider`, `Chunker`. Implement
-  one to plug in a backend of your own; the compliance suite in
-  `tests/compliance` is what says whether you got it right.
+- **Ports.** `GraphStore`, `VectorStore`, `ChunkStore`, `Cache`,
+  `LlmProvider`, `EmbeddingProvider`, `Chunker`. Implement one to plug in a
+  backend of your own; the compliance suite in `tests/compliance` is what
+  says whether you got it right.
+
+  Three of them are **composed from capability protocols, and those are
+  exported too**: `GraphStore` from `EntityReader`, `EntityWriter`,
+  `AliasStore`, `RelationshipStore` and `TenantPurge`; `ChunkStore` from
+  `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource` and `ChunkPurge`;
+  `Cache` from `KeyValueCache` and `HitWindow`. Implement the composed port;
+  *depend* on the narrowest capability you actually call. The split is what
+  lets `ChunkProjection` need one method rather than nine, and what lets a
+  caller supply BM25 recall from an index that is not a chunk store at all.
 - **Adapters.** `InMemoryGraphStore`, `InMemoryVectorStore` and
   `InMemoryChunkStore` are complete
   implementations, not test doubles -- suitable for a single-process job.
@@ -223,7 +232,14 @@ from redstring.extraction.protocols import Chunker
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
-from redstring.ports.chunk_store import ChunkStore
+from redstring.ports.cache import Cache, HitWindow, KeyValueCache
+from redstring.ports.chunk_store import (
+    ChunkPurge,
+    ChunkReader,
+    ChunkStore,
+    ChunkWriter,
+    LexicalCandidateSource,
+)
 from redstring.ports.embedding_provider import EmbeddingProvider
 from redstring.ports.graph_store import (
     AliasStore,
@@ -244,8 +260,6 @@ __version__ = "0.3.0"
 
 __all__ = [
     "AUTO",
-    "DEFAULT_SYSTEM_PROMPT",
-    "EMPTY",
     "AdjudicationVerdict",
     "Adjudicator",
     "Alias",
@@ -253,13 +267,17 @@ __all__ = [
     "AliasStore",
     "AutoDomain",
     "Bounds",
+    "Cache",
     "CandidateFinder",
     "CandidateSource",
     "Chunk",
     "ChunkId",
     "ChunkProjection",
+    "ChunkPurge",
+    "ChunkReader",
     "ChunkSizeError",
     "ChunkStore",
+    "ChunkWriter",
     "Chunker",
     "ChunkerError",
     "ChunkingError",
@@ -270,6 +288,7 @@ __all__ = [
     "Consolidator",
     "CorpusStats",
     "CursorStalledError",
+    "DEFAULT_SYSTEM_PROMPT",
     "DatePrecision",
     "DimensionMismatchError",
     "Document",
@@ -278,6 +297,7 @@ __all__ = [
     "DomainSchema",
     "DomainSummary",
     "DoubleMergeError",
+    "EMPTY",
     "EmbeddingProvider",
     "EmbeddingProviderError",
     "EmptyCompletionError",
@@ -296,12 +316,15 @@ __all__ = [
     "GraphBuildReport",
     "GraphProjection",
     "GraphStore",
+    "HitWindow",
     "InMemoryChunkStore",
     "InMemoryGraphStore",
     "InMemoryVectorStore",
     "IndexReport",
     "InferredRelation",
+    "KeyValueCache",
     "LexicalCandidate",
+    "LexicalCandidateSource",
     "LexicalCandidates",
     "LlmProvider",
     "LlmProviderError",
