@@ -162,4 +162,6 @@ nav:
       - "0022 · The lexical channel is not BM25": adr/0022-the-lexical-channel-is-not-bm25.md
       - "0023 · The chunk corpus": adr/0023-the-chunk-corpus.md
       - "0024 · BM25 over the chunk corpus": adr/0024-bm25-over-the-chunk-corpus.md
+      - "0025 · Consolidation substitution is two protocols": adr/0025-consolidation-substitution-is-two-protocols.md
+      - "0026 · ChunkStore and Cache are capabilities too": adr/0026-chunk-store-and-cache-are-capabilities-too.md
   - Contributing: contributing.md

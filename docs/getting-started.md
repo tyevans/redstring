@@ -111,7 +111,7 @@ from langchain_openai import ChatOpenAI
 from redstring.llm.adapters.langchain import LangChainLlmProvider
 
 chat_model = ChatOpenAI(model="qwen3-30b", base_url="http://localhost:8080/v1", api_key="-")
-provider = LangChainLlmProvider(chat_model)
+provider = LangChainLlmProvider(chat_model, model="openai-compatible/qwen3-30b")
 ```
 
 Constructing the chat model is the one step the example does not show, because

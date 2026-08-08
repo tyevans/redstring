@@ -1,6 +1,10 @@
 # ADR 0015: Consolidation gets a composed entry point, and an absent graph signal stops meaning zero
 
-**Status:** accepted.
+**Status:** accepted. Amended by [`0025` consolidation's substitution points
+are protocols](0025-consolidation-substitution-is-two-protocols.md), which
+retypes `resolve`'s `finder` and `adjudicator` against one-method protocols.
+The Decision below stands unchanged: same entry point, same arguments, same
+defaults, same banding.
 
 **Why this is an ADR:** it changes the public surface, and it changes what a
 merge decision is. Either alone would qualify under

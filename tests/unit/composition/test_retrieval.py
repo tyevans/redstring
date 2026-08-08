@@ -21,6 +21,7 @@ from redstring.domain.blocking import (
 )
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import DimensionMismatchError
+from redstring.domain.fusion import reciprocal_rank_fusion
 from redstring.domain.normalization import normalize_name
 from redstring.domain.retrieval import RetrievalMode
 from redstring.graph.adapters.memory import InMemoryGraphStore
@@ -541,3 +542,109 @@ async def test_a_provider_and_store_of_different_dimensions_are_refused() -> Non
             vectors=InMemoryVectorStore(dimension=16),
             graph=InMemoryGraphStore(),
         )
+
+
+# ----------------------------------------------------------------------
+# Overfetch: what each channel is asked for, and why it is more than `k`
+# ----------------------------------------------------------------------
+
+
+class _RecordingVectorStore:
+    """A real `InMemoryVectorStore` that remembers the `k` it was asked for.
+
+    Delegation rather than a mock: every answer is the real adapter's, so a
+    test using this still exercises search. Only the argument is observed.
+    """
+
+    def __init__(self, inner: InMemoryVectorStore) -> None:
+        self._inner = inner
+        self.requested_k: list[int] = []
+
+    @property
+    def dimension(self) -> int:
+        return self._inner.dimension
+
+    async def search(self, *args: Any, **kwargs: Any) -> Any:
+        self.requested_k.append(kwargs.get("k", args[2] if len(args) > 2 else None))
+        return await self._inner.search(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+async def test_each_channel_is_asked_for_more_candidates_than_k() -> None:
+    """The mechanism. Asking each channel for exactly `k` under-recalls.
+
+    RRF scores an entity by the ranks it holds in *each* list, so an entity
+    ranked k+1 in both channels can beat one ranked first in a single
+    channel -- see `test_rank_fusion_promotes_a_consistent_runner_up` below
+    for that arithmetic. An entity neither channel returned cannot be
+    promoted by any amount of fusion, so the candidates that decide the fused
+    ordering are precisely the ones just past each channel's cutoff.
+
+    This asserts the request, not the result, because the request is the
+    thing that was wrong: both channels were asked for `k`.
+    """
+    tenant = uuid4()
+    graph = InMemoryGraphStore()
+    embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
+    inner = InMemoryVectorStore(dimension=DIMENSION)
+    ada = _entity("Ada Lovelace", tenant)
+    await graph.upsert_entity(ada)
+    await _store_vector(inner, embeddings, ada)
+
+    recording = _RecordingVectorStore(inner)
+    retriever = Retriever(embeddings=embeddings, vectors=recording, graph=graph)
+
+    await retriever.retrieve("Ada Lovelace", tenant, k=4)
+
+    assert recording.requested_k == [12], "each channel must be asked for k * overfetch"
+
+
+async def test_overfetch_is_configurable_and_one_restores_the_narrow_behaviour() -> None:
+    tenant = uuid4()
+    graph = InMemoryGraphStore()
+    embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
+    inner = InMemoryVectorStore(dimension=DIMENSION)
+    ada = _entity("Ada Lovelace", tenant)
+    await graph.upsert_entity(ada)
+    await _store_vector(inner, embeddings, ada)
+
+    recording = _RecordingVectorStore(inner)
+    retriever = Retriever(embeddings=embeddings, vectors=recording, graph=graph, overfetch=1)
+
+    await retriever.retrieve("Ada Lovelace", tenant, k=4)
+
+    assert recording.requested_k == [4]
+
+
+@pytest.mark.parametrize("overfetch", [0, -1])
+async def test_an_overfetch_below_one_is_refused(overfetch: int) -> None:
+    # Fetching fewer than `k` per channel cannot improve on `k`, so there is
+    # no reading of it that is a caller's intent rather than a mistake.
+    with pytest.raises(ValueError, match="overfetch"):
+        Retriever(
+            embeddings=FakeEmbeddingProvider(dimension=DIMENSION),
+            vectors=InMemoryVectorStore(dimension=DIMENSION),
+            graph=InMemoryGraphStore(),
+            overfetch=overfetch,
+        )
+
+
+def test_rank_fusion_promotes_a_consistent_runner_up() -> None:
+    """Why overfetching is not merely "more is better".
+
+    This is the arithmetic the default rests on, asserted directly rather
+    than assumed. `b` is second in *both* channels and first in neither; `a`
+    and `c` each top one channel. RRF ranks `b` above both.
+
+    At `k=1` with `overfetch=1` each channel would return one id -- `a` and
+    `c` -- and `b` would not be a candidate at all. The entity the fusion
+    rule says is best is exactly the one the narrow fetch drops.
+    """
+    a, b, c = (UUID(int=n) for n in (1, 2, 3))
+
+    fused = reciprocal_rank_fusion([[a, b], [c, b]])
+
+    assert fused[0][0] == b
+    assert {entity_id for entity_id, _ in fused[1:]} == {a, c}

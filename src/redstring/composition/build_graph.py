@@ -45,9 +45,9 @@ is no state and no refusal, so nothing behavioural can distinguish the design
 from its opposite. See `index_documents`.
 
 A caller who wants a log without this parameter appends `report.event` to an
-`EventStore` themselves and drives `redstring.projections.project` over the
-feed. `report.event` is returned for precisely that, and it is the same object
-the projection just consumed.
+`EventStore` themselves and drives `eventsource.replay` over the feed.
+`report.event` is returned for precisely that, and it is the same object the
+projection just consumed.
 
 ## `domain=AUTO` costs an extra model call, and says so
 
@@ -89,7 +89,7 @@ if TYPE_CHECKING:
     from eventsource.ports.snapshots import SnapshotStore
     from eventsource.ports.store import AggregateStore
 
-    from redstring.consolidation.policy import Adjudicator
+    from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
     from redstring.domain.source import SourceDocument
@@ -671,8 +671,8 @@ class Consolidator:
         self,
         subject: Entity,
         *,
-        finder: CandidateFinder | None = None,
-        adjudicator: Adjudicator | None = None,
+        finder: CandidateSource | None = None,
+        adjudicator: MergeAdjudicator | None = None,
         high: float = HIGH_SIMILARITY,
         low: float = LOW_SIMILARITY,
     ) -> ConsolidationReport | None:

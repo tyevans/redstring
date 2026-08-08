@@ -2104,6 +2104,193 @@ mechanism gap that let it ship is what this entry tracks. A fix extracts
 each how-to's fenced block(s) the way `test_end_to_end_example.py` extracts
 `build_a_graph.py`'s, and executes them in the commit gate.
 
+**Widen it past `docs/how-to/`.** A review found the same shape in the three
+most-read pages in the repo: `README.md`, `docs/getting-started.md` and
+`docs/installation.md` each constructed `LangChainLlmProvider(chat_model)`,
+missing the required keyword-only `model=`, so all three raised `TypeError`
+on the first line a real-provider user copies. Three sites drifted *together*
+— `docs/how-to/consolidate-duplicate-entities.md` had it right — which is the
+tell that no mechanism was watching any of them. Fixed in the same commit as
+this note; the executor this entry describes has to cover `README.md` and
+`docs/*.md`, not just the how-to directory, or it would have caught none of
+the three.
+
+### B101. `CandidateSource` and `MergeAdjudicator` have no compliance suite
+
+ADR 0025 declared both protocols and stated two obligations a substitute can
+violate without erroring:
+
+- `candidates` returns results best first **under a total order**. The default
+  breaks score ties by ascending entity id as a string so two runs over one
+  graph agree. A substitute sorting on score alone leaves a cutoff falling
+  inside a tie to be decided by whatever order its backend returned, which
+  surfaces as an intermittently different merge rather than as a failure.
+- `adjudicate` returns **exactly one verdict per candidate, positionally
+  aligned**, `None` where it has no answer. A short list silently records an
+  answer about one pair against another; `False` in place of `None` turns a
+  provider outage into a corpus that appears to hold no duplicates.
+
+Both are prose in a protocol docstring. Every other multi-implementation
+contract here is a shared body under `tests/compliance/` subclassed per
+adapter, and `.claude/rules/recurring-defects.md` §1 is precisely about what
+happens without one — two implementations diverge and nothing fails, because
+each one's tests assert its own behaviour.
+
+**Not built now, deliberately, and the reason is the part worth keeping:**
+there is exactly one implementation of each protocol. A compliance suite
+written against a single implementation gets tuned until that implementation
+passes, which is the failure this project has recorded twice (the tier-2
+banner in `tests/compliance/vector_store.py` says the same thing about a tier
+that has never run against an adapter that could fail it). The suite is worth
+writing when the *second* implementation appears, and its two cases are the
+two bullets above — a tie forced to occur, and an adjudicator returning a
+short list.
+
+`tests/unit/consolidation/test_substitution.py` covers the seam for the
+defaults' sake and says in its own docstring what it does not prove.
+
+### B102. `Retriever`'s overfetch default of 3 is reasoned, not measured
+
+`Retriever.__init__` takes `overfetch=3`, multiplying what each channel is
+asked for before RRF truncates to `k`. The *direction* is not in doubt: an
+entity neither channel returned cannot be promoted by fusion, and RRF
+demonstrably ranks a consistent runner-up above two channel-leaders
+(`test_rank_fusion_promotes_a_consistent_runner_up` asserts that arithmetic).
+Asking each channel for exactly `k`, as the code did, therefore dropped
+candidates the fusion rule says should win.
+
+**The number 3 is a guess.** Nothing here measures recall@k against a ground
+truth at 1, 2, 3 or 5, because there is no retrieval evaluation corpus --
+`tests/accuracy/` grades extraction, not retrieval. So the tests assert the
+*request* (`k * overfetch` per channel) and the fusion arithmetic, and neither
+can tell you whether 3 buys materially more than 2 or leaves recall on the
+table at 5.
+
+What a fix needs: a small graded query set in the shape of
+`tests/accuracy/corpus.yaml` -- queries with known-relevant entity ids -- and
+a measurement of recall@k across overfetch values, on a corpus large enough
+that the channels disagree. Related: **B10k** (no ANN adapter exists, so
+nothing here has ever run against a store that can miss a neighbour) and
+**B86** (two retrieval tests already pass on the adapter's guarantee rather
+than the `Retriever`'s).
+
+Until then the cost is stated in the docstring -- a wider `VectorStore.search`
+and a wider blocking-key scan per query -- and `overfetch=1` restores the
+previous behaviour exactly.
+
+### B103. The only production adapters live on paths the package calls unsupported
+
+`redstring/__init__.py` states the contract plainly: anything reached through
+a dotted path "is internal and may change without notice, including in a patch
+release." The adapters a caller actually deploys are all reached that way --
+`redstring.llm.adapters.langchain.LangChainLlmProvider`,
+`LangChainEmbeddingProvider`, `Neo4jGraphStore`, `PgVectorStore` -- while the
+two *exported* providers are `FakeLlmProvider` and `FakeEmbeddingProvider`.
+
+So the README's primary quickstart imports from an explicitly unsupported
+path, and the supported surface is the one nobody ships. The reason for not
+exporting them is good and should not be reversed: exporting
+`LangChainLlmProvider` makes `import redstring` pull LangChain in, and the
+extras exist so a caller pays only for the backends they use.
+
+**The obvious fix is blocked by the architecture contract, which is why this
+is filed rather than done.** A `redstring.adapters` namespace re-exporting the
+extra-gated adapters would import `llm`, `graph` and `vector` -- three
+siblings forbidden from importing each other -- so it could only sit on
+`composition`. And `pyproject.toml`'s contract says exactly what to do with
+such a candidate: "ask what it composes; a candidate that cannot name such a
+pair is a piece of one half placed above it for convenience." A re-export
+shim composes nothing. CLAUDE.md separately records that `context`, a
+re-export shim, was deleted in slice 10.
+
+Three routes, none free:
+
+1. **A module-level `__getattr__` on `redstring`** raising a helpful
+   `ImportError` naming the extra, with the names declared under
+   `TYPE_CHECKING` so checkers still resolve them. Smallest, adds no module to
+   the contract, and keeps `import redstring` lazy. The cost is that
+   `__all__` stops being the literal list of what a caller may use, which the
+   three public-surface gates are built around -- so those gates need to
+   learn about it, and ADR 0006 needs amending rather than merely citing.
+2. **A stability promise attached to the existing dotted paths**, stated in
+   `__init__.py` and enforced by a test that those four import paths still
+   resolve. No new module, no contract change; the promise becomes prose plus
+   one gate rather than membership of `__all__`.
+3. **Accept it and say so in the README**, which is the status quo made
+   honest rather than a fix.
+
+Route 2 is the cheapest thing that removes the contradiction, and route 1 is
+the one that gives a caller what they actually want. Either needs an ADR,
+because "the public surface is `__all__` and nothing else" is ADR 0006's
+decision and both routes qualify it.
+
+### B104. `DomainSchemaRegistry` is a process-global singleton with two caches
+
+`src/redstring/extraction/domains/registry.py` is visibly from a different era
+than the code around it -- the docstring style ("This module provides a
+singleton registry...", `Attributes:`/`Usage:` blocks) matches nothing else
+under `src/`, and `extraction/prompt_generator.py` records that this module's
+*sibling* singleton was deleted in slice 10 for the reasons that apply here.
+
+Concretely:
+
+- **Two layers of global state for one object.** A class-level `_instance`
+  with double-checked locking, *plus* `@lru_cache(maxsize=1)` on
+  `get_domain_registry()`, plus `reset_registry_cache()` existing to clear
+  both.
+- **Three jobs in one class.** Loading (`load_schemas`), lifecycle
+  (`get_instance`, `ensure_loaded`, `hot_reload`), and querying (`get_schema`,
+  `list_domains`, `get_schemas_for_entity_type`, `__len__`, `__iter__`,
+  `__contains__`).
+- **`get_instance(force_new=True)` returns a non-singleton**, from a method
+  whose name promises the opposite. It is a testing hatch in production code,
+  and `reset_instance()` is a second one.
+- **The mutable global is unreachable from the public API.**
+  `domain_system_prompt` is the only exported consumer and reads the
+  process-wide registry, so a caller with their own schema *directory* cannot
+  point it there -- they must load a `DomainSchema` and pass the object form.
+  That works, and is not what the argument's docstring implies.
+- **`get_schema` raises `KeyError`**, translated to `UnknownDomainError` at
+  the boundary. Correct as written, but the error type a caller sees depends
+  on which door they came in by.
+
+**Nothing has gone wrong because of it**, which is why it has survived: the
+bundled schemas are read-only and loaded once, so the singleton's hazards are
+all latent. `list_available_domains()` is now exported and goes through the
+same global, which raises the stakes slightly.
+
+The fix is an ordinary object -- `SchemaRegistry(schema_dir)` with `get` and
+`list`, no singleton, no `lru_cache`, no `force_new`, no `reset_*` -- and
+`domain_system_prompt` taking an optional `registry` defaulting to a
+module-level instance over the bundled directory. That removes the global
+*and* gives a caller with their own schema directory a supported path, which
+is the part with user-visible value. Sized medium-to-large because
+`hot_reload` and `get_schemas_for_entity_type` need callers found or deleted
+first.
+
+### B100. ADR 0007 cites `redstring.projections.project`, which does not exist
+
+`docs/adr/0007-composition-is-the-only-top-layer.md:86,362,446` name
+`redstring.projections.project` as the caller's escape hatch for driving a
+projection over their own event feed. There is no such callable:
+`src/redstring/projections/__init__.py` exports the three projection classes
+and nothing else, and `redstring/__init__.py`'s own docstring records that
+`project`/`replay` left this surface in the 0.12.0 upstreaming — a caller
+writes `from eventsource import replay`.
+
+The live copies of this claim (`README.md`, `composition/build_graph.py`'s
+module docstring) were fixed in the commit that filed this. The ADR was not,
+because ADR bodies are immutable records of a decision as taken —
+`.claude/rules/definition-of-done.md` item 2. What is deferred is the
+*mechanism* question, not a text edit: an ADR whose prose names a symbol that
+has since been deleted is indistinguishable from one that is current, and
+`mkdocs --strict` checks links rather than identifiers. The two options are
+an "Amended by" note on 0007 pointing at the rename, or a gate that greps ADR
+bodies for `redstring.`-prefixed dotted paths and fails when one does not
+resolve against the installed package. The second would also have caught this
+one in the slice that caused it, and would cover every future ADR for free.
+Prefer it.
+
 ### B96. Nothing asserts `docs/adr/*.md` and `docs/adr/index.md` agree
 
 Every ADR file is supposed to have a matching row in `docs/adr/index.md`'s

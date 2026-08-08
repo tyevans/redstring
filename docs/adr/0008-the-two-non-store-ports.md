@@ -1,7 +1,10 @@
 # ADR 0008: The two non-store ports, `Cache` and `LlmProvider`
 
 **Status:** accepted; amended by
-[ADR 0017](0017-the-embedding-provider-port.md).
+[ADR 0017](0017-the-embedding-provider-port.md) and by
+[ADR 0026](0026-chunk-store-and-cache-are-capabilities-too.md), which composes
+`Cache` from `KeyValueCache` and `HitWindow` — the split this document's own
+"two capabilities, not one" reasoning describes. No method changed.
 
 > **Amendment (ADR 0017).** There are now **three** non-store ports:
 > `EmbeddingProvider` joined `Cache` and `LlmProvider`. The title and the

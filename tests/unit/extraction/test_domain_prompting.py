@@ -27,6 +27,7 @@ from uuid import uuid4
 
 import pytest
 
+import redstring
 from redstring import RedstringError, UnknownDomainError
 from redstring.domain.source import SourceDocument
 from redstring.extraction import (
@@ -112,3 +113,45 @@ class TestTheDomainPromptReachesTheModel:
         await pipeline.extract(SourceDocument(id="doc-1", text="Hamlet met Ophelia."), TENANT_ID)
 
         assert set(provider.system_prompts) == {DEFAULT_SYSTEM_PROMPT}
+
+
+class TestTheBundledDomainsAreDiscoverable:
+    """`list_available_domains` must agree with what the prompt accepts.
+
+    Exporting a listing is only worth anything if it is the *same* set the
+    function it serves will take. Two independent sources for "which domains
+    exist" is `.claude/rules/recurring-defects.md` §2 -- one silently wins and
+    the loser looks authoritative -- so these assert the listing against both
+    doors into the registry: the success path and the error path.
+
+    Before this was exported the supported way to discover a domain id was to
+    pass a wrong one and read `UnknownDomainError.available`, which is why
+    that attribute is the oracle here rather than a hand-written list of six
+    names. A list written here would agree with the code by construction and
+    could not fail.
+    """
+
+    def test_every_listed_domain_is_one_the_prompt_accepts(self) -> None:
+        listed = redstring.list_available_domains()
+
+        assert listed, "the listing is empty, so nothing below can fail"
+        for summary in listed:
+            assert domain_system_prompt(summary.domain_id)
+
+    def test_the_listing_is_exactly_what_the_error_offers(self) -> None:
+        with pytest.raises(UnknownDomainError) as caught:
+            domain_system_prompt("underwater_basket_weaving")
+
+        assert {s.domain_id for s in redstring.list_available_domains()} == set(
+            caught.value.available
+        )
+
+    def test_a_summary_says_what_the_domain_is_for(self) -> None:
+        # A listing of bare ids would satisfy the two tests above while
+        # leaving a caller no way to choose between six of them.
+        summary = redstring.list_available_domains()[0]
+
+        assert summary.display_name
+        assert summary.description
+        assert summary.entity_type_count == len(summary.entity_types)
+        assert summary.relationship_type_count == len(summary.relationship_types)

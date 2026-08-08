@@ -60,15 +60,24 @@ could not be caught without a dotted import.
   `TenantId` and `SourceId` are the id vocabulary -- the first three are
   `UUID`, the last is `str`. `ChunkId` joins them for a stored passage, and
   is a `str`: a chunk is identified by the digest of its source and its text.
-- **Ports.** `GraphStore`, `VectorStore`, `ChunkStore`, `LlmProvider`,
-  `EmbeddingProvider`, `Chunker`. Implement
-  one to plug in a backend of your own; the compliance suite in
-  `tests/compliance` is what says whether you got it right.
+- **Ports.** `GraphStore`, `VectorStore`, `ChunkStore`, `Cache`,
+  `LlmProvider`, `EmbeddingProvider`, `Chunker`. Implement one to plug in a
+  backend of your own; the compliance suite in `tests/compliance` is what
+  says whether you got it right.
+
+  Three of them are **composed from capability protocols, and those are
+  exported too**: `GraphStore` from `EntityReader`, `EntityWriter`,
+  `AliasStore`, `RelationshipStore` and `TenantPurge`; `ChunkStore` from
+  `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource` and `ChunkPurge`;
+  `Cache` from `KeyValueCache` and `HitWindow`. Implement the composed port;
+  *depend* on the narrowest capability you actually call. The split is what
+  lets `ChunkProjection` need one method rather than nine, and what lets a
+  caller supply BM25 recall from an index that is not a chunk store at all.
 - **Adapters.** `InMemoryGraphStore`, `InMemoryVectorStore` and
   `InMemoryChunkStore` are complete
   implementations, not test doubles -- suitable for a single-process job.
   `Neo4jGraphStore` and `PgVectorStore` need their extras
-  (`redstring[neo4j]`, and `asyncpg`, which is a core dependency).
+  (`redstring[neo4j]` and `redstring[pgvector]`).
 - **Providers.** `FakeLlmProvider` answers from a script or by substring
   (`Response`, `EMPTY`) and validates like the real thing;
   `LangChainLlmProvider` (`redstring[llm]`) speaks to any OpenAI-compatible
@@ -79,7 +88,10 @@ could not be caught without a dotted import.
   (`redstring[llm]`) is the live one. Both LangChain adapters are reached by
   path rather than exported, so `import redstring` does not pull LangChain in.
 - **Domain-aware prompting.** `domain_system_prompt` takes a bundled domain id
-  or a `DomainSchema` of your own -- `load_schema_from_file` and
+  or a `DomainSchema` of your own. `list_available_domains` is how you find out
+  which ids are bundled, returning a `DomainSummary` each -- without it the
+  supported way to discover them is to pass a wrong one and read
+  `UnknownDomainError`. `load_schema_from_file` and
   `load_schema_from_string` build one, out of `EntityTypeSchema`,
   `RelationshipTypeSchema`, `PropertySchema` and `ConfidenceThresholds`.
 - **Pieces, for callers who want the steps rather than the whole.**
@@ -113,6 +125,14 @@ upstream version does that this one did not.
   with the closure that came with it: `CandidateFinder`, `Adjudicator`, the
   two merge events, the four value types those name, and the four
   consolidation errors.
+
+  `Consolidator.resolve` is typed against `CandidateSource` and
+  `MergeAdjudicator` rather than those two classes. Both are single-method
+  protocols, and they are what make the docstring's "supply one to change the
+  weights or the blocking" a real offer: substituting your own search index
+  for the blocking, or a human review queue for the model, no longer means
+  subclassing a class whose constructor demands collaborators you do not
+  have. `CandidateFinder` and `Adjudicator` remain the defaults.
 - **No scraping, no HTML preprocessing.** A caller supplies a
   `SourceDocument`. Fetching content is a different job with different
   failure modes, and it was removed rather than left unfinished (slice 1).
@@ -149,6 +169,7 @@ from redstring.composition import (
 )
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
+from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
 from redstring.domain.alias import Alias
 from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk import ChunkId, StoredChunk
@@ -193,10 +214,12 @@ from redstring.extraction.domains.loader import load_schema_from_file, load_sche
 from redstring.extraction.domains.models import (
     ConfidenceThresholds,
     DomainSchema,
+    DomainSummary,
     EntityTypeSchema,
     PropertySchema,
     RelationshipTypeSchema,
 )
+from redstring.extraction.domains.registry import list_available_domains
 from redstring.extraction.errors import ChunkerError, ChunkingError, ChunkSizeError
 from redstring.extraction.pipeline import (
     DEFAULT_SYSTEM_PROMPT,
@@ -209,7 +232,14 @@ from redstring.extraction.protocols import Chunker
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
-from redstring.ports.chunk_store import ChunkStore
+from redstring.ports.cache import Cache, HitWindow, KeyValueCache
+from redstring.ports.chunk_store import (
+    ChunkPurge,
+    ChunkReader,
+    ChunkStore,
+    ChunkWriter,
+    LexicalCandidateSource,
+)
 from redstring.ports.embedding_provider import EmbeddingProvider
 from redstring.ports.graph_store import (
     AliasStore,
@@ -239,12 +269,17 @@ __all__ = [
     "AliasStore",
     "AutoDomain",
     "Bounds",
+    "Cache",
     "CandidateFinder",
+    "CandidateSource",
     "Chunk",
     "ChunkId",
     "ChunkProjection",
+    "ChunkPurge",
+    "ChunkReader",
     "ChunkSizeError",
     "ChunkStore",
+    "ChunkWriter",
     "Chunker",
     "ChunkerError",
     "ChunkingError",
@@ -261,6 +296,7 @@ __all__ = [
     "DocumentChunked",
     "DocumentExtracted",
     "DomainSchema",
+    "DomainSummary",
     "DoubleMergeError",
     "EmbeddingProvider",
     "EmbeddingProviderError",
@@ -280,16 +316,20 @@ __all__ = [
     "GraphBuildReport",
     "GraphProjection",
     "GraphStore",
+    "HitWindow",
     "InMemoryChunkStore",
     "InMemoryGraphStore",
     "InMemoryVectorStore",
     "IndexReport",
     "InferredRelation",
+    "KeyValueCache",
     "LexicalCandidate",
+    "LexicalCandidateSource",
     "LexicalCandidates",
     "LlmProvider",
     "LlmProviderError",
     "MalformedCompletionError",
+    "MergeAdjudicator",
     "MergeIntoAliasError",
     "MergeUndone",
     "MissingEntityError",
@@ -332,6 +372,7 @@ __all__ = [
     "domain_system_prompt",
     "index_documents",
     "infer_relations",
+    "list_available_domains",
     "load_schema_from_file",
     "load_schema_from_string",
     "rank_chunks",

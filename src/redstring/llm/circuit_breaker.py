@@ -44,7 +44,7 @@ from redstring.domain.exceptions import RedstringError
 from redstring.llm.cache.memory import MemoryCache
 
 if TYPE_CHECKING:
-    from redstring.ports.cache import Cache
+    from redstring.ports.cache import KeyValueCache
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ class CircuitBreaker:
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
         half_open_max_calls: int = 1,
-        cache: Cache | None = None,
+        cache: KeyValueCache | None = None,
         key_prefix: str = "kg:circuit",
     ) -> None:
         """Build a breaker.
@@ -109,7 +109,7 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_max_calls = half_open_max_calls
-        self._cache: Cache = cache if cache is not None else MemoryCache()
+        self._cache: KeyValueCache = cache if cache is not None else MemoryCache()
         self._key_prefix = key_prefix
 
     def _key(self, name: str) -> str:

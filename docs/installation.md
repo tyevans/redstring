@@ -53,7 +53,7 @@ chat_model = ChatOpenAI(
     base_url="http://localhost:8080/v1",
     api_key="-",  # most local servers ignore it, but the client requires one
 )
-provider = LangChainLlmProvider(chat_model)
+provider = LangChainLlmProvider(chat_model, model="openai-compatible/qwen3-30b")
 ```
 
 The dependency ranges are deliberately wide (`langchain-core>=0.3,<2`) rather

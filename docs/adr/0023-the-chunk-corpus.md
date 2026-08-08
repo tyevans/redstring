@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted.
+Accepted; amended in typing by
+[ADR 0026](0026-chunk-store-and-cache-are-capabilities-too.md), which composes
+`ChunkStore` from `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource` and
+`ChunkPurge`. No method here is added, removed or respecified.
 [`0022` the lexical channel is not BM25](0022-the-lexical-channel-is-not-bm25.md)
 is **amended**: its premise that this library stores no text no longer holds.
 Its *decision* stands unchanged — the lexical channel is still a

@@ -79,6 +79,27 @@ committing.** It duplicates work the hook already does and burns time. Write the
 change, then commit; the hook reports what is wrong and often fixes it in place
 (re-`git add` and commit again when it does).
 
+**That instruction is only safe because the hook is installed, and in a fresh
+clone it is not.** Without `.git/hooks/pre-commit`, "do not run the checks
+yourself" becomes "do not run the checks": every `git commit` succeeds
+unconditionally and CI is the first thing to disagree, on a branch you have
+already pushed. This is worse than an inert gate, because an *absent* hook is
+indistinguishable from a passing one — nothing is printed either way.
+
+It has happened: eight commits landed in one session in a clone with no hook,
+each reported as having passed the gate. `ruff format` surfaced it on CI after
+the push, and `lint-imports` and `bandit` had also never run.
+
+`tests/unit/test_pre_commit_hook_is_installed.py` is the gate for the gate. It
+skips on CI, which runs the same tools as separate jobs and wants no hook. Two
+things about it are worth copying rather than admiring: it matches on
+`hook-impl` from pre-commit's generated body, because its first version
+matched `"pre-commit"` — a string git's own `pre-commit.sample` also contains,
+so copying the sample into place passed. And that was found only by deleting
+the hook and then by swapping in the sample, to watch the assertion fail each
+way. **Break a new gate on purpose before believing it**, especially one whose
+happy path is "the file is there".
+
 Prefer many small commits over one large one. Small commits make for happy
 reviewers, and they keep each hook run fast.
 

@@ -60,8 +60,8 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
-class ChunkStore(Protocol):
-    """Storage for the passages a document was split into."""
+class ChunkWriter(Protocol):
+    """Putting passages in. What a projection needs, and all of it."""
 
     async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
         """Insert or replace chunks, keyed by `(tenant_id, id)`.
@@ -73,24 +73,6 @@ class ChunkStore(Protocol):
 
         A document's chunking is thousands of rows, so an adapter over a
         database must send this as one statement, not a loop.
-        """
-        ...
-
-    async def get(self, chunk_id: ChunkId, tenant_id: TenantId) -> StoredChunk | None:
-        """Return the stored chunk, or `None` if this tenant has no such id.
-
-        An unknown id is not an error. The returned chunk is the caller's:
-        mutating it -- including appending to `entity_ids` -- cannot change
-        stored state.
-        """
-        ...
-
-    async def get_by_source(self, source_id: SourceId, tenant_id: TenantId) -> list[StoredChunk]:
-        """This tenant's chunks of one source, ordered.
-
-        Ordered by `chunk_index` ascending, ties broken by `id` ascending; see
-        the module docstring for why the tie-break is not optional. An unknown
-        source yields `[]`. The returned chunks are the caller's.
         """
         ...
 
@@ -116,6 +98,51 @@ class ChunkStore(Protocol):
         An empty `chunks` empties the source. That is legal.
         """
         ...
+
+
+@runtime_checkable
+class ChunkReader(Protocol):
+    """Getting passages back by id, by source, or by entity."""
+
+    async def get(self, chunk_id: ChunkId, tenant_id: TenantId) -> StoredChunk | None:
+        """Return the stored chunk, or `None` if this tenant has no such id.
+
+        An unknown id is not an error. The returned chunk is the caller's:
+        mutating it -- including appending to `entity_ids` -- cannot change
+        stored state.
+        """
+        ...
+
+    async def get_by_source(self, source_id: SourceId, tenant_id: TenantId) -> list[StoredChunk]:
+        """This tenant's chunks of one source, ordered.
+
+        Ordered by `chunk_index` ascending, ties broken by `id` ascending; see
+        the module docstring for why the tie-break is not optional. An unknown
+        source yields `[]`. The returned chunks are the caller's.
+        """
+        ...
+
+    async def get_by_entity(self, entity_id: EntityId, tenant_id: TenantId) -> list[StoredChunk]:
+        """This tenant's chunks whose `entity_ids` contain `entity_id`.
+
+        A plain read, and deliberately not a filter on the ranked path.
+        "Which passages mention this entity" is graph navigation rather than
+        relevance, and folding it into a search signature makes one method
+        answer two questions under one `k` -- so a caller asking for the top
+        five passages about a topic that also mention Ada gets neither
+        question answered well.
+
+        Ordered by `source_id`, then `chunk_index`, then `id` ascending: a
+        total order, so two adapters cannot disagree. None of the three is
+        unique on its own. An unknown entity yields `[]`. The returned chunks
+        are the caller's.
+        """
+        ...
+
+
+@runtime_checkable
+class LexicalCandidateSource(Protocol):
+    """Recall and corpus statistics for BM25. One method, by design."""
 
     async def lexical_candidates(
         self,
@@ -162,22 +189,10 @@ class ChunkStore(Protocol):
         """
         ...
 
-    async def get_by_entity(self, entity_id: EntityId, tenant_id: TenantId) -> list[StoredChunk]:
-        """This tenant's chunks whose `entity_ids` contain `entity_id`.
 
-        A plain read, and deliberately not a filter on the ranked path.
-        "Which passages mention this entity" is graph navigation rather than
-        relevance, and folding it into a search signature makes one method
-        answer two questions under one `k` -- so a caller asking for the top
-        five passages about a topic that also mention Ada gets neither
-        question answered well.
-
-        Ordered by `source_id`, then `chunk_index`, then `id` ascending: a
-        total order, so two adapters cannot disagree. None of the three is
-        unique on its own. An unknown entity yields `[]`. The returned chunks
-        are the caller's.
-        """
-        ...
+@runtime_checkable
+class ChunkPurge(Protocol):
+    """Removing passages wholesale, by source or by tenant."""
 
     async def delete_by_source(self, source_id: SourceId, tenant_id: TenantId) -> int:
         """Delete every chunk of one source; return how many were removed.
@@ -193,3 +208,36 @@ class ChunkStore(Protocol):
         No other tenant is touched.
         """
         ...
+
+
+@runtime_checkable
+class ChunkStore(ChunkWriter, ChunkReader, LexicalCandidateSource, ChunkPurge, Protocol):
+    """Storage for the passages a document was split into.
+
+    The whole port, composed from the four capabilities above. Adapters
+    implement this and `tests/compliance/chunk_store.py` runs against it.
+
+    **Collaborators should not**, and the number here is worse than the one
+    `GraphStore` records about itself. Nine methods; the only first-party
+    consumer is `ChunkProjection`, which calls `replace_source` and nothing
+    else. One of nine. The other eight exist for library users, which is a
+    good reason for the *port* to have them and no reason at all for the
+    projection to depend on them -- so `ChunkProjection` is a
+    `StoreProjection[ChunkWriter]`.
+
+    The cost was concrete rather than stylistic: `tests/compliance/chunk_store.py`
+    is over a thousand lines, so anyone writing a chunk store to serve only the
+    corpus-write path owed a read, rank and delete surface they would never
+    call.
+
+    Splitting changes nothing for an adapter. `ChunkStore` still names every
+    method through its bases, `runtime_checkable` still works, and
+    `tests/unit/chunks/test_compliance_coverage.py` still finds every read
+    method, because `inspect.getmembers` and `typing.get_type_hints` both walk
+    the MRO. See `ports/graph_store.py`, which made this move first.
+
+    `LexicalCandidateSource` is the one to annotate against when writing a
+    ranked-retrieval caller: `rank_chunks` needs recall and corpus statistics
+    and nothing else, and a caller who has those from an index that is not a
+    chunk store at all can supply them.
+    """
