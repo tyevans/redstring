@@ -60,6 +60,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk_ranking import rank_chunks
 from redstring.ports.chunk_store import ChunkStore
 
 if TYPE_CHECKING:
@@ -315,6 +316,35 @@ class ChunkStoreCompliance:
         assert await store.get(second_orphan.id, tenant) is None
         assert await store.get(survivor.id, tenant) == survivor
         assert [chunk.id for chunk in await store.get_by_source("doc-1", tenant)] == [survivor.id]
+
+    async def test_replace_source_leaves_no_orphan_in_the_term_index(
+        self, store: ChunkStore
+    ) -> None:
+        """A term unique to a replaced chunk must stop being counted.
+
+        `get`/`get_by_source` cannot see a stale term-index row at all -- a
+        row an adapter forgot to clean up after `replace_source` never
+        surfaces through either method, since both read the chunk table only.
+        `lexical_candidates`'s document frequency is the one place a leftover
+        row is visible: if the term index still carries a row for a chunk
+        that `replace_source` removed, `doc_frequencies` keeps counting it
+        even though the chunk itself is gone -- exactly the shape `ON DELETE
+        CASCADE` exists to prevent.
+        """
+        tenant = uuid4()
+        replaced = self._chunk(tenant, "doc-1", "orphanterm passage", chunk_index=0)
+        await store.upsert_many([replaced])
+        assert (await store.lexical_candidates(["orphanterm"], tenant, 10)).stats.doc_frequencies[
+            "orphanterm"
+        ] == 1
+
+        survivor = self._chunk(tenant, "doc-1", "replacement text", chunk_index=0)
+        removed = await store.replace_source("doc-1", tenant, [survivor])
+        assert removed == 1
+
+        result = await store.lexical_candidates(["orphanterm"], tenant, 10)
+        assert result.stats.doc_frequencies["orphanterm"] == 0
+        assert result.candidates == []
 
     async def test_replace_source_with_an_empty_set_empties_the_source(
         self, store: ChunkStore
@@ -765,3 +795,382 @@ class ChunkStoreCompliance:
         assert await store.delete_by_tenant(uuid4()) == 0
         assert await store.delete_by_tenant(tenant) == 1
         assert await store.delete_by_tenant(tenant) == 0
+
+    # ------------------------------------------------------------------
+    # `lexical_candidates`
+    # ------------------------------------------------------------------
+
+    async def _corpus(self, store: ChunkStore, tenant: TenantId) -> list[StoredChunk]:
+        """Four chunks whose term statistics genuinely differ.
+
+        `common` is in every chunk, `rare` in one, so IDF has something to
+        distinguish. Lengths differ (4, 3, 5, 1 tokens), so length
+        normalisation has something to do. Under `terms=["common", "rare",
+        "alpha", "beta"]`, chunk 0 and chunk 1 each match 3 distinct terms --
+        a genuine tie -- so the truncation tie-break has something to decide.
+        """
+        chunks = [
+            self._chunk(tenant, "doc-1", "common rare alpha alpha", chunk_index=0),
+            self._chunk(tenant, "doc-1", "common alpha beta", chunk_index=1),
+            self._chunk(tenant, "doc-2", "common beta beta beta beta", chunk_index=0),
+            self._chunk(tenant, "doc-2", "common", chunk_index=1),
+        ]
+        # Written with chunks[1] before chunks[0]: those two are the genuine
+        # tie the truncation test decides between, and chunks[0].id sorts
+        # below chunks[1].id -- so writing them in id order would leave a
+        # stable sort on match count alone, with the tie-break removed
+        # entirely, indistinguishable from the contract. Insertion order must
+        # *disagree* with id order for the tie to prove anything.
+        await store.upsert_many([chunks[1], chunks[0], chunks[2], chunks[3]])
+        return chunks
+
+    async def test_lexical_candidates_finds_chunks_containing_a_term(
+        self, store: ChunkStore
+    ) -> None:
+        tenant = uuid4()
+        chunks = await self._corpus(store, tenant)
+
+        result = await store.lexical_candidates(["rare"], tenant, 10)
+
+        assert {candidate.chunk.id for candidate in result.candidates} == {chunks[0].id}
+
+    async def test_lexical_candidates_reports_term_frequencies(self, store: ChunkStore) -> None:
+        """A chunk repeating a term reports the count, not `1`."""
+        tenant = uuid4()
+        chunks = await self._corpus(store, tenant)
+
+        result = await store.lexical_candidates(["alpha"], tenant, 10)
+
+        by_id = {candidate.chunk.id: candidate for candidate in result.candidates}
+        assert by_id[chunks[0].id].term_frequencies["alpha"] == 2
+        assert by_id[chunks[1].id].term_frequencies["alpha"] == 1
+
+    async def test_lexical_candidates_reports_doc_length_in_tokens(self, store: ChunkStore) -> None:
+        """A chunk whose text contains stopwords reports the post-tokenization
+        length, so a store counting words or characters fails."""
+        tenant = uuid4()
+        # "the" and "is" are stopwords: 4 words, 19 characters, 2 tokens.
+        chunk = self._chunk(tenant, "doc-1", "the common is alpha")
+        await store.upsert_many([chunk])
+
+        result = await store.lexical_candidates(["common"], tenant, 10)
+
+        assert len(result.candidates) == 1
+        assert result.candidates[0].doc_length == 2
+
+    async def test_lexical_candidates_reports_corpus_wide_statistics(
+        self, store: ChunkStore
+    ) -> None:
+        """`n_docs` and `avg_doc_length` describe the whole corpus, asserted
+        with a `limit` that truncates -- a store computing them over the
+        survivors fails."""
+        tenant = uuid4()
+        await self._corpus(store, tenant)
+
+        result = await store.lexical_candidates(["common", "rare", "alpha", "beta"], tenant, 1)
+
+        assert len(result.candidates) == 1
+        assert result.stats.n_docs == 4
+        assert result.stats.avg_doc_length == pytest.approx(3.25)
+
+    async def test_lexical_candidates_reports_zero_for_an_absent_term(
+        self, store: ChunkStore
+    ) -> None:
+        tenant = uuid4()
+        await self._corpus(store, tenant)
+
+        result = await store.lexical_candidates(["zzz-absent"], tenant, 10)
+
+        assert result.stats.doc_frequencies == {"zzz-absent": 0}
+        assert result.candidates == []
+
+    async def test_lexical_candidates_covers_exactly_the_requested_terms(
+        self, store: ChunkStore
+    ) -> None:
+        tenant = uuid4()
+        await self._corpus(store, tenant)
+
+        result = await store.lexical_candidates(["common", "zzz-absent"], tenant, 10)
+
+        assert result.stats.doc_frequencies.keys() == {"common", "zzz-absent"}
+        assert result.stats.doc_frequencies["common"] == 4
+        assert result.stats.doc_frequencies["zzz-absent"] == 0
+
+    async def test_lexical_candidates_truncates_by_match_count_then_id(
+        self, store: ChunkStore
+    ) -> None:
+        """The ordering contract: chunks matching different numbers of terms,
+        and a genuine tie between two of them.
+
+        Under `terms=["common", "rare", "alpha", "beta"]`: chunk 0 matches
+        {common, rare, alpha} (3), chunk 1 matches {common, alpha, beta} (3,
+        tied with chunk 0), chunk 2 matches {common, beta} (2), chunk 3
+        matches {common} (1). A `limit` of 3 keeps both tied chunks plus
+        chunk 2 and drops chunk 3; a `limit` of 1 keeps only the
+        lower-`id` member of the tied pair.
+        """
+        tenant = uuid4()
+        terms = ["common", "rare", "alpha", "beta"]
+        chunks = await self._corpus(store, tenant)
+        tied_low, tied_high = sorted((chunks[0].id, chunks[1].id))
+
+        top_three = await store.lexical_candidates(terms, tenant, 3)
+        assert {candidate.chunk.id for candidate in top_three.candidates} == {
+            chunks[0].id,
+            chunks[1].id,
+            chunks[2].id,
+        }
+
+        top_one = await store.lexical_candidates(terms, tenant, 1)
+        assert {candidate.chunk.id for candidate in top_one.candidates} == {tied_low}
+        assert tied_high not in {candidate.chunk.id for candidate in top_one.candidates}
+
+    async def test_lexical_candidates_with_an_empty_term_list_returns_nothing(
+        self, store: ChunkStore
+    ) -> None:
+        """Empty `terms` returns zeroed statistics and no candidates, without
+        touching the store -- a non-empty corpus must not leak into the
+        statistics regardless."""
+        tenant = uuid4()
+        await self._corpus(store, tenant)
+
+        result = await store.lexical_candidates([], tenant, 10)
+
+        assert result.candidates == []
+        assert result.stats.n_docs == 0
+        assert result.stats.avg_doc_length == 0.0
+        assert result.stats.doc_frequencies == {}
+
+    async def test_lexical_candidates_with_a_zero_limit_still_reports_statistics(
+        self, store: ChunkStore
+    ) -> None:
+        tenant = uuid4()
+        await self._corpus(store, tenant)
+
+        result = await store.lexical_candidates(["common"], tenant, 0)
+
+        assert result.candidates == []
+        assert result.stats.n_docs == 4
+        assert result.stats.avg_doc_length == pytest.approx(3.25)
+        assert result.stats.doc_frequencies == {"common": 4}
+
+    async def test_lexical_candidates_rejects_a_negative_limit(self, store: ChunkStore) -> None:
+        tenant = uuid4()
+        await self._corpus(store, tenant)
+
+        with pytest.raises(ValueError, match="-1"):
+            await store.lexical_candidates(["common"], tenant, -1)
+
+    async def test_lexical_candidates_returns_copies(self, store: ChunkStore) -> None:
+        tenant = uuid4()
+        chunk = self._chunk(
+            tenant,
+            "doc-1",
+            "common alpha",
+            entity_ids=[uuid4()],
+            metadata={"nested": {"k": "v"}, "list": ["a"]},
+        )
+        pristine = chunk.model_copy(deep=True)
+        await store.upsert_many([chunk])
+
+        result = await store.lexical_candidates(["common"], tenant, 10)
+        assert len(result.candidates) == 1
+        _mutate(result.candidates[0].chunk)
+
+        again = await store.lexical_candidates(["common"], tenant, 10)
+        assert again.candidates[0].chunk == pristine
+
+    async def test_lexical_candidates_never_crosses_tenants(self, store: ChunkStore) -> None:
+        """Two tenants holding the same content-addressed chunk id -- the
+        case that catches a key compared on `id` alone."""
+        left, right = uuid4(), uuid4()
+        shared_text = "common rare alpha"
+        left_chunk = self._chunk(left, "doc-1", shared_text, metadata={"owner": "left"})
+        right_chunk = self._chunk(right, "doc-1", shared_text, metadata={"owner": "right"})
+        assert left_chunk.id == right_chunk.id
+        await store.upsert_many([left_chunk, right_chunk])
+
+        result = await store.lexical_candidates(["common"], left, 10)
+
+        assert result.stats.n_docs == 1
+        assert len(result.candidates) == 1
+        assert result.candidates[0].chunk.metadata == {"owner": "left"}
+        assert result.candidates[0].chunk.tenant_id == left
+
+    # ------------------------------------------------------------------
+    # `get_by_entity`
+    # ------------------------------------------------------------------
+
+    async def test_get_by_entity_finds_chunks_mentioning_the_entity(
+        self, store: ChunkStore
+    ) -> None:
+        tenant = uuid4()
+        entity = uuid4()
+        mentioning = self._chunk(tenant, "doc-1", "mentions it", entity_ids=[entity])
+        silent = self._chunk(tenant, "doc-1", "does not", chunk_index=1)
+        await store.upsert_many([mentioning, silent])
+
+        found = await store.get_by_entity(entity, tenant)
+
+        assert [chunk.id for chunk in found] == [mentioning.id]
+
+    async def test_get_by_entity_orders_by_source_then_index_then_id(
+        self, store: ChunkStore
+    ) -> None:
+        """Two sources, with an index-10 case -- a text-typed index column
+        fails here as it does for `get_by_source` -- and a genuine
+        `(source_id, chunk_index)` tie, so the `id` tie-break decides
+        something.
+
+        Without the tie, no two chunks share `(source_id, chunk_index)`, so
+        dropping `id` from the sort key would leave this case green: `id`
+        never decides anything. `tied_a`/`tied_b` share `doc-1`, index 5, and
+        different content-addressed ids -- written **higher id first**, so a
+        stable sort on `(source_id, chunk_index)` alone (insertion order)
+        disagrees with the contract instead of agreeing with it by accident.
+        """
+        tenant = uuid4()
+        entity = uuid4()
+        tied_a = self._chunk(tenant, "doc-1", "tie text alpha", chunk_index=5, entity_ids=[entity])
+        tied_b = self._chunk(tenant, "doc-1", "tie text beta", chunk_index=5, entity_ids=[entity])
+        tied_low, tied_high = sorted((tied_a, tied_b), key=lambda chunk: chunk.id)
+        assert tied_low.id < tied_high.id
+        first_source = [
+            self._chunk(tenant, "doc-1", "a", chunk_index=0, entity_ids=[entity]),
+            self._chunk(tenant, "doc-1", "b", chunk_index=1, entity_ids=[entity]),
+            self._chunk(tenant, "doc-1", "c", chunk_index=10, entity_ids=[entity]),
+        ]
+        second_source = [
+            self._chunk(tenant, "doc-2", "d", chunk_index=0, entity_ids=[entity]),
+        ]
+        await store.upsert_many([*second_source, *first_source[::-1], tied_high, tied_low])
+
+        found = await store.get_by_entity(entity, tenant)
+
+        assert [chunk.id for chunk in found] == [
+            first_source[0].id,
+            first_source[1].id,
+            tied_low.id,
+            tied_high.id,
+            first_source[2].id,
+            second_source[0].id,
+        ]
+
+    async def test_get_by_entity_ignores_other_entities(self, store: ChunkStore) -> None:
+        tenant = uuid4()
+        wanted, other = uuid4(), uuid4()
+        mentions_wanted = self._chunk(tenant, "doc-1", "wanted", entity_ids=[wanted])
+        mentions_other = self._chunk(tenant, "doc-1", "other", chunk_index=1, entity_ids=[other])
+        await store.upsert_many([mentions_wanted, mentions_other])
+
+        found = await store.get_by_entity(wanted, tenant)
+
+        assert [chunk.id for chunk in found] == [mentions_wanted.id]
+
+    async def test_get_by_entity_of_an_unknown_entity_is_empty(self, store: ChunkStore) -> None:
+        tenant = uuid4()
+        await store.upsert_many([self._chunk(tenant, "doc-1", "no mentions here")])
+
+        assert await store.get_by_entity(uuid4(), tenant) == []
+
+    async def test_get_by_entity_returns_copies(self, store: ChunkStore) -> None:
+        tenant = uuid4()
+        entity = uuid4()
+        written = self._chunk(
+            tenant,
+            "doc-1",
+            "mentions it",
+            entity_ids=[entity],
+            metadata={"nested": {"k": "v"}, "list": ["a"]},
+        )
+        pristine = written.model_copy(deep=True)
+        await store.upsert_many([written])
+
+        for chunk in await store.get_by_entity(entity, tenant):
+            _mutate(chunk)
+
+        assert await store.get_by_entity(entity, tenant) == [pristine]
+        assert await store.get(written.id, tenant) == pristine
+
+    async def test_get_by_entity_never_crosses_tenants(self, store: ChunkStore) -> None:
+        """Same content-addressed chunk id, two tenants, same entity id."""
+        left, right = uuid4(), uuid4()
+        entity = uuid4()
+        shared_text = "mentions it"
+        left_chunk = self._chunk(left, "doc-1", shared_text, entity_ids=[entity])
+        right_chunk = self._chunk(right, "doc-1", shared_text, entity_ids=[entity])
+        assert left_chunk.id == right_chunk.id
+        await store.upsert_many([left_chunk, right_chunk])
+
+        found = await store.get_by_entity(entity, left)
+
+        assert [chunk.id for chunk in found] == [left_chunk.id]
+        assert found[0].tenant_id == left
+
+    # ------------------------------------------------------------------
+    # Ranking is identical across adapters
+    # ------------------------------------------------------------------
+
+    async def test_ranking_is_identical_to_the_reference_adapter(self, store: ChunkStore) -> None:
+        """The property this whole design exists for.
+
+        Build the same corpus in an `InMemoryChunkStore` -- the reference --
+        and run `lexical_candidates` + `rank_chunks` on both. The returned
+        `(id, score)` sequences must be **equal**, not approximately equal.
+        On the in-memory adapter this compares it with itself and is
+        trivially true; it exists so every *other* adapter is held to the
+        reference. The corpus must produce differing scores, or this passes
+        on a store that returns everything at score zero.
+
+        Truncation is exercised at **two** limits, and the second is the one
+        that matters. `limit=3` cuts the single one-match chunk, which proves
+        the adapters agree about a cut but says nothing about *ties* -- chunks
+        0 and 1 both match three terms, so both survive at 3 whatever the
+        tie-break does. Only `limit=1` cuts through the tied pair, and which
+        member survives is precisely the divergence this case exists to
+        catch: Postgres offers candidates in whatever order the planner
+        produces, and the port's `id` tie-break is the only thing making the
+        two adapters agree.
+
+        `k` stays 10, above both limits, so `limit` and `k` can never be
+        silently wired to each other's argument without a test noticing.
+
+        The two stores are also loaded in **different insertion orders** --
+        `_corpus` writes the tied pair reversed into `store` while the
+        reference is written in list order -- so an adapter whose ordering
+        fell back on arrival order would disagree here rather than agreeing
+        by coincidence.
+        """
+        # Local import: this module must stay import-order-safe for the
+        # reference adapter itself, and importing at module scope would
+        # create a cycle if `InMemoryChunkStore` ever imported this suite.
+        from redstring.chunks.adapters.memory import InMemoryChunkStore
+
+        tenant = uuid4()
+        chunks = await self._corpus(store, tenant)
+        reference = InMemoryChunkStore()
+        await reference.upsert_many(chunks)
+
+        terms = ["common", "rare", "alpha", "beta"]
+
+        for limit in (3, 1):
+            under_test = await store.lexical_candidates(terms, tenant, limit)
+            from_reference = await reference.lexical_candidates(terms, tenant, limit)
+
+            ranked_under_test = rank_chunks(terms, under_test, 10)
+            ranked_reference = rank_chunks(terms, from_reference, 10)
+
+            # A corpus where every chunk scores zero would pass this trivially.
+            assert any(ranked.score > 0.0 for ranked in ranked_under_test)
+            assert [(ranked.chunk.id, ranked.score) for ranked in ranked_under_test] == [
+                (ranked.chunk.id, ranked.score) for ranked in ranked_reference
+            ], f"adapters disagree at limit={limit}"
+
+        # Guard the guard: at limit=1 the cut must fall *inside* the tied
+        # pair, or the loop above proves nothing more than the limit=3 pass
+        # already did. chunks[0] and chunks[1] both match three terms and
+        # chunks[0].id sorts below, so the contract names chunks[0].
+        survivor = await store.lexical_candidates(terms, tenant, 1)
+        assert [candidate.chunk.id for candidate in survivor.candidates] == [
+            min(chunks[0].id, chunks[1].id)
+        ]

@@ -6,14 +6,27 @@ handlers replay.
 
 Every method is tenant-scoped. There is no cross-tenant read, ever.
 
-## There is no search method, and that is deliberate
+## There is a candidate method and no ranked one
 
-Retrieval over this corpus -- embeddings, a term-weighted ranker, a public
-result type -- is a separate piece of work with its own design. Every one of
-its decisions is downstream of what a stored chunk *is*, and guessing a search
-signature before the corpus exists is how a port acquires a method its
-adapters cannot implement the same way. Adding a method to our own port later
-costs nothing.
+The port offers `lexical_candidates`, which answers "which chunks contain
+these terms, how often, how long are they, and how many chunks contain each
+term". It does **not** rank. Ranking is `domain/chunk_ranking.py`.
+
+The split is by responsibility. Recall and corpus statistics are storage
+questions and a database is uniquely good at all of them; relevance is a
+domain rule. The obvious alternative -- `ts_rank_cd` over a Postgres
+`tsvector` -- was rejected because two adapters ranking by different formulas
+mean retrieval quality changes when a caller swaps their store, and the
+compliance suite could then no longer assert that two adapters agree. It would
+be reduced to checking contracts while the answers diverged silently.
+
+The same reasoning is why the method takes **terms rather than a query
+string**: tokenization decides what a term is, so a string argument would hand
+that decision back to each adapter and let two stores disagree about it before
+any score was computed. See `domain/tokenize.py`.
+
+Semantic search over this corpus -- chunk embeddings, a fused public result
+type -- is still a separate piece of work and still has no method here.
 
 ## `replace_source` is one operation, not an upsert and a delete
 
@@ -42,7 +55,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from redstring.domain.chunk import ChunkId, StoredChunk
-    from redstring.domain.ids import SourceId, TenantId
+    from redstring.domain.chunk_ranking import LexicalCandidates
+    from redstring.domain.ids import EntityId, SourceId, TenantId
 
 
 @runtime_checkable
@@ -100,6 +114,68 @@ class ChunkStore(Protocol):
         document's entity links end up on another's passage.
 
         An empty `chunks` empties the source. That is legal.
+        """
+        ...
+
+    async def lexical_candidates(
+        self,
+        terms: Sequence[str],
+        tenant_id: TenantId,
+        limit: int,
+    ) -> LexicalCandidates:
+        """Chunks containing any of `terms`, with the statistics to rank them.
+
+        Takes **terms and not a query string**; see the module docstring for
+        why tokenization stays on this side of the port.
+
+        `stats.doc_frequencies` covers **exactly** `terms`. A term no chunk
+        contains appears with `0` rather than being omitted -- an absent key
+        and a zero are different facts, and a scorer that has to guess which
+        it received is a scorer with a latent bug.
+
+        `stats.n_docs` and `stats.avg_doc_length` describe the tenant's whole
+        corpus, **not the candidate set**. Statistics computed over the
+        survivors of a truncation are statistics of a corpus that never
+        existed, and every score derived from them is wrong in a way no
+        assertion about the returned chunks can see.
+
+        **Which candidates survive `limit` is contract, not discretion.**
+        Ordered by the number of distinct requested terms the chunk contains,
+        descending, then by `id` ascending; the first `limit` are returned.
+        Without the tie-break two adapters cut different chunks from an
+        equally-matching pair, which is a divergence in results.
+
+        The cost is bounded recall, and it is real: a chunk matching one rare
+        and highly informative term can be cut before a chunk matching two
+        common ones, so a passage that would have ranked first can be absent
+        entirely. This is the same shape as the blocking-bounded recall of the
+        entity lexical channel, and it belongs in the caller's documentation
+        as well as here -- a missing result reads as a bug rather than as a
+        declared limit.
+
+        Empty `terms` returns no candidates and zeroed statistics without
+        touching the store. A `limit` of `0` returns no candidates but **still
+        populates the statistics**. A negative `limit` raises `ValueError`.
+
+        The returned chunks are the caller's; mutating them -- including
+        appending to `entity_ids` -- cannot change stored state.
+        """
+        ...
+
+    async def get_by_entity(self, entity_id: EntityId, tenant_id: TenantId) -> list[StoredChunk]:
+        """This tenant's chunks whose `entity_ids` contain `entity_id`.
+
+        A plain read, and deliberately not a filter on the ranked path.
+        "Which passages mention this entity" is graph navigation rather than
+        relevance, and folding it into a search signature makes one method
+        answer two questions under one `k` -- so a caller asking for the top
+        five passages about a topic that also mention Ada gets neither
+        question answered well.
+
+        Ordered by `source_id`, then `chunk_index`, then `id` ascending: a
+        total order, so two adapters cannot disagree. None of the three is
+        unique on its own. An unknown entity yields `[]`. The returned chunks
+        are the caller's.
         """
         ...
 

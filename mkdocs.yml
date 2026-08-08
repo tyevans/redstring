@@ -115,6 +115,7 @@ nav:
           - Harden model calls: how-to/harden-model-calls.md
       - Search and read:
           - Retrieve entities: how-to/retrieve-entities.md
+          - Rank passages: how-to/rank-passages.md
       - Keep the graph honest:
           - Consolidate duplicate entities: how-to/consolidate-duplicate-entities.md
           - Query a timeline: how-to/query-a-timeline.md
@@ -160,4 +161,5 @@ nav:
       - "0021 · composition holds a second module": adr/0021-composition-holds-a-second-module.md
       - "0022 · The lexical channel is not BM25": adr/0022-the-lexical-channel-is-not-bm25.md
       - "0023 · The chunk corpus": adr/0023-the-chunk-corpus.md
+      - "0024 · BM25 over the chunk corpus": adr/0024-bm25-over-the-chunk-corpus.md
   - Contributing: contributing.md

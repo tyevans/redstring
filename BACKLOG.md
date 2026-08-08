@@ -1093,38 +1093,34 @@ Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
 
-### B89. No chunk embeddings and no term-weighted ranker over the corpus — B2
+### B89. No chunk embeddings and no fused `retrieve_chunks` entry point — B2b
 
-B1 built the corpus and deliberately stopped there:
-`docs/adr/0023-the-chunk-corpus.md`. B2 is chunk embeddings, a real
-term-weighted ranker over the stored passages, a `ScoredChunk`, a
-`retrieve_chunks` entry point, and fusion with the RRF that
-`composition/retrieval.py` already does. None of it exists.
+B1 built the corpus (`docs/adr/0023-the-chunk-corpus.md`) and B2a built a real
+term-weighted ranker over it — BM25, scored in the domain, with the tokenizer
+and truncation cost it depends on
+(`docs/adr/0024-bm25-over-the-chunk-corpus.md`). **B2a has landed.** What is
+still missing is chunk embeddings, a `ScoredChunk`, a `retrieve_chunks` entry
+point, and fusion with the RRF that `composition/retrieval.py` already does
+for entities. None of that exists.
 
-What B1 decided that B2 inherits, and would otherwise have to rediscover:
+What B1 and B2a decided that B2b inherits, and would otherwise have to
+rediscover:
 
-- **`ChunkStore` has no search or filter method, on purpose.** Adding one to
-  our own port later costs nothing; shipping the wrong one costs an adapter
-  divergence, and every decision a search signature encodes is downstream of
-  what a stored passage is. B2 defines it against a corpus that exists. It
-  goes in `tests/compliance/chunk_store.py` first — a search method landing in
-  one adapter's test module is `recurring-defects.md` §1 exactly.
 - **Chunk ids are content-addressed over `(source_id, text)`**, so a re-chunk
   produces *new* ids rather than overwriting. A stored embedding therefore
   never silently describes text that has changed — which is the property that
   makes chunk embeddings safe to store at all, and it was chosen for this
   reason before any embedding existed. Do not "simplify" identity to
   `(source_id, chunk_index)` on the way in.
-- **`replace_source` is one atomic call.** Once document-frequency statistics
-  exist, a split upsert-then-delete would let them be computed over a chunk
-  set that never existed. Any statistic B2 caches has the same requirement:
-  it is invalidated by the same call that replaces the source, not by a
-  second one.
+- **`replace_source` is one atomic call.** Document-frequency statistics are
+  computed at query time over rows written by that one call; any statistic
+  B2b caches has the same requirement — invalidated by the call that replaces
+  the source, not by a second one.
 - **BM25 is still not a name for the entity-name lexical channel.** ADR 0022
-  stands; the term appears nowhere under `src/`, and B2's ranker is a
-  *different and additional* channel over passages, not a replacement for the
-  one that catches `Acme Corp`. Two channels named the same thing is how a
-  caller ends up tuning the wrong one.
+  stands even after ADR 0024 made the name honest for the chunk ranker: the
+  entity channel is a field-weighted string similarity, and B2b's semantic
+  channel over chunks is a *third and additional* one, not a replacement for
+  either.
 - **`entity_ids` is on the chunk, not in the graph.** A ranked passage is
   turned into entities by the caller holding both ports. Putting a chunk
   reference into the graph gives `mapping.py` a second id scheme.
@@ -1133,9 +1129,86 @@ What B1 decided that B2 inherits, and would otherwise have to rediscover:
   types — is a third instance waiting to happen the moment chunk embeddings
   acquire their own composition point.
 
-`PostgresChunkStore` stores no vector column today, so B2 also has a schema
+`PostgresChunkStore` stores no vector column today, so B2b also has a schema
 migration for a table that is already shipped and already has an integration
 suite pinning its DDL.
+
+**A second migration is already owed, ahead of B2b's vector column.** Every
+statement in `_schema_statements` is `IF NOT EXISTS`, so `ensure_schema` run
+against a `kg_chunks` table created before the chunk-lexical work (56542ba)
+adds `kg_chunks_terms` and leaves the existing `kg_chunks` table alone --
+after which every query naming `_COLUMNS` fails with "column doc_length does
+not exist", because the new `doc_length` column was never added to a table
+`CREATE TABLE IF NOT EXISTS` declines to touch. And even with the column
+added by hand, existing rows have no term rows and `doc_length = 0`, so they
+rank as empty documents until backfilled. Whoever writes B2b's `ALTER TABLE`
+for the vector column should add `doc_length` and a `<table>_terms` backfill
+in the same migration rather than treating this as separate follow-up --
+`kg_chunks` has never appeared in a tagged release, so today this affects
+only a deployment tracking `main`, but that stops being true the moment a
+release ships it.
+
+### B92. Corpus statistics are recomputed per query, not maintained incrementally
+
+`lexical_candidates` counts `n_docs`, `avg_doc_length` and per-term document
+frequencies at query time — `count(*)`, `avg()`, and a per-term count scoped
+to the requested terms — rather than reading from counters kept in step with
+writes (`docs/adr/0024-bm25-over-the-chunk-corpus.md`).
+
+Deliberately not built speculatively: maintaining counters correctly across
+`upsert_many`, `replace_source` and both delete paths is real code with its
+own failure modes (a counter that drifts from the rows it describes is worse
+than no counter), and nothing has measured `count(*)`/`avg()` per query as a
+cost centre at any scale this repository has exercised. If it becomes one,
+the fix is counters updated by the same writes that touch `<table>_terms`,
+not a cache invalidated by a schedule.
+
+### B93. The truncation tie-break plan test EXPLAINs a hand-reconstructed proxy query, not the adapter's own SQL
+
+`tests/integration/chunks/test_postgres_store.py::test_lexical_candidates_truncation_tie_break_is_unfalsifiable_by_plan_alone`
+proves the `matched` CTE's `, chunk_id ASC` is load-bearing by forcing a
+`HashAggregate` (`enable_sort = off`) and EXPLAINing a query built by hand to
+resemble `_candidates_sql()`, rather than EXPLAINing the string that method
+actually returns. It exists because dropping the tie-break stayed green even
+with `enable_indexscan`/`enable_bitmapscan` off — a `GroupAggregate`'s
+incidental sort was supplying the order the assertion wanted, which is
+exactly the kind of accidental-pass this table's rows warn about.
+
+A hand-reconstructed proxy can drift from the statement it stands for: an
+edit to `_candidates_sql()` (an added predicate, a rewritten join) is not
+guaranteed to be mirrored into the test's copy, and when the two diverge the
+test keeps asserting a plan shape the adapter no longer produces while
+reading as green. Minor rather than a correctness hole, because real
+candidate correctness is asserted immediately after by a separate,
+non-EXPLAIN test — this only weakens the *plan* assertion, not the *result*
+one. Fix is to `EXPLAIN` the literal string `_candidates_sql()` returns
+(with parameter placeholders bound the same way the adapter binds them)
+rather than a restated query.
+
+**That fix is now cheap, and the pattern is already in the same file.**
+`test_get_by_entity_uses_the_gin_index` needed the identical guarantee and
+solved it with a `_RecordingPool` that intercepts `.fetch()`, so the statement
+EXPLAINed is by construction the one the adapter issued — no restatement to
+drift. Reuse it here. This was noticed while re-reviewing that test and not
+folded in, because doing so changes what a passing integration test proves
+and deserves its own commit rather than riding along in a fix round for
+unrelated findings.
+
+### B94. Generated Postgres index names can exceed the 63-byte NAMEDATALEN, and truncation is silent
+
+`chunks/adapters/postgres.py`'s DDL builds index names by interpolating the
+configured table name — `{table}_terms_term_idx` and its siblings — and the
+table name is validated only as a bare identifier up to 62 characters. A
+long but legal table name pushes the generated index name past Postgres's
+63-byte `NAMEDATALEN`, and Postgres truncates silently rather than erroring,
+so two differently-named tables with a shared long prefix could collide on
+the same truncated index name.
+
+**Pre-existing, not introduced by this branch** — the naming scheme predates
+the chunk-lexical work and is unchanged by it; filed now because Task 6/7
+review is what noticed it. Fix, if picked up, is either shortening the
+generated suffixes or hashing the table name into the index name so length
+is bounded regardless of what the caller configures.
 
 ### B88. `SlidingWindowChunker` is not exported, so tuning the split needs a dotted import
 
@@ -1569,6 +1642,26 @@ needs a field naming the string that actually matched — without it the caller
 cannot tell an alias hit from a name hit, and that is the distinction the
 whole question turns on.
 
+### B91. `domain/tokenize.py` does no stemming
+
+`tokenize` splits on non-alphanumerics and casefolds, but "running" and "run"
+are different terms to it, and that recall cost is real for the BM25 channel
+built on top of it (see
+`docs/superpowers/plans/2026-08-07-chunk-lexical-channel.md`).
+
+Deferred rather than added because a stemmer is a language model — English-only,
+and a new dependency — and two implementations of "the Porter stemmer" differ
+at the edges, which is exactly the adapter-divergence shape
+`domain/tokenize.py`'s own docstring exists to prevent, reintroduced one level
+up. Postgres's `english` text search configuration stems, and using it instead
+of this module was rejected for the same reason: the in-memory adapter has no
+equivalent, and the two stores would then disagree about what a term is.
+
+If this is picked up, it is a single domain-owned implementation added to
+`tokenize.py` (or a sibling module both adapters call), never a per-adapter
+one — a Postgres-side stemmer and an in-memory approximation of it is the same
+divergence with different code.
+
 ---
 
 ## 6. Tooling, packaging and hygiene
@@ -1994,3 +2087,94 @@ load-bearing as written, so nobody re-derives that later.
 
 Neither is a defect to fix under time pressure; the entry exists so the next
 reader does not mistake either for evidence about the `Retriever`.
+
+### B95. Nothing executes the code blocks in `docs/how-to/*`
+
+`tests/unit/test_end_to_end_example.py` executes `docs/examples/build_a_graph.py`
+and is the mechanism behind the repo's public-surface gate ("the end-to-end
+example imports nothing but `redstring`"). Nothing equivalent runs the
+fenced Python in `docs/how-to/*.md`. This is how
+`docs/how-to/rank-passages.md`'s only example called
+`index_documents(..., chunks=chunks, ...)` against a parameter actually named
+`store` and shipped anyway — `mkdocs --strict` checks links, not Python, and
+the how-to's imports were all in `__all__`, so the public-surface gate gave
+it zero protection despite the how-to satisfying every condition that gate
+checks for. Fixed for this one instance in the final review pass; the
+mechanism gap that let it ship is what this entry tracks. A fix extracts
+each how-to's fenced block(s) the way `test_end_to_end_example.py` extracts
+`build_a_graph.py`'s, and executes them in the commit gate.
+
+### B96. Nothing asserts `docs/adr/*.md` and `docs/adr/index.md` agree
+
+Every ADR file is supposed to have a matching row in `docs/adr/index.md`'s
+table, by convention (`.claude/rules/recurring-defects.md` §6 argues for
+exactly this kind of two-declaration-site risk generally). Nothing checks
+it: ADR 0024 shipped with no index row for it, `mkdocs.yml`'s nav made the
+page reachable so `mkdocs --strict` was silent, and the omission was found
+only by a review reading both files side by side. Fixed for 0024 in the
+final review pass. A fix is a small test — glob `docs/adr/000*.md` and
+`docs/adr/0[1-9]*.md` for ADR numbers, parse the index table's numbers out
+of its first column, and assert the two sets are equal — living in
+`tests/unit/` next to the other doc-consistency checks (e.g. wherever
+`mkdocs --strict`'s invocation lives in the gate, if it does).
+
+### B97. Same chunk id, changed text diverges between the adapters
+
+`chunks/adapters/postgres.py`'s `_TERMS_ON_CONFLICT` is `DO NOTHING` and
+`_ON_CONFLICT` deliberately omits `doc_length` from its `SET` clause, both
+justified by content addressing: a chunk id fixes its text (via
+`chunk_id(source_id, text)`), so a write reusing an existing id is assumed to
+be writing the same text, and the term index and length can never need
+updating. That argument is correct only for callers who build ids with
+`chunk_id`; nothing enforces that they do. `StoredChunk.id` is a
+caller-supplied `str`, and `ports/chunk_store.py`'s `upsert_many` promises
+unqualified last-write-wins on `(tenant_id, id)`.
+
+A caller using self-assigned (non-content-addressed) ids that re-writes one
+id with different text gets, from `InMemoryChunkStore`, ranking over the
+*new* text (it tokenizes at query time), and from `PostgresChunkStore`,
+ranking over the *old* text and the *old* `doc_length` — the `text` column
+updates on conflict while the term rows and `doc_length` do not, because
+`_TERMS_ON_CONFLICT`/`_ON_CONFLICT` assume it can't happen. That is
+`.claude/rules/recurring-defects.md` §1, silently, and the compliance suite
+cannot see it because its `_chunk` helper always builds ids the real
+content-addressed way. Cheap fix: state the constraint as prose on
+`ChunkStore.upsert_many` in the port ("a chunk id is content-addressed over
+`(source_id, text)`; re-using an id for different text is outside the
+contract"). Thorough fix: make it executable, either a compliance case that
+asserts the adapters agree after such a write (would currently fail on
+Postgres) or `chunk_id`-derived validation on `StoredChunk` construction.
+
+### B98. `PostgresChunkStore.lexical_candidates` is three unsynchronised reads
+
+It acquires one connection and issues the corpus-statistics query, the
+document-frequency query, and the candidate query as three separate
+statements with no wrapping transaction. Under concurrent writes, the
+`n_docs` and `avg_doc_length` returned can describe a corpus that never
+coexisted with the returned `doc_frequencies` — a write landing between the
+first and third statement changes what "the corpus" means mid-read.
+`InMemoryChunkStore` is atomic by construction (no interleaving possible
+within one event loop turn), so this is a real adapter divergence, but it is
+in something `ports/chunk_store.py` does not pin: the port says nothing
+about snapshot consistency across the three parts of `lexical_candidates`'s
+answer. Nothing in the suite can observe it (single-threaded tests). Fix is
+either a `REPEATABLE READ` transaction around the three statements, or a
+sentence in the port stating plainly that the three are not guaranteed to be
+a consistent snapshot — so a caller relying on it knows not to.
+
+### B99. `avg_doc_length` is computed by two different arithmetics
+
+`InMemoryChunkStore` computes `sum(lengths) / n` in Python float.
+`PostgresChunkStore` computes `avg(doc_length)` in SQL `numeric` and the
+adapter rounds the result to float. The compliance suite requires adapter
+scores to be **exactly** equal (not `pytest.approx`), and `avg_doc_length`
+feeds every BM25 score through the length-normalisation term. For the
+fixtures currently in the suite (13/4 = 3.25) both arithmetics are exact, and
+in general both are *correctly rounded*, so a disagreement needs a
+double-rounding case, which is rare — but the failure mode when it happens
+is an intermittently red cross-adapter test with nothing in the source
+changed, a shape this project has already been bitten by once (the
+`k=0`-sampler note in `CLAUDE.md`'s Testing notes section, about
+`InMemoryVectorStore.search`). Fix: `avg(doc_length::float8)` on the
+Postgres side makes both adapters do the same float arithmetic instead of
+routing one of them through `numeric`.

@@ -138,8 +138,84 @@ async def _truncate(pool: asyncpg.Pool[Any]) -> None:
     The reset lives here, not on the adapter: "delete every tenant's rows" is
     a test affordance, and a production `ChunkStore` should not offer one.
     `delete_by_tenant` is the port's bulk removal.
+
+    `CASCADE` is required, not cosmetic: the `<table>_terms` table's foreign
+    key makes a plain `TRUNCATE {TABLE}` raise `FeatureNotSupportedError`
+    rather than silently leaving stale term rows behind, and cascading
+    truncates the child table along with the parent -- which is what "empty"
+    is supposed to mean now that a chunk row has a dependent table.
     """
-    await pool.execute(f"TRUNCATE {TABLE}")
+    await pool.execute(f"TRUNCATE {TABLE} CASCADE")
+
+
+class _OneConnectionPool:
+    """Answers `.acquire()` with the one connection it wraps.
+
+    `PostgresChunkStore.lexical_candidates` acquires its own connection
+    internally, so a test that needs `SET` to survive into that query cannot
+    hand the adapter a bare `Connection` (no `.acquire()`) or a real `Pool`
+    (may hand back any connection, not the one carrying the `SET`). This is
+    the minimum needed to satisfy the adapter's `Pool[Any]` usage --
+    `acquire()` as an async context manager yielding the wrapped connection,
+    and nothing else, because `lexical_candidates` is the only method this
+    test exercises through it.
+    """
+
+    def __init__(
+        self, connection: asyncpg.pool.PoolConnectionProxy[Any] | asyncpg.Connection[Any]
+    ) -> None:
+        self._connection = connection
+
+    def acquire(self) -> _OneConnectionPool:
+        return self
+
+    async def __aenter__(self) -> Any:
+        return self._connection
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        # `upsert_many` calls `self._pool.execute(...)` directly, without
+        # going through `acquire()` -- proxy straight to the connection for
+        # anything this class does not define itself.
+        return getattr(self._connection, name)
+
+
+class _RecordingPool:
+    """Wraps one connection and remembers the last `.fetch()` sent through it.
+
+    `get_by_entity` calls `self._pool.fetch(query, *args)` directly, without
+    `.acquire()`, so this needs only `fetch` and `.acquire()` proxied through
+    to the wrapped connection -- `__getattr__` covers anything else the
+    adapter might reach for. The point is to EXPLAIN the *real* statement
+    text a method sent, not a hand-copied string that can drift from it; see
+    `test_get_by_entity_uses_the_gin_index`.
+    """
+
+    def __init__(
+        self, connection: asyncpg.pool.PoolConnectionProxy[Any] | asyncpg.Connection[Any]
+    ) -> None:
+        self._connection = connection
+        self.last_query: str | None = None
+        self.last_args: tuple[Any, ...] = ()
+
+    def acquire(self) -> _RecordingPool:
+        return self
+
+    async def __aenter__(self) -> Any:
+        return self._connection
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+    async def fetch(self, query: str, *args: Any) -> Any:
+        self.last_query = query
+        self.last_args = args
+        return await self._connection.fetch(query, *args)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
 
 
 class TestPostgresChunkStore(ChunkStoreCompliance):
@@ -192,20 +268,26 @@ class TestPostgresChunkStoreSpecifics:
         is one starting from no table.
         """
         table = f"{TABLE}_fresh"
-        await pool.execute(f"DROP TABLE IF EXISTS {table}")
+        terms_table = f"{table}_terms"
+        # CASCADE: a leftover `_fresh_terms` table from an earlier aborted run
+        # holds a foreign key onto `_fresh`, and a plain DROP raises
+        # DependentObjectsStillExistError instead of clearing the way.
+        await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
         assert not await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", table)
+        assert not await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", terms_table)
 
         fresh = PostgresChunkStore(pool, table=table)
         await fresh.ensure_schema()
 
         assert await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", table)
+        assert await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", terms_table)
         # Usable, not merely present.
         tenant = uuid4()
         written = ChunkStoreCompliance._chunk(tenant, "doc-1", "a passage", chunk_index=0)
         await fresh.upsert_many([written])
         assert await fresh.get(written.id, tenant) == written
 
-        # And the table the other 53 tests use matches what the adapter
+        # And the table the other tests use matches what the adapter
         # *currently* declares. This half is about the harness, not the DDL,
         # and without it the module has a standing false-green: `_schema_ready`
         # is a module-level global and the DDL is `CREATE TABLE IF NOT
@@ -213,6 +295,12 @@ class TestPostgresChunkStoreSpecifics:
         # effect on any run until someone drops the worker table by hand. A
         # sabotage touching only the DDL would leave the whole suite green and
         # the schema change invisible.
+        #
+        # Both tables are compared -- not just the chunk table -- because the
+        # `_terms` table is a second schema this adapter declares and the same
+        # staleness would hide it just as well: an old worker table predating
+        # the term index would leave every `lexical_candidates` test running
+        # against a table that silently does not exist.
         #
         # Compared rather than silently repaired with a `DROP TABLE`: dropping
         # would make a stale table a thing that quietly heals, and the failure
@@ -222,10 +310,16 @@ class TestPostgresChunkStoreSpecifics:
             f"{TABLE} does not match the schema {type(fresh).__name__} now "
             f"declares. `CREATE TABLE IF NOT EXISTS` cannot migrate it, so "
             f"every other test in this module is running against a stale "
-            f"table. Drop it: DROP TABLE {TABLE};"
+            f"table. Drop it: DROP TABLE {TABLE} CASCADE;"
+        )
+        assert await _columns(pool, terms_table) == await _columns(pool, f"{TABLE}_terms"), (
+            f"{TABLE}_terms does not match the schema {type(fresh).__name__} now "
+            f"declares. `CREATE TABLE IF NOT EXISTS` cannot migrate it, so "
+            f"every other test in this module is running against a stale "
+            f"table. Drop it: DROP TABLE {TABLE}_terms;"
         )
 
-        await pool.execute(f"DROP TABLE {table}")
+        await pool.execute(f"DROP TABLE {table} CASCADE")
 
     async def test_chunk_index_is_an_integer_column(
         self, store: PostgresChunkStore, pool: asyncpg.Pool[Any]
@@ -312,6 +406,79 @@ class TestPostgresChunkStoreSpecifics:
         assert "tenant_id" in conditions[0]
         assert "source_id" in conditions[0]
 
+    async def test_get_by_entity_uses_the_gin_index(self, pool: asyncpg.Pool[Any]) -> None:
+        """`get_by_entity` must plan as a GIN index seek, not a tenant scan.
+
+        GIN's array operator class indexes `@>`, `<@`, `&&` and whole-array
+        `=` -- it does not index `scalar = ANY(col)`, and Postgres performs
+        no transform between the two. A predicate written as `$2 = ANY
+        (entity_ids)` therefore plans as `Bitmap Index Scan` on the *primary
+        key* with the array test pushed into `Filter`, reading every row of
+        the tenant regardless of how selective the entity filter is --
+        verified against this project's own container before this test
+        existed: 20 000 rows, `enable_seqscan = off`, `Filter: ($2 = ANY
+        (entity_ids))` with no `entity_ids_idx` anywhere in the plan.
+        `entity_ids @> ARRAY[$2::uuid]` plans as a bitmap scan *on the GIN
+        index*, with the containment as `Index Cond`.
+
+        This EXPLAINs the adapter's **own statement text**, captured off the
+        real `fetch()` call rather than retyped by hand -- BACKLOG B93 records
+        that the sibling truncation-tie-break test EXPLAINs a hand-reconstructed
+        proxy of the adapter's SQL, which can drift from what the adapter
+        actually sends without this test noticing. `_RecordingPool` sits
+        between the adapter and the connection for exactly that reason: it
+        never rewrites the query, it only remembers the string and parameters
+        `PostgresChunkStore.get_by_entity` passed to `.fetch()`, and replays
+        the same text under `EXPLAIN`.
+        """
+        async with pool.acquire() as connection:
+            await connection.execute(f"TRUNCATE {TABLE} CASCADE")
+            await connection.execute("SET enable_seqscan = off")
+            recording = _RecordingPool(connection)
+            store = PostgresChunkStore(cast("asyncpg.Pool[Any]", recording), table=TABLE)
+
+            tenant = uuid4()
+            target_entity = uuid4()
+            matching = ChunkStoreCompliance._chunk(
+                tenant, "doc-1", "the matching passage", entity_ids=[target_entity]
+            )
+            await store.upsert_many(
+                [
+                    matching,
+                    *(
+                        ChunkStoreCompliance._chunk(
+                            tenant,
+                            "doc-1",
+                            f"other passage {i}",
+                            chunk_index=i + 1,
+                            entity_ids=[uuid4()],
+                        )
+                        for i in range(500)
+                    ),
+                ]
+            )
+            await connection.execute(f"ANALYZE {TABLE}")
+
+            found = await store.get_by_entity(target_entity, tenant)
+            assert recording.last_query is not None, "get_by_entity never called .fetch()"
+
+            plan = "\n".join(
+                row["QUERY PLAN"]
+                for row in await connection.fetch(
+                    f"EXPLAIN (ANALYZE false, COSTS false) {recording.last_query}",
+                    *recording.last_args,
+                )
+            )
+
+        assert f"{TABLE}_entity_ids_idx" in plan, (
+            f"the GIN index is not in the plan at all:\n{plan}"
+        )
+        conditions = [line for line in plan.splitlines() if "Index Cond" in line]
+        assert conditions, f"no index condition -- the filter is not seeking:\n{plan}"
+        assert "entity_ids" in conditions[0], f"not on entity_ids:\n{plan}"
+        assert "@>" in conditions[0], f"the index condition is not the containment test:\n{plan}"
+        assert [chunk.id for chunk in found] == [matching.id]
+
     async def test_the_order_by_alone_produces_the_tie_break(self, pool: asyncpg.Pool[Any]) -> None:
         """The total order is guaranteed **twice**, so neither guarantee is
         falsifiable by any other test in this repository.
@@ -341,7 +508,7 @@ class TestPostgresChunkStoreSpecifics:
         # `fetch`/`fetchrow`/`fetchval`/`execute` on the paths used here, all
         # of which a Connection has with the same signatures.
         async with pool.acquire() as connection:
-            await connection.execute(f"TRUNCATE {TABLE}")
+            await connection.execute(f"TRUNCATE {TABLE} CASCADE")
             await connection.execute("SET enable_indexscan = off")
             await connection.execute("SET enable_bitmapscan = off")
             store = PostgresChunkStore(cast("asyncpg.Pool[Any]", connection), table=TABLE)
@@ -372,6 +539,75 @@ class TestPostgresChunkStoreSpecifics:
             found = await store.get_by_source("doc-1", tenant)
 
         assert [chunk.id for chunk in found] == [leader.id, low_tie.id, high_tie.id]
+
+    async def test_lexical_candidates_truncation_tie_break_is_unfalsifiable_by_plan_alone(
+        self, pool: asyncpg.Pool[Any]
+    ) -> None:
+        """The `matched` CTE's `, chunk_id ASC` is the same trap as above, in
+        the term-index query.
+
+        Under the planner's default plan, `GROUP BY chunk_id` is satisfied by
+        a `GroupAggregate` over a sorted input, and that sort happens to leave
+        ties in `chunk_id` order even though only `ORDER BY matched_terms
+        DESC` names it -- deleting `, chunk_id ASC` from the clause leaves
+        every compliance case green. `enable_indexscan` /
+        `enable_bitmapscan = off` is not enough here, unlike the `get_by_source`
+        case above: without an index the planner still reaches a
+        `GroupAggregate` over a `Sort`, which happens to reproduce the same
+        order by accident of the grouping strategy. Disabling
+        `enable_presorted_aggregate` alone still leaves a `GroupAggregate`
+        over an explicit `Sort` on `chunk_id` -- on a two-row table the
+        planner prefers sorting over hashing regardless. `enable_sort = off`
+        is what actually forces a `HashAggregate`, whose bucket order carries
+        no relationship to `chunk_id` -- the plan is asserted for exactly
+        this reason, so a future settings change that stops applying cannot
+        pass silently.
+
+        Unlike the `get_by_source` test above, `lexical_candidates` acquires
+        its own connection internally (three queries in one round trip, see
+        the module docstring), so it cannot be handed a bare `Connection` in
+        place of the pool the way `get_by_source` can -- it needs something
+        that answers `.acquire()`. `_OneConnectionPool` below is that: it
+        wraps the one connection this test configured with `SET` and hands
+        that same connection back from `acquire()`, so `lexical_candidates`'s
+        three queries run on the session the settings apply to rather than on
+        whatever connection a real pool happens to have free.
+        """
+        async with pool.acquire() as connection:
+            await connection.execute("SET enable_indexscan = off")
+            await connection.execute("SET enable_bitmapscan = off")
+            await connection.execute("SET enable_presorted_aggregate = off")
+            await connection.execute("SET enable_sort = off")
+            await connection.execute(f"TRUNCATE {TABLE} CASCADE")
+            store = PostgresChunkStore(
+                cast("asyncpg.Pool[Any]", _OneConnectionPool(connection)), table=TABLE
+            )
+
+            tenant = uuid4()
+            low_tie = ChunkStoreCompliance._chunk(tenant, "doc-1", "common alpha", chunk_index=3)
+            high_tie = ChunkStoreCompliance._chunk(tenant, "doc-1", "common beta", chunk_index=3)
+            assert low_tie.id < high_tie.id
+            await store.upsert_many([low_tie, high_tie])
+
+            plan = "\n".join(
+                row["QUERY PLAN"]
+                for row in await connection.fetch(
+                    "EXPLAIN (ANALYZE false, COSTS false) "
+                    f"SELECT chunk_id FROM {TABLE}_terms "
+                    "WHERE tenant_id = $1 AND term = ANY ($2) "
+                    "GROUP BY chunk_id ORDER BY count(*) DESC LIMIT 1",
+                    tenant,
+                    ["common"],
+                )
+            )
+            assert "HashAggregate" in plan, (
+                f"a GroupAggregate over a sorted input can reproduce chunk_id "
+                f"order by accident, making the tie-break unfalsifiable:\n{plan}"
+            )
+
+            result = await store.lexical_candidates(["common"], tenant, 1)
+
+        assert {candidate.chunk.id for candidate in result.candidates} == {low_tie.id}
 
     # ------------------------------------------------------------------
     # Round-trip cost

@@ -40,6 +40,12 @@ could not be caught without a dotted import.
   documents into a `ChunkStore` and asks no model anything, so a corpus is
   affordable for every document a caller holds and extraction can be paid for
   over whichever subset is worth it.
+- **Ranking passages.** `tokenize` decides what counts as a term.
+  `rank_chunks` scores a store's `LexicalCandidates` with BM25 and returns
+  `RankedChunk`s, best first -- the scorer is pure so two `ChunkStore`
+  adapters, asked for the same candidates and statistics, rank identically.
+  `LexicalCandidate` and `CorpusStats` are what an adapter hands back;
+  `ChunkStore.lexical_candidates` is where a caller asks for them.
 - **Retrieval.** `Retriever` turns a query string into ranked entities,
   fusing a semantic channel over `VectorStore` with a lexical one over
   `GraphStore`'s blocking keys. `RetrievalMode` picks the channels,
@@ -144,7 +150,14 @@ from redstring.composition import (
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
 from redstring.domain.alias import Alias
+from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk import ChunkId, StoredChunk
+from redstring.domain.chunk_ranking import (
+    LexicalCandidate,
+    LexicalCandidates,
+    RankedChunk,
+    rank_chunks,
+)
 from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import (
@@ -170,6 +183,7 @@ from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEnt
 from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
 from redstring.domain.source import SourceDocument
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+from redstring.domain.tokenize import tokenize
 from redstring.domain.vector import VectorMatch, VectorRecord
 from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.merge import EntitiesMerged, MergeUndone
@@ -239,6 +253,7 @@ __all__ = [
     "ConsolidationInvariantError",
     "ConsolidationReport",
     "Consolidator",
+    "CorpusStats",
     "CursorStalledError",
     "DatePrecision",
     "DimensionMismatchError",
@@ -270,6 +285,8 @@ __all__ = [
     "InMemoryVectorStore",
     "IndexReport",
     "InferredRelation",
+    "LexicalCandidate",
+    "LexicalCandidates",
     "LlmProvider",
     "LlmProviderError",
     "MalformedCompletionError",
@@ -279,6 +296,7 @@ __all__ = [
     "PartialExtractionError",
     "PipelineResult",
     "PropertySchema",
+    "RankedChunk",
     "RedstringError",
     "RefusedCompletionError",
     "Relationship",
@@ -316,4 +334,6 @@ __all__ = [
     "infer_relations",
     "load_schema_from_file",
     "load_schema_from_string",
+    "rank_chunks",
+    "tokenize",
 ]

@@ -25,7 +25,8 @@ import typing
 from collections.abc import Sequence
 
 from redstring.domain.chunk import ChunkId, StoredChunk
-from redstring.domain.ids import SourceId, TenantId
+from redstring.domain.chunk_ranking import LexicalCandidates
+from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.ports.chunk_store import ChunkStore
 from tests.compliance.chunk_store import ChunkStoreCompliance
 
@@ -36,6 +37,8 @@ _PORT_NAMESPACE = {
     "ChunkId": ChunkId,
     "SourceId": SourceId,
     "TenantId": TenantId,
+    "EntityId": EntityId,
+    "LexicalCandidates": LexicalCandidates,
     "Sequence": Sequence,
 }
 
@@ -60,13 +63,22 @@ def read_methods() -> set[str]:
     Derived from return annotations rather than names, so the three methods
     returning `int` drop out automatically and a future read method is
     included automatically.
+
+    `LexicalCandidates` is in the target set alongside `StoredChunk` itself.
+    `lexical_candidates` returns `LexicalCandidates`, which *contains* chunks
+    (each `LexicalCandidate.chunk` is a `StoredChunk`) without the wrapper's
+    own annotation mentioning `StoredChunk` anywhere -- so a return type that
+    *contains* domain objects leaks exactly as one that *is* a domain object,
+    and `_mentions` cannot see through a type it was not told to look for.
+    Omitting it here would silently skip the method this gate exists to
+    catch.
     """
     found = set()
     for name, function in inspect.getmembers(ChunkStore, inspect.isfunction):
         if name.startswith("_"):
             continue
         hints = typing.get_type_hints(function, localns=_PORT_NAMESPACE)
-        if _mentions(hints.get("return"), {StoredChunk}):
+        if _mentions(hints.get("return"), {StoredChunk, LexicalCandidates}):
             found.add(name)
     return found
 
@@ -90,7 +102,12 @@ class TestEveryReadMethodIsCovered:
         dropped from it, none would -- and both mistakes leave the two
         coverage tests below green.
         """
-        assert read_methods() == {"get", "get_by_source"}
+        assert read_methods() == {
+            "get",
+            "get_by_source",
+            "get_by_entity",
+            "lexical_candidates",
+        }
 
     def test_every_read_method_declares_isolation_coverage(self) -> None:
         missing = _uncovered(ISOLATION_CONVENTION, ISOLATION_EXEMPT)
