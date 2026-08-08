@@ -2366,44 +2366,6 @@ changed, a shape this project has already been bitten by once (the
 Postgres side makes both adapters do the same float arithmetic instead of
 routing one of them through `numeric`.
 
-### B105. The store-adapter guide numbers five steps and writes two of them
-
-`docs/how-to/implement-a-store-adapter.md` opens with a five-item numbered
-list of the work and then has `## Step 1` and `## Step 2` headings and no
-others. Steps 3 (isolation and tenant tests), 4 (running the suite serially,
-`--all-extras`, `KG_COMPLIANCE_MAX_EXAMPLES`) and 5 (adapter-specific tests
-and module placement) exist only as list items, while the body cross-refers to
-them as though they had sections — one reference read "Step 6 covers what
-`lint-imports` will say", naming a step the list never had.
-
-Fixed the false cross-references and added a sentence saying which steps have
-sections; did **not** write the missing three, because step 4's content is
-genuinely elsewhere (`docs/how-to/run-integration-and-mutation-suites.md`) and
-step 3's is in `.claude/rules/definition-of-done.md`, so writing them here
-would create the two-declaration-sites shape (`recurring-defects.md` §2)
-rather than close a gap. Decide between writing three short sections that
-*link* rather than restate, or dropping the numbered list in favour of prose
-that points at where each step already lives. The list is what created the
-expectation of sections; it is the cheaper thing to change.
-
-### B106. The guide's port check infers the composed Protocol from the filename
-
-`tests/unit/test_the_adapter_guide_names_every_compliance_suite.py::port_protocols`
-finds each port's composed Protocol by PascalCasing the module stem —
-`chunk_store.py` → `ChunkStore`. A future port module whose composed class is
-named differently from its file would contribute nothing and be silently
-exempt from `test_every_port_is_named_in_the_guide`, which is exactly the
-inert-check shape (`recurring-defects.md` §3).
-
-It is guarded, not solved: `test_the_detectors_find_something` asserts at
-least six ports are found, so dropping to five fails. That catches a *rename*
-of an existing port and would not catch a *seventh* port added under a
-mismatched name. The thorough fix is to detect any `runtime_checkable`
-Protocol in the module that is not a base of another one in the same module
-(the composed leaf), which is a real bit of `ast` work for a hazard that
-needs someone to break a naming convention every other port follows. Revisit
-if a port module ever declares two composed leaves.
-
 ### B107a. `AsyncClosable` is not exported from `redstring.__all__`
 
 ADR 0028 gives every capability protocol a `close`/`__aenter__`/`__aexit__`
@@ -2465,17 +2427,6 @@ capability doubles, hoist it then -- and `tests/compliance/` is the likelier
 home than `conftest.py`.
 
 
-### B109. The store-adapter guide still teaches only `try`/`finally`
-
-`docs/how-to/implement-a-store-adapter.md` was being edited by another agent
-in the wave that added `__aenter__`/`__aexit__` to the four resource-owning
-adapters, so it was left untouched rather than risk a conflicting write. The
-neo4j reference, the pgvector how-to and `harden-model-calls.md` all gained an
-`async with` section; that guide did not, and it is the page a *new* adapter
-author reads. Add the pair to whatever it says an adapter owes -- an adapter
-holding a pool and offering only `close()` is now the odd one out rather than
-the norm.
-
 ### B111. Nothing gates a *new* collaborator against its capability
 
 ADR 0027 narrowed the four first-party collaborators that were wide, and the
@@ -2499,22 +2450,3 @@ type-correct by construction, so the type checker can never report this. It
 was measured during 0027 -- reverting all four narrowings left `uv run mypy`
 completely silent. The annotation-reading assertions in those two test modules
 are a stopgap for four known names, not a mechanism.
-
-### B112. The store-adapter guide names two composed ports; there are four
-
-`docs/how-to/implement-a-store-adapter.md:184-187` reads "`GraphStore` and
-`ChunkStore` are each composed from smaller capability protocols (ADR 0016)".
-`Cache` has been composed since ADR 0026 and `VectorStore` since ADR 0027, so
-the sentence is wrong about half the ports it is describing, and it cites only
-0016.
-
-Not fixed here because that file was being edited by another agent in the same
-wave (see B109, which defers a different change to the same page for the same
-reason) and a concurrent write to one paragraph is how a merge silently keeps
-the wrong half. It is `.claude/rules/recurring-defects.md` §5 exactly: a doc
-naming specifics, gone stale the moment a sweep touched the tree.
-
-The fix is one sentence plus the two citations, and it should say *four of the
-six*, not "all" -- `LlmProvider` and `EmbeddingProvider` are single
-capabilities and naming them as composed would be the opposite error. Fold it
-in with B109 rather than as its own commit.

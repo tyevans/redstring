@@ -61,6 +61,12 @@ about, so each direction was watched failing: a fake
 `tests/compliance/widget_store.py` declaring `WidgetStoreCompliance` (the
 suite direction), and the `ChunkStore` row deleted from the guide (the
 staleness direction, and the ports check with it).
+
+The port detector was broken on purpose the same way when it stopped inferring
+the class name from the filename: a throwaway `ports/widget.py` declaring
+`runtime_checkable class WidgetCorpus(AsyncClosable, Protocol)` -- a composed
+port under a name no convention would guess -- which the old rule exempted
+silently and the leaf rule reports.
 """
 
 from __future__ import annotations
@@ -121,25 +127,72 @@ def suites_named_in_the_guide() -> set[str]:
     return named
 
 
-def port_protocols() -> set[str]:
-    """Every runtime-checkable Protocol in `src/redstring/ports/` that is a port.
+def _base_name(base: ast.expr) -> str | None:
+    """The bare name of a base class as written: `Protocol`, `typing.Protocol`."""
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return None
 
-    A port module may declare several capability protocols composed into one
-    (`GraphStore` is five, `ChunkStore` is four -- ADR 0016), and an adapter
-    implements the composed name. That is the one an implementer looks up, so
-    it is the one the guide must name: the class whose name is the module's,
-    in PascalCase.
+
+def _is_runtime_checkable(node: ast.ClassDef) -> bool:
+    """Whether the class carries `@runtime_checkable`, however it is spelled."""
+    return any(_base_name(decorator) == "runtime_checkable" for decorator in node.decorator_list)
+
+
+def runtime_checkable_protocols() -> dict[str, set[str]]:
+    """Every `@runtime_checkable` class under `ports/`, mapped to its base names.
+
+    Parsed rather than imported: the ports import optional third-party types
+    under `if TYPE_CHECKING`, and a check that needs an importable tree is a
+    check that fails for reasons unrelated to what it asserts.
     """
-    wanted: set[str] = set()
+    declared: dict[str, set[str]] = {}
     for module in sorted(PORTS_DIR.glob("*.py")):
         if module.stem == "__init__":
             continue
-        expected = "".join(part.title() for part in module.stem.split("_"))
         tree = ast.parse(module.read_text(encoding="utf-8"))
         for node in tree.body:
-            if isinstance(node, ast.ClassDef) and node.name == expected:
-                wanted.add(node.name)
-    return wanted
+            if isinstance(node, ast.ClassDef) and _is_runtime_checkable(node):
+                bases = {name for base in node.bases if (name := _base_name(base)) is not None}
+                declared[node.name] = bases
+    return declared
+
+
+def port_protocols() -> set[str]:
+    """Every composed port in `src/redstring/ports/` -- the leaves of the package.
+
+    A port module declares several capability protocols composed into one
+    (`GraphStore` is five, `ChunkStore` four, `VectorStore` three, `Cache`
+    two -- ADRs 0016, 0026, 0027), and an adapter implements the composed
+    name. That is the one an implementer looks up, so it is the one the guide
+    must name.
+
+    **It is found structurally, not from the filename.** The earlier version
+    PascalCased the module stem, so a port whose composed class did not match
+    its file contributed nothing and was silently exempt from the check below
+    -- the inert-check shape (`.claude/rules/recurring-defects.md` §3) in the
+    gate rather than in the code. A port is instead *a `runtime_checkable`
+    protocol that no other protocol in the package inherits from*: the
+    composed ports are exactly the leaves of the inheritance forest under
+    `ports/`.
+
+    The index is built across the **whole package**, not per module, and that
+    is the part that has to be right. `AsyncClosable` (ADR 0028) sits alone in
+    `ports/lifecycle.py` and is a base of every capability declared in the
+    other files, so a same-module rule would call it a leaf and demand the
+    guide document a lifetime mixin as a seventh port.
+
+    Both ways of being wrong fail loudly rather than quietly. If base
+    resolution stopped working, every capability protocol would become a leaf
+    and `test_every_port_is_named_in_the_guide` would start demanding rows for
+    `EntityReader` and friends; if it became over-eager, the set shrinks and
+    the count guard in `test_the_detectors_find_something` trips.
+    """
+    declared = runtime_checkable_protocols()
+    used_as_base = {base for bases in declared.values() for base in bases}
+    return {name for name in declared if name not in used_as_base}
 
 
 def ports_named_in_the_guide() -> set[str]:
@@ -165,6 +218,34 @@ def test_the_detectors_find_something() -> None:
     assert len(compliance_suites()) >= 5, compliance_suites()
     assert len(suites_named_in_the_guide()) >= 5, suites_named_in_the_guide()
     assert len(port_protocols()) >= 6, port_protocols()
+
+
+@pytest.mark.unit
+def test_the_leaf_rule_excludes_bases_rather_than_finding_everything() -> None:
+    """The other half of the guard: the base index must actually resolve.
+
+    `port_protocols()` is a subtraction, and a subtraction that removes
+    nothing is indistinguishable from one that works -- every capability
+    protocol would be reported as a port and the guide would be asked to
+    document `EntityReader`. So assert the two shapes the leaf rule exists to
+    reject are in fact rejected, one of each kind:
+
+    - a capability composed into a port in the *same* module (`EntityReader`
+      into `GraphStore`), and
+    - the lifecycle base shared across the package from a module of its own
+      (`AsyncClosable`, ADR 0028), which a same-module rule would call a leaf.
+    """
+    declared = runtime_checkable_protocols()
+    ports = port_protocols()
+
+    assert "EntityReader" in declared, sorted(declared)
+    assert "EntityReader" not in ports, sorted(ports)
+    assert "AsyncClosable" in declared, sorted(declared)
+    assert "AsyncClosable" not in ports, sorted(ports)
+    assert len(ports) < len(declared), (
+        "every runtime-checkable protocol under ports/ was reported as a port, "
+        "so no base was recognised as a base and the leaf rule is inert"
+    )
 
 
 @pytest.mark.unit

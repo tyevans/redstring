@@ -36,9 +36,13 @@ internal state are all requirements a `Protocol` cannot express and a passing
 `mypy --strict` run will not notice.
 
 Steps 1–4 are the required path for every adapter. Step 5 is what stops a
-correct adapter from being an unusable one. Only steps 1 and 2 have sections
-of their own below — steps 3 to 5 are covered by
-`.claude/rules/definition-of-done.md` and by the coverage gates named there.
+correct adapter from being an unusable one. Steps 1 and 2 are the two that are
+specific to writing an adapter, so they get the long sections below; steps 3
+to 5 are already defined elsewhere in the repository, and the "Steps 3 to 5"
+section at the end of this page says where each one lives rather than
+restating it here. A
+procedure copied into a second place is a procedure that will disagree with
+itself.
 
 ## Before you start
 
@@ -181,11 +185,19 @@ ports rather than one.
 Open the port module and write a plain class with the same methods. There is
 nothing to inherit — all six ports are `runtime_checkable` `Protocol`s, so
 conformance is structural. `InMemoryGraphStore` does not import `GraphStore`
-at all; it is a `GraphStore` because its methods match. `GraphStore` and
-`ChunkStore` are each composed from smaller capability protocols ([ADR
-0016](../adr/0016-graph-store-is-five-capabilities.md)), which changes nothing
-for an adapter implementing the whole port and lets a caller depend on only
-the slice it uses.
+at all; it is a `GraphStore` because its methods match.
+
+**Four of the six ports are composed from smaller capability protocols**, and
+the other two are single capabilities rather than an oversight: `GraphStore`
+is five ([ADR 0016](../adr/0016-graph-store-is-five-capabilities.md)),
+`ChunkStore` four and `Cache` two ([ADR
+0026](../adr/0026-chunk-store-and-cache-are-capabilities-too.md)),
+`VectorStore` three ([ADR
+0027](../adr/0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md)),
+while `LlmProvider` and `EmbeddingProvider` are one method and a property
+apiece with nothing to slice. The decomposition changes nothing for an adapter
+implementing a whole port — you write every method either way — and it lets a
+caller depend on only the slice it uses.
 
 Put the module where the layer contract expects it: `graph/adapters/`,
 `vector/adapters/`, `chunks/adapters/`, `llm/cache/`, `llm/adapters/`. The
@@ -211,6 +223,73 @@ Four things hold for every method on all three store ports:
   lets them mutate it afterwards. A database-backed adapter gets this for
   free by deserialising; an in-process one has to do it deliberately. Step 3
   is the gate that checks you did.
+
+### Every adapter owes a lifetime: `close()`, `__aenter__` and `__aexit__`
+
+`GraphStore`, `VectorStore`, `ChunkStore` and `Cache` all declare the release
+trio, because every capability protocol inherits
+`redstring.ports.lifecycle.AsyncClosable` ([ADR
+0028](../adr/0028-a-capability-declares-its-own-release.md)). So this is not a
+choice your adapter makes — the port already promised it, and an adapter
+offering only `close()` is the odd one out rather than the norm.
+
+```python
+async def close(self) -> None:
+    """Release the pool. Safe to call twice."""
+    if self._owns_pool:
+        await self._pool.close()
+
+
+async def __aenter__(self) -> Self:
+    return self
+
+
+async def __aexit__(
+    self,
+    exc_type: type[BaseException] | None,
+    exc: BaseException | None,
+    tb: TracebackType | None,
+) -> None:
+    await self.close()
+```
+
+Four rules, each of which one of the shipped adapters exists to demonstrate:
+
+- **`__aenter__` returns the store**, not `None`, so `async with ... as store`
+  binds something usable.
+- **`__aexit__` returns `None` and never suppresses.** The annotation is
+  `None` rather than `bool` on purpose: `bool` invites `return True`, which
+  reads as "handled" and silently eats every exception raised in the body —
+  including the `CancelledError` of a request that timed out, whose caller
+  would then be told the work completed.
+- **Exit goes through `close()`, so ownership still decides.** An adapter
+  handed a driver or pool it did not create leaves it open, inside a block as
+  much as outside one — `Neo4jGraphStore` flips that flag only in `connect()`,
+  and `RedisCache` takes `owns_client=False` by default. Without the ownership
+  check, a per-example `dispose` in the compliance suite takes the whole
+  session's shared connection down with it and every later example fails on a
+  closed connection.
+- **An adapter that owns nothing writes all three anyway, as honest no-ops.**
+  `InMemoryGraphStore` holds dictionaries the interpreter already owns, so
+  "release what you hold" is satisfied by doing nothing — and it must still
+  *work* after its own block, because "drop everything on close" is the
+  available over-implementation. `MemoryCache` deliberately does discard state,
+  which is right for expiring state and wrong for a store. Keeping the
+  in-memory adapters out of the promise would be the same thing as not making
+  it: a caller cannot write one lifetime discipline against a port whose
+  adapters disagree about whether it has one.
+
+`tests/unit/test_ports_declare_the_block_form.py` and
+`tests/unit/test_adapters_close_on_block_exit.py` are the gates. Their subject
+set is derived structurally — every class satisfying a capability — so a fifth
+adapter is caught by being written rather than by someone remembering the
+file, and `LlmProvider` and `EmbeddingProvider` are asserted *not* to be
+closable so that "not yet" and "deliberately not" stay distinguishable.
+
+For what the block form looks like from the caller's side, see the worked
+sections in [the Neo4j graph store reference](../reference/neo4j-graph-store.md),
+[Use the pgvector store](use-the-pgvector-store.md) and [Harden model
+calls](harden-model-calls.md).
 
 ### GraphStore
 
@@ -1023,6 +1102,43 @@ test would pass against a merge that is not order-independent at all.
 [ADR 0008: the two non-store ports](../adr/0008-the-two-non-store-ports.md)
 has the rest of the reasoning for why this port is one property and one
 method.
+
+## Steps 3 to 5: where the rest of the path is defined
+
+The remaining three steps are required, and none of them is written out here.
+Each is already defined somewhere that a change to the rule would be made, and
+a second copy on this page would be the copy that goes stale — one fact, one
+declaration site.
+
+**Step 3 — the isolation and tenant tests.** Every read method on a store port
+needs a `test_<method>_returns_copies` and a
+`test_<method>_never_crosses_tenants` on the compliance class. Follow that
+naming and there is nothing to configure: `tests/unit/graph/`,
+`tests/unit/vector/` and `tests/unit/chunks/test_compliance_coverage.py`
+derive the read-method list from the Protocol by introspection and fail until
+both exist. The rule, and the four read methods that shipped without it, are
+in `.claude/rules/definition-of-done.md` under "New port adapter"; the reason a
+behavioural test cannot substitute is in the "Copies, not live internal state"
+bullet above.
+
+**Step 4 — running the suite.** Sync with `uv sync --all-extras`, run one
+adapter per pytest invocation, and reach for `KG_COMPLIANCE_MAX_EXAMPLES`
+rather than `-n auto` when a real backend makes the run slow. All three are
+constraints of the *runner* rather than of your adapter, and each has a
+measured failure behind it (36 parallel failures on the shared Neo4j database;
+34 `FailedHealthCheck: called from multiple different executors` when a unit
+and an integration subclass of one suite share a process). The runbook is
+[Run the integration and mutation
+suites](run-integration-and-mutation-suites.md).
+
+**Step 5 — the tests the port cannot specify, and where the module sits.**
+Schema creation, encoding fidelity, connection ownership and query plans go in
+a `Test*Specifics` class beside your compliance subclass; anything true of the
+*port* goes up into `tests/compliance/` instead. Placement is decided by the
+`lint-imports` contract in `pyproject.toml`, which runs on commit — and if your
+adapter brought a new driver with it, the dependency-confinement table in
+`tests/unit/test_dependencies_stay_confined.py` needs a row — the one gate you
+are most likely to miss, covered in step 2 above.
 
 ## Related reading
 
