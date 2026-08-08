@@ -2366,29 +2366,6 @@ changed, a shape this project has already been bitten by once (the
 Postgres side makes both adapters do the same float arithmetic instead of
 routing one of them through `numeric`.
 
-### B107a. `AsyncClosable` is not exported from `redstring.__all__`
-
-ADR 0028 gives every capability protocol a `close`/`__aenter__`/`__aexit__`
-trio through `redstring.ports.lifecycle.AsyncClosable`, and the type itself is
-reachable only by a dotted path into an internal module. That is the shape
-`docs/adr/0006-the-public-surface-is-gated.md` exists to prevent, and ADR 0027
-already recorded the general form: a caller cannot narrow an annotation to a
-type they may not import.
-
-**Nothing currently fails, and the reason is worth knowing before fixing it.**
-`tests/unit/test_public_surface_is_self_contained.py` reads the *annotations*
-of exported names, and `AsyncClosable` appears in none -- it is a base class,
-not a parameter or a return. So the gate is silent in exactly the way it was
-silent about `RefusedCompletionError` before slice 10 found that by hand: the
-name is needed by a caller writing `async def shutdown(store: AsyncClosable)`
-and is unreachable to them.
-
-Left undone here only because `src/redstring/__init__.py` was owned by another
-agent in this wave. The fix is one import and one `__all__` entry; the
-judgement to make first is whether that gate should learn to walk the *bases*
-of exported protocols, which would have caught this and will catch the next
-one. That is the more valuable half.
-
 ### B107b. `LlmProvider` and `EmbeddingProvider` have no declared lifetime
 
 ADR 0028 deliberately stopped at the four store-shaped ports.

@@ -1,6 +1,9 @@
 # ADR 0006: The public surface is gated by three tests, not curated
 
-**Status:** accepted, slice 10 of the ring migration.
+**Status:** accepted, slice 10 of the ring migration. **Amended by**
+[`0028` a capability declares its own release](0028-a-capability-declares-its-own-release.md),
+which put a type on the surface that check 1 as decided here could not see —
+see Consequences.
 
 **Why this is an ADR:** the three tests look redundant, and each is blind to
 the failures the other two catch. Deleting any one of them leaves a hole that
@@ -63,6 +66,15 @@ which obliges `DatePrecision`.
 - Adding an export is more expensive than it looks, and deliberately so: the
   closure comes with it, and the closure is the part a caller needs.
 - Removing an export is a visible breaking change rather than a quiet one.
+- **A base class is part of the surface, and check 1 was written in terms of
+  signatures.** 0028 made every capability protocol inherit `AsyncClosable`,
+  so `async with store` is supported against a port — while the type is named
+  by no parameter and no return, and the check was silent. Check 1 therefore
+  reads inherited *types* as well as inherited annotations: it is the same MRO
+  mechanic recorded above, applied to the base list rather than to what the
+  bases declare. Private bases are excluded, and foreign ones stay the
+  business of `DOCUMENTED_FOREIGN_TYPES`, which is about types a signature
+  forces a caller to name.
 - The gate constrains *shape*, not taste. It cannot tell you an export is a bad
   idea — only that it is complete.
 - `packaging` is proven rather than inferred alongside this:
