@@ -40,6 +40,21 @@ def test_normalises_compatibility_forms() -> None:
     assert tokenize("ofﬁce") == ["office"]
 
 
+def test_normalisation_precedes_casefolding() -> None:
+    """The stated order is load-bearing, and `℡` is where it shows.
+
+    NFKC expands U+2121 to `TEL`, which casefolding then lowers to `tel`.
+    Casefolding first leaves the ligature untouched -- there is no lowercase
+    form of it -- so the expansion happens last and the term stays `TEL`,
+    unfindable by any query a reader would type.
+
+    The module comment asserted this ordering and nothing tested it: the two
+    compatibility examples above resolve identically under either order, so
+    the suite agreed with the claim without ever checking it.
+    """
+    assert tokenize("℡") == ["tel"]
+
+
 def test_splits_on_underscore() -> None:
     """`snake_case` is two terms, matching how a reader would search for it."""
     assert tokenize("source_id") == ["source", "id"]

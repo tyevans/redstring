@@ -69,7 +69,7 @@ STOPWORDS: frozenset[str] = frozenset(
 
 #: One or more alphanumerics. `\w` would keep the underscore, making
 #: `source_id` a single term no reader would search for.
-_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
+_TOKEN = re.compile(r"[^\W_]+")
 
 
 def tokenize(text: str) -> list[str]:
