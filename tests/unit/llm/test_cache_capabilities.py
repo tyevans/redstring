@@ -15,15 +15,17 @@ implement **one half each and nothing of the other** -- `BreakerCache` has no
 reached across the split would fail with `AttributeError` here rather than in
 whatever deployment first swapped in a narrow adapter.
 
-Neither double subclasses anything, which is the same reasoning as
+Neither double subclasses an *adapter*, which is the same reasoning as
 `tests/unit/consolidation/test_substitution.py`: a double built by subclassing
 `MemoryCache` would satisfy the whole port however the protocols were
-declared, and could not tell you the split held.
+declared, and could not tell you the split held. What they do inherit is
+`tests/compliance/lifetime.NoOpLifetime`, which supplies nothing but the
+`AsyncClosable` members ADR 0028 added -- shared rather than restated because
+three modules had grown the same nine lines (B107c).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Self
 from uuid import uuid4
 
 import pytest
@@ -31,35 +33,18 @@ import pytest
 from redstring.llm.circuit_breaker import CircuitBreaker
 from redstring.llm.rate_limiter import RateLimiter, RateLimitExceeded
 from redstring.ports.cache import Cache, HitWindow, KeyValueCache
-
-if TYPE_CHECKING:
-    from types import TracebackType
+from tests.compliance.lifetime import NoOpLifetime
 
 
-class Lifetime:
-    """The release half every capability inherits from `AsyncClosable`.
+class BreakerCache(NoOpLifetime):
+    """`KeyValueCache` and not one method more.
 
-    A double claiming to *be* a capability has to satisfy all of it, including
-    the part ADR 0028 added -- otherwise the `isinstance` assertions below stop
-    saying anything about segregation and start reporting a missing `close`.
-    These doubles hold nothing, so all three are no-ops.
+    Overrides `close` on purpose: `NoOpLifetime.close` records nothing, and
+    `test_neither_consumer_closes_a_cache_it_was_given` needs a cache that
+    *would* report having been closed. See
+    `test_the_doubles_would_notice_being_closed`, which is what stops the
+    override being lost to a future tidy-up while that assertion stays green.
     """
-
-    async def close(self) -> None: ...
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None: ...
-
-
-class BreakerCache(Lifetime):
-    """`KeyValueCache` and not one method more."""
 
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
@@ -84,8 +69,11 @@ class BreakerCache(Lifetime):
         self.closed = True
 
 
-class LimiterCache(Lifetime):
-    """`HitWindow` and not one method more."""
+class LimiterCache(NoOpLifetime):
+    """`HitWindow` and not one method more.
+
+    Overrides `close` for the same reason `BreakerCache` does.
+    """
 
     def __init__(self) -> None:
         self.hits: dict[str, list[float]] = {}
@@ -187,3 +175,21 @@ class TestReachingAcrossTheSplitFails:
         # to lack, the consumer tests above would pass while proving nothing
         # about segregation.
         assert not hasattr(double, absent)
+
+    async def test_the_doubles_would_notice_being_closed(self) -> None:
+        """Guards `test_neither_consumer_closes_a_cache_it_was_given`.
+
+        That test asserts a flag stays False, which is the assertion shape
+        that passes for two different reasons: nobody closed the cache, or
+        nothing in the double sets the flag at all. Both doubles override
+        `NoOpLifetime.close` to set it; drop either override and the shared
+        no-op takes over, `closed` is False forever, and the B108 regression
+        goes quiet while staying green.
+
+        Proved by deleting `BreakerCache.close`: this failed with
+        `assert False` on the first line while every other test in the module
+        stayed green -- which is exactly the gap it exists to fill.
+        """
+        for double in (BreakerCache(), LimiterCache()):
+            await double.close()
+            assert double.closed, f"{type(double).__name__}.close no longer records the call"
