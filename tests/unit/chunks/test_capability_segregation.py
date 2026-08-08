@@ -19,6 +19,7 @@ has quietly become a fork. `InMemoryChunkStore` is checked against all four.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Self
 from uuid import uuid4
 
 from eventsource.adapters.memory import InMemoryCheckpointRepository, InMemoryDLQRepository
@@ -35,8 +36,33 @@ from redstring.ports.chunk_store import (
 )
 from redstring.projections.chunk import ChunkProjection
 
+if TYPE_CHECKING:
+    from types import TracebackType
 
-class WriteOnlyChunkStore:
+
+class Lifetime:
+    """The release half every capability inherits from `AsyncClosable`.
+
+    A double claiming to *be* a capability has to satisfy all of it, including
+    the part ADR 0028 added -- otherwise the `isinstance` assertions below stop
+    saying anything about segregation and start reporting a missing `close`.
+    These doubles hold nothing, so all three are no-ops.
+    """
+
+    async def close(self) -> None: ...
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+
+class WriteOnlyChunkStore(Lifetime):
     """`ChunkWriter` and not one method more."""
 
     def __init__(self) -> None:

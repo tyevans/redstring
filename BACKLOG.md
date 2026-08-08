@@ -2404,49 +2404,66 @@ Protocol in the module that is not a base of another one in the same module
 needs someone to break a naming convention every other port follows. Revisit
 if a port module ever declares two composed leaves.
 
-### B107. Whether a capability Protocol should declare `__aenter__`/`__aexit__`
+### B107a. `AsyncClosable` is not exported from `redstring.__all__`
 
-The four resource-owning adapters (`Neo4jGraphStore`, `PgVectorStore`,
-`PostgresChunkStore`, `RedisCache`) gained `__aenter__`/`__aexit__`; the ports
-in `src/redstring/ports/` did not. That was deliberate for a scheduling reason
--- another agent owned `ports/` in the wave that added them -- but there is a
-real argument underneath, and it wants deciding rather than drifting.
+ADR 0028 gives every capability protocol a `close`/`__aenter__`/`__aexit__`
+trio through `redstring.ports.lifecycle.AsyncClosable`, and the type itself is
+reachable only by a dotted path into an internal module. That is the shape
+`docs/adr/0006-the-public-surface-is-gated.md` exists to prevent, and ADR 0027
+already recorded the general form: a caller cannot narrow an annotation to a
+type they may not import.
 
-The case *for* declaring it: a caller holding a `GraphStore` cannot write
-`async with` against the port, only against the concrete class, so the safe
-form is available exactly where the type is least abstract. The case
-*against*, and the one currently winning by default: `InMemoryGraphStore`,
-`InMemoryVectorStore`, `InMemoryChunkStore` and `MemoryCache` own nothing, so
-declaring entry on the port either obliges four adapters to write a pair of
-no-op methods, or -- worse -- makes "closing" part of a port whose whole point
-is that most implementations have nothing to close. `Cache` already declares
-`close()` (`ports/cache.py`), so that port has half-answered the question in
-the permissive direction and the store ports have not answered it at all,
-which is the inconsistency to resolve either way.
+**Nothing currently fails, and the reason is worth knowing before fixing it.**
+`tests/unit/test_public_surface_is_self_contained.py` reads the *annotations*
+of exported names, and `AsyncClosable` appears in none -- it is a base class,
+not a parameter or a return. So the gate is silent in exactly the way it was
+silent about `RefusedCompletionError` before slice 10 found that by hand: the
+name is needed by a caller writing `async def shutdown(store: AsyncClosable)`
+and is unreachable to them.
 
-Note the shape this would take if it went the other way: a separate
-`AsyncClosable`-style protocol that resource-owning adapters satisfy and
-in-memory ones do not, structurally checkable at a composition root, rather
-than a method added to five capability protocols.
+Left undone here only because `src/redstring/__init__.py` was owned by another
+agent in this wave. The fix is one import and one `__all__` entry; the
+judgement to make first is whether that gate should learn to walk the *bases*
+of exported protocols, which would have caught this and will catch the next
+one. That is the more valuable half.
 
-### B108. `CircuitBreaker` and `RateLimiter` expose `close()` and no block form
+### B107b. `LlmProvider` and `EmbeddingProvider` have no declared lifetime
 
-`llm/circuit_breaker.py:235` and `llm/rate_limiter.py:146` both define
-`async def close()` that forwards to `self._cache.close()`. Neither got
-`__aenter__`/`__aexit__` in the wave that gave the four adapters theirs,
-because neither *owns* a resource -- the flag-based detector in
-`tests/unit/test_adapters_close_on_block_exit.py::_resource_owning_classes`
-finds them correctly absent, and a gate keyed on the method name would have
-demanded methods there and been wrong about it.
+ADR 0028 deliberately stopped at the four store-shaped ports.
+`tests/unit/test_ports_declare_the_block_form.py::TestOnlyTheStoreShapedPortsAreClaimed`
+asserts the two provider ports are *not* `AsyncClosable`, so the exclusion is a
+decision rather than an omission -- but it is an open one.
 
-Left alone rather than overlooked, and the reason is that their `close()` is
-already questionable on its own terms: forwarding `close()` to a cache the
-component was *handed* is the shared-resource-closed-by-whoever-finished-first
-bug that `RedisCache.owns_client` exists to prevent, and neither class carries
-an ownership flag. Decide that first. If those `close()` methods should
-narrow to "release only a cache I created", the block form follows for free;
-if they should go away, there is nothing to wrap. Adding `async with` now
-would harden whichever answer is wrong.
+What makes them different, and why copying the decision across would be wrong
+rather than merely premature: `LangChainProvider` and the embedding adapters
+hold an HTTP client, so `close()` there is not the honest no-op it is on
+`InMemoryGraphStore`. It is a real release with a real ownership question --
+did the adapter build the client, or was it handed one? -- and that is the
+question `RedisCache.owns_client` answers and that B108 had to answer for
+`CircuitBreaker` and `RateLimiter`. Grant the pair before answering it and the
+adapter ships four methods that look like a lifetime and are not one.
+
+So the order is: decide ownership on the provider adapters, then extend 0028
+and delete the exclusion test in the same commit.
+
+### B107c. The capability doubles in three test modules repeat a `Lifetime` mixin
+
+`tests/unit/vector/test_capability_segregation.py`,
+`tests/unit/chunks/test_capability_segregation.py` and
+`tests/unit/llm/test_cache_capabilities.py` each grew an identical local
+`Lifetime` class when ADR 0028 landed, because a double claiming to satisfy one
+capability must now satisfy its release half too -- without it the
+`isinstance` assertions in those modules stop reporting segregation and start
+reporting a missing `close`.
+
+Three copies of nine lines. Left duplicated rather than hoisted into
+`tests/conftest.py` because that file deliberately defines nothing shared (see
+`.claude/rules/testing.md`: a root fixture is visible to every tree including
+`tests/integration/`), and a fourth home would be a new shared test-support
+module, which is a decision rather than a tidy-up. If a fourth port grows
+capability doubles, hoist it then -- and `tests/compliance/` is the likelier
+home than `conftest.py`.
+
 
 ### B109. The store-adapter guide still teaches only `try`/`finally`
 
@@ -2458,31 +2475,6 @@ neo4j reference, the pgvector how-to and `harden-model-calls.md` all gained an
 author reads. Add the pair to whatever it says an adapter owes -- an adapter
 holding a pool and offering only `close()` is now the odd one out rather than
 the norm.
-
-### B110. `ConsolidationGraph` sits beside its consumer, not in `ports/`
-
-`src/redstring/consolidation/candidates.py` declares `ConsolidationGraph`, the
-composition of `EntityReader`, `AliasStore` and `RelationshipStore` that
-`CandidateFinder` is now typed against (ADR 0027). Two homes are defensible and
-the choice was not made on the merits: it composes capabilities the port
-declares, which argues for `ports/graph_store.py` beside `GraphStore` itself;
-it is also a statement about one caller, which is what
-`consolidation/protocols.py` already holds for `CandidateSource` and
-`MergeAdjudicator`.
-
-It landed in `candidates.py` because the agent that wrote it owned that file
-and neither of the other two, and moving a public name across modules
-mid-branch was the riskier of the two errors. The move is a rename with no
-behavioural component -- the export is `redstring.ConsolidationGraph` either
-way, and `tests/unit/consolidation/test_graph_capability_segregation.py`
-imports it from `redstring.consolidation.candidates`, so exactly two import
-sites change. Decide it once; do not infer the answer from where it currently
-is.
-
-The precedent worth weighing: if `ports/` wins, expect a second composition
-the next time a caller spans a subset, and the port module starts carrying one
-protocol per consumer -- which is the outcome ADR 0016's "Alternatives
-rejected" section warns about under "consumer-owned protocols everywhere".
 
 ### B111. Nothing gates a *new* collaborator against its capability
 
@@ -2526,3 +2518,27 @@ The fix is one sentence plus the two citations, and it should say *four of the
 six*, not "all" -- `LlmProvider` and `EmbeddingProvider` are single
 capabilities and naming them as composed would be the opposite error. Fold it
 in with B109 rather than as its own commit.
+
+### B113. Narrowing `close()` on the resilience components has no ADR
+
+Fixing B108 changed the behaviour of two public methods:
+`CircuitBreaker.close()` and `RateLimiter.close()` now release only a cache
+the component constructed itself, leaving an injected one open. That is a
+change to a public contract, which `.claude/rules/definition-of-done.md` names
+as ADR-worthy, and no ADR was written.
+
+The argument for *not* writing one, which is why it was deferred rather than
+skipped: ADR 0013 already decides this exact question one layer down --
+"`owns_client` defaults to False so `close()` does not shut a shared client
+out from under whatever else is using it" -- and the fix applies that existing
+decision to the two consumers that had missed it rather than making a new one.
+On that reading **ADR 0013 stands**, and what is missing is a sentence in it
+recording that the rule now reaches the consumers too, not a document.
+
+Two reasons it was not written anyway. `docs/adr/` was outside the ownership
+boundary of the agent that fixed B108, and `ports/cache.py` was being reshaped
+in parallel by the work that became `ports/lifecycle.py::AsyncClosable` -- so
+whatever ADR that lands may already cover this ground, and two documents
+arguing one ownership rule is worse than one. Decide after that work merges:
+either amend 0013 with the extra reach, or fold this into the lifecycle ADR.
+Do not leave it as neither, which is the current state.

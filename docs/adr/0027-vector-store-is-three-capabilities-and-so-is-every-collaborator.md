@@ -8,7 +8,10 @@ capabilities](0016-graph-store-is-five-capabilities.md) started and
 too](0026-chunk-store-and-cache-are-capabilities-too.md) claimed to complete.
 Amends [`0002` two store ports](0002-two-store-ports.md) in its typing only —
 no method is added, removed or respecified, and no adapter is touched. Amends
-0016's judgement about `CandidateFinder` and 0026's Consequences.
+0016's judgement about `CandidateFinder` and 0026's Consequences. **Extended
+by [`0028`](0028-a-capability-declares-its-own-release.md)**, which adds the
+lifecycle member these three capabilities -- and every other -- inherit; the
+split below is untouched.
 
 ## Context
 
@@ -113,6 +116,26 @@ holds for `CandidateSource` and `MergeAdjudicator`. It sits in
 `consolidation/candidates.py` today. Moving it is a rename with no behavioural
 component, and the argument for either home is worth having once rather than
 inferring from where it happens to be.
+
+**Amendment: that argument was had, and it settled on
+`consolidation/protocols.py`.** The deciding fact is not the layering — unlike
+`CandidateSource` and `MergeAdjudicator`, `ConsolidationGraph` names only
+types `ports/` already declares, so it *could* sit there and compile. It is
+what the port would become. A port module describes the store; a composition
+describes one consumer's subset of it, and a `ports/` module carrying those
+accumulates one protocol per caller, which is what 0016 rejected under
+"consumer-owned protocols everywhere". Declaring it beside the consumer that
+shaped it keeps 0016's line — the port still describes the store — while
+keeping the room 0016 left for "a slice these five cannot express".
+
+`consolidation/protocols.py` therefore holds two kinds of thing, and its
+docstring now says so: two substitution points a caller may replace, and one
+narrowing that nobody substitutes. What they share is the direction they face
+— each states what consolidation needs rather than what a store offers.
+
+The public name is unchanged: `redstring.ConsolidationGraph`, exported from
+`__all__` exactly as before. Nothing about the type, its bases or its
+`runtime_checkable` behaviour moved with it.
 
 **The narrowing is enforced by asserting the declarations, because nothing
 else can.** This is the part of the sweep that had not been checked before and

@@ -6,7 +6,11 @@ Accepted, and **amended by
 [`0027`](0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md)**,
 which corrects the claim below that `ChunkStore` and `Cache` were the two
 *remaining* ports: `VectorStore` had the same problem and is named in neither
-this ADR nor 0016. Applies [`0016` `GraphStore` is five
+this ADR nor 0016, and **extended by
+[`0028`](0028-a-capability-declares-its-own-release.md)**, which moves this
+ADR's `close` -- and the `async with` pair the ports had never declared -- onto
+every capability through a shared `AsyncClosable` base, by the same `mypy`
+arbitration recorded below. Applies [`0016` `GraphStore` is five
 capabilities](0016-graph-store-is-five-capabilities.md) to two of the three
 ports that had the problem. Amends [`0008` the two non-store
 ports](0008-the-two-non-store-ports.md) and [`0023` the chunk

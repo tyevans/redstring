@@ -43,9 +43,11 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from redstring.ports.lifecycle import AsyncClosable
+
 
 @runtime_checkable
-class KeyValueCache(Protocol):
+class KeyValueCache(AsyncClosable, Protocol):
     """Expiring keys and counters. What a circuit breaker needs, and all of it."""
 
     async def get(self, key: str) -> str | None:
@@ -76,13 +78,9 @@ class KeyValueCache(Protocol):
         """Remove `key`. Absent keys are not an error."""
         ...
 
-    async def close(self) -> None:
-        """Release whatever the adapter holds. Safe to call twice."""
-        ...
-
 
 @runtime_checkable
-class HitWindow(Protocol):
+class HitWindow(AsyncClosable, Protocol):
     """Events in a time window. What a sliding-window rate limiter needs."""
 
     async def record_hit(self, key: str, *, at: float, ttl_seconds: float) -> None:
@@ -110,10 +108,6 @@ class HitWindow(Protocol):
         seconds": the oldest hit in the window is the one whose expiry frees a
         slot.
         """
-        ...
-
-    async def close(self) -> None:
-        """Release whatever the adapter holds. Safe to call twice."""
         ...
 
 
@@ -144,6 +138,10 @@ class Cache(KeyValueCache, HitWindow, Protocol):
     breaker created"). Releasing what the adapter holds is a property of
     *holding* one, so it belongs to every capability rather than beside them.
     Recorded because the wrong version reads perfectly well.
+
+    It arrives through `ports/lifecycle.AsyncClosable` now, along with the
+    `async with` pair, and that module records why the same conclusion
+    generalised to every store port rather than staying a quirk of this one.
 
     Splitting changes nothing for an adapter: `Cache` still names every method
     through its bases, `runtime_checkable` still works, and `isinstance`

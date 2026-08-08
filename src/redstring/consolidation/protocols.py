@@ -1,4 +1,15 @@
-"""The two shapes consolidation plugs in: `CandidateSource` and `MergeAdjudicator`.
+"""The shapes consolidation names for itself, rather than borrowing whole ports.
+
+Three protocols, two kinds. `CandidateSource` and `MergeAdjudicator` are the
+substitution points -- the decisions a caller might own. `ConsolidationGraph`
+is not a substitution point at all: it is a *narrowing*, the subset of
+`GraphStore` that blocking-and-scoring actually calls, named so a signature can
+withhold what it does not need.
+
+What puts all three in one module is that each is a statement about what
+consolidation needs, not about what a store offers.
+
+## The two substitution points
 
 `Consolidator.resolve` has always invited substitution -- "supply one to
 change the weights or the blocking" -- but its parameters were annotated
@@ -18,12 +29,23 @@ registration.
 
 ## Why these live here and not in `ports/`
 
-`ports/` sits below the sibling band, and both protocols traffic in
-`ScoredCandidate`, which is a consolidation type. A port for either would
-have to import upward. That is the layering telling the truth about what
-these are: not store or provider boundaries the whole library is built on,
-but the two decisions *within* consolidation that a caller might reasonably
-own -- which candidates to consider, and who settles the ambiguous ones.
+For the substitution pair the layering settles it: `ports/` sits below the
+sibling band, and both traffic in `ScoredCandidate`, which is a consolidation
+type. A port for either would have to import upward. That is the layering
+telling the truth about what these are -- not store or provider boundaries the
+whole library is built on, but the two decisions *within* consolidation that a
+caller might reasonably own.
+
+`ConsolidationGraph` is here for a different reason, and it is worth being
+plain that the layering does **not** decide it: it names only capabilities
+`ports/graph_store.py` already declares, so it could sit there and compile.
+What rules that out is what it would make the port into. The port describes
+the store; a composition describes one *consumer's* subset of it, and a
+`ports/` module carrying those accumulates one protocol per caller. ADR 0016
+rejected exactly that under "consumer-owned protocols everywhere" -- it scales
+with the number of callers rather than the number of capabilities -- while
+leaving room for "a slice these five cannot express". A consumer-shaped slice
+belongs beside the consumer that shaped it, which is here.
 
 ## What a substitute owes
 
@@ -46,12 +68,45 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from redstring.ports.graph_store import AliasStore, EntityReader, RelationshipStore
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from redstring.consolidation.candidates import ScoredCandidate
     from redstring.consolidation.policy import AdjudicationVerdict
     from redstring.domain.entity import Entity
+
+
+@runtime_checkable
+class ConsolidationGraph(EntityReader, AliasStore, RelationshipStore, Protocol):
+    """The three graph capabilities blocking-and-scoring needs, and no more.
+
+    Not a fourth store capability -- it adds no method and regroups nothing.
+    It is a *composition* of three of `GraphStore`'s five, named so that a
+    signature can say "reads entities, resolves aliases, reads edges" without
+    also saying "and may wipe a tenant".
+
+    `docs/adr/0016-graph-store-is-five-capabilities.md` left `CandidateFinder`
+    on the whole port, reasoning that a collaborator spanning three
+    capabilities is honestly typed by the composed one. Three of five is not
+    five, and the two it does not span are the two that matter most: it holds
+    `EntityWriter` while its own docstring promises it never writes, and it
+    holds `TenantPurge`, whose whole stated purpose is to make "this
+    collaborator can wipe a tenant" a visible fact about a signature. A
+    capability that is load-bearing only when it is *absent* cannot be granted
+    by default without retiring it.
+
+    0016 also declined a bespoke three-method protocol here and said to
+    revisit "if a caller ever needs a slice these five cannot express". This
+    is that slice, and the form matters: naming a caller's *combination* of
+    capabilities keeps the port describing the store, where inventing a
+    three-method interface would have started describing its callers.
+
+    It is declared here rather than in `ports/graph_store.py` because it is a
+    statement about a consumer -- see this module's docstring for why that is
+    the deciding fact and the layering is not.
+    """
 
 
 @runtime_checkable

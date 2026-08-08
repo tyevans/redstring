@@ -35,12 +35,13 @@ would satisfy every capability however the protocols were declared.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 from uuid import uuid4
 
 import pytest
 
-from redstring.consolidation.candidates import CandidateFinder, ConsolidationGraph
+from redstring.consolidation.candidates import CandidateFinder
+from redstring.consolidation.protocols import ConsolidationGraph
 from redstring.domain.blocking import blocking_keys_for
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.ports.graph_store import (
@@ -54,6 +55,8 @@ from redstring.ports.graph_store import (
 from tests.unit.consolidation.conftest import edge, entity
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
 
@@ -66,16 +69,38 @@ def blocked(tenant_id: TenantId, name: str) -> Entity:
 class BlockingGraph:
     """`ConsolidationGraph` and not one method more.
 
-    Eleven methods rather than three: the composition names every method of
-    `EntityReader`, `AliasStore` and `RelationshipStore`, which is the honest
-    price of composing capabilities instead of inventing a caller-shaped
-    three-method interface. It is still seven fewer than the whole port, and
-    the seven it omits are every write and the tenant purge.
+    Far more than the three methods the finder calls: the composition names
+    every method of `EntityReader`, `AliasStore` and `RelationshipStore`,
+    which is the honest price of composing capabilities instead of inventing a
+    caller-shaped three-method interface. What it omits is what matters --
+    every entity write, and the tenant purge.
     """
 
     def __init__(self, entities: list[Entity], edges: list[Any] | None = None) -> None:
         self.entities = entities
         self.edges = edges or []
+
+    # -- AsyncClosable, which every capability now composes ---------------
+
+    async def close(self) -> None:
+        """Nothing to release. Present because the capabilities require it.
+
+        `EntityReader`, `AliasStore` and `RelationshipStore` each compose
+        `AsyncClosable`, so a double that omits the lifetime methods is not
+        the composition at all -- `isinstance` says so, which is the whole
+        point of asserting it above.
+        """
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.close()
 
     # -- EntityReader ---------------------------------------------------
 
