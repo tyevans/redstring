@@ -40,7 +40,7 @@ from redstring.llm.cache.memory import MemoryCache
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from redstring.ports.cache import Cache
+    from redstring.ports.cache import HitWindow
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class RateLimiter:
         *,
         rpm: int,
         window_seconds: float = 60.0,
-        cache: Cache | None = None,
+        cache: HitWindow | None = None,
         key_prefix: str = "kg:ratelimit",
     ) -> None:
         """Build a limiter.
@@ -102,7 +102,7 @@ class RateLimiter:
             raise ValueError(f"window_seconds must be positive, got {window_seconds}")
         self._rpm = rpm
         self._window = window_seconds
-        self._cache: Cache = cache if cache is not None else MemoryCache()
+        self._cache: HitWindow = cache if cache is not None else MemoryCache()
         self._key_prefix = key_prefix
 
     def _key(self, tenant_id: UUID) -> str:

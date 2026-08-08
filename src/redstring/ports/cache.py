@@ -45,8 +45,8 @@ from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
-class Cache(Protocol):
-    """Expiring shared state, in the terms the LLM transport needs."""
+class KeyValueCache(Protocol):
+    """Expiring keys and counters. What a circuit breaker needs, and all of it."""
 
     async def get(self, key: str) -> str | None:
         """The value at `key`, or None if absent or expired.
@@ -76,6 +76,15 @@ class Cache(Protocol):
         """Remove `key`. Absent keys are not an error."""
         ...
 
+    async def close(self) -> None:
+        """Release whatever the adapter holds. Safe to call twice."""
+        ...
+
+
+@runtime_checkable
+class HitWindow(Protocol):
+    """Events in a time window. What a sliding-window rate limiter needs."""
+
     async def record_hit(self, key: str, *, at: float, ttl_seconds: float) -> None:
         """Record one event against `key` at epoch time `at`.
 
@@ -103,6 +112,43 @@ class Cache(Protocol):
         """
         ...
 
+
     async def close(self) -> None:
         """Release whatever the adapter holds. Safe to call twice."""
         ...
+
+
+@runtime_checkable
+class Cache(KeyValueCache, HitWindow, Protocol):
+    """Expiring shared state, in the terms the LLM transport needs.
+
+    The whole port, composed from the three capabilities above. Adapters
+    implement this and `tests/compliance/cache.py` runs against it.
+
+    **Collaborators should not.** The split is not stylistic: the two
+    first-party consumers partition these methods exactly, with no overlap
+    and nothing left over between them --
+
+    | Consumer | Uses |
+    |---|---|
+    | `llm/circuit_breaker.py` | `get`, `set`, `increment`, `delete`, `close` |
+    | `llm/rate_limiter.py` | `record_hit`, `count_hits`, `oldest_hit`, `close` |
+
+    -- so anyone writing an adapter to get *distributed circuit breaking* was
+    obliged to implement a sliding-window hit log they had no use for, and
+    vice versa. Annotate against the half you call.
+
+    **`close` is in both halves, and that is not an oversight.** The first
+    attempt at this split gave it a protocol of its own, on the reasoning that
+    neither consumer called it. `mypy` said otherwise within a minute: both
+    forward it, each with the same docstring ("only meaningful for one this
+    breaker created"). Releasing what the adapter holds is a property of
+    *holding* one, so it belongs to every capability rather than beside them.
+    Recorded because the wrong version reads perfectly well.
+
+    Splitting changes nothing for an adapter: `Cache` still names every method
+    through its bases, `runtime_checkable` still works, and `isinstance`
+    against any of the four still answers structurally. This is the same move
+    `GraphStore` made for the same reason -- see `ports/graph_store.py`, whose
+    composed docstring carries the fuller argument.
+    """
