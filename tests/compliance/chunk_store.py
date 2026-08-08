@@ -317,6 +317,35 @@ class ChunkStoreCompliance:
         assert await store.get(survivor.id, tenant) == survivor
         assert [chunk.id for chunk in await store.get_by_source("doc-1", tenant)] == [survivor.id]
 
+    async def test_replace_source_leaves_no_orphan_in_the_term_index(
+        self, store: ChunkStore
+    ) -> None:
+        """A term unique to a replaced chunk must stop being counted.
+
+        `get`/`get_by_source` cannot see a stale term-index row at all -- a
+        row an adapter forgot to clean up after `replace_source` never
+        surfaces through either method, since both read the chunk table only.
+        `lexical_candidates`'s document frequency is the one place a leftover
+        row is visible: if the term index still carries a row for a chunk
+        that `replace_source` removed, `doc_frequencies` keeps counting it
+        even though the chunk itself is gone -- exactly the shape `ON DELETE
+        CASCADE` exists to prevent.
+        """
+        tenant = uuid4()
+        replaced = self._chunk(tenant, "doc-1", "orphanterm passage", chunk_index=0)
+        await store.upsert_many([replaced])
+        assert (await store.lexical_candidates(["orphanterm"], tenant, 10)).stats.doc_frequencies[
+            "orphanterm"
+        ] == 1
+
+        survivor = self._chunk(tenant, "doc-1", "replacement text", chunk_index=0)
+        removed = await store.replace_source("doc-1", tenant, [survivor])
+        assert removed == 1
+
+        result = await store.lexical_candidates(["orphanterm"], tenant, 10)
+        assert result.stats.doc_frequencies["orphanterm"] == 0
+        assert result.candidates == []
+
     async def test_replace_source_with_an_empty_set_empties_the_source(
         self, store: ChunkStore
     ) -> None:
