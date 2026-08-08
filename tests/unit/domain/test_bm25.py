@@ -107,12 +107,53 @@ class TestScore:
         Two adapters returning the same terms in different orders must
         produce the *same* score, not merely a close one -- the compliance
         suite compares adapter rankings for equality.
+
+        The three term weights below span several orders of magnitude
+        (~0.14, ~0.39, ~1.76) and were found by search rather than picked by
+        hand: summing them unsorted in `beta, alpha, gamma` order versus
+        `beta, gamma, alpha` order gives the bit-different floats
+        2.295619484028052 and 2.2956194840280526 -- confirmed below by
+        evaluating the three IDF-derived weights outside `bm25_score` and
+        summing them unsorted in both orders. A prior version of this test
+        used values for which every permutation of the *unsorted* sum
+        happened to land on the same float, so it could not distinguish
+        `bm25_score` from a version with `sorted()` removed.
         """
-        corpus = stats(alpha=3, beta=7, gamma=1)
-        frequencies = {"alpha": 2, "beta": 4, "gamma": 1}
-        assert bm25_score(["gamma", "alpha", "beta"], frequencies, 20, corpus) == bm25_score(
-            ["alpha", "beta", "gamma"], frequencies, 20, corpus
+        corpus = stats(
+            n_docs=1_000_000,
+            avg=81.58189335263245,
+            gamma=794772,
+            alpha=933488,
+            beta=441001,
         )
+        frequencies = {"gamma": 6, "alpha": 34, "beta": 66}
+        doc_length = 125
+
+        def unsorted_weight(term: str) -> float:
+            idf = inverse_document_frequency(term, corpus)
+            tf = frequencies[term]
+            denom = tf + BM25_K1 * (1 - BM25_B + BM25_B * doc_length / corpus.avg_doc_length)
+            return idf * (tf * (BM25_K1 + 1)) / denom
+
+        def unsorted_sum(order: tuple[str, ...]) -> float:
+            # A manual accumulation, matching `bm25_score`'s `total +=` loop
+            # exactly -- `sum()` on CPython 3.12+ uses a compensated
+            # summation algorithm that is *not* subject to this hazard, so
+            # it would not reproduce the divergence being tested for.
+            total = 0.0
+            for term in order:
+                total += unsorted_weight(term)
+            return total
+
+        unsorted_orders = {
+            unsorted_sum(order)
+            for order in (("beta", "alpha", "gamma"), ("beta", "gamma", "alpha"))
+        }
+        assert len(unsorted_orders) == 2, "the unsorted sums must genuinely differ"
+
+        assert bm25_score(
+            ["beta", "gamma", "alpha"], frequencies, doc_length, corpus
+        ) == bm25_score(["beta", "alpha", "gamma"], frequencies, doc_length, corpus)
 
     def test_an_empty_corpus_scores_zero(self) -> None:
         assert bm25_score(["alpha"], {"alpha": 1}, 0, stats(n_docs=0, avg=0.0)) == 0.0
