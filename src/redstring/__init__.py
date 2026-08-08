@@ -144,7 +144,9 @@ from redstring.composition import (
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
 from redstring.domain.alias import Alias
+from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk import ChunkId, StoredChunk
+from redstring.domain.chunk_ranking import LexicalCandidate, LexicalCandidates
 from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import (
@@ -239,6 +241,7 @@ __all__ = [
     "ConsolidationInvariantError",
     "ConsolidationReport",
     "Consolidator",
+    "CorpusStats",
     "CursorStalledError",
     "DatePrecision",
     "DimensionMismatchError",
@@ -270,6 +273,8 @@ __all__ = [
     "InMemoryVectorStore",
     "IndexReport",
     "InferredRelation",
+    "LexicalCandidate",
+    "LexicalCandidates",
     "LlmProvider",
     "LlmProviderError",
     "MalformedCompletionError",
