@@ -1,6 +1,9 @@
 # ADR 0013: Resilience lives in `llm/`, over the `Cache` port
 
-**Status:** accepted, slice 6 of the ring migration.
+**Status:** accepted, slice 6 of the ring migration. **Stands**, and its
+ownership rule was found to bind one layer higher than it had been read —
+see "Amendment: the ownership rule binds consumers, not just adapters" at
+the end of this document.
 
 Retry, rate limiting and circuit breaking are transport concerns. They sit in
 `redstring.llm` — beside the provider adapters, a *sibling* of `extraction`
@@ -1079,3 +1082,37 @@ worse liability than the failures it was installed to contain.
 place around a provider; the `retry_after` on `CircuitOpen` is an estimate for
 exactly the reason this section describes — another worker may probe first and
 either close the circuit early or push the timeout out by failing.
+
+## Amendment: the ownership rule binds consumers, not just adapters
+
+This decision stands unchanged. What follows is the one thing it turned out
+not to say clearly enough, recorded here rather than in a new ADR because it
+adds no decision — it applies this one where it was not being applied.
+
+`RedisCache(client, owns_client=False)` above states the rule: **close only
+what you created**, because closing a resource you were handed takes it down
+for everyone sharing it. That was written about the *adapter*, and read as
+being about adapters. It is not. It binds anything holding a `Cache` it did
+not build.
+
+`CircuitBreaker` and `RateLimiter` each construct a `MemoryCache` when the
+caller supplies none, so each of them sometimes owns its cache — and neither
+tracked which case it was in, while `close()` closed unconditionally. Sharing
+one `RedisCache` between a breaker and a limiter is the arrangement this ADR
+exists to make possible, and doing it meant that closing either one destroyed
+the other's state. The breaker's failure is the instructive one: a circuit
+that had just decided the model was down forgot it, and resumed admitting
+traffic. That is the opposite of what a breaker is for, and it arrived through
+the shutdown path rather than through any decision this ADR argues about.
+
+Both components now carry an ownership flag and release only what they
+created, which is `owns_client` one layer up and nothing more.
+
+The general form, for the next component that accepts a port-typed
+collaborator: **taking a resource as a constructor argument is taking a
+borrow, not a handle.** A component that also has a convenience path
+constructing its own is two lifetimes wearing one type, and the flag
+distinguishing them is not optional bookkeeping — it is the only thing
+standing between a shared upgrade and a shutdown-ordering bug. Where such a
+component exists, expect exactly this defect, and note that no type checker
+can see it: both cases have the same annotation.
