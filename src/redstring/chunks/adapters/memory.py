@@ -102,6 +102,14 @@ class InMemoryChunkStore:
         if limit < 0:
             raise ValueError(f"limit must not be negative, got {limit}")
 
+        # Empty `terms` returns zeroed statistics and no candidates without
+        # scanning the corpus at all -- checked before anything below touches
+        # `self._chunks`, so a rejected call has genuinely not touched the
+        # store rather than merely discarded what it found.
+        if not terms:
+            stats = CorpusStats(n_docs=0, avg_doc_length=0.0, doc_frequencies={})
+            return LexicalCandidates(stats=stats, candidates=[])
+
         tenant_chunks = self._chunks.get(tenant_id, {}).values()
 
         # Terms are derived from `text` at query time rather than stored as
@@ -120,12 +128,6 @@ class InMemoryChunkStore:
         avg_doc_length = (
             0.0 if n_docs == 0 else sum(length for _, _, length in tokenized.values()) / n_docs
         )
-
-        # Empty `terms` returns zeroed statistics and no candidates without
-        # scanning the corpus at all.
-        if not terms:
-            stats = CorpusStats(n_docs=0, avg_doc_length=0.0, doc_frequencies={})
-            return LexicalCandidates(stats=stats, candidates=[])
 
         distinct_terms = set(terms)
         # Built from the *requested* terms, never from the corpus's own

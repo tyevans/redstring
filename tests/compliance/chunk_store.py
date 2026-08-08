@@ -786,7 +786,13 @@ class ChunkStoreCompliance:
             self._chunk(tenant, "doc-2", "common beta beta beta beta", chunk_index=0),
             self._chunk(tenant, "doc-2", "common", chunk_index=1),
         ]
-        await store.upsert_many(chunks)
+        # Written with chunks[1] before chunks[0]: those two are the genuine
+        # tie the truncation test decides between, and chunks[0].id sorts
+        # below chunks[1].id -- so writing them in id order would leave a
+        # stable sort on match count alone, with the tie-break removed
+        # entirely, indistinguishable from the contract. Insertion order must
+        # *disagree* with id order for the tie to prove anything.
+        await store.upsert_many([chunks[1], chunks[0], chunks[2], chunks[3]])
         return chunks
 
     async def test_lexical_candidates_finds_chunks_containing_a_term(
@@ -814,7 +820,7 @@ class ChunkStoreCompliance:
         """A chunk whose text contains stopwords reports the post-tokenization
         length, so a store counting words or characters fails."""
         tenant = uuid4()
-        # "the" and "is" are stopwords: 4 words, 21 characters, 2 tokens.
+        # "the" and "is" are stopwords: 4 words, 19 characters, 2 tokens.
         chunk = self._chunk(tenant, "doc-1", "the common is alpha")
         await store.upsert_many([chunk])
 
@@ -983,9 +989,23 @@ class ChunkStoreCompliance:
         self, store: ChunkStore
     ) -> None:
         """Two sources, with an index-10 case -- a text-typed index column
-        fails here as it does for `get_by_source`."""
+        fails here as it does for `get_by_source` -- and a genuine
+        `(source_id, chunk_index)` tie, so the `id` tie-break decides
+        something.
+
+        Without the tie, no two chunks share `(source_id, chunk_index)`, so
+        dropping `id` from the sort key would leave this case green: `id`
+        never decides anything. `tied_a`/`tied_b` share `doc-1`, index 5, and
+        different content-addressed ids -- written **higher id first**, so a
+        stable sort on `(source_id, chunk_index)` alone (insertion order)
+        disagrees with the contract instead of agreeing with it by accident.
+        """
         tenant = uuid4()
         entity = uuid4()
+        tied_a = self._chunk(tenant, "doc-1", "tie text alpha", chunk_index=5, entity_ids=[entity])
+        tied_b = self._chunk(tenant, "doc-1", "tie text beta", chunk_index=5, entity_ids=[entity])
+        tied_low, tied_high = sorted((tied_a, tied_b), key=lambda chunk: chunk.id)
+        assert tied_low.id < tied_high.id
         first_source = [
             self._chunk(tenant, "doc-1", "a", chunk_index=0, entity_ids=[entity]),
             self._chunk(tenant, "doc-1", "b", chunk_index=1, entity_ids=[entity]),
@@ -994,13 +1014,15 @@ class ChunkStoreCompliance:
         second_source = [
             self._chunk(tenant, "doc-2", "d", chunk_index=0, entity_ids=[entity]),
         ]
-        await store.upsert_many([*second_source, *first_source[::-1]])
+        await store.upsert_many([*second_source, *first_source[::-1], tied_high, tied_low])
 
         found = await store.get_by_entity(entity, tenant)
 
         assert [chunk.id for chunk in found] == [
             first_source[0].id,
             first_source[1].id,
+            tied_low.id,
+            tied_high.id,
             first_source[2].id,
             second_source[0].id,
         ]
@@ -1070,6 +1092,14 @@ class ChunkStoreCompliance:
         trivially true; it exists so every *other* adapter is held to the
         reference. The corpus must produce differing scores, or this passes
         on a store that returns everything at score zero.
+
+        `limit` is **3**, below the corpus's four chunks, and `k` stays 10:
+        `lexical_candidates` genuinely truncates, so this is the only case
+        that could catch two adapters cutting a tied pair differently. With
+        `limit >= len(corpus)` nothing is ever cut and the property is
+        asserted only where there is nothing to disagree about. Keeping `k`
+        distinct from `limit` also means the two parameters cannot silently
+        be wired to each other's argument without a test noticing.
         """
         # Local import: this module must stay import-order-safe for the
         # reference adapter itself, and importing at module scope would
@@ -1082,8 +1112,8 @@ class ChunkStoreCompliance:
         await reference.upsert_many(chunks)
 
         terms = ["common", "rare", "alpha", "beta"]
-        under_test = await store.lexical_candidates(terms, tenant, 10)
-        from_reference = await reference.lexical_candidates(terms, tenant, 10)
+        under_test = await store.lexical_candidates(terms, tenant, 3)
+        from_reference = await reference.lexical_candidates(terms, tenant, 3)
 
         ranked_under_test = rank_chunks(terms, under_test, 10)
         ranked_reference = rank_chunks(terms, from_reference, 10)
