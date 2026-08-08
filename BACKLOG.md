@@ -1569,6 +1569,25 @@ needs a field naming the string that actually matched — without it the caller
 cannot tell an alias hit from a name hit, and that is the distinction the
 whole question turns on.
 
+### B88. `domain/tokenize.py` does no stemming
+
+`tokenize` splits on non-alphanumerics and casefolds, but "running" and "run"
+are different terms to it, and that recall cost is real for the BM25 channel
+built on top of it (see `.superpowers/sdd/2026-08-07-chunk-lexical-channel/`).
+
+Deferred rather than added because a stemmer is a language model — English-only,
+and a new dependency — and two implementations of "the Porter stemmer" differ
+at the edges, which is exactly the adapter-divergence shape
+`domain/tokenize.py`'s own docstring exists to prevent, reintroduced one level
+up. Postgres's `english` text search configuration stems, and using it instead
+of this module was rejected for the same reason: the in-memory adapter has no
+equivalent, and the two stores would then disagree about what a term is.
+
+If this is picked up, it is a single domain-owned implementation added to
+`tokenize.py` (or a sibling module both adapters call), never a per-adapter
+one — a Postgres-side stemmer and an in-memory approximation of it is the same
+divergence with different code.
+
 ---
 
 ## 6. Tooling, packaging and hygiene
