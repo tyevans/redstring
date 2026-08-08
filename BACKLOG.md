@@ -2383,3 +2383,26 @@ adapter ships four methods that look like a lifetime and are not one.
 
 So the order is: decide ownership on the provider adapters, then extend 0028
 and delete the exclusion test in the same commit.
+
+### B114. `index_documents` takes a whole `ChunkStore` and drives a `ChunkWriter`
+
+`src/redstring/composition/index_documents.py:114` declares `store: ChunkStore`
+and does one thing with it: `ChunkProjection(store)`, which ADR 0026 narrowed
+to `ChunkWriter`. So the composition entry point is the wider of the two, and
+the narrowing stops one line short of the front door.
+
+It is exempt in `tests/unit/test_collaborators_declare_their_capability.py`
+rather than narrowed, because the argument is genuinely two-sided and the gate
+landed in a test-only wave that did not own `src/`. For narrowing: the function
+uses one capability, and `build_graph`'s `chunks: ChunkStore | None` is in the
+same position for the same reason. Against: this is the public surface a caller
+hands their corpus to, the docstring says "The corpus. Any `ChunkStore`", and a
+caller who then wants to *read* the corpus holds the whole port anyway -- so
+narrowing here buys a smaller signature and no removed authority, unlike
+`CandidateFinder`, where the point was declining `TenantPurge`.
+
+Decide it deliberately: either narrow both entry points to `ChunkWriter` and
+delete the exemption, or record in the exemption's reason that the whole port
+is the intended front-door contract. Do not leave it as neither. Note that
+narrowing changes a signature in `redstring.__all__`'s closure, so check
+`tests/unit/test_public_surface_is_self_contained.py` in the same edit.
