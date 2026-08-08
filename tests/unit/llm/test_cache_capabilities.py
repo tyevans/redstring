@@ -23,9 +23,9 @@ declared, and could not tell you the split held.
 
 from __future__ import annotations
 
-import pytest
-
 from uuid import uuid4
+
+import pytest
 
 from redstring.llm.circuit_breaker import CircuitBreaker
 from redstring.llm.rate_limiter import RateLimiter, RateLimitExceeded

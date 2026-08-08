@@ -260,6 +260,8 @@ __version__ = "0.3.0"
 
 __all__ = [
     "AUTO",
+    "DEFAULT_SYSTEM_PROMPT",
+    "EMPTY",
     "AdjudicationVerdict",
     "Adjudicator",
     "Alias",
@@ -288,7 +290,6 @@ __all__ = [
     "Consolidator",
     "CorpusStats",
     "CursorStalledError",
-    "DEFAULT_SYSTEM_PROMPT",
     "DatePrecision",
     "DimensionMismatchError",
     "Document",
@@ -297,7 +298,6 @@ __all__ = [
     "DomainSchema",
     "DomainSummary",
     "DoubleMergeError",
-    "EMPTY",
     "EmbeddingProvider",
     "EmbeddingProviderError",
     "EmptyCompletionError",

@@ -43,6 +43,7 @@ the protocols are deleted and the concrete annotations restored.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
@@ -52,10 +53,12 @@ from redstring.consolidation.candidates import ScoredCandidate, SimilarityFeatur
 from redstring.consolidation.policy import AdjudicationVerdict
 from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
 from redstring.consolidation.service import ConsolidationService
-from redstring.domain.entity import Entity
 from redstring.graph.adapters.memory import InMemoryGraphStore
 
 from .conftest import entity
+
+if TYPE_CHECKING:
+    from redstring.domain.entity import Entity
 
 
 class SearchIndexCandidates:
@@ -197,4 +200,4 @@ class TestTheProtocolsAcceptAForeignImplementation:
 
         kept = asyncio.run(source.candidates(low, minimum_score=minimum))
 
-        assert bool(kept) is (0.6 >= minimum)
+        assert bool(kept) is (minimum <= 0.6)

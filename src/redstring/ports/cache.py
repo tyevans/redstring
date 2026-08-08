@@ -112,7 +112,6 @@ class HitWindow(Protocol):
         """
         ...
 
-
     async def close(self) -> None:
         """Release whatever the adapter holds. Safe to call twice."""
         ...

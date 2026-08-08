@@ -20,8 +20,8 @@ from redstring.domain.blocking import (
     soundex_key_for_name,
 )
 from redstring.domain.entity import Entity, ExtractionMethod
-from redstring.domain.fusion import reciprocal_rank_fusion
 from redstring.domain.exceptions import DimensionMismatchError
+from redstring.domain.fusion import reciprocal_rank_fusion
 from redstring.domain.normalization import normalize_name
 from redstring.domain.retrieval import RetrievalMode
 from redstring.graph.adapters.memory import InMemoryGraphStore

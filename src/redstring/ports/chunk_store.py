@@ -122,7 +122,6 @@ class ChunkReader(Protocol):
         """
         ...
 
-
     async def get_by_entity(self, entity_id: EntityId, tenant_id: TenantId) -> list[StoredChunk]:
         """This tenant's chunks whose `entity_ids` contain `entity_id`.
 
@@ -139,6 +138,7 @@ class ChunkReader(Protocol):
         are the caller's.
         """
         ...
+
 
 @runtime_checkable
 class LexicalCandidateSource(Protocol):
