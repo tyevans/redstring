@@ -75,6 +75,12 @@ could not be caught without a dotted import.
   lets `ChunkProjection` need one method rather than nine, and what lets a
   caller supply BM25 recall from an index that is not a chunk store at all.
 
+  Every capability protocol also inherits `AsyncClosable` (ADR 0028), which
+  is exported for the same reason the capabilities are: `async with store`
+  and `await store.close()` are supported against a port rather than only
+  against the adapter class behind it, so a caller writing
+  `async def shutdown(s: AsyncClosable)` needs the name.
+
   `ConsolidationGraph` is the one name here that is not a store capability:
   it composes three of `GraphStore`'s five so `CandidateFinder` can say what
   it reads without also claiming the right to write or to wipe a tenant.
@@ -258,6 +264,7 @@ from redstring.ports.graph_store import (
     RelationshipStore,
     TenantPurge,
 )
+from redstring.ports.lifecycle import AsyncClosable
 from redstring.ports.llm_provider import LlmProvider
 from redstring.ports.vector_store import (
     VectorPurge,
@@ -281,6 +288,7 @@ __all__ = [
     "Alias",
     "AliasCycleError",
     "AliasStore",
+    "AsyncClosable",
     "AutoDomain",
     "Bounds",
     "Cache",
