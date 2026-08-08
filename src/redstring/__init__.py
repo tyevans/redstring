@@ -79,7 +79,10 @@ could not be caught without a dotted import.
   (`redstring[llm]`) is the live one. Both LangChain adapters are reached by
   path rather than exported, so `import redstring` does not pull LangChain in.
 - **Domain-aware prompting.** `domain_system_prompt` takes a bundled domain id
-  or a `DomainSchema` of your own -- `load_schema_from_file` and
+  or a `DomainSchema` of your own. `list_available_domains` is how you find out
+  which ids are bundled, returning a `DomainSummary` each -- without it the
+  supported way to discover them is to pass a wrong one and read
+  `UnknownDomainError`. `load_schema_from_file` and
   `load_schema_from_string` build one, out of `EntityTypeSchema`,
   `RelationshipTypeSchema`, `PropertySchema` and `ConfidenceThresholds`.
 - **Pieces, for callers who want the steps rather than the whole.**
@@ -193,10 +196,12 @@ from redstring.extraction.domains.loader import load_schema_from_file, load_sche
 from redstring.extraction.domains.models import (
     ConfidenceThresholds,
     DomainSchema,
+    DomainSummary,
     EntityTypeSchema,
     PropertySchema,
     RelationshipTypeSchema,
 )
+from redstring.extraction.domains.registry import list_available_domains
 from redstring.extraction.errors import ChunkerError, ChunkingError, ChunkSizeError
 from redstring.extraction.pipeline import (
     DEFAULT_SYSTEM_PROMPT,
@@ -261,6 +266,7 @@ __all__ = [
     "DocumentChunked",
     "DocumentExtracted",
     "DomainSchema",
+    "DomainSummary",
     "DoubleMergeError",
     "EmbeddingProvider",
     "EmbeddingProviderError",
@@ -332,6 +338,7 @@ __all__ = [
     "domain_system_prompt",
     "index_documents",
     "infer_relations",
+    "list_available_domains",
     "load_schema_from_file",
     "load_schema_from_string",
     "rank_chunks",
