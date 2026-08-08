@@ -1148,6 +1148,44 @@ cost centre at any scale this repository has exercised. If it becomes one,
 the fix is counters updated by the same writes that touch `<table>_terms`,
 not a cache invalidated by a schedule.
 
+### B93. The truncation tie-break plan test EXPLAINs a hand-reconstructed proxy query, not the adapter's own SQL
+
+`tests/integration/chunks/test_postgres_store.py::test_lexical_candidates_truncation_tie_break_is_unfalsifiable_by_plan_alone`
+proves the `matched` CTE's `, chunk_id ASC` is load-bearing by forcing a
+`HashAggregate` (`enable_sort = off`) and EXPLAINing a query built by hand to
+resemble `_candidates_sql()`, rather than EXPLAINing the string that method
+actually returns. It exists because dropping the tie-break stayed green even
+with `enable_indexscan`/`enable_bitmapscan` off — a `GroupAggregate`'s
+incidental sort was supplying the order the assertion wanted, which is
+exactly the kind of accidental-pass this table's rows warn about.
+
+A hand-reconstructed proxy can drift from the statement it stands for: an
+edit to `_candidates_sql()` (an added predicate, a rewritten join) is not
+guaranteed to be mirrored into the test's copy, and when the two diverge the
+test keeps asserting a plan shape the adapter no longer produces while
+reading as green. Minor rather than a correctness hole, because real
+candidate correctness is asserted immediately after by a separate,
+non-EXPLAIN test — this only weakens the *plan* assertion, not the *result*
+one. Fix is to `EXPLAIN` the literal string `_candidates_sql()` returns
+(with parameter placeholders bound the same way the adapter binds them)
+rather than a restated query.
+
+### B94. Generated Postgres index names can exceed the 63-byte NAMEDATALEN, and truncation is silent
+
+`chunks/adapters/postgres.py`'s DDL builds index names by interpolating the
+configured table name — `{table}_terms_term_idx` and its siblings — and the
+table name is validated only as a bare identifier up to 62 characters. A
+long but legal table name pushes the generated index name past Postgres's
+63-byte `NAMEDATALEN`, and Postgres truncates silently rather than erroring,
+so two differently-named tables with a shared long prefix could collide on
+the same truncated index name.
+
+**Pre-existing, not introduced by this branch** — the naming scheme predates
+the chunk-lexical work and is unchanged by it; filed now because Task 6/7
+review is what noticed it. Fix, if picked up, is either shortening the
+generated suffixes or hashing the table name into the index name so length
+is bounded regardless of what the caller configures.
+
 ### B88. `SlidingWindowChunker` is not exported, so tuning the split needs a dotted import
 
 `Chunker` is on the public surface and the bundled implementation is not, so a
