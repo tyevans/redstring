@@ -1185,6 +1185,15 @@ one. Fix is to `EXPLAIN` the literal string `_candidates_sql()` returns
 (with parameter placeholders bound the same way the adapter binds them)
 rather than a restated query.
 
+**That fix is now cheap, and the pattern is already in the same file.**
+`test_get_by_entity_uses_the_gin_index` needed the identical guarantee and
+solved it with a `_RecordingPool` that intercepts `.fetch()`, so the statement
+EXPLAINed is by construction the one the adapter issued — no restatement to
+drift. Reuse it here. This was noticed while re-reviewing that test and not
+folded in, because doing so changes what a passing integration test proves
+and deserves its own commit rather than riding along in a fix round for
+unrelated findings.
+
 ### B94. Generated Postgres index names can exceed the 63-byte NAMEDATALEN, and truncation is silent
 
 `chunks/adapters/postgres.py`'s DDL builds index names by interpolating the
