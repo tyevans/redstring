@@ -1499,6 +1499,23 @@ whole failure mode: no exception, just a circuit that never opens.
 shared client closed by whichever component finished first is a bug that only
 appears under shutdown.
 
+### `async with`, for a cache whose lifetime is a block
+
+```python
+async with RedisCache.from_url("redis://localhost:6379/0") as cache:
+    limiter = RateLimiter(rpm=60, cache=cache)
+    ...
+```
+
+`__aenter__` returns the cache; `__aexit__` calls `close()` and returns `None`,
+which is falsy — so the block releases the client and **suppresses nothing**,
+including a cancellation delivered while the body is suspended. Ownership is
+unchanged by the block, because exit goes through `close()`: a cache built with
+`owns_client=False` leaves your client open on the way out.
+
+`close()` stays public for the common case where the cache outlives any one
+block — a limiter and a breaker sharing one cache for the life of the process.
+
 ### One cache or two, and shutting down
 
 The limiter and the breaker use different key prefixes (`"kg:ratelimit"` and

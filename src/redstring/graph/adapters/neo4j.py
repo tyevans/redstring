@@ -53,6 +53,7 @@ from redstring.domain.temporal import TemporalExtent
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from types import TracebackType
 
     from neo4j import AsyncDriver, Record
     from neo4j.graph import Node
@@ -183,6 +184,31 @@ class Neo4jGraphStore:
         """Release the driver, if this store created it."""
         if self._owns_driver:
             await self._driver.close()
+
+    async def __aenter__(self) -> Self:
+        """Enter a block whose exit closes this store. See `__aexit__`."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        """Close on the way out, and **never suppress**.
+
+        The `None` return is the decision, not an omission: `__aexit__` is
+        read for truthiness, so any truthy value would swallow whatever the
+        body raised -- including `CancelledError`, which would break task
+        cancellation for the caller. `None` is falsy, so the exception
+        propagates and this is a resource-release block rather than an
+        exception handler.
+
+        Closing goes through `close()`, so ownership still decides: a store
+        wrapping an injected driver leaves it open here exactly as it does
+        there.
+        """
+        await self.close()
 
     async def ensure_schema(self) -> None:
         """Create the constraint and indexes. Idempotent; safe on every start."""

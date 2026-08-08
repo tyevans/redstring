@@ -197,6 +197,27 @@ it does nothing at all.
 | `Neo4jGraphStore(driver)` | nothing — the driver stays open and usable |
 | `Neo4jGraphStore.connect(uri, auth=...)` | `await driver.close()` |
 
+### `async with`, which is how you should be calling it
+
+The store is an async context manager, so the `try`/`finally` above has a
+shorter and harder-to-forget spelling:
+
+```python
+async with Neo4jGraphStore.connect("bolt://localhost:7688", auth=("neo4j", "redstring")) as store:
+    await store.ensure_schema()
+    entities = await store.find_entities(tenant_id, entity_type="person", limit=20)
+```
+
+`__aenter__` returns the store itself. `__aexit__` calls `close()` and returns
+`None`, which is falsy — so it **never suppresses**: an exception raised in the
+body, and a cancellation delivered while the body is suspended, both propagate
+after the driver is released. `close()` remains public and unchanged, for
+callers whose lifetime is not a block.
+
+Because exit goes through `close()`, ownership still decides. Entering a block
+with a store built around an *injected* driver leaves that driver open on the
+way out.
+
 Ownership follows creation, and it is fixed at construction: the constructor
 records that this store does *not* own its driver, and `connect()` is the only
 thing that flips that. There is no parameter to override it, and no way to
@@ -1356,16 +1377,18 @@ without a backend.
 ```python
 from redstring.graph.adapters.neo4j import Neo4jGraphStore
 
-store = Neo4jGraphStore.connect(
+async with Neo4jGraphStore.connect(
     "bolt://localhost:7688",
     auth=("neo4j", "redstring"),
-)
-try:
+) as store:
     await store.ensure_schema()
     entities = await store.find_entities(tenant_id, entity_type="person", limit=20)
-finally:
-    await store.close()
 ```
+
+The block is the recommended form: it closes the driver on every path out,
+including cancellation, and it suppresses nothing. The equivalent
+`try`/`finally` around `await store.close()` still works and is what a caller
+whose lifetime is not a block should write.
 
 If the driver is managed by the surrounding application, construct the store
 around it instead and let the application close it:

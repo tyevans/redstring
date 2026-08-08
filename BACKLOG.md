@@ -2402,3 +2402,57 @@ Protocol in the module that is not a base of another one in the same module
 (the composed leaf), which is a real bit of `ast` work for a hazard that
 needs someone to break a naming convention every other port follows. Revisit
 if a port module ever declares two composed leaves.
+### B107. Whether a capability Protocol should declare `__aenter__`/`__aexit__`
+
+The four resource-owning adapters (`Neo4jGraphStore`, `PgVectorStore`,
+`PostgresChunkStore`, `RedisCache`) gained `__aenter__`/`__aexit__`; the ports
+in `src/redstring/ports/` did not. That was deliberate for a scheduling reason
+-- another agent owned `ports/` in the wave that added them -- but there is a
+real argument underneath, and it wants deciding rather than drifting.
+
+The case *for* declaring it: a caller holding a `GraphStore` cannot write
+`async with` against the port, only against the concrete class, so the safe
+form is available exactly where the type is least abstract. The case
+*against*, and the one currently winning by default: `InMemoryGraphStore`,
+`InMemoryVectorStore`, `InMemoryChunkStore` and `MemoryCache` own nothing, so
+declaring entry on the port either obliges four adapters to write a pair of
+no-op methods, or -- worse -- makes "closing" part of a port whose whole point
+is that most implementations have nothing to close. `Cache` already declares
+`close()` (`ports/cache.py`), so that port has half-answered the question in
+the permissive direction and the store ports have not answered it at all,
+which is the inconsistency to resolve either way.
+
+Note the shape this would take if it went the other way: a separate
+`AsyncClosable`-style protocol that resource-owning adapters satisfy and
+in-memory ones do not, structurally checkable at a composition root, rather
+than a method added to five capability protocols.
+
+### B108. `CircuitBreaker` and `RateLimiter` expose `close()` and no block form
+
+`llm/circuit_breaker.py:235` and `llm/rate_limiter.py:146` both define
+`async def close()` that forwards to `self._cache.close()`. Neither got
+`__aenter__`/`__aexit__` in the wave that gave the four adapters theirs,
+because neither *owns* a resource -- the flag-based detector in
+`tests/unit/test_adapters_close_on_block_exit.py::_resource_owning_classes`
+finds them correctly absent, and a gate keyed on the method name would have
+demanded methods there and been wrong about it.
+
+Left alone rather than overlooked, and the reason is that their `close()` is
+already questionable on its own terms: forwarding `close()` to a cache the
+component was *handed* is the shared-resource-closed-by-whoever-finished-first
+bug that `RedisCache.owns_client` exists to prevent, and neither class carries
+an ownership flag. Decide that first. If those `close()` methods should
+narrow to "release only a cache I created", the block form follows for free;
+if they should go away, there is nothing to wrap. Adding `async with` now
+would harden whichever answer is wrong.
+
+### B109. The store-adapter guide still teaches only `try`/`finally`
+
+`docs/how-to/implement-a-store-adapter.md` was being edited by another agent
+in the wave that added `__aenter__`/`__aexit__` to the four resource-owning
+adapters, so it was left untouched rather than risk a conflicting write. The
+neo4j reference, the pgvector how-to and `harden-model-calls.md` all gained an
+`async with` section; that guide did not, and it is the page a *new* adapter
+author reads. Add the pair to whatever it says an adapter owes -- an adapter
+holding a pool and offering only `close()` is now the odd one out rather than
+the norm.

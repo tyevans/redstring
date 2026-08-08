@@ -25,10 +25,12 @@ the deployment that has Redis.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 from uuid import uuid4
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     import redis.asyncio
 
 
@@ -164,6 +166,31 @@ class RedisCache:
     async def close(self) -> None:
         if self._owns_client:
             await self._redis.aclose()
+
+    async def __aenter__(self) -> Self:
+        """Enter a block whose exit closes this cache. See `__aexit__`."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        """Close on the way out, and **never suppress**.
+
+        The `None` return is the decision, not an omission: `__aexit__` is
+        read for truthiness, so any truthy value would swallow whatever the
+        body raised -- including `CancelledError`, which would break task
+        cancellation for the caller. `None` is falsy, so the exception
+        propagates and this is a resource-release block rather than an
+        exception handler.
+
+        Closing goes through `close()`, so ownership still decides: a cache
+        wrapping an injected client leaves it open here exactly as it does
+        there.
+        """
+        await self.close()
 
 
 def _hits(key: str) -> str:
