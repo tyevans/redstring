@@ -33,7 +33,7 @@ protocols were declared, and could not tell you the split held.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import pytest
@@ -44,38 +44,15 @@ from redstring.events.document import EntitiesEmbedded
 from redstring.ports.vector_store import VectorPurge, VectorReader, VectorStore, VectorWriter
 from redstring.projections.vector import VectorProjection
 from redstring.vector.adapters.memory import InMemoryVectorStore
+from tests.compliance.lifetime import NoOpLifetime
 
 if TYPE_CHECKING:
-    from types import TracebackType
-
     from redstring.domain.ids import EntityId, TenantId
 
 DIMENSION = 4
 
 
-class Lifetime:
-    """The release half every capability inherits from `AsyncClosable`.
-
-    A double claiming to *be* a capability has to satisfy all of it, including
-    the part ADR 0028 added -- otherwise the `isinstance` assertions below stop
-    saying anything about segregation and start reporting a missing `close`.
-    These doubles hold nothing, so all three are no-ops.
-    """
-
-    async def close(self) -> None: ...
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None: ...
-
-
-class WriteOnlyVectorStore(Lifetime):
+class WriteOnlyVectorStore(NoOpLifetime):
     """`VectorWriter` and not one method more."""
 
     def __init__(self) -> None:
@@ -110,7 +87,7 @@ class WriteOnlyVectorStore(Lifetime):
             )
 
 
-class SearchOnlyVectorStore(Lifetime):
+class SearchOnlyVectorStore(NoOpLifetime):
     """`VectorReader` and not one method more.
 
     `get` and `search` together, because that is the slice both read-side

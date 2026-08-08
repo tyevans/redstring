@@ -29,13 +29,16 @@ reverted narrowing fail rather than merely read differently. The
 moment the double grows a method it is supposed to lack, which is how a
 segregation test quietly stops testing segregation.
 
-The double subclasses nothing, per ADR 0026. Subclassing `InMemoryGraphStore`
-would satisfy every capability however the protocols were declared.
+The double subclasses no *adapter*, per ADR 0026. Subclassing
+`InMemoryGraphStore` would satisfy every capability however the protocols were
+declared. What it does inherit is `tests/compliance/lifetime.NoOpLifetime`,
+which supplies the `AsyncClosable` members ADR 0028 added and nothing else --
+shared rather than restated, per B107c.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import pytest
@@ -52,11 +55,10 @@ from redstring.ports.graph_store import (
     RelationshipStore,
     TenantPurge,
 )
+from tests.compliance.lifetime import NoOpLifetime
 from tests.unit.consolidation.conftest import edge, entity
 
 if TYPE_CHECKING:
-    from types import TracebackType
-
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
 
@@ -66,7 +68,7 @@ def blocked(tenant_id: TenantId, name: str) -> Entity:
     return built.model_copy(update={"blocking_keys": blocking_keys_for(built)})
 
 
-class BlockingGraph:
+class BlockingGraph(NoOpLifetime):
     """`ConsolidationGraph` and not one method more.
 
     Far more than the three methods the finder calls: the composition names
@@ -80,27 +82,13 @@ class BlockingGraph:
         self.entities = entities
         self.edges = edges or []
 
-    # -- AsyncClosable, which every capability now composes ---------------
-
-    async def close(self) -> None:
-        """Nothing to release. Present because the capabilities require it.
-
-        `EntityReader`, `AliasStore` and `RelationshipStore` each compose
-        `AsyncClosable`, so a double that omits the lifetime methods is not
-        the composition at all -- `isinstance` says so, which is the whole
-        point of asserting it above.
-        """
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        await self.close()
+    # -- AsyncClosable arrives from `NoOpLifetime` ------------------------
+    #
+    # `EntityReader`, `AliasStore` and `RelationshipStore` each compose it, so
+    # a double omitting the lifetime methods is not the composition at all --
+    # `isinstance` says so, which is the whole point of asserting it below.
+    # There is nothing here to release, and the mixin is where that fact is
+    # written once rather than in each module holding capability doubles.
 
     # -- EntityReader ---------------------------------------------------
 

@@ -1693,7 +1693,6 @@ calls `asyncpg` "a core dependency" in the module's own reference prose. It is
 not -- it is what the `pgvector` extra installs, same as `neo4j`. Predates this
 branch; fix both when the extras get their proper rename.
 
-
 ### B42. `ANN401` is silenced on `domain/merge_strategy.py::resolve`
 
 Three `# noqa: ANN401` on `resolve` and `_union`. Silencing is correct here
@@ -2402,7 +2401,6 @@ Three copies of nine lines. Left duplicated rather than hoisted into
 module, which is a decision rather than a tidy-up. If a fourth port grows
 capability doubles, hoist it then -- and `tests/compliance/` is the likelier
 home than `conftest.py`.
-
 
 ### B111. Nothing gates a *new* collaborator against its capability
 
