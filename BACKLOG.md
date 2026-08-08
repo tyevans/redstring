@@ -2518,27 +2518,3 @@ The fix is one sentence plus the two citations, and it should say *four of the
 six*, not "all" -- `LlmProvider` and `EmbeddingProvider` are single
 capabilities and naming them as composed would be the opposite error. Fold it
 in with B109 rather than as its own commit.
-
-### B113. Narrowing `close()` on the resilience components has no ADR
-
-Fixing B108 changed the behaviour of two public methods:
-`CircuitBreaker.close()` and `RateLimiter.close()` now release only a cache
-the component constructed itself, leaving an injected one open. That is a
-change to a public contract, which `.claude/rules/definition-of-done.md` names
-as ADR-worthy, and no ADR was written.
-
-The argument for *not* writing one, which is why it was deferred rather than
-skipped: ADR 0013 already decides this exact question one layer down --
-"`owns_client` defaults to False so `close()` does not shut a shared client
-out from under whatever else is using it" -- and the fix applies that existing
-decision to the two consumers that had missed it rather than making a new one.
-On that reading **ADR 0013 stands**, and what is missing is a sentence in it
-recording that the rule now reaches the consumers too, not a document.
-
-Two reasons it was not written anyway. `docs/adr/` was outside the ownership
-boundary of the agent that fixed B108, and `ports/cache.py` was being reshaped
-in parallel by the work that became `ports/lifecycle.py::AsyncClosable` -- so
-whatever ADR that lands may already cover this ground, and two documents
-arguing one ownership rule is worse than one. Decide after that work merges:
-either amend 0013 with the extra reach, or fold this into the lifecycle ADR.
-Do not leave it as neither, which is the current state.
