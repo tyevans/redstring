@@ -37,10 +37,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from typing import TYPE_CHECKING, Any, Self
 
 from redstring.chunks.provenance import reject_foreign_chunks
+from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk import StoredChunk
+from redstring.domain.chunk_ranking import LexicalCandidate, LexicalCandidates
+from redstring.domain.tokenize import tokenize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -48,7 +52,7 @@ if TYPE_CHECKING:
     import asyncpg
 
     from redstring.domain.chunk import ChunkId
-    from redstring.domain.ids import SourceId, TenantId
+    from redstring.domain.ids import EntityId, SourceId, TenantId
 
 #: Table names are interpolated into SQL -- Postgres has no parameter form for
 #: an identifier -- so the name is proved to be a bare lowercase identifier
@@ -65,15 +69,41 @@ _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 #: because `upsert_many` and `replace_source` must agree about it: a column
 #: typed differently in the two statements is the silent-divergence shape
 #: inside a single adapter.
+#:
+#: `doc_length` is here and in `_COLUMNS` below, but deliberately **not** in
+#: `_ON_CONFLICT` -- see that constant's docstring.
 _INCOMING = (
     "t(tenant_id uuid, id text, source_id text, text text, chunk_index integer, "
-    "start_char integer, end_char integer, entity_ids uuid[], metadata jsonb)"
+    "start_char integer, end_char integer, entity_ids uuid[], metadata jsonb, "
+    "doc_length integer)"
 )
+
+#: The record shape the term-index payload unpacks into. A term row has no
+#: identity of its own beyond its key, so unlike `_INCOMING` there is no
+#: matching `_ON_CONFLICT`: see `_TERMS_ON_CONFLICT`.
+_TERMS_INCOMING = "t(tenant_id uuid, chunk_id text, term text, tf integer)"
+
+#: Term rows are written `ON CONFLICT DO NOTHING`, never `DO UPDATE`. Chunk
+#: ids are content-addressed over `(source_id, text)` -- see the module
+#: docstring's identity discussion -- so a given id always has the same text,
+#: therefore always the same terms and the same `tf` for each. There is no
+#: update path for a term row: the "obvious" DELETE-then-INSERT is both
+#: unnecessary (the row can never legitimately change) and unsafe in one
+#: statement, since a row deleted and reinserted by the same statement is a
+#: same-statement double modification.
+_TERMS_ON_CONFLICT = "ON CONFLICT (tenant_id, chunk_id, term) DO NOTHING"
 
 #: What every write sets when the key already exists. Last-write-wins, and the
 #: list is the whole row bar the key -- an omitted column here is a field one
 #: adapter preserves and the other drops, which is `recurring-defects.md` §1's
 #: third observed shape verbatim.
+#:
+#: `doc_length` is deliberately **absent** from this list, unlike every other
+#: column in `_COLUMNS`. It is not an oversight of that rule: `doc_length` is a
+#: pure function of `text`, which a content-addressed id fixes for good, so
+#: there is no value it could ever need updating to. Including it in the
+#: `SET` list would be a no-op that reads as one more ordinary column and
+#: hides the reasoning; omitting it and saying so here is the honest spelling.
 _ON_CONFLICT = (
     "ON CONFLICT (tenant_id, id) DO UPDATE SET "
     "source_id = EXCLUDED.source_id, text = EXCLUDED.text, "
@@ -82,7 +112,10 @@ _ON_CONFLICT = (
     "metadata = EXCLUDED.metadata"
 )
 
-_COLUMNS = "tenant_id, id, source_id, text, chunk_index, start_char, end_char, entity_ids, metadata"
+_COLUMNS = (
+    "tenant_id, id, source_id, text, chunk_index, start_char, end_char, "
+    "entity_ids, metadata, doc_length"
+)
 
 
 class PostgresChunkStore:
@@ -160,6 +193,28 @@ class PostgresChunkStore:
 
         `chunk_index` is `integer`. See the module docstring: `text` here is a
         working store that reorders documents.
+
+        `doc_length` is a column on this row rather than something computed
+        on read, because `lexical_candidates` needs it for every candidate
+        the term-index query returns and recomputing it there would mean
+        re-tokenizing `text` in SQL -- exactly the divergence
+        `domain/tokenize.py`'s module docstring exists to rule out. It is
+        immutable per id for the same reason the term index is; see
+        `_ON_CONFLICT`.
+
+        `<table>_entity_ids_idx` is a GIN index over the array column,
+        supporting `get_by_entity`'s `$2 = ANY (entity_ids)`.
+
+        `<table>_terms` is the term index: one row per `(tenant_id, chunk_id,
+        term)`, carrying that term's frequency in the chunk. **`ON DELETE
+        CASCADE` is load-bearing, not incidental.** It is what lets
+        `replace_source`'s orphan delete, `delete_by_source` and
+        `delete_by_tenant` all keep the term index correct without any of
+        them mentioning `<table>_terms` -- three delete paths that would each
+        otherwise need a second statement, and each one edit away from
+        forgetting it. `<table>_terms_term_idx` supports
+        `lexical_candidates`'s per-term lookups (document frequency and
+        candidate matching), both filtered on `(tenant_id, term)`.
         """
         return (
             f"CREATE TABLE IF NOT EXISTS {self._table} ("
@@ -172,10 +227,24 @@ class PostgresChunkStore:
             "  end_char    integer NOT NULL,"
             "  entity_ids  uuid[]  NOT NULL DEFAULT '{}',"
             "  metadata    jsonb   NOT NULL DEFAULT '{}'::jsonb,"
+            "  doc_length  integer NOT NULL DEFAULT 0,"
             "  PRIMARY KEY (tenant_id, id)"
             ")",
             f"CREATE INDEX IF NOT EXISTS {self._table}_tenant_source_idx "
             f"ON {self._table} (tenant_id, source_id, chunk_index, id)",
+            f"CREATE INDEX IF NOT EXISTS {self._table}_entity_ids_idx "
+            f"ON {self._table} USING gin (entity_ids)",
+            f"CREATE TABLE IF NOT EXISTS {self._table}_terms ("
+            "  tenant_id uuid    NOT NULL,"
+            "  chunk_id  text    NOT NULL,"
+            "  term      text    NOT NULL,"
+            "  tf        integer NOT NULL,"
+            "  PRIMARY KEY (tenant_id, chunk_id, term),"
+            f"  FOREIGN KEY (tenant_id, chunk_id) REFERENCES {self._table} (tenant_id, id) "
+            "    ON DELETE CASCADE"
+            ")",
+            f"CREATE INDEX IF NOT EXISTS {self._table}_terms_term_idx "
+            f"ON {self._table}_terms (tenant_id, term)",
         )
 
     # ------------------------------------------------------------------
@@ -186,7 +255,7 @@ class PostgresChunkStore:
         rows = deduplicate(chunks)
         if not rows:
             return
-        await self._pool.execute(self._insert_sql(), encode(rows))
+        await self._pool.execute(self._insert_sql(), encode(rows), encode_terms(rows))
 
     def _insert_sql(self) -> str:
         """One statement for the whole batch, not a loop.
@@ -194,11 +263,24 @@ class PostgresChunkStore:
         A document's chunking is thousands of rows and the port says so. The
         payload is one `jsonb` parameter rather than parallel arrays because
         `entity_ids` is a per-row array; see the module docstring.
+
+        The term-index insert rides in a CTE alongside the chunk insert.
+        `written` is unreferenced by the final statement and still runs --
+        Postgres executes every data-modifying CTE regardless of whether its
+        output is read, the same property `_replace_sql` relies on for
+        `written` there.
         """
         return (
-            f"INSERT INTO {self._table} ({_COLUMNS}) "  # nosec B608
-            f"SELECT {_COLUMNS} FROM jsonb_to_recordset($1::jsonb) AS {_INCOMING} "
-            f"{_ON_CONFLICT}"
+            f"WITH written AS ("  # nosec B608
+            f"    INSERT INTO {self._table} ({_COLUMNS})"
+            f"    SELECT {_COLUMNS} FROM jsonb_to_recordset($1::jsonb) AS {_INCOMING}"
+            f"    {_ON_CONFLICT}"
+            "    RETURNING 1"
+            ")"
+            f"INSERT INTO {self._table}_terms (tenant_id, chunk_id, term, tf)"
+            f"SELECT tenant_id, chunk_id, term, tf FROM jsonb_to_recordset($2::jsonb) "
+            f"AS {_TERMS_INCOMING} "
+            f"{_TERMS_ON_CONFLICT}"
         )
 
     async def replace_source(
@@ -212,8 +294,9 @@ class PostgresChunkStore:
         # then discover the batch is invalid -- empties the source and raises.
         reject_foreign_chunks(chunks, source_id, tenant_id)
 
+        rows = deduplicate(chunks)
         removed = await self._pool.fetchval(
-            self._replace_sql(), tenant_id, source_id, encode(deduplicate(chunks))
+            self._replace_sql(), tenant_id, source_id, encode(rows), encode_terms(rows)
         )
         return int(removed)
 
@@ -229,8 +312,20 @@ class PostgresChunkStore:
         The count comes through the `removed` CTE rather than from asyncpg's
         `"DELETE n"` status string, matching `PgVectorStore.delete_by_tenant`:
         a stringly-typed answer to a numeric question is one release note away
-        from changing shape. `written` is unreferenced by the final `SELECT`
-        and still runs -- Postgres executes every data-modifying CTE.
+        from changing shape. `written` and `terms_written` are unreferenced by
+        the final `SELECT` and still run -- Postgres executes every
+        data-modifying CTE.
+
+        The orphan `DELETE` needs no matching statement against
+        `<table>_terms`: `ON DELETE CASCADE` removes those rows as a
+        consequence of the row in `<table>` going, which is the whole reason
+        this stays one statement instead of gaining a second delete to keep in
+        step with the first.
+
+        `terms_written` writes `ON CONFLICT DO NOTHING` rather than `DO
+        UPDATE`; see `_TERMS_ON_CONFLICT`. Nothing here needs to reconcile a
+        term row against a stale one, because a chunk id's terms cannot
+        change.
         """
         return (
             "WITH incoming AS ("  # nosec B608
@@ -244,6 +339,12 @@ class PostgresChunkStore:
             f"    INSERT INTO {self._table} ({_COLUMNS})"
             f"    SELECT {_COLUMNS} FROM incoming "
             f"    {_ON_CONFLICT}"
+            "    RETURNING 1"
+            "), terms_written AS ("
+            f"    INSERT INTO {self._table}_terms (tenant_id, chunk_id, term, tf)"
+            f"    SELECT tenant_id, chunk_id, term, tf FROM jsonb_to_recordset($4::jsonb) "
+            f"    AS {_TERMS_INCOMING}"
+            f"    {_TERMS_ON_CONFLICT}"
             "    RETURNING 1"
             ") SELECT (SELECT count(*) FROM removed)"
         )
@@ -273,6 +374,116 @@ class PostgresChunkStore:
             source_id,
         )
         return [_chunk_from(row) for row in rows]
+
+    async def get_by_entity(self, entity_id: EntityId, tenant_id: TenantId) -> list[StoredChunk]:
+        rows = await self._pool.fetch(
+            # A total order -- source, then index, then id -- served by no
+            # single index; see the port docstring for why all three are
+            # required. The GIN index on `entity_ids` serves the filter.
+            f"SELECT {_COLUMNS} FROM {self._table} "  # nosec B608
+            "WHERE tenant_id = $1 AND $2 = ANY (entity_ids) "
+            "ORDER BY source_id ASC, chunk_index ASC, id ASC",
+            tenant_id,
+            entity_id,
+        )
+        return [_chunk_from(row) for row in rows]
+
+    async def lexical_candidates(
+        self,
+        terms: Sequence[str],
+        tenant_id: TenantId,
+        limit: int,
+    ) -> LexicalCandidates:
+        # Rejected before any query, matching the in-memory adapter: a
+        # rejected call must not have counted a corpus.
+        if limit < 0:
+            raise ValueError(f"limit must not be negative, got {limit}")
+
+        # Short-circuits before a round trip, not merely before a scan --
+        # the in-memory adapter's equivalent guard only avoids the scan,
+        # since building `tokenized` there is not a network cost. The port's
+        # contract is stated in terms both readings satisfy: "without
+        # touching the store."
+        if not terms:
+            return LexicalCandidates(
+                stats=CorpusStats(n_docs=0, avg_doc_length=0.0, doc_frequencies={}), candidates=[]
+            )
+
+        # Sorted so the parameter array is deterministic across calls with
+        # the same term set -- not required for correctness, but it keeps
+        # the statement's bound values reproducible for anyone reading a
+        # slow-query log.
+        distinct_terms = sorted(set(terms))
+
+        async with self._pool.acquire() as connection:
+            corpus = await connection.fetchrow(
+                f"SELECT count(*) AS n_docs, coalesce(avg(doc_length), 0) AS avg_len "  # nosec B608
+                f"FROM {self._table} WHERE tenant_id = $1",
+                tenant_id,
+            )
+            frequency_rows = await connection.fetch(
+                f"SELECT term, count(*) AS df FROM {self._table}_terms "  # nosec B608
+                "WHERE tenant_id = $1 AND term = ANY ($2) GROUP BY term",
+                tenant_id,
+                distinct_terms,
+            )
+            candidate_rows = await connection.fetch(
+                self._candidates_sql(), tenant_id, distinct_terms, limit
+            )
+
+        # `GROUP BY` in the frequency query cannot produce a row for a term no
+        # chunk contains, so every requested term is seeded at `0` first --
+        # the port requires `doc_frequencies` to cover exactly `terms`, absent
+        # keys are not permitted as "the term wasn't asked about" here.
+        doc_frequencies = dict.fromkeys(distinct_terms, 0)
+        for row in frequency_rows:
+            doc_frequencies[row["term"]] = row["df"]
+
+        stats = CorpusStats(
+            n_docs=corpus["n_docs"],
+            avg_doc_length=float(corpus["avg_len"]),
+            doc_frequencies=doc_frequencies,
+        )
+        candidates = [
+            LexicalCandidate(
+                chunk=_chunk_from(row),
+                doc_length=row["doc_length"],
+                term_frequencies=json.loads(row["tfs"]),
+            )
+            for row in candidate_rows
+        ]
+        return LexicalCandidates(stats=stats, candidates=candidates)
+
+    def _candidates_sql(self) -> str:
+        """Which chunks match, truncated by `limit`, with their term counts.
+
+        `matched` picks the surviving chunk ids first, ordered by the
+        contract's tie-break -- number of distinct requested terms matched,
+        descending, then `id` ascending -- and `LIMIT`s there, before the join
+        against `<table>` ever runs. Joining first and limiting after would
+        pull every matching row's full text across the wire only to discard
+        most of it.
+
+        `jsonb_object_agg(term, tf)` builds this candidate's term frequencies
+        in one aggregate rather than a second query per chunk; zero-frequency
+        terms the chunk does not contain are filled in by the caller from the
+        requested list, since a term with no match has no row here to
+        aggregate.
+        """
+        return (
+            "WITH matched AS ("  # nosec B608
+            f"    SELECT chunk_id, count(*) AS matched_terms, jsonb_object_agg(term, tf) AS tfs"
+            f"    FROM {self._table}_terms"
+            "     WHERE tenant_id = $1 AND term = ANY ($2)"
+            "     GROUP BY chunk_id"
+            "     ORDER BY matched_terms DESC, chunk_id ASC"
+            "     LIMIT $3"
+            ")"
+            f"SELECT c.{_COLUMNS}, m.tfs"
+            "  FROM matched m"
+            f" JOIN {self._table} c ON c.tenant_id = $1 AND c.id = m.chunk_id"
+            " ORDER BY m.matched_terms DESC, m.chunk_id ASC"
+        )
 
     # ------------------------------------------------------------------
     # Deletion
@@ -329,6 +540,11 @@ def encode(chunks: Sequence[StoredChunk]) -> str:
     through the `uuid` and `uuid[]` column types in `_INCOMING`. `metadata`
     is nested as an object rather than a string, so it arrives as `jsonb`
     without a second parse.
+
+    `doc_length` travels with the row rather than being computed in SQL: it
+    is `len(tokenize(chunk.text))`, and computing that any other way risks
+    the in-memory adapter and this one disagreeing about what a token is --
+    exactly the divergence `domain/tokenize.py` exists to prevent.
     """
     return json.dumps(
         [
@@ -342,8 +558,33 @@ def encode(chunks: Sequence[StoredChunk]) -> str:
                 "end_char": chunk.end_char,
                 "entity_ids": [str(entity_id) for entity_id in chunk.entity_ids],
                 "metadata": chunk.metadata,
+                "doc_length": len(tokenize(chunk.text)),
             }
             for chunk in chunks
+        ]
+    )
+
+
+def encode_terms(chunks: Sequence[StoredChunk]) -> str:
+    """Render each chunk's term index as the `jsonb` document `_TERMS_INCOMING`
+    unpacks: one row per `(tenant_id, chunk_id, term)` carrying that term's
+    frequency.
+
+    Computed from `text` with the same `tokenize` the in-memory adapter
+    scores against directly -- this table exists only because Postgres needs
+    something to seek on, not as a second source of truth. It is written once
+    per id and never updated; see `_TERMS_ON_CONFLICT`.
+    """
+    return json.dumps(
+        [
+            {
+                "tenant_id": str(chunk.tenant_id),
+                "chunk_id": chunk.id,
+                "term": term,
+                "tf": tf,
+            }
+            for chunk in chunks
+            for term, tf in Counter(tokenize(chunk.text)).items()
         ]
     )
 
