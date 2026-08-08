@@ -42,7 +42,7 @@ async def main() -> None:
             SourceDocument(id="notes", text="Ada Lovelace worked with Charles Babbage."),
             SourceDocument(id="weather", text="It rained in London on Tuesday."),
         ],
-        chunks=chunks,
+        store=chunks,
         tenant_id=tenant_id,
     )
 
@@ -96,9 +96,11 @@ Concretely: a chunk matching one rare, highly informative term can be cut
 from the candidate set before a chunk matching two common terms, even though
 BM25's IDF weighting would have scored the rare-term chunk higher. Distinct
 term count is decided *before* any BM25 weighting is applied, because
-weighting needs the corpus statistics computed over the candidate set --
-computing it before truncation would mean scanning the whole corpus, which is
-what `limit` exists to avoid. A passage that would have ranked first among
+weighting needs corpus-wide statistics -- computed once, over every document
+in the tenant's corpus, never over the candidate set truncation leaves behind
+-- and truncating by distinct-term-match count first is what bounds the
+candidate set without requiring a scan of the whole corpus to rank it. A
+passage that would have ranked first among
 all your chunks can therefore be **absent from the ranked results entirely**,
 not merely ranked low, if it happens to share fewer distinct terms with the
 query than `limit` other chunks do.

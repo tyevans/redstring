@@ -81,9 +81,9 @@ cost 0012 refused for the vector store's exact search and 0022 refused by
 routing entity candidates through blocking keys instead. It truncates before
 `rank_chunks` ever sees the candidates, ordered by **distinct matched term
 count, then chunk id** -- computed before BM25 weighting, because the
-weighting needs corpus statistics computed *over* the candidate set, and
-computing those first would mean scanning the whole corpus regardless of
-`limit`.
+weighting needs corpus-wide statistics, never statistics over the candidate
+set truncation leaves behind, and truncating first by distinct term count is
+what bounds the candidate set without scanning the whole corpus to rank it.
 
 The consequence is the same shape 0022 already named for blocking: a chunk
 matching one rare, highly informative term can be truncated away before a
