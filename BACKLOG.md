@@ -1133,6 +1133,21 @@ rediscover:
 migration for a table that is already shipped and already has an integration
 suite pinning its DDL.
 
+**A second migration is already owed, ahead of B2b's vector column.** Every
+statement in `_schema_statements` is `IF NOT EXISTS`, so `ensure_schema` run
+against a `kg_chunks` table created before the chunk-lexical work (56542ba)
+adds `kg_chunks_terms` and leaves the existing `kg_chunks` table alone --
+after which every query naming `_COLUMNS` fails with "column doc_length does
+not exist", because the new `doc_length` column was never added to a table
+`CREATE TABLE IF NOT EXISTS` declines to touch. And even with the column
+added by hand, existing rows have no term rows and `doc_length = 0`, so they
+rank as empty documents until backfilled. Whoever writes B2b's `ALTER TABLE`
+for the vector column should add `doc_length` and a `<table>_terms` backfill
+in the same migration rather than treating this as separate follow-up --
+`kg_chunks` has never appeared in a tagged release, so today this affects
+only a deployment tracking `main`, but that stops being true the moment a
+release ships it.
+
 ### B92. Corpus statistics are recomputed per query, not maintained incrementally
 
 `lexical_candidates` counts `n_docs`, `avg_doc_length` and per-term document
@@ -2063,3 +2078,94 @@ load-bearing as written, so nobody re-derives that later.
 
 Neither is a defect to fix under time pressure; the entry exists so the next
 reader does not mistake either for evidence about the `Retriever`.
+
+### B95. Nothing executes the code blocks in `docs/how-to/*`
+
+`tests/unit/test_end_to_end_example.py` executes `docs/examples/build_a_graph.py`
+and is the mechanism behind the repo's public-surface gate ("the end-to-end
+example imports nothing but `redstring`"). Nothing equivalent runs the
+fenced Python in `docs/how-to/*.md`. This is how
+`docs/how-to/rank-passages.md`'s only example called
+`index_documents(..., chunks=chunks, ...)` against a parameter actually named
+`store` and shipped anyway — `mkdocs --strict` checks links, not Python, and
+the how-to's imports were all in `__all__`, so the public-surface gate gave
+it zero protection despite the how-to satisfying every condition that gate
+checks for. Fixed for this one instance in the final review pass; the
+mechanism gap that let it ship is what this entry tracks. A fix extracts
+each how-to's fenced block(s) the way `test_end_to_end_example.py` extracts
+`build_a_graph.py`'s, and executes them in the commit gate.
+
+### B96. Nothing asserts `docs/adr/*.md` and `docs/adr/index.md` agree
+
+Every ADR file is supposed to have a matching row in `docs/adr/index.md`'s
+table, by convention (`.claude/rules/recurring-defects.md` §6 argues for
+exactly this kind of two-declaration-site risk generally). Nothing checks
+it: ADR 0024 shipped with no index row for it, `mkdocs.yml`'s nav made the
+page reachable so `mkdocs --strict` was silent, and the omission was found
+only by a review reading both files side by side. Fixed for 0024 in the
+final review pass. A fix is a small test — glob `docs/adr/000*.md` and
+`docs/adr/0[1-9]*.md` for ADR numbers, parse the index table's numbers out
+of its first column, and assert the two sets are equal — living in
+`tests/unit/` next to the other doc-consistency checks (e.g. wherever
+`mkdocs --strict`'s invocation lives in the gate, if it does).
+
+### B97. Same chunk id, changed text diverges between the adapters
+
+`chunks/adapters/postgres.py`'s `_TERMS_ON_CONFLICT` is `DO NOTHING` and
+`_ON_CONFLICT` deliberately omits `doc_length` from its `SET` clause, both
+justified by content addressing: a chunk id fixes its text (via
+`chunk_id(source_id, text)`), so a write reusing an existing id is assumed to
+be writing the same text, and the term index and length can never need
+updating. That argument is correct only for callers who build ids with
+`chunk_id`; nothing enforces that they do. `StoredChunk.id` is a
+caller-supplied `str`, and `ports/chunk_store.py`'s `upsert_many` promises
+unqualified last-write-wins on `(tenant_id, id)`.
+
+A caller using self-assigned (non-content-addressed) ids that re-writes one
+id with different text gets, from `InMemoryChunkStore`, ranking over the
+*new* text (it tokenizes at query time), and from `PostgresChunkStore`,
+ranking over the *old* text and the *old* `doc_length` — the `text` column
+updates on conflict while the term rows and `doc_length` do not, because
+`_TERMS_ON_CONFLICT`/`_ON_CONFLICT` assume it can't happen. That is
+`.claude/rules/recurring-defects.md` §1, silently, and the compliance suite
+cannot see it because its `_chunk` helper always builds ids the real
+content-addressed way. Cheap fix: state the constraint as prose on
+`ChunkStore.upsert_many` in the port ("a chunk id is content-addressed over
+`(source_id, text)`; re-using an id for different text is outside the
+contract"). Thorough fix: make it executable, either a compliance case that
+asserts the adapters agree after such a write (would currently fail on
+Postgres) or `chunk_id`-derived validation on `StoredChunk` construction.
+
+### B98. `PostgresChunkStore.lexical_candidates` is three unsynchronised reads
+
+It acquires one connection and issues the corpus-statistics query, the
+document-frequency query, and the candidate query as three separate
+statements with no wrapping transaction. Under concurrent writes, the
+`n_docs` and `avg_doc_length` returned can describe a corpus that never
+coexisted with the returned `doc_frequencies` — a write landing between the
+first and third statement changes what "the corpus" means mid-read.
+`InMemoryChunkStore` is atomic by construction (no interleaving possible
+within one event loop turn), so this is a real adapter divergence, but it is
+in something `ports/chunk_store.py` does not pin: the port says nothing
+about snapshot consistency across the three parts of `lexical_candidates`'s
+answer. Nothing in the suite can observe it (single-threaded tests). Fix is
+either a `REPEATABLE READ` transaction around the three statements, or a
+sentence in the port stating plainly that the three are not guaranteed to be
+a consistent snapshot — so a caller relying on it knows not to.
+
+### B99. `avg_doc_length` is computed by two different arithmetics
+
+`InMemoryChunkStore` computes `sum(lengths) / n` in Python float.
+`PostgresChunkStore` computes `avg(doc_length)` in SQL `numeric` and the
+adapter rounds the result to float. The compliance suite requires adapter
+scores to be **exactly** equal (not `pytest.approx`), and `avg_doc_length`
+feeds every BM25 score through the length-normalisation term. For the
+fixtures currently in the suite (13/4 = 3.25) both arithmetics are exact, and
+in general both are *correctly rounded*, so a disagreement needs a
+double-rounding case, which is rare — but the failure mode when it happens
+is an intermittently red cross-adapter test with nothing in the source
+changed, a shape this project has already been bitten by once (the
+`k=0`-sampler note in `CLAUDE.md`'s Testing notes section, about
+`InMemoryVectorStore.search`). Fix: `avg(doc_length::float8)` on the
+Postgres side makes both adapters do the same float arithmetic instead of
+routing one of them through `numeric`.
