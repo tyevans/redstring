@@ -2104,6 +2104,40 @@ mechanism gap that let it ship is what this entry tracks. A fix extracts
 each how-to's fenced block(s) the way `test_end_to_end_example.py` extracts
 `build_a_graph.py`'s, and executes them in the commit gate.
 
+**Widen it past `docs/how-to/`.** A review found the same shape in the three
+most-read pages in the repo: `README.md`, `docs/getting-started.md` and
+`docs/installation.md` each constructed `LangChainLlmProvider(chat_model)`,
+missing the required keyword-only `model=`, so all three raised `TypeError`
+on the first line a real-provider user copies. Three sites drifted *together*
+— `docs/how-to/consolidate-duplicate-entities.md` had it right — which is the
+tell that no mechanism was watching any of them. Fixed in the same commit as
+this note; the executor this entry describes has to cover `README.md` and
+`docs/*.md`, not just the how-to directory, or it would have caught none of
+the three.
+
+### B100. ADR 0007 cites `redstring.projections.project`, which does not exist
+
+`docs/adr/0007-composition-is-the-only-top-layer.md:86,362,446` name
+`redstring.projections.project` as the caller's escape hatch for driving a
+projection over their own event feed. There is no such callable:
+`src/redstring/projections/__init__.py` exports the three projection classes
+and nothing else, and `redstring/__init__.py`'s own docstring records that
+`project`/`replay` left this surface in the 0.12.0 upstreaming — a caller
+writes `from eventsource import replay`.
+
+The live copies of this claim (`README.md`, `composition/build_graph.py`'s
+module docstring) were fixed in the commit that filed this. The ADR was not,
+because ADR bodies are immutable records of a decision as taken —
+`.claude/rules/definition-of-done.md` item 2. What is deferred is the
+*mechanism* question, not a text edit: an ADR whose prose names a symbol that
+has since been deleted is indistinguishable from one that is current, and
+`mkdocs --strict` checks links rather than identifiers. The two options are
+an "Amended by" note on 0007 pointing at the rename, or a gate that greps ADR
+bodies for `redstring.`-prefixed dotted paths and fails when one does not
+resolve against the installed package. The second would also have caught this
+one in the slice that caused it, and would cover every future ADR for free.
+Prefer it.
+
 ### B96. Nothing asserts `docs/adr/*.md` and `docs/adr/index.md` agree
 
 Every ADR file is supposed to have a matching row in `docs/adr/index.md`'s

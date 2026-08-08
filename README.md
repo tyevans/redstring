@@ -84,7 +84,7 @@ store = InMemoryGraphStore()
 
 report = await build_graph(
     SourceDocument(id="notes", text="Ada Lovelace worked with Charles Babbage."),
-    provider=LangChainLlmProvider(chat_model),
+    provider=LangChainLlmProvider(chat_model, model="openai-compatible/qwen3-30b"),
     store=store,
     tenant_id=tenant_id,
 )
@@ -123,8 +123,8 @@ what a merge would do, records that as an `EntitiesMerged` (or a
 second source of truth.
 
 `build_graph` does both in one call for a caller who has no event store; a
-caller who has one appends `report.event` and drives
-`redstring.projections.project` over the feed instead. That separation is why
+caller who has one appends `report.event` and drives `eventsource.replay` over
+the feed instead. That separation is why
 a store can be rebuilt from the log.
 
 | Package | What it is |

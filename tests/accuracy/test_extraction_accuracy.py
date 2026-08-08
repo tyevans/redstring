@@ -58,7 +58,9 @@ MIN_RELATIONSHIP_RECALL = 0.2
 
 
 def _provider() -> LangChainLlmProvider:
-    return LangChainLlmProvider(model=MODEL, base_url=BASE_URL, api_key="not-needed")
+    return LangChainLlmProvider.openai_compatible(
+        base_url=BASE_URL, model=MODEL, api_key="not-needed"
+    )
 
 
 async def _serving() -> bool:
@@ -68,9 +70,18 @@ async def _serving() -> bool:
     probe exercises the same call shape the suite depends on — a server that
     answers chat but fails structured output skips rather than failing every
     test with the same traceback.
+
+    The provider is built *outside* the try. Transport variety is why the
+    catch is broad — every client spells "connection refused" differently —
+    but that breadth once swallowed a `TypeError` from this harness's own
+    wiring: `_provider` called `LangChainLlmProvider(...)` with
+    `openai_compatible`'s arguments, so every accuracy floor skipped while
+    the message blamed the endpoint. A rig that cannot be constructed is not
+    an absent model server, and must fail rather than skip.
     """
+    provider = _provider()
     try:
-        result = await run_corpus(load_corpus()[:1], provider=_provider())
+        result = await run_corpus(load_corpus()[:1], provider=provider)
     except Exception:
         return False
     entities = result.entities

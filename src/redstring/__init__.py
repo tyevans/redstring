@@ -68,7 +68,7 @@ could not be caught without a dotted import.
   `InMemoryChunkStore` are complete
   implementations, not test doubles -- suitable for a single-process job.
   `Neo4jGraphStore` and `PgVectorStore` need their extras
-  (`redstring[neo4j]`, and `asyncpg`, which is a core dependency).
+  (`redstring[neo4j]` and `redstring[pgvector]`).
 - **Providers.** `FakeLlmProvider` answers from a script or by substring
   (`Response`, `EMPTY`) and validates like the real thing;
   `LangChainLlmProvider` (`redstring[llm]`) speaks to any OpenAI-compatible

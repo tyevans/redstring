@@ -45,8 +45,7 @@ is no state and no refusal, so nothing behavioural can distinguish the design
 from its opposite. See `index_documents`.
 
 A caller who wants a log without this parameter appends `report.event` to an
-`EventStore` themselves and drives `redstring.projections.project` over the
-feed. `report.event` is returned for precisely that, and it is the same object
+`EventStore` themselves and drives `eventsource.replay` over the feed. `report.event` is returned for precisely that, and it is the same object
 the projection just consumed.
 
 ## `domain=AUTO` costs an extra model call, and says so
