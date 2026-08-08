@@ -182,6 +182,42 @@ class _OneConnectionPool:
         return getattr(self._connection, name)
 
 
+class _RecordingPool:
+    """Wraps one connection and remembers the last `.fetch()` sent through it.
+
+    `get_by_entity` calls `self._pool.fetch(query, *args)` directly, without
+    `.acquire()`, so this needs only `fetch` and `.acquire()` proxied through
+    to the wrapped connection -- `__getattr__` covers anything else the
+    adapter might reach for. The point is to EXPLAIN the *real* statement
+    text a method sent, not a hand-copied string that can drift from it; see
+    `test_get_by_entity_uses_the_gin_index`.
+    """
+
+    def __init__(
+        self, connection: asyncpg.pool.PoolConnectionProxy[Any] | asyncpg.Connection[Any]
+    ) -> None:
+        self._connection = connection
+        self.last_query: str | None = None
+        self.last_args: tuple[Any, ...] = ()
+
+    def acquire(self) -> _RecordingPool:
+        return self
+
+    async def __aenter__(self) -> Any:
+        return self._connection
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+    async def fetch(self, query: str, *args: Any) -> Any:
+        self.last_query = query
+        self.last_args = args
+        return await self._connection.fetch(query, *args)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+
 class TestPostgresChunkStore(ChunkStoreCompliance):
     """The whole compliance suite, unchanged, against real Postgres."""
 
@@ -369,6 +405,79 @@ class TestPostgresChunkStoreSpecifics:
         assert conditions, f"no index condition at all:\n{plan}"
         assert "tenant_id" in conditions[0]
         assert "source_id" in conditions[0]
+
+    async def test_get_by_entity_uses_the_gin_index(self, pool: asyncpg.Pool[Any]) -> None:
+        """`get_by_entity` must plan as a GIN index seek, not a tenant scan.
+
+        GIN's array operator class indexes `@>`, `<@`, `&&` and whole-array
+        `=` -- it does not index `scalar = ANY(col)`, and Postgres performs
+        no transform between the two. A predicate written as `$2 = ANY
+        (entity_ids)` therefore plans as `Bitmap Index Scan` on the *primary
+        key* with the array test pushed into `Filter`, reading every row of
+        the tenant regardless of how selective the entity filter is --
+        verified against this project's own container before this test
+        existed: 20 000 rows, `enable_seqscan = off`, `Filter: ($2 = ANY
+        (entity_ids))` with no `entity_ids_idx` anywhere in the plan.
+        `entity_ids @> ARRAY[$2::uuid]` plans as a bitmap scan *on the GIN
+        index*, with the containment as `Index Cond`.
+
+        This EXPLAINs the adapter's **own statement text**, captured off the
+        real `fetch()` call rather than retyped by hand -- BACKLOG B93 records
+        that the sibling truncation-tie-break test EXPLAINs a hand-reconstructed
+        proxy of the adapter's SQL, which can drift from what the adapter
+        actually sends without this test noticing. `_RecordingPool` sits
+        between the adapter and the connection for exactly that reason: it
+        never rewrites the query, it only remembers the string and parameters
+        `PostgresChunkStore.get_by_entity` passed to `.fetch()`, and replays
+        the same text under `EXPLAIN`.
+        """
+        async with pool.acquire() as connection:
+            await connection.execute(f"TRUNCATE {TABLE} CASCADE")
+            await connection.execute("SET enable_seqscan = off")
+            recording = _RecordingPool(connection)
+            store = PostgresChunkStore(cast("asyncpg.Pool[Any]", recording), table=TABLE)
+
+            tenant = uuid4()
+            target_entity = uuid4()
+            matching = ChunkStoreCompliance._chunk(
+                tenant, "doc-1", "the matching passage", entity_ids=[target_entity]
+            )
+            await store.upsert_many(
+                [
+                    matching,
+                    *(
+                        ChunkStoreCompliance._chunk(
+                            tenant,
+                            "doc-1",
+                            f"other passage {i}",
+                            chunk_index=i + 1,
+                            entity_ids=[uuid4()],
+                        )
+                        for i in range(500)
+                    ),
+                ]
+            )
+            await connection.execute(f"ANALYZE {TABLE}")
+
+            found = await store.get_by_entity(target_entity, tenant)
+            assert recording.last_query is not None, "get_by_entity never called .fetch()"
+
+            plan = "\n".join(
+                row["QUERY PLAN"]
+                for row in await connection.fetch(
+                    f"EXPLAIN (ANALYZE false, COSTS false) {recording.last_query}",
+                    *recording.last_args,
+                )
+            )
+
+        assert f"{TABLE}_entity_ids_idx" in plan, (
+            f"the GIN index is not in the plan at all:\n{plan}"
+        )
+        conditions = [line for line in plan.splitlines() if "Index Cond" in line]
+        assert conditions, f"no index condition -- the filter is not seeking:\n{plan}"
+        assert "entity_ids" in conditions[0], f"not on entity_ids:\n{plan}"
+        assert "@>" in conditions[0], f"the index condition is not the containment test:\n{plan}"
+        assert [chunk.id for chunk in found] == [matching.id]
 
     async def test_the_order_by_alone_produces_the_tie_break(self, pool: asyncpg.Pool[Any]) -> None:
         """The total order is guaranteed **twice**, so neither guarantee is

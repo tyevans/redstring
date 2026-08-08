@@ -203,7 +203,10 @@ class PostgresChunkStore:
         `_ON_CONFLICT`.
 
         `<table>_entity_ids_idx` is a GIN index over the array column,
-        supporting `get_by_entity`'s `$2 = ANY (entity_ids)`.
+        supporting `get_by_entity`'s `entity_ids @> ARRAY[$2::uuid]`. GIN's
+        array operator class indexes `@>`, `<@`, `&&` and whole-array `=`;
+        it does not index `scalar = ANY(col)`, which is why `get_by_entity`
+        uses containment rather than the more obvious membership test.
 
         `<table>_terms` is the term index: one row per `(tenant_id, chunk_id,
         term)`, carrying that term's frequency in the chunk. **`ON DELETE
@@ -379,9 +382,16 @@ class PostgresChunkStore:
         rows = await self._pool.fetch(
             # A total order -- source, then index, then id -- served by no
             # single index; see the port docstring for why all three are
-            # required. The GIN index on `entity_ids` serves the filter.
+            # required. The GIN index on `entity_ids` serves the filter, but
+            # only because the predicate is `@>` (array containment): GIN's
+            # array operator class indexes `@>`, `<@`, `&&` and whole-array
+            # `=`, never `scalar = ANY(col)`, and Postgres performs no
+            # transform between the two. `ARRAY[$2::uuid]` is a one-element
+            # array so this is semantically identical to `$2 = ANY
+            # (entity_ids)`; see `tests/integration/chunks/test_postgres_store.py`
+            # for the plan assertion naming the index.
             f"SELECT {_COLUMNS} FROM {self._table} "  # nosec B608
-            "WHERE tenant_id = $1 AND $2 = ANY (entity_ids) "
+            "WHERE tenant_id = $1 AND entity_ids @> ARRAY[$2::uuid] "
             "ORDER BY source_id ASC, chunk_index ASC, id ASC",
             tenant_id,
             entity_id,

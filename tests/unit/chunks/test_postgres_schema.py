@@ -186,7 +186,13 @@ class TestSqlConstruction:
     def test_get_by_entity_orders_by_the_ports_total_order(self):
         sql = inspect.getsource(PostgresChunkStore.get_by_entity)
         assert "ORDER BY source_id ASC, chunk_index ASC, id ASC" in sql
-        assert "$2 = ANY (entity_ids)" in sql
+        # `@>` (containment), not `$2 = ANY (entity_ids)` (membership): GIN's
+        # array operator class indexes the former and not the latter, so a
+        # membership predicate here would plan as a tenant-wide scan with the
+        # index maintained on every write and used by nothing. See
+        # `tests/integration/chunks/test_postgres_store.py::test_get_by_entity_uses_the_gin_index`
+        # for the plan assertion.
+        assert "entity_ids @> ARRAY[$2::uuid]" in sql
 
     def test_the_candidates_query_limits_before_joining_the_wide_table(self):
         """The port's cost note: cutting after the join would pull every
