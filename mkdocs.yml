@@ -164,4 +164,5 @@ nav:
       - "0024 · BM25 over the chunk corpus": adr/0024-bm25-over-the-chunk-corpus.md
       - "0025 · Consolidation substitution is two protocols": adr/0025-consolidation-substitution-is-two-protocols.md
       - "0026 · ChunkStore and Cache are capabilities too": adr/0026-chunk-store-and-cache-are-capabilities-too.md
+      - "0027 · VectorStore is three capabilities": adr/0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md
   - Contributing: contributing.md

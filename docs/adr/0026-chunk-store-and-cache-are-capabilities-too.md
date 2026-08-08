@@ -2,9 +2,13 @@
 
 ## Status
 
-Accepted. Applies [`0016` `GraphStore` is five
-capabilities](0016-graph-store-is-five-capabilities.md) to the two remaining
-ports that had the same problem. Amends [`0008` the two non-store
+Accepted, and **amended by
+[`0027`](0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md)**,
+which corrects the claim below that `ChunkStore` and `Cache` were the two
+*remaining* ports: `VectorStore` had the same problem and is named in neither
+this ADR nor 0016. Applies [`0016` `GraphStore` is five
+capabilities](0016-graph-store-is-five-capabilities.md) to two of the three
+ports that had the problem. Amends [`0008` the two non-store
 ports](0008-the-two-non-store-ports.md) and [`0023` the chunk
 corpus](0023-the-chunk-corpus.md) in their typing only: no method is added,
 removed or respecified, and every adapter in the tree is untouched.

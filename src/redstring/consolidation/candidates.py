@@ -14,6 +14,14 @@ returns scored pairs; `redstring.consolidation.policy` decides what to do with
 them and `ConsolidationService` emits the event. A finder that also merged
 would make "what would this merge?" unanswerable without merging.
 
+## "Never writes" is now a fact about the signature
+
+`CandidateFinder` took a whole `GraphStore` while its docstring promised it
+never writes -- so the promise was prose, and `EntityWriter` and `TenantPurge`
+were both in reach of a class that wanted neither. It takes a
+`ConsolidationGraph` below: the three capabilities it does call, composed.
+The vector side is narrowed the same way, to `VectorReader`.
+
 ## Aliases are excluded, and that is not an optimisation
 
 An entity already merged away is not a merge candidate: `ConsolidationLog`
@@ -39,7 +47,7 @@ disagreement.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from redstring.domain.similarity import (
     FeatureWeights,
@@ -48,12 +56,12 @@ from redstring.domain.similarity import (
     graph_similarity,
     string_similarity,
 )
+from redstring.ports.graph_store import AliasStore, EntityReader, RelationshipStore
 
 if TYPE_CHECKING:
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
-    from redstring.ports.graph_store import GraphStore
-    from redstring.ports.vector_store import VectorStore
+    from redstring.ports.vector_store import VectorReader
 
 #: How many nearest vectors the embedding step asks for.
 #:
@@ -63,6 +71,33 @@ if TYPE_CHECKING:
 #: feature rather than a zero, which is the honest reading: the store was not
 #: asked about it.
 EMBEDDING_SEARCH_K = 50
+
+
+@runtime_checkable
+class ConsolidationGraph(EntityReader, AliasStore, RelationshipStore, Protocol):
+    """The three graph capabilities blocking-and-scoring needs, and no more.
+
+    Not a fourth store capability -- it adds no method and regroups nothing.
+    It is a *composition* of three of `GraphStore`'s five, named so that a
+    signature can say "reads entities, resolves aliases, reads edges" without
+    also saying "and may wipe a tenant".
+
+    `docs/adr/0016-graph-store-is-five-capabilities.md` left `CandidateFinder`
+    on the whole port, reasoning that a collaborator spanning three
+    capabilities is honestly typed by the composed one. Three of five is not
+    five, and the two it does not span are the two that matter most: it holds
+    `EntityWriter` while its own docstring promises it never writes, and it
+    holds `TenantPurge`, whose whole stated purpose is to make "this
+    collaborator can wipe a tenant" a visible fact about a signature. A
+    capability that is load-bearing only when it is *absent* cannot be granted
+    by default without retiring it.
+
+    0016 also declined a bespoke three-method protocol here and said to
+    revisit "if a caller ever needs a slice these five cannot express". This
+    is that slice, and the form matters: naming a caller's *combination* of
+    capabilities keeps the port describing the store, where inventing a
+    three-method interface would have started describing its callers.
+    """
 
 
 @dataclass(frozen=True)
@@ -85,9 +120,9 @@ class CandidateFinder:
 
     def __init__(
         self,
-        graph_store: GraphStore,
+        graph_store: ConsolidationGraph,
         *,
-        vector_store: VectorStore | None = None,
+        vector_store: VectorReader | None = None,
         weights: FeatureWeights | None = None,
         use_graph_signal: bool = True,
     ) -> None:
