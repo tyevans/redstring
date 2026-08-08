@@ -18,6 +18,15 @@ names and still not a term-weighted ranker, and a ranker over passages would
 be a different and additional thing rather than a replacement for the one that
 catches `Acme Corp`.
 
+Amended a second time by
+[`0024` BM25 over the chunk corpus](0024-bm25-over-the-chunk-corpus.md). The
+sentence below reading "the name 'BM25' appears nowhere under `src/`" no
+longer holds — `domain/bm25.py` is a real term-weighted ranker over the real
+document corpus 0023 built, and the name is honest there for the first time.
+The **decision below stands unchanged** for the channel this document is
+about: the entity lexical channel is still a field-weighted string similarity,
+still not BM25, and 0024's ranker does not replace it.
+
 ## Context
 
 A retrieval surface over entities wants two channels, because they fail in

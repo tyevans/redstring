@@ -1093,38 +1093,34 @@ Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
 
-### B89. No chunk embeddings and no term-weighted ranker over the corpus — B2
+### B89. No chunk embeddings and no fused `retrieve_chunks` entry point — B2b
 
-B1 built the corpus and deliberately stopped there:
-`docs/adr/0023-the-chunk-corpus.md`. B2 is chunk embeddings, a real
-term-weighted ranker over the stored passages, a `ScoredChunk`, a
-`retrieve_chunks` entry point, and fusion with the RRF that
-`composition/retrieval.py` already does. None of it exists.
+B1 built the corpus (`docs/adr/0023-the-chunk-corpus.md`) and B2a built a real
+term-weighted ranker over it — BM25, scored in the domain, with the tokenizer
+and truncation cost it depends on
+(`docs/adr/0024-bm25-over-the-chunk-corpus.md`). **B2a has landed.** What is
+still missing is chunk embeddings, a `ScoredChunk`, a `retrieve_chunks` entry
+point, and fusion with the RRF that `composition/retrieval.py` already does
+for entities. None of that exists.
 
-What B1 decided that B2 inherits, and would otherwise have to rediscover:
+What B1 and B2a decided that B2b inherits, and would otherwise have to
+rediscover:
 
-- **`ChunkStore` has no search or filter method, on purpose.** Adding one to
-  our own port later costs nothing; shipping the wrong one costs an adapter
-  divergence, and every decision a search signature encodes is downstream of
-  what a stored passage is. B2 defines it against a corpus that exists. It
-  goes in `tests/compliance/chunk_store.py` first — a search method landing in
-  one adapter's test module is `recurring-defects.md` §1 exactly.
 - **Chunk ids are content-addressed over `(source_id, text)`**, so a re-chunk
   produces *new* ids rather than overwriting. A stored embedding therefore
   never silently describes text that has changed — which is the property that
   makes chunk embeddings safe to store at all, and it was chosen for this
   reason before any embedding existed. Do not "simplify" identity to
   `(source_id, chunk_index)` on the way in.
-- **`replace_source` is one atomic call.** Once document-frequency statistics
-  exist, a split upsert-then-delete would let them be computed over a chunk
-  set that never existed. Any statistic B2 caches has the same requirement:
-  it is invalidated by the same call that replaces the source, not by a
-  second one.
+- **`replace_source` is one atomic call.** Document-frequency statistics are
+  computed at query time over rows written by that one call; any statistic
+  B2b caches has the same requirement — invalidated by the call that replaces
+  the source, not by a second one.
 - **BM25 is still not a name for the entity-name lexical channel.** ADR 0022
-  stands; the term appears nowhere under `src/`, and B2's ranker is a
-  *different and additional* channel over passages, not a replacement for the
-  one that catches `Acme Corp`. Two channels named the same thing is how a
-  caller ends up tuning the wrong one.
+  stands even after ADR 0024 made the name honest for the chunk ranker: the
+  entity channel is a field-weighted string similarity, and B2b's semantic
+  channel over chunks is a *third and additional* one, not a replacement for
+  either.
 - **`entity_ids` is on the chunk, not in the graph.** A ranked passage is
   turned into entities by the caller holding both ports. Putting a chunk
   reference into the graph gives `mapping.py` a second id scheme.
@@ -1133,9 +1129,24 @@ What B1 decided that B2 inherits, and would otherwise have to rediscover:
   types — is a third instance waiting to happen the moment chunk embeddings
   acquire their own composition point.
 
-`PostgresChunkStore` stores no vector column today, so B2 also has a schema
+`PostgresChunkStore` stores no vector column today, so B2b also has a schema
 migration for a table that is already shipped and already has an integration
 suite pinning its DDL.
+
+### B92. Corpus statistics are recomputed per query, not maintained incrementally
+
+`lexical_candidates` counts `n_docs`, `avg_doc_length` and per-term document
+frequencies at query time — `count(*)`, `avg()`, and a per-term count scoped
+to the requested terms — rather than reading from counters kept in step with
+writes (`docs/adr/0024-bm25-over-the-chunk-corpus.md`).
+
+Deliberately not built speculatively: maintaining counters correctly across
+`upsert_many`, `replace_source` and both delete paths is real code with its
+own failure modes (a counter that drifts from the rows it describes is worse
+than no counter), and nothing has measured `count(*)`/`avg()` per query as a
+cost centre at any scale this repository has exercised. If it becomes one,
+the fix is counters updated by the same writes that touch `<table>_terms`,
+not a cache invalidated by a schedule.
 
 ### B88. `SlidingWindowChunker` is not exported, so tuning the split needs a dotted import
 
