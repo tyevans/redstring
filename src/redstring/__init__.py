@@ -65,14 +65,19 @@ could not be caught without a dotted import.
   backend of your own; the compliance suite in `tests/compliance` is what
   says whether you got it right.
 
-  Three of them are **composed from capability protocols, and those are
+  Four of them are **composed from capability protocols, and those are
   exported too**: `GraphStore` from `EntityReader`, `EntityWriter`,
-  `AliasStore`, `RelationshipStore` and `TenantPurge`; `ChunkStore` from
+  `AliasStore`, `RelationshipStore` and `TenantPurge`; `VectorStore` from
+  `VectorWriter`, `VectorReader` and `VectorPurge`; `ChunkStore` from
   `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource` and `ChunkPurge`;
   `Cache` from `KeyValueCache` and `HitWindow`. Implement the composed port;
   *depend* on the narrowest capability you actually call. The split is what
   lets `ChunkProjection` need one method rather than nine, and what lets a
   caller supply BM25 recall from an index that is not a chunk store at all.
+
+  `ConsolidationGraph` is the one name here that is not a store capability:
+  it composes three of `GraphStore`'s five so `CandidateFinder` can say what
+  it reads without also claiming the right to write or to wipe a tenant.
 - **Adapters.** `InMemoryGraphStore`, `InMemoryVectorStore` and
   `InMemoryChunkStore` are complete
   implementations, not test doubles -- suitable for a single-process job.
@@ -167,7 +172,11 @@ from redstring.composition import (
     build_graph,
     index_documents,
 )
-from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
+from redstring.consolidation.candidates import (
+    CandidateFinder,
+    ConsolidationGraph,
+    ScoredCandidate,
+)
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
 from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
 from redstring.domain.alias import Alias
@@ -250,7 +259,12 @@ from redstring.ports.graph_store import (
     TenantPurge,
 )
 from redstring.ports.llm_provider import LlmProvider
-from redstring.ports.vector_store import VectorStore
+from redstring.ports.vector_store import (
+    VectorPurge,
+    VectorReader,
+    VectorStore,
+    VectorWriter,
+)
 from redstring.projections import ChunkProjection, GraphProjection, VectorProjection
 from redstring.temporal.inference import InferredRelation, infer_relations
 from redstring.temporal.query import CursorStalledError, TemporalQuery
@@ -285,6 +299,7 @@ __all__ = [
     "ChunkingError",
     "ChunkingResult",
     "ConfidenceThresholds",
+    "ConsolidationGraph",
     "ConsolidationInvariantError",
     "ConsolidationReport",
     "Consolidator",
@@ -364,8 +379,11 @@ __all__ = [
     "UnknownMergeError",
     "VectorMatch",
     "VectorProjection",
+    "VectorPurge",
+    "VectorReader",
     "VectorRecord",
     "VectorStore",
+    "VectorWriter",
     "__version__",
     "build_graph",
     "document_stream",

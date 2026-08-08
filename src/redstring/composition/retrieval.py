@@ -1,10 +1,18 @@
 """Turning a query string into ranked entities, over three collaborators.
 
 This is a composition and nothing else: every decision it makes is delegated
-to a pure function in `domain/`. It lives on the top layer because it holds
-`EmbeddingProvider`, `VectorStore` and `GraphStore` at once, and `vector` and
+to a pure function in `domain/`. It lives on the top layer because it holds an
+embedding provider, a vector store and a graph store at once, and `vector` and
 `graph` are siblings that may not import each other while neither may import
 `llm` -- so no lower layer can hold all three.
+
+It holds the *narrowest* form of each: `VectorReader` and `EntityReader`, not
+the composed ports. Retrieval reads, and nothing else -- two methods of seven
+on the vector side, two of eighteen on the graph side -- so the composed
+annotations were promising a caller's adapter far more than this class ever
+asks it for. Note what the narrowing rules out at the type level: a retriever
+holding `GraphStore` could wipe a tenant, which is precisely the fact
+`TenantPurge` exists to make visible in a signature.
 
 ## Lexical recall is bounded by blocking
 
@@ -47,8 +55,8 @@ if TYPE_CHECKING:
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
     from redstring.ports.embedding_provider import EmbeddingProvider
-    from redstring.ports.graph_store import GraphStore
-    from redstring.ports.vector_store import VectorStore
+    from redstring.ports.graph_store import EntityReader
+    from redstring.ports.vector_store import VectorReader
 
 
 class Retriever:
@@ -58,8 +66,8 @@ class Retriever:
         self,
         *,
         embeddings: EmbeddingProvider,
-        vectors: VectorStore,
-        graph: GraphStore,
+        vectors: VectorReader,
+        graph: EntityReader,
         overfetch: int = 3,
     ) -> None:
         """Wire the three collaborators, refusing a mismatched pair.

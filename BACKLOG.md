@@ -2365,6 +2365,7 @@ changed, a shape this project has already been bitten by once (the
 `InMemoryVectorStore.search`). Fix: `avg(doc_length::float8)` on the
 Postgres side makes both adapters do the same float arithmetic instead of
 routing one of them through `numeric`.
+
 ### B105. The store-adapter guide numbers five steps and writes two of them
 
 `docs/how-to/implement-a-store-adapter.md` opens with a five-item numbered
@@ -2402,6 +2403,7 @@ Protocol in the module that is not a base of another one in the same module
 (the composed leaf), which is a real bit of `ast` work for a hazard that
 needs someone to break a naming convention every other port follows. Revisit
 if a port module ever declares two composed leaves.
+
 ### B107. Whether a capability Protocol should declare `__aenter__`/`__aexit__`
 
 The four resource-owning adapters (`Neo4jGraphStore`, `PgVectorStore`,
@@ -2456,3 +2458,71 @@ neo4j reference, the pgvector how-to and `harden-model-calls.md` all gained an
 author reads. Add the pair to whatever it says an adapter owes -- an adapter
 holding a pool and offering only `close()` is now the odd one out rather than
 the norm.
+
+### B110. `ConsolidationGraph` sits beside its consumer, not in `ports/`
+
+`src/redstring/consolidation/candidates.py` declares `ConsolidationGraph`, the
+composition of `EntityReader`, `AliasStore` and `RelationshipStore` that
+`CandidateFinder` is now typed against (ADR 0027). Two homes are defensible and
+the choice was not made on the merits: it composes capabilities the port
+declares, which argues for `ports/graph_store.py` beside `GraphStore` itself;
+it is also a statement about one caller, which is what
+`consolidation/protocols.py` already holds for `CandidateSource` and
+`MergeAdjudicator`.
+
+It landed in `candidates.py` because the agent that wrote it owned that file
+and neither of the other two, and moving a public name across modules
+mid-branch was the riskier of the two errors. The move is a rename with no
+behavioural component -- the export is `redstring.ConsolidationGraph` either
+way, and `tests/unit/consolidation/test_graph_capability_segregation.py`
+imports it from `redstring.consolidation.candidates`, so exactly two import
+sites change. Decide it once; do not infer the answer from where it currently
+is.
+
+The precedent worth weighing: if `ports/` wins, expect a second composition
+the next time a caller spans a subset, and the port module starts carrying one
+protocol per consumer -- which is the outcome ADR 0016's "Alternatives
+rejected" section warns about under "consumer-owned protocols everywhere".
+
+### B111. Nothing gates a *new* collaborator against its capability
+
+ADR 0027 narrowed the four first-party collaborators that were wide, and the
+new modules `tests/unit/vector/test_capability_segregation.py` and
+`tests/unit/consolidation/test_graph_capability_segregation.py` each assert the
+resulting annotations by name. That pins the four that exist; it does nothing
+about the fifth.
+
+The gap is precisely the one `tests/unit/graph/test_compliance_coverage.py`
+closed for isolation tests, and the fix has the same shape: derive the check
+rather than hand-write it. A gate here would walk every class under
+`src/redstring` whose constructor names a composed port (`GraphStore`,
+`VectorStore`, `ChunkStore`, `Cache`), and fail unless the module is on a
+short list saying why the whole port is the honest annotation --
+`build_graph.py` and `GraphProjection` genuinely span most of theirs, so the
+list is not empty and per ADR 0014 it needs a staleness test of its own.
+
+What makes this worth doing rather than trusting: the configured `mypy` run
+covers `src/redstring` and not `tests/`, and a *widened* annotation is
+type-correct by construction, so the type checker can never report this. It
+was measured during 0027 -- reverting all four narrowings left `uv run mypy`
+completely silent. The annotation-reading assertions in those two test modules
+are a stopgap for four known names, not a mechanism.
+
+### B112. The store-adapter guide names two composed ports; there are four
+
+`docs/how-to/implement-a-store-adapter.md:184-187` reads "`GraphStore` and
+`ChunkStore` are each composed from smaller capability protocols (ADR 0016)".
+`Cache` has been composed since ADR 0026 and `VectorStore` since ADR 0027, so
+the sentence is wrong about half the ports it is describing, and it cites only
+0016.
+
+Not fixed here because that file was being edited by another agent in the same
+wave (see B109, which defers a different change to the same page for the same
+reason) and a concurrent write to one paragraph is how a merge silently keeps
+the wrong half. It is `.claude/rules/recurring-defects.md` §5 exactly: a doc
+naming specifics, gone stale the moment a sweep touched the tree.
+
+The fix is one sentence plus the two citations, and it should say *four of the
+six*, not "all" -- `LlmProvider` and `EmbeddingProvider` are single
+capabilities and naming them as composed would be the opposite error. Fold it
+in with B109 rather than as its own commit.
