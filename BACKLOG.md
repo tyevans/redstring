@@ -1569,11 +1569,12 @@ needs a field naming the string that actually matched — without it the caller
 cannot tell an alias hit from a name hit, and that is the distinction the
 whole question turns on.
 
-### B88. `domain/tokenize.py` does no stemming
+### B91. `domain/tokenize.py` does no stemming
 
 `tokenize` splits on non-alphanumerics and casefolds, but "running" and "run"
 are different terms to it, and that recall cost is real for the BM25 channel
-built on top of it (see `.superpowers/sdd/2026-08-07-chunk-lexical-channel/`).
+built on top of it (see
+`docs/superpowers/plans/2026-08-07-chunk-lexical-channel.md`).
 
 Deferred rather than added because a stemmer is a language model — English-only,
 and a new dependency — and two implementations of "the Porter stemmer" differ
