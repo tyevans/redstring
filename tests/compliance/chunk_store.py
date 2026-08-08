@@ -1093,13 +1093,24 @@ class ChunkStoreCompliance:
         reference. The corpus must produce differing scores, or this passes
         on a store that returns everything at score zero.
 
-        `limit` is **3**, below the corpus's four chunks, and `k` stays 10:
-        `lexical_candidates` genuinely truncates, so this is the only case
-        that could catch two adapters cutting a tied pair differently. With
-        `limit >= len(corpus)` nothing is ever cut and the property is
-        asserted only where there is nothing to disagree about. Keeping `k`
-        distinct from `limit` also means the two parameters cannot silently
-        be wired to each other's argument without a test noticing.
+        Truncation is exercised at **two** limits, and the second is the one
+        that matters. `limit=3` cuts the single one-match chunk, which proves
+        the adapters agree about a cut but says nothing about *ties* -- chunks
+        0 and 1 both match three terms, so both survive at 3 whatever the
+        tie-break does. Only `limit=1` cuts through the tied pair, and which
+        member survives is precisely the divergence this case exists to
+        catch: Postgres offers candidates in whatever order the planner
+        produces, and the port's `id` tie-break is the only thing making the
+        two adapters agree.
+
+        `k` stays 10, above both limits, so `limit` and `k` can never be
+        silently wired to each other's argument without a test noticing.
+
+        The two stores are also loaded in **different insertion orders** --
+        `_corpus` writes the tied pair reversed into `store` while the
+        reference is written in list order -- so an adapter whose ordering
+        fell back on arrival order would disagree here rather than agreeing
+        by coincidence.
         """
         # Local import: this module must stay import-order-safe for the
         # reference adapter itself, and importing at module scope would
@@ -1112,14 +1123,25 @@ class ChunkStoreCompliance:
         await reference.upsert_many(chunks)
 
         terms = ["common", "rare", "alpha", "beta"]
-        under_test = await store.lexical_candidates(terms, tenant, 3)
-        from_reference = await reference.lexical_candidates(terms, tenant, 3)
 
-        ranked_under_test = rank_chunks(terms, under_test, 10)
-        ranked_reference = rank_chunks(terms, from_reference, 10)
+        for limit in (3, 1):
+            under_test = await store.lexical_candidates(terms, tenant, limit)
+            from_reference = await reference.lexical_candidates(terms, tenant, limit)
 
-        # A corpus where every chunk scores zero would pass this trivially.
-        assert any(ranked.score > 0.0 for ranked in ranked_under_test)
-        assert [(ranked.chunk.id, ranked.score) for ranked in ranked_under_test] == [
-            (ranked.chunk.id, ranked.score) for ranked in ranked_reference
+            ranked_under_test = rank_chunks(terms, under_test, 10)
+            ranked_reference = rank_chunks(terms, from_reference, 10)
+
+            # A corpus where every chunk scores zero would pass this trivially.
+            assert any(ranked.score > 0.0 for ranked in ranked_under_test)
+            assert [(ranked.chunk.id, ranked.score) for ranked in ranked_under_test] == [
+                (ranked.chunk.id, ranked.score) for ranked in ranked_reference
+            ], f"adapters disagree at limit={limit}"
+
+        # Guard the guard: at limit=1 the cut must fall *inside* the tied
+        # pair, or the loop above proves nothing more than the limit=3 pass
+        # already did. chunks[0] and chunks[1] both match three terms and
+        # chunks[0].id sorts below, so the contract names chunks[0].
+        survivor = await store.lexical_candidates(terms, tenant, 1)
+        assert [candidate.chunk.id for candidate in survivor.candidates] == [
+            min(chunks[0].id, chunks[1].id)
         ]
