@@ -116,6 +116,14 @@ upstream version does that this one did not.
   with the closure that came with it: `CandidateFinder`, `Adjudicator`, the
   two merge events, the four value types those name, and the four
   consolidation errors.
+
+  `Consolidator.resolve` is typed against `CandidateSource` and
+  `MergeAdjudicator` rather than those two classes. Both are single-method
+  protocols, and they are what make the docstring's "supply one to change the
+  weights or the blocking" a real offer: substituting your own search index
+  for the blocking, or a human review queue for the model, no longer means
+  subclassing a class whose constructor demands collaborators you do not
+  have. `CandidateFinder` and `Adjudicator` remain the defaults.
 - **No scraping, no HTML preprocessing.** A caller supplies a
   `SourceDocument`. Fetching content is a different job with different
   failure modes, and it was removed rather than left unfinished (slice 1).
@@ -152,6 +160,7 @@ from redstring.composition import (
 )
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
+from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
 from redstring.domain.alias import Alias
 from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk import ChunkId, StoredChunk
@@ -245,6 +254,7 @@ __all__ = [
     "AutoDomain",
     "Bounds",
     "CandidateFinder",
+    "CandidateSource",
     "Chunk",
     "ChunkId",
     "ChunkProjection",
@@ -296,6 +306,7 @@ __all__ = [
     "LlmProvider",
     "LlmProviderError",
     "MalformedCompletionError",
+    "MergeAdjudicator",
     "MergeIntoAliasError",
     "MergeUndone",
     "MissingEntityError",

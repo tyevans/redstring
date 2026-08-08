@@ -88,7 +88,7 @@ if TYPE_CHECKING:
     from eventsource.ports.snapshots import SnapshotStore
     from eventsource.ports.store import AggregateStore
 
-    from redstring.consolidation.policy import Adjudicator
+    from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
     from redstring.domain.source import SourceDocument
@@ -670,8 +670,8 @@ class Consolidator:
         self,
         subject: Entity,
         *,
-        finder: CandidateFinder | None = None,
-        adjudicator: Adjudicator | None = None,
+        finder: CandidateSource | None = None,
+        adjudicator: MergeAdjudicator | None = None,
         high: float = HIGH_SIMILARITY,
         low: float = LOW_SIMILARITY,
     ) -> ConsolidationReport | None:

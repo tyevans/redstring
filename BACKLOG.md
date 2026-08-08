@@ -2115,6 +2115,40 @@ this note; the executor this entry describes has to cover `README.md` and
 `docs/*.md`, not just the how-to directory, or it would have caught none of
 the three.
 
+### B101. `CandidateSource` and `MergeAdjudicator` have no compliance suite
+
+ADR 0025 declared both protocols and stated two obligations a substitute can
+violate without erroring:
+
+- `candidates` returns results best first **under a total order**. The default
+  breaks score ties by ascending entity id as a string so two runs over one
+  graph agree. A substitute sorting on score alone leaves a cutoff falling
+  inside a tie to be decided by whatever order its backend returned, which
+  surfaces as an intermittently different merge rather than as a failure.
+- `adjudicate` returns **exactly one verdict per candidate, positionally
+  aligned**, `None` where it has no answer. A short list silently records an
+  answer about one pair against another; `False` in place of `None` turns a
+  provider outage into a corpus that appears to hold no duplicates.
+
+Both are prose in a protocol docstring. Every other multi-implementation
+contract here is a shared body under `tests/compliance/` subclassed per
+adapter, and `.claude/rules/recurring-defects.md` §1 is precisely about what
+happens without one — two implementations diverge and nothing fails, because
+each one's tests assert its own behaviour.
+
+**Not built now, deliberately, and the reason is the part worth keeping:**
+there is exactly one implementation of each protocol. A compliance suite
+written against a single implementation gets tuned until that implementation
+passes, which is the failure this project has recorded twice (the tier-2
+banner in `tests/compliance/vector_store.py` says the same thing about a tier
+that has never run against an adapter that could fail it). The suite is worth
+writing when the *second* implementation appears, and its two cases are the
+two bullets above — a tie forced to occur, and an adjudicator returning a
+short list.
+
+`tests/unit/consolidation/test_substitution.py` covers the seam for the
+defaults' sake and says in its own docstring what it does not prove.
+
 ### B100. ADR 0007 cites `redstring.projections.project`, which does not exist
 
 `docs/adr/0007-composition-is-the-only-top-layer.md:86,362,446` name
