@@ -2149,6 +2149,35 @@ short list.
 `tests/unit/consolidation/test_substitution.py` covers the seam for the
 defaults' sake and says in its own docstring what it does not prove.
 
+### B102. `Retriever`'s overfetch default of 3 is reasoned, not measured
+
+`Retriever.__init__` takes `overfetch=3`, multiplying what each channel is
+asked for before RRF truncates to `k`. The *direction* is not in doubt: an
+entity neither channel returned cannot be promoted by fusion, and RRF
+demonstrably ranks a consistent runner-up above two channel-leaders
+(`test_rank_fusion_promotes_a_consistent_runner_up` asserts that arithmetic).
+Asking each channel for exactly `k`, as the code did, therefore dropped
+candidates the fusion rule says should win.
+
+**The number 3 is a guess.** Nothing here measures recall@k against a ground
+truth at 1, 2, 3 or 5, because there is no retrieval evaluation corpus --
+`tests/accuracy/` grades extraction, not retrieval. So the tests assert the
+*request* (`k * overfetch` per channel) and the fusion arithmetic, and neither
+can tell you whether 3 buys materially more than 2 or leaves recall on the
+table at 5.
+
+What a fix needs: a small graded query set in the shape of
+`tests/accuracy/corpus.yaml` -- queries with known-relevant entity ids -- and
+a measurement of recall@k across overfetch values, on a corpus large enough
+that the channels disagree. Related: **B10k** (no ANN adapter exists, so
+nothing here has ever run against a store that can miss a neighbour) and
+**B86** (two retrieval tests already pass on the adapter's guarantee rather
+than the `Retriever`'s).
+
+Until then the cost is stated in the docstring -- a wider `VectorStore.search`
+and a wider blocking-key scan per query -- and `overfetch=1` restores the
+previous behaviour exactly.
+
 ### B100. ADR 0007 cites `redstring.projections.project`, which does not exist
 
 `docs/adr/0007-composition-is-the-only-top-layer.md:86,362,446` name

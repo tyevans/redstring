@@ -60,8 +60,25 @@ class Retriever:
         embeddings: EmbeddingProvider,
         vectors: VectorStore,
         graph: GraphStore,
+        overfetch: int = 3,
     ) -> None:
         """Wire the three collaborators, refusing a mismatched pair.
+
+        `overfetch` multiplies how many candidates each channel is asked for
+        before fusion truncates to `k`. It defaults to 3 rather than 1, and
+        the reason is a property of rank fusion rather than a tuning
+        preference: RRF scores an entity by the ranks it holds in *each*
+        list, so an entity ranked k+1 in both channels can legitimately beat
+        one ranked first in a single channel -- and asking each channel for
+        exactly `k` makes that entity invisible, because neither list
+        contains it. The candidates that decide the fused ordering are the
+        ones just past each channel's cutoff.
+
+        `overfetch=1` restores the old behaviour and is the cheapest setting;
+        raising it costs a wider `VectorStore.search` and a wider blocking-key
+        scan per query, and buys recall. Values below 1 raise `ValueError` --
+        fetching fewer than `k` per channel cannot improve on `k` and is
+        always a mistake.
 
         The dimension check is at construction, before any text is embedded --
         the same rule `build_graph` applies, and for the same reason: the
@@ -75,6 +92,9 @@ class Retriever:
         """
         if embeddings.dimension != vectors.dimension:
             raise DimensionMismatchError(expected=vectors.dimension, actual=embeddings.dimension)
+        if overfetch < 1:
+            raise ValueError(f"overfetch must be at least 1, got {overfetch}")
+        self._overfetch = overfetch
         self._embeddings = embeddings
         self._vectors = vectors
         self._graph = graph
@@ -108,15 +128,19 @@ class Retriever:
         if k == 0:
             return RetrievalResult(query=query, matches=[])
 
+        # Each channel is asked for more than `k`; see `overfetch` on
+        # `__init__` for why fusion needs the candidates past each cutoff.
+        per_channel = k * self._overfetch
+
         semantic_scores: dict[EntityId, float] = {}
         if mode in (RetrievalMode.SEMANTIC, RetrievalMode.HYBRID):
-            semantic_scores = await self._semantic(query, tenant_id, k, entity_types)
+            semantic_scores = await self._semantic(query, tenant_id, per_channel, entity_types)
 
         lexical_scores: dict[EntityId, float] = {}
         lexical_entities: dict[EntityId, Entity] = {}
         if mode in (RetrievalMode.LEXICAL, RetrievalMode.HYBRID):
             lexical_scores, lexical_entities = await self._lexical(
-                query, tenant_id, k, entity_types
+                query, tenant_id, per_channel, entity_types
             )
 
         fused = reciprocal_rank_fusion([list(semantic_scores), list(lexical_scores)])[:k]
