@@ -427,6 +427,31 @@ finally:
     await pool.close()  # you created it, so you close it
 ```
 
+### Prefer `async with`, which closes on every path out
+
+The store is an async context manager, so a `connect()`-built store does not
+need the `try`/`finally` at all:
+
+```python
+async with await PgVectorStore.connect(dsn, dimension=768) as store:
+    await store.ensure_schema()
+    ...
+```
+
+Note the `await` inside the `async with`: `PgVectorStore.connect` is itself a
+coroutine, because it creates the pool.
+
+`__aenter__` returns the store. `__aexit__` calls `close()` and returns `None`,
+which is falsy — so the block **never suppresses**: an exception from the body,
+and a cancellation delivered while the body is suspended, both propagate after
+the pool is released. That matters more here than it reads: a request cancelled
+mid-query is exactly the case a forgotten `finally` leaks a pool on.
+
+Since exit goes through `close()`, ownership is unchanged by the block. An
+injected-pool store inside an `async with` leaves your pool open on the way out,
+so the snippet above it is still the shape to write when you own the pool —
+just with the store's own `close()` in a block if you like.
+
 Both `store.dimension` and `store.table` are readable back off the store, which
 is the cheap way to confirm at a composition site that a shared pool is being
 handed the table and dimension you meant.
