@@ -23,6 +23,7 @@ declared, and could not tell you the split held.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Self
 from uuid import uuid4
 
 import pytest
@@ -31,8 +32,33 @@ from redstring.llm.circuit_breaker import CircuitBreaker
 from redstring.llm.rate_limiter import RateLimiter, RateLimitExceeded
 from redstring.ports.cache import Cache, HitWindow, KeyValueCache
 
+if TYPE_CHECKING:
+    from types import TracebackType
 
-class BreakerCache:
+
+class Lifetime:
+    """The release half every capability inherits from `AsyncClosable`.
+
+    A double claiming to *be* a capability has to satisfy all of it, including
+    the part ADR 0028 added -- otherwise the `isinstance` assertions below stop
+    saying anything about segregation and start reporting a missing `close`.
+    These doubles hold nothing, so all three are no-ops.
+    """
+
+    async def close(self) -> None: ...
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
+
+
+class BreakerCache(Lifetime):
     """`KeyValueCache` and not one method more."""
 
     def __init__(self) -> None:
@@ -58,7 +84,7 @@ class BreakerCache:
         self.closed = True
 
 
-class LimiterCache:
+class LimiterCache(Lifetime):
     """`HitWindow` and not one method more."""
 
     def __init__(self) -> None:
@@ -126,17 +152,29 @@ class TestEachConsumerNeedsOnlyItsHalf:
         # no hits and refused everything would pass the three lines above.
         assert len(cache.hits[limiter._key(tenant)]) == 2
 
-    async def test_each_consumer_closes_the_cache_it_was_given(self) -> None:
-        # `close` is in *both* halves rather than in a lifecycle protocol of
-        # its own, because both consumers forward it. Asserting it here is
-        # what would fail if someone factored it back out.
+    async def test_neither_consumer_closes_a_cache_it_was_given(self) -> None:
+        """Inverted by B108, and the reason it existed still holds.
+
+        This read `assert breaker_cache.closed` until `close()` narrowed to
+        "release only a cache I created" -- the fix for one shared
+        `RedisCache` being closed out from under whichever component had not
+        finished yet. See `tests/unit/llm/test_resilience_cache_ownership.py`
+        for the behavioural regression; what is asserted *here* is the half
+        this module is about, which is that neither consumer reaches across
+        the capability split to do it.
+
+        `close` is still in both halves of the port rather than in a lifecycle
+        protocol of its own, and that claim is now carried structurally by
+        `test_each_double_satisfies_exactly_its_own_capability`: a double
+        lacking `close` would fail its `isinstance` check.
+        """
         breaker_cache, limiter_cache = BreakerCache(), LimiterCache()
 
         await CircuitBreaker(cache=breaker_cache).close()
         await RateLimiter(rpm=1, cache=limiter_cache).close()
 
-        assert breaker_cache.closed
-        assert limiter_cache.closed
+        assert not breaker_cache.closed
+        assert not limiter_cache.closed
 
 
 class TestReachingAcrossTheSplitFails:

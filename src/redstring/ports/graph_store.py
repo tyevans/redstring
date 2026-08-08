@@ -35,6 +35,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
+from redstring.ports.lifecycle import AsyncClosable
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -45,7 +47,7 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
-class EntityReader(Protocol):
+class EntityReader(AsyncClosable, Protocol):
     """Reads entities back out.
 
     The narrowest useful slice of the port, and the one most collaborators
@@ -137,7 +139,7 @@ class EntityReader(Protocol):
 
 
 @runtime_checkable
-class EntityWriter(Protocol):
+class EntityWriter(AsyncClosable, Protocol):
     """Puts entities in, idempotently.
 
     Separate from reading because projections write and queries read, and
@@ -163,7 +165,7 @@ class EntityWriter(Protocol):
 
 
 @runtime_checkable
-class AliasStore(Protocol):
+class AliasStore(AsyncClosable, Protocol):
     """Records and resolves merges.
 
     Why the store knows about aliases at all is argued in the module
@@ -236,7 +238,7 @@ class AliasStore(Protocol):
 
 
 @runtime_checkable
-class RelationshipStore(Protocol):
+class RelationshipStore(AsyncClosable, Protocol):
     """The edges, and the ways to walk them.
 
     Reads and writes together here rather than split like entities, because
@@ -371,7 +373,7 @@ class RelationshipStore(Protocol):
 
 
 @runtime_checkable
-class TenantPurge(Protocol):
+class TenantPurge(AsyncClosable, Protocol):
     """Removing everything one tenant owns.
 
     Alone in its own protocol because it is the one operation with no

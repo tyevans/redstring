@@ -1,10 +1,20 @@
-"""`async with` on the four adapters that hold a real resource.
+"""`async with` on every class that may hold a resource it created.
 
-Each of `Neo4jGraphStore`, `PgVectorStore`, `PostgresChunkStore` and
-`RedisCache` owns a driver, a connection pool or a client, and each exposes
-`close()`. Before this module they exposed *only* `close()`, so the shipped
-usage was `connect()` plus a `try/finally` the caller had to remember, and a
-caller who forgot -- or who was cancelled inside the body -- leaked the pool.
+`Neo4jGraphStore`, `PgVectorStore`, `PostgresChunkStore` and `RedisCache` each
+own a driver, a connection pool or a client, and each exposes `close()`. Before
+this module they exposed *only* `close()`, so the shipped usage was `connect()`
+plus a `try/finally` the caller had to remember, and a caller who forgot -- or
+who was cancelled inside the body -- leaked the pool.
+
+`CircuitBreaker` and `RateLimiter` joined them when B108 was fixed, and how
+they joined is the point of the derivation below. They were correctly *out* of
+scope while their `close()` closed unconditionally, because a class that always
+closes owns nothing conditionally and has nothing to be careful about. Giving
+each an `_owns_cache` flag -- so a cache the caller passed in is left open --
+made them resource owners in exactly the sense this module scans for, and the
+scan picked them up on its own. Nobody had to remember to add them; the run
+failed until the builders below existed. That is the property the derivation
+was written for, and this is the first time it fired.
 
 **Why these are unit tests when three of the four adapters need a server.**
 The semantics under test are properties of `__aexit__`, not of any backend:
@@ -48,6 +58,8 @@ import redstring
 from redstring.chunks.adapters.postgres import PostgresChunkStore
 from redstring.graph.adapters.neo4j import Neo4jGraphStore
 from redstring.llm.cache.redis import RedisCache
+from redstring.llm.circuit_breaker import CircuitBreaker
+from redstring.llm.rate_limiter import RateLimiter
 from redstring.vector.adapters.pgvector import PgVectorStore
 
 if TYPE_CHECKING:
@@ -113,7 +125,23 @@ def _redis(resource: _Resource, *, owned: bool) -> _Closeable:
     return RedisCache(cast("Any", resource), owns_client=owned)
 
 
-#: Every adapter in `src/` that owns an external resource.
+def _breaker(resource: _Resource, *, owned: bool) -> _Closeable:
+    # The resource stands in for the cache. Passing one sets `_owns_cache`
+    # False, which is the case the constructor decides -- so the flag is set
+    # afterwards for the owning case, exactly as the three stores above do it,
+    # rather than constructing with `cache=None` and losing the double.
+    breaker = CircuitBreaker(cache=cast("Any", resource))
+    breaker._owns_cache = owned
+    return breaker
+
+
+def _limiter(resource: _Resource, *, owned: bool) -> _Closeable:
+    limiter = RateLimiter(rpm=1, cache=cast("Any", resource))
+    limiter._owns_cache = owned
+    return limiter
+
+
+#: Every class in `src/` that may own the resource it holds.
 #: `TestEveryResourceHoldingAdapterIsCovered` below derives that set from the
 #: source tree and fails if this dict has drifted from it.
 BUILDERS: dict[str, Callable[[_Resource, bool], _Closeable]] = {
@@ -121,6 +149,8 @@ BUILDERS: dict[str, Callable[[_Resource, bool], _Closeable]] = {
     "PgVectorStore": lambda resource, owned: _pgvector(resource, owned=owned),
     "PostgresChunkStore": lambda resource, owned: _chunks(resource, owned=owned),
     "RedisCache": lambda resource, owned: _redis(resource, owned=owned),
+    "CircuitBreaker": lambda resource, owned: _breaker(resource, owned=owned),
+    "RateLimiter": lambda resource, owned: _limiter(resource, owned=owned),
 }
 
 adapters = pytest.mark.parametrize("build", BUILDERS.values(), ids=list(BUILDERS))
@@ -253,13 +283,16 @@ class TestEveryResourceHoldingAdapterIsCovered:
     subject set is **derived from the source tree** the way the compliance
     coverage gates derive their read-method lists.
 
-    The derivation is the ownership flag, not `close()`. Every one of these
-    four keeps an `_owns_*` attribute because it may or may not have created
+    The derivation is the ownership flag, not `close()`, and B108 is the
+    argument for that choice rather than a complication of it. Every subject
+    here keeps an `_owns_*` attribute because it may or may not have created
     the thing it holds, and that flag is what makes it a resource owner.
-    `close()` is the wrong signal: `CircuitBreaker.close` and
-    `RateLimiter.close` both exist, both mean "release the cache I was given",
-    and neither owns anything -- a gate keyed on the method name would demand
-    context managers there and be wrong about it.
+    `close()` is the wrong signal in both directions: it would have demanded
+    these methods of `CircuitBreaker` and `RateLimiter` back when their
+    `close()` closed unconditionally, which was the wrong fix for the wrong
+    problem -- the bug there was the unconditional close, not the missing
+    block form. Fixing the ownership made the flag appear, and the flag is
+    what brought them in here.
     """
 
     def test_the_builders_cover_every_resource_owning_class_in_src(self):
@@ -272,7 +305,14 @@ class TestEveryResourceHoldingAdapterIsCovered:
 
     @pytest.mark.parametrize(
         "adapter_class",
-        [Neo4jGraphStore, PgVectorStore, PostgresChunkStore, RedisCache],
+        [
+            Neo4jGraphStore,
+            PgVectorStore,
+            PostgresChunkStore,
+            RedisCache,
+            CircuitBreaker,
+            RateLimiter,
+        ],
         ids=lambda cls: cls.__name__,
     )
     def test_each_one_declares_both_halves_of_the_pair(self, adapter_class):

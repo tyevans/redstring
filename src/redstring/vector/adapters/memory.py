@@ -19,7 +19,7 @@ with a deep copy.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.vector import VectorMatch, VectorRecord, cosine_score, has_zero_norm
@@ -27,6 +27,7 @@ from redstring.ports.vector_store import entity_type_of
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from types import TracebackType
 
     from redstring.domain.ids import EntityId, TenantId
 
@@ -154,3 +155,29 @@ class InMemoryVectorStore:
             raise DimensionMismatchError(expected=self._dimension, actual=len(vector))
         if has_zero_norm(vector):
             raise ValueError("a zero vector has no direction; cosine is undefined for it")
+
+    # ------------------------------------------------------------------
+    # Lifetime
+    # ------------------------------------------------------------------
+
+    async def close(self) -> None:
+        """Nothing to release: this adapter holds dictionaries the interpreter already owns.
+
+        A no-op rather than an omission. `VectorStore` declares the release half
+        through `AsyncClosable` so a caller can write one lifetime discipline
+        against the port whichever adapter is behind it; an adapter that owns
+        no driver, pool or client satisfies "release what you hold" by doing
+        nothing, and saying so here is more honest than making the caller
+        find out by reading the class.
+        """
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.close()

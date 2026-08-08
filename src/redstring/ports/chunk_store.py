@@ -51,6 +51,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from redstring.ports.lifecycle import AsyncClosable
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -60,7 +62,7 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
-class ChunkWriter(Protocol):
+class ChunkWriter(AsyncClosable, Protocol):
     """Putting passages in. What a projection needs, and all of it."""
 
     async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
@@ -101,7 +103,7 @@ class ChunkWriter(Protocol):
 
 
 @runtime_checkable
-class ChunkReader(Protocol):
+class ChunkReader(AsyncClosable, Protocol):
     """Getting passages back by id, by source, or by entity."""
 
     async def get(self, chunk_id: ChunkId, tenant_id: TenantId) -> StoredChunk | None:
@@ -141,7 +143,7 @@ class ChunkReader(Protocol):
 
 
 @runtime_checkable
-class LexicalCandidateSource(Protocol):
+class LexicalCandidateSource(AsyncClosable, Protocol):
     """Recall and corpus statistics for BM25. One method, by design."""
 
     async def lexical_candidates(
@@ -191,7 +193,7 @@ class LexicalCandidateSource(Protocol):
 
 
 @runtime_checkable
-class ChunkPurge(Protocol):
+class ChunkPurge(AsyncClosable, Protocol):
     """Removing passages wholesale, by source or by tenant."""
 
     async def delete_by_source(self, source_id: SourceId, tenant_id: TenantId) -> int:

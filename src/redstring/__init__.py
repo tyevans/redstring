@@ -172,13 +172,13 @@ from redstring.composition import (
     build_graph,
     index_documents,
 )
-from redstring.consolidation.candidates import (
-    CandidateFinder,
-    ConsolidationGraph,
-    ScoredCandidate,
-)
+from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
-from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
+from redstring.consolidation.protocols import (
+    CandidateSource,
+    ConsolidationGraph,
+    MergeAdjudicator,
+)
 from redstring.domain.alias import Alias
 from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk import ChunkId, StoredChunk

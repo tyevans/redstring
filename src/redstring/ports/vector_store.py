@@ -83,6 +83,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from redstring.ports.lifecycle import AsyncClosable
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -115,7 +117,7 @@ def entity_type_of(metadata: dict[str, Any]) -> str | None:
 
 
 @runtime_checkable
-class VectorWriter(Protocol):
+class VectorWriter(AsyncClosable, Protocol):
     """Putting embeddings in. What a projection needs, and all of it."""
 
     @property
@@ -158,7 +160,7 @@ class VectorWriter(Protocol):
 
 
 @runtime_checkable
-class VectorReader(Protocol):
+class VectorReader(AsyncClosable, Protocol):
     """Getting embeddings back, by id or by proximity.
 
     `get` and `search` stay together rather than splitting into a lookup and a
@@ -219,7 +221,7 @@ class VectorReader(Protocol):
 
 
 @runtime_checkable
-class VectorPurge(Protocol):
+class VectorPurge(AsyncClosable, Protocol):
     """Removing embeddings, one at a time or a whole tenant's worth.
 
     The only capability here that declares no `dimension`, and the line is the

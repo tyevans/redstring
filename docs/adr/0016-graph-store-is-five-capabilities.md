@@ -5,7 +5,10 @@
 `VectorStore` by
 [ADR 0027](0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md)
 — which also amends the judgement below that `CandidateFinder` is honestly
-typed by the whole port.
+typed by the whole port. Extended by
+[ADR 0028](0028-a-capability-declares-its-own-release.md), which gives every
+capability here a `close` and an `async with` pair through `AsyncClosable`;
+the five capabilities and their boundaries are unchanged.
 
 **Why this is an ADR:** it changes the shape of a store port, which
 `.claude/rules/definition-of-done.md` names explicitly, and it changes what a

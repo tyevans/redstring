@@ -23,10 +23,11 @@ is dropped. For the two callers here -- one entry per tenant, one per circuit
 from __future__ import annotations
 
 import bisect
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
+    from types import TracebackType
 
 
 class MemoryCache:
@@ -133,3 +134,14 @@ class MemoryCache:
         """Drop everything. Nothing to release, but the port promises it."""
         self._values.clear()
         self._hits.clear()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.close()

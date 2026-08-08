@@ -38,12 +38,14 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 from redstring.domain.exceptions import RedstringError
 from redstring.llm.cache.memory import MemoryCache
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from redstring.ports.cache import KeyValueCache
 
 logger = logging.getLogger(__name__)
@@ -109,6 +111,13 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_max_calls = half_open_max_calls
+        # Ownership is decided here and nowhere else. A breaker handed a cache
+        # did not create it and must not close it: passing one `RedisCache` to
+        # a breaker *and* a limiter is the documented way to make several
+        # processes agree, and an unconditional `close()` then kills the other
+        # component's state store from under it. Same reasoning, and same
+        # spelling, as `RedisCache.owns_client`.
+        self._owns_cache = cache is None
         self._cache: KeyValueCache = cache if cache is not None else MemoryCache()
         self._key_prefix = key_prefix
 
@@ -233,5 +242,36 @@ class CircuitBreaker:
         await self._to_closed()
 
     async def close(self) -> None:
-        """Release the cache. Only meaningful for one this breaker created."""
-        await self._cache.close()
+        """Release the cache, if this breaker created it.
+
+        A cache passed in by the caller is left open. The caller built it,
+        knows what else holds it, and is the only party who can say when it
+        is finished with -- which is exactly the argument
+        `RedisCache.owns_client` makes one layer down.
+        """
+        if self._owns_cache:
+            await self._cache.close()
+
+    async def __aenter__(self) -> Self:
+        """Enter a block whose exit closes this breaker. See `__aexit__`."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        """Close on the way out, and **never suppress**.
+
+        The `None` return is the decision, not an omission: `__aexit__` is
+        read for truthiness, so any truthy value would swallow whatever the
+        body raised -- including `CancelledError`, which would break task
+        cancellation for the caller. `None` is falsy, so the exception
+        propagates and this is a resource-release block rather than an
+        exception handler.
+
+        Closing goes through `close()`, so ownership still decides: a breaker
+        given a cache leaves it open here exactly as it does there.
+        """
+        await self.close()
