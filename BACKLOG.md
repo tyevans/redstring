@@ -1207,6 +1207,46 @@ Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
 
+### B122. The coverage ratchet measures a moving number, and cannot be lowered
+
+Two findings, and the second is the one that will waste someone's afternoon.
+
+**The measurement moves between runs.** The #39 gate run measured 96.32 and
+wrote it as the baseline. Two runs over a tree differing only in a version
+string and a CHANGELOG then measured **96.2968** — twice, identically — and
+`TOLERANCE` in `scripts/coverage_ratchet.py` is `0.01`, so a commit changing
+no code could not pass its own gate. The number moves by roughly one unit of
+~7100 (6009 statements + 1120 branches), and a baseline written from the high
+end of that spread rejects everything after it.
+
+**The cause was not established.** Candidates in the order worth checking: the
+suite runs `-n auto` with `parallel = true`, so worker assignment varies with
+`pytest-randomly`'s seed and coverage is combined over a worker set that is
+not fixed; two tests skip, and a varying skip condition would move the number;
+and a stale `.coverage.*` combining in would inflate rather than deflate,
+which fits 96.32 being the outlier. The diagnostic that settles it is cheap
+and was **not run**: snapshot `Coverage.get_data()`'s missing-line set,
+re-run, diff per file. That names the wobbling lines instead of inferring
+them.
+
+**Lowering the baseline by hand does not work, and fails silently.** The
+script auto-raises — `if total > baseline + TOLERANCE: write_baseline(total)`
+— and `write_baseline` runs `git add`. So editing `.coverage-baseline` down
+and committing produces a commit containing the *measured* value, not the
+edited one, with the hook reporting `Passed` either way. This was tried while
+cutting 0.4.0: 95.00 was written, and 96.30 is what landed. CLAUDE.md and
+`.claude/rules/testing.md` both say "to accept a deliberate drop, edit
+`.coverage-baseline` in the same commit" — **that instruction cannot be
+followed as written** while the auto-raise exists, and both files should say
+so once this is resolved.
+
+Widening `TOLERANCE` to cover the measured spread (0.05 would) fixes the
+lock-out but not the drop. A deliberate drop needs the auto-raise to be
+skippable — an environment variable the script reads, or raising only when
+the gain exceeds a margin larger than the noise. Do both, and find the lines
+first: a tolerance alone hides the variance, and finding the lines without a
+tolerance leaves the next lucky run to write another unreachable baseline.
+
 ### B121. Should `BoundaryPreferenceChunker` become the default split?
 
 B120 upstreamed `research-team`'s boundary heuristic as a second `Chunker`
