@@ -29,6 +29,7 @@ from __future__ import annotations
 import pytest
 
 from redstring import FakeLlmProvider
+from redstring.extraction.domains.registry import get_domain_schema
 from tests.accuracy.corpus import GradedDocument, load_corpus
 from tests.accuracy.runner import run_corpus, run_document
 from tests.accuracy.scoring import ExpectedEntity, ExpectedRelationship
@@ -157,6 +158,67 @@ class TestTheCorpusItself:
         )
 
         with pytest.raises(ValueError, match="not a graded entity"):
+            load_corpus(bad)
+
+    def test_every_graded_type_is_declared_by_its_domain_schema(self):
+        """Grading rule 2, which was prose until constrained decoding gave it
+        teeth.
+
+        A graded type no schema declares is *unreachable* for a run using
+        `constrain_to_domain=True` -- the enum cannot produce it -- so it would
+        score as a false negative no model could ever avoid, and the resulting
+        "constrained extraction is worse" would be a property of the grading
+        rather than of extraction. See `BACKLOG.md` B57.
+        """
+        for document in load_corpus():
+            schema = get_domain_schema(document.domain)
+            declared = {t.id for t in schema.entity_types}
+            declared_edges = {t.id for t in schema.relationship_types}
+            for entity in document.entities:
+                assert entity.entity_type in declared, f"{document.id}: {entity.entity_type}"
+            for rel in document.relationships:
+                assert rel.relationship_type in declared_edges, (
+                    f"{document.id}: {rel.relationship_type}"
+                )
+
+    def test_a_corpus_grading_an_undeclared_entity_type_is_rejected(self, tmp_path):
+        """Proving that guard can fail. `company` is the obvious English word
+        and `organization` is the schema's id, which is exactly the mistake a
+        grader makes."""
+        bad = tmp_path / "bad.yaml"
+        bad.write_text(
+            "documents:\n"
+            "  - id: broken\n"
+            "    domain: news_journalism\n"
+            "    text: Northwind Energy did something.\n"
+            "    entities:\n"
+            "      - {name: Northwind Energy, type: company}\n"
+        )
+
+        with pytest.raises(ValueError, match="entity type"):
+            load_corpus(bad)
+
+    def test_a_corpus_grading_an_undeclared_relationship_type_is_rejected(self, tmp_path):
+        """The other half of the same check.
+
+        Enforcing only entity types would pass every test above, and
+        relationship vocabularies are the *less* complete half of a domain
+        schema -- so this is the side more likely to drift.
+        """
+        bad = tmp_path / "bad.yaml"
+        bad.write_text(
+            "documents:\n"
+            "  - id: broken\n"
+            "    domain: news_journalism\n"
+            "    text: Maria Chen runs Northwind Energy.\n"
+            "    entities:\n"
+            "      - {name: Maria Chen, type: person}\n"
+            "      - {name: Northwind Energy, type: organization}\n"
+            "    relationships:\n"
+            "      - {source: Maria Chen, target: Northwind Energy, type: runs}\n"
+        )
+
+        with pytest.raises(ValueError, match="relationship type"):
             load_corpus(bad)
 
     def test_an_empty_corpus_is_rejected_rather_than_scoring_perfectly(self, tmp_path):
