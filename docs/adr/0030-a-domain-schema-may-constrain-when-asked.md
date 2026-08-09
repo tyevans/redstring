@@ -136,3 +136,24 @@ should reach for by default.
 
 This is five documents against one model, so it settles that constrained
 decoding is not free here -- not that it loses everywhere.
+
+### Re-measured after ADR 0031: the finding above was confounded
+
+Both arms above ran with the model *thinking*.
+[`0031`](0031-extraction-does-not-think.md) turned that off by default, and
+the same comparison re-run against the new baseline is **identical in both
+arms** -- 12 entity true positives, 3 false positives, 0 false negatives
+either way, down to which types each document produced.
+
+So the "enum as a checklist" mechanism explains nothing. The false positives
+it was invented to account for were the reasoning trace inventing entities,
+and they went away with the thinking rather than with the constraint. The
+decision recorded above stands unchanged; only its rationale moves, from "the
+dial costs something" to "the dial buys nothing measurable here".
+
+**The lesson is about the reasoning rather than the flag.** A mechanism
+inferred from a single measurement is a hypothesis, and this one was
+persuasive enough to be written into this ADR, a BACKLOG entry and a
+documentation warning before the confounder surfaced a day later. When a
+result arrives with a satisfying story attached, the story is the part to
+distrust: it is what stops you looking for the variable you did not control.

@@ -138,6 +138,20 @@ and correct; it does not prove they improve extraction, and no committed suite
 currently can. `BACKLOG.md` records what a multi-chunk graded document would
 take.
 
+**Gleaning stays off, now measured rather than only argued.** Once ADR 0031
+made the graded corpus cheap to run, `gleanings=1` was compared against
+`gleanings=0` on it: **identical results**, 12 entity true positives and 4
+false positives either way. The second pass reported nothing missed, so the
+combined answer equalled the first answer exactly and the extra call per chunk
+bought nothing.
+
+That is a null result on a corpus that **cannot show gleaning's benefit** --
+recall is already 1.000 with no headroom, and every document is one short
+chunk, which is the opposite of the long dense chunk a second pass is for. So
+this neither vindicates nor condemns the mechanism; it says the default is
+correct on the evidence available, and that B115's third property (entities a
+good model plausibly misses) is what would change the answer.
+
 Two counters are added to `PipelineResult` (`gleaning_passes`,
 `failed_gleanings`) and one argument to each of `ExtractionPipeline` and
 `build_graph`. `build_graph` exposes both because it constructs the pipeline,

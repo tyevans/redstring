@@ -1553,16 +1553,34 @@ owns". Both that file and `TemporalEventProperties` were deleted in slice 9 and
 neither exists anywhere in the tree. The recoverable copy is under
 `src/redstring/extraction/schemas.py` at `66f589d` or earlier.
 
-### B57. Constrained decoding is built, measured, and worse -- keep it off
+### B57. Constrained decoding is built and measured: it changes nothing here
 
 **Both halves are closed.** `extraction/constrained.py` builds the enum-bearing
 schema, `build_graph(..., constrain_to_domain=True)` wires it, and
 `docs/adr/0030-a-domain-schema-may-constrain-when-asked.md` records the design.
-The measurement this entry demanded before believing constrained decoding
-extracts better has been run, and the answer is that it does not.
+The measurement this entry demanded has been run **twice**, and the second run
+retracts the first.
 
-Graded corpus, `qwen3.6-27b-mtp`, `temperature=0.0` so both arms are
-deterministic and no repeat is needed:
+**Current answer, against the thinking-off baseline ADR 0031 established:**
+
+| | entity tp/fp/fn | relationship tp/fp/fn |
+|---|---|---|
+| unconstrained | 12 / 3 / 0 | 5 / 6 / 1 |
+| constrained | 12 / 3 / 0 | 5 / 6 / 1 |
+
+**Identical** -- not close, identical, down to which entity types each document
+produced. A model that is not reasoning its way into inventing types already
+answers in the schema's vocabulary, so the enum has nothing left to forbid.
+The flag costs nothing and buys nothing here. It stays off for that boring
+reason, and stays *available* for the unchanged reason: a caller with a coarse
+schema and a model that wanders may still want it, and nobody here can measure
+that for them.
+
+**What follows is the first measurement, kept because being wrong this way is
+the lesson.** It ran with the model thinking, and read a confounder as a
+mechanism.
+
+Graded corpus, `qwen3.6-27b-mtp`, `temperature=0.0`, **thinking on**:
 
 | | entity tp | entity fp | entity fn | rel tp | rel fp | rel fn |
 |---|---|---|---|---|---|---|
@@ -1586,11 +1604,16 @@ many types the schema declares and how few of them the document contains.
 A nine-type schema against a one-sentence document is the worst case, and it
 is not a rare one.
 
-**Do not read this as settled for every model or corpus.** Constrained
-decoding is a well-attested technique and this is five short documents against
-one 27B model. What is settled is that it is not a free improvement here, so
-the default stays off and the burden is on the next person to show a case
-where it wins.
+**And that mechanism explains nothing, which is the correction.** The false
+positives it was invented to account for were the *reasoning trace* inventing
+entities; they vanished when thinking was turned off, not when the constraint
+was removed. The "checklist" story was persuasive enough to reach an ADR, this
+entry and a documentation warning before the confounder surfaced a day later.
+
+**A mechanism inferred from one measurement is a hypothesis, however well the
+story fits.** When a result comes with a satisfying explanation, the
+explanation is the part to distrust -- it is what stops you looking for the
+variable you did not control.
 
 **Two limits of the instrument, which matter more than the result.**
 

@@ -104,6 +104,12 @@ being the one to expect, with a 400 on the first call. `BACKLOG.md` B118
 carries what is untested and what would close it. The failure is loud and
 immediate, which is the property that made this default acceptable.
 
+**Thinking-off is steadier, not deterministic.** The two thinking-off calls
+above agreed where the thinking-on pair did not, and that is the whole of the
+evidence for it: later corpus runs with thinking off returned 3 and then 4
+entity false positives on the same documents. Reproducibility improved; it did
+not arrive. Any comparison here still needs both arms in one run.
+
 **Two earlier findings in this repository were measured with thinking on and
 are weakened.** ADR 0030's conclusion that constrained decoding hurts
 precision was measured against a noisier baseline (8-9 entity false positives,
