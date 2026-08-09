@@ -18,7 +18,7 @@
 #   2. leftover dirs at src/redstring/<pkg> or tests/unit/<pkg> -- even
 #      __pycache__-only debris resurrects the old import path as a PEP 420
 #      namespace package.
-#      tests/integration/ and tests/compliance/ are NOT checked: they are
+#      tests/integration/ and src/redstring/testing/ are NOT checked: they are
 #      organised by backend and by port contract rather than by layer, so
 #      only their imports are repointed.
 # Bare path mentions (logger names, prose, comments) are printed for triage

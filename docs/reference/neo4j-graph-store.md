@@ -1229,7 +1229,7 @@ just left childless. See
 `InMemoryGraphStore` keeps no key index at all — `find_by_blocking_key` walks
 the tenant's entities and tests `key in entity.blocking_keys` — so a key exists
 there only as a member of some entity's `frozenset`. Everything in this section
-is therefore invisible to `tests/compliance/graph_store.py`, which is
+is therefore invisible to `src/redstring/testing/graph_store.py`, which is
 adapter-agnostic by construction and can only state claims both adapters
 satisfy (see [ADR 0002](../adr/0002-two-store-ports.md)). The shared suite
 constrains what a read *returns*; the cost and the node-level layout are both
@@ -1402,7 +1402,7 @@ store = Neo4jGraphStore(driver)  # close() is then a no-op
 - `redstring.ports.graph_store.GraphStore` — the port this implements
 - `redstring.graph.adapters.memory.InMemoryGraphStore` — the in-process
   adapter, exercised by the same compliance suite in the default gate
-- `tests/compliance/graph_store.py` — the shared suite both adapters must pass
+- `src/redstring/testing/graph_store.py` — the shared suite both adapters must pass
 - [ADR 0002: two store ports](../adr/0002-two-store-ports.md)
 - [ADR 0003: blocking keys as nodes](../adr/0003-blocking-keys-as-nodes.md)
 - [How-to: implement a store adapter](../how-to/implement-a-store-adapter.md)

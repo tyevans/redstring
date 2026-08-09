@@ -7,7 +7,7 @@ found on its first run is recorded as `.claude/rules/recurring-defects.md`
 (g).
 
 The gap mattered more here than it would elsewhere, because
-`tests/compliance/cache.py` was written *about this adapter*. Its docstring
+`redstring/testing/cache.py` was written *about this adapter*. Its docstring
 names the divergence it exists to catch — a Redis client left at its defaults
 returns `bytes`, so a caller comparing `await cache.get(k) == "open"` matches
 in every `MemoryCache` test and never matches in production — and until now
@@ -34,7 +34,7 @@ import pytest
 
 from redstring.llm.cache.redis import RedisCache
 from redstring.ports.cache import Cache
-from tests.compliance.cache import CacheCompliance
+from redstring.testing.cache import CacheCompliance
 
 pytestmark = pytest.mark.integration
 

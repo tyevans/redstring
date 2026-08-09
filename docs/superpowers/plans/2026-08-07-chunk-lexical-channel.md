@@ -886,7 +886,7 @@ git commit -m "Declare the candidate and entity reads on ChunkStore"
 ### Task 5: The compliance suite, the gate, and the reference adapter
 
 **Files:**
-- Modify: `tests/compliance/chunk_store.py`
+- Modify: `src/redstring/testing/chunk_store.py`
 - Modify: `tests/unit/chunks/test_compliance_coverage.py`
 - Modify: `src/redstring/chunks/adapters/memory.py`
 
@@ -1066,7 +1066,7 @@ quietly.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add tests/compliance/chunk_store.py tests/unit/chunks/ src/redstring/chunks/adapters/memory.py
+git add src/redstring/testing/chunk_store.py tests/unit/chunks/ src/redstring/chunks/adapters/memory.py
 git commit -m "Gate the candidate and entity reads, and answer them in the reference adapter"
 ```
 

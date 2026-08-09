@@ -40,7 +40,7 @@ from redstring import (
     TemporalRelation,
     infer_relations,
 )
-from tests.compliance.strategies import aware_datetimes, distinct_tenant_pairs, entities
+from redstring.testing.strategies import aware_datetimes, distinct_tenant_pairs, entities
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -177,7 +177,7 @@ class TestTenantIsolation:
 class TestProperties:
     """Two claims that examples cannot make, over generated entities.
 
-    `tests/compliance/strategies.py` already draws entities with optional
+    `redstring/testing/strategies.py` already draws entities with optional
     `TemporalExtent`s, so these get undated entities, open-ended extents and
     coincident bounds for free -- the shapes a hand-written fixture forgets.
     """

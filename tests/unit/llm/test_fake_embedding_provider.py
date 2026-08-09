@@ -14,7 +14,7 @@ import pytest
 from redstring.domain.exceptions import EmbeddingProviderError
 from redstring.llm.adapters.fake_embedding import DEFAULT_DIMENSION, FakeEmbeddingProvider
 from redstring.ports.embedding_provider import EmbeddingProvider
-from tests.compliance.embedding_provider import EmbeddingProviderCompliance
+from redstring.testing.embedding_provider import EmbeddingProviderCompliance
 
 
 class TestFakeEmbeddingProvider(EmbeddingProviderCompliance):

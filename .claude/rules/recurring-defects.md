@@ -64,9 +64,9 @@ implementation follows.
 body parametrised over every implementation, never by a per-implementation
 test. Adding a method to a shared interface is not done until every
 implementation runs a shared case for it. Here that body is
-`tests/compliance/graph_store.py`, `tests/compliance/vector_store.py` and
-`tests/compliance/cache.py` (with generators in
-`tests/compliance/strategies.py`) — none of them named `test_*.py`, so none
+`src/redstring/testing/graph_store.py`, `src/redstring/testing/vector_store.py` and
+`src/redstring/testing/cache.py` (with generators in
+`src/redstring/testing/strategies.py`) — none of them named `test_*.py`, so none
 collected directly. An adapter opts in by subclassing and supplying one hook:
 an `async def new_store()` returning a fresh empty store for the two store
 suites (the class turns that into the `store` fixture itself, plus an optional
@@ -86,7 +86,7 @@ of the fix.
 between adapters is a defect, and a suite that pretends otherwise is worse
 than none — it either fails against a legitimate backend or gets an opt-out
 flag that silently disables the check it was written for.
-`tests/compliance/vector_store.py` states the `VectorStore` contract in **two
+`src/redstring/testing/vector_store.py` states the `VectorStore` contract in **two
 tiers** for exactly this reason: an approximate index (ivfflat, hnsw, a
 managed ANN service) may legitimately omit a true neighbour, so tier 1 asserts
 exact membership, ordering and scores on tens of vectors — where every
@@ -446,7 +446,7 @@ being about tests. Read `MagicMock`-only fixtures as an unverified interface,
 not as a tested one.
 
 **(b) §1 — the cache compliance suite's docstring names the divergence it
-exists to catch, and says it was learned twice.** `tests/compliance/cache.py`
+exists to catch, and says it was learned twice.** `src/redstring/testing/cache.py`
 opens with it: "an in-memory reference that is *more forgiving* than the real
 backend lets a caller pass its tests on behaviour production does not have."
 The concrete instance is in the suite itself —

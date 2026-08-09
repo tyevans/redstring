@@ -8,7 +8,7 @@ own").
 
 Left to the client, `get` returned `b"open"` through one door and `"open"`
 through the other. That is not two behaviours of one adapter, it is two
-adapters, and it is exactly the divergence `tests/compliance/cache.py` exists
+adapters, and it is exactly the divergence `redstring/testing/cache.py` exists
 to catch -- reached through the constructor the compliance suite does not
 use.
 

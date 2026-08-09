@@ -12,20 +12,17 @@ Two deliberate choices:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from hypothesis import assume
 from hypothesis import strategies as st
 
 from redstring.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
 from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
 
 #: Characters a domain type will actually accept.
 #:
@@ -46,7 +43,7 @@ storable_characters = st.characters(codec="utf-8", exclude_characters="\x00")
 #: and therefore as an intermittent failure in whatever property happened to
 #: draw it rather than as a finding about the guard. Excluded in the alphabet
 #: so the constraint is stated once, where the text is generated.
-def text(**kwargs: Any) -> st.SearchStrategy[str]:
+def text(**kwargs: Any) -> st.SearchStrategy[str]:  # noqa: ANN401 -- st.text's own kwargs, passed through
     return st.text(alphabet=storable_characters, **kwargs)
 
 
@@ -81,8 +78,11 @@ property_dicts = st.dictionaries(
 )
 
 aware_datetimes = st.datetimes(
-    min_value=datetime(1800, 1, 1),
-    max_value=datetime(2200, 1, 1),
+    # Naive bounds because `st.datetimes` requires them naive when no
+    # `timezones=` is given; every drawn value is made aware by the `.map`
+    # below, which is what the domain types accept.
+    min_value=datetime(1800, 1, 1),  # noqa: DTZ001
+    max_value=datetime(2200, 1, 1),  # noqa: DTZ001
 ).map(lambda d: d.replace(tzinfo=UTC))
 
 # `TemporalExtent` requires end_date >= start_date, so the pair is drawn
@@ -110,20 +110,20 @@ def temporal_extents(draw: st.DrawFn) -> TemporalExtent:
 def entities(
     draw: st.DrawFn,
     *,
-    tenant_id: UUID | None = None,
-    entity_id: UUID | None = None,
+    tenant_id: TenantId | None = None,
+    entity_id: EntityId | None = None,
 ) -> Entity:
     """Generate a valid `Entity`, optionally pinning its tenant or its id."""
     method = draw(st.sampled_from(list(ExtractionMethod)))
     return Entity(
-        id=entity_id if entity_id is not None else draw(st.uuids()),
-        tenant_id=tenant_id if tenant_id is not None else draw(st.uuids()),
+        id=entity_id if entity_id is not None else EntityId(draw(st.uuids())),
+        tenant_id=tenant_id if tenant_id is not None else TenantId(draw(st.uuids())),
         name=draw(names),
         normalized_name=draw(names),
         entity_type=draw(entity_types),
         original_entity_type=draw(st.none() | names),
         description=draw(st.none() | text(max_size=40)),
-        source_id=draw(st.none() | text(min_size=1, max_size=12)),
+        source_id=draw(st.none() | text(min_size=1, max_size=12).map(SourceId)),
         source_text=draw(st.none() | text(max_size=40)),
         external_ids=draw(st.dictionaries(text(max_size=6), text(max_size=12), max_size=3)),
         properties=draw(property_dicts),
@@ -142,10 +142,10 @@ def entities(
 def relationships(
     draw: st.DrawFn,
     *,
-    tenant_id: UUID,
-    source_entity_id: UUID,
-    target_entity_id: UUID,
-    relationship_id: UUID | None = None,
+    tenant_id: TenantId,
+    source_entity_id: EntityId,
+    target_entity_id: EntityId,
+    relationship_id: RelationshipId | None = None,
 ) -> Relationship:
     """Generate a valid `Relationship` between two given endpoints.
 
@@ -154,18 +154,24 @@ def relationships(
     entities it has already written.
     """
     return Relationship(
-        id=relationship_id if relationship_id is not None else draw(st.uuids()),
+        id=relationship_id if relationship_id is not None else RelationshipId(draw(st.uuids())),
         tenant_id=tenant_id,
         source_entity_id=source_entity_id,
         target_entity_id=target_entity_id,
         relationship_type=draw(relationship_types),
-        source_id=draw(st.none() | text(min_size=1, max_size=12)),
+        source_id=draw(st.none() | text(min_size=1, max_size=12).map(SourceId)),
         properties=draw(property_dicts),
         confidence=draw(confidences),
     )
 
 
-distinct_tenant_pairs = st.tuples(st.uuids(), st.uuids()).filter(lambda pair: pair[0] != pair[1])
+#: Two distinct tenants. Drawn rather than hand-picked, because tenant
+#: isolation must hold for *any* pair of distinct tenants and not the pair
+#: someone typed -- and mapped to `TenantId` so a suite drawing from here does
+#: not have to name the role at every call site.
+distinct_tenant_pairs = st.tuples(st.uuids().map(TenantId), st.uuids().map(TenantId)).filter(
+    lambda pair: pair[0] != pair[1]
+)
 
 
 # ----------------------------------------------------------------------

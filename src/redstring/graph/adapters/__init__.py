@@ -1,1 +1,1 @@
-"""`GraphStore` adapters. Each must pass `tests/compliance/graph_store.py`."""
+"""`GraphStore` adapters. Each must pass `redstring/testing/graph_store.py`."""

@@ -170,4 +170,5 @@ nav:
       - "0030 · A domain schema may constrain, when asked": adr/0030-a-domain-schema-may-constrain-when-asked.md
       - "0031 · Extraction does not think": adr/0031-extraction-does-not-think.md
       - "0032 · The id names are NewTypes": adr/0032-the-id-names-are-newtypes.md
+      - "0033 · The compliance suites ship": adr/0033-the-compliance-suites-ship.md
   - Contributing: contributing.md

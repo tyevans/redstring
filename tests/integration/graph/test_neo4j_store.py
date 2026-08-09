@@ -1,6 +1,6 @@
 """The Neo4j `GraphStore` adapter against the shared compliance suite.
 
-Everything asserted about behaviour lives in `tests.compliance.graph_store`.
+Everything asserted about behaviour lives in `redstring.testing.graph_store`.
 This module supplies a store and adds only what is specific to *this*
 adapter -- schema creation, encoding fidelity, and connection handling.
 
@@ -44,7 +44,7 @@ import pytest
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import MissingEntityError
 from redstring.graph.adapters.neo4j import Neo4jGraphStore
-from tests.compliance.graph_store import GraphStoreCompliance
+from redstring.testing.graph_store import GraphStoreCompliance
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

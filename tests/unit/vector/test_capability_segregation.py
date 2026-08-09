@@ -43,8 +43,8 @@ from redstring.domain.vector import VectorMatch, VectorRecord
 from redstring.events.document import EntitiesEmbedded
 from redstring.ports.vector_store import VectorPurge, VectorReader, VectorStore, VectorWriter
 from redstring.projections.vector import VectorProjection
+from redstring.testing.lifetime import NoOpLifetime
 from redstring.vector.adapters.memory import InMemoryVectorStore
-from tests.compliance.lifetime import NoOpLifetime
 
 if TYPE_CHECKING:
     from redstring.domain.ids import EntityId, TenantId

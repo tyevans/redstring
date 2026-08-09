@@ -1,1 +1,1 @@
-"""`ChunkStore` adapters. Each must pass `tests/compliance/chunk_store.py`."""
+"""`ChunkStore` adapters. Each must pass `redstring/testing/chunk_store.py`."""

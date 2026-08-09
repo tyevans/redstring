@@ -1,7 +1,7 @@
 ---
 paths:
   - "tests/**/*.py"
-  - "tests/compliance/**"
+  - "src/redstring/testing/**"
 ---
 
 # Testing Conventions
@@ -10,12 +10,12 @@ How tests are organised, marked, and run in this repo, and which of those
 choices are load-bearing rather than taste.
 
 Four trees, and they are not interchangeable: `tests/unit/` (the commit gate),
-`tests/compliance/` (shared port contracts, not itself collected),
+`src/redstring/testing/` (shared port contracts, not itself collected),
 `tests/integration/` (real backends from `docker-compose.test.yml`), and
 `tests/accuracy/` (extraction quality against a live model, plus a scorer and
 corpus that need nothing and run in the commit gate).
 
-The second frontmatter path is deliberate. `tests/compliance/` holds no
+The second frontmatter path is deliberate. `src/redstring/testing/` holds no
 `test_*.py` files, so `tests/**/*.py` matches it only by accident of the glob
 and a narrower pattern would silently stop applying these conventions to the
 one place a defect propagates to every adapter at once.
@@ -41,11 +41,11 @@ where, against what:
 | Tree | Collected by default? | Needs |
 |---|---|---|
 | `tests/unit/` | yes | nothing external |
-| `tests/compliance/` | **never collected** | imported by unit and integration modules |
+| `src/redstring/testing/` | **never collected** | imported by unit and integration modules |
 | `tests/integration/` | no (`-m` excludes it) | `docker-compose.test.yml` backends; the `live`-marked subset also an endpoint |
 | `tests/accuracy/` | no (`-m` excludes it) | a live LLM for the test module; `scoring.py`/`corpus.py` need nothing |
 
-`tests/compliance/` is the one that breaks the pattern and the one worth
+`src/redstring/testing/` is the one that breaks the pattern and the one worth
 understanding first. It is a *library*, not a suite: `graph_store.py`,
 `vector_store.py`, `cache.py` and `strategies.py`, with no `test_*.py` module
 and no `Test*` class, so pytest's default collection walks past it. The
@@ -69,7 +69,7 @@ than one module of it. This tree is the commit gate: it needs nothing
 external, and it is what the pre-commit hook runs.
 
 It is also where each adapter's compliance subclass lives. A contract class in
-`tests/compliance/` is inert until a module here subclasses it under a `Test*`
+`src/redstring/testing/` is inert until a module here subclasses it under a `Test*`
 name, and for the in-memory adapters that happens in these files:
 
 | File | Subclass | Contract |
@@ -90,9 +90,9 @@ defect no single adapter can.
 So a new in-memory adapter is added by writing the subclass here, not by
 copying cases out of the compliance module. And a case that only makes sense
 for one adapter belongs in that adapter's file, below the subclass — anything
-stated about the port itself goes up into `tests/compliance/`.
+stated about the port itself goes up into `src/redstring/testing/`.
 
-### `tests/compliance/`
+### `src/redstring/testing/`
 
 Contract classes and their generators, and no tests of its own:
 
@@ -258,7 +258,7 @@ A store adapter here supplies the same one thing its in-memory counterpart
 does — `new_store()` returning an empty, isolated store — and adds a
 `Test*Specifics` class for what is true of that backend alone: schema
 creation, encoding fidelity, query plans, connection handling. Anything
-stated about the *port* goes up into `tests/compliance/`. Running the real
+stated about the *port* goes up into `src/redstring/testing/`. Running the real
 adapters against the same contract as the in-memory ones is what makes the
 contract mean anything: pgvector rebuilds ids from a row where the in-memory
 store hands back the object it was given, which is the difference that catches
@@ -326,7 +326,7 @@ the origin of the probe rule now stated for every integration suite here.
 ## Port compliance suites
 
 One contract class per port, each in its own module under
-`tests/compliance/`, each made to run by being subclassed from an adapter's
+`src/redstring/testing/`, each made to run by being subclassed from an adapter's
 own test module under a `Test*` name:
 
 | Contract | Adapter supplies | Subclassed by |
@@ -816,7 +816,7 @@ import, and mutation runs lower it deliberately. Two
 and survived the next with nothing in the adapter changed between them*,
 because `k = 0` was reachable only through a property drawing `k` from `0..12`.
 The fix is `test_k_zero_returns_nothing_rather_than_raising` in
-`tests/compliance/vector_store.py`, an example-based test that also asserts
+`src/redstring/testing/vector_store.py`, an example-based test that also asserts
 `k=1` returns one row — so it distinguishes "asked for nothing" from "nothing
 there" rather than passing on an empty store.
 
@@ -851,7 +851,7 @@ Three further rules this repo has paid to learn:
   that stays green under a deliberate defect is worse than none, because its
   existence is what stops anyone writing the test that would have worked.
 
-Strategies for the domain types live in `tests/compliance/strategies.py` and
+Strategies for the domain types live in `src/redstring/testing/strategies.py` and
 are reusable from unit tests. Two of its choices are load-bearing rather than
 stylistic and should be preserved when extending it: `property_dicts` is
 *recursive*, because a shallow-copying adapter passes a flat-dict mutation test

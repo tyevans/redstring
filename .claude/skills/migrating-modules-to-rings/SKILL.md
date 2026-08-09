@@ -894,7 +894,7 @@ things about the mirror that are easy to get wrong:
 - **Create `__init__.py` in a new test package.** Every existing
   `tests/unit/<layer>/` has one; a directory without it collides on module
   basename with any same-named test file elsewhere in the tree.
-- **`tests/integration/` and `tests/compliance/` do not mirror and do not
+- **`tests/integration/` and `src/redstring/testing/` do not mirror and do not
   move.** They are organised by backend and by port contract rather than by
   layer, and they are deselected from the default run
   (`addopts = ["-m", "not accuracy and not integration"]`), so a broken import
@@ -1152,7 +1152,7 @@ reintroduce a reference to a path you retired, and neither branch's CI sees it.
    notice. `git mv` does not remove the source directory; `rmdir` it, and
    `git clean -nd` it first for untracked debris.
 
-`tests/integration/` and `tests/compliance/` are **not** checked for leftover
+`tests/integration/` and `src/redstring/testing/` are **not** checked for leftover
 directories: they are organised by backend and by port contract rather than by
 layer, so they stay where they are and only their imports are repointed. Their
 imports *are* covered by check 1 — which matters, because both are deselected
@@ -1295,7 +1295,7 @@ The value is the package root, so no per-module maintenance. Two things a
 migration can still break:
 
 - **`tests_dir` is `tests/unit/` only.** A moved test that lands outside the
-  unit mirror (see step 3 — `tests/integration/` and `tests/compliance/` do
+  unit mirror (see step 3 — `tests/integration/` and `src/redstring/testing/` do
   not mirror) stops contributing to mutation kills without any signal.
 - **`also_copy` is what survives into mutmut's scratch tree.** If a migration
   makes the suite depend on a new root-level file — a fixture module, a data
@@ -1343,7 +1343,7 @@ markers = ["unit", "integration", "accuracy", "slow"]
 `addopts` deselects the `accuracy` and `integration` suites from the default
 run, and therefore from the commit gate — which keeps it infra-free and fast,
 and means **a migration can leave `tests/integration/` and
-`tests/compliance/` importing a retired path and see nothing but green.** The
+`src/redstring/testing/` importing a retired path and see nothing but green.** The
 sweep's import check is what catches that; run the suites explicitly as well
 (a CLI `-m` overrides the config one).
 
@@ -1474,7 +1474,7 @@ suite is parallel-safe only because its table is named per worker.
 
 ### The two compliance suites — separate invocations, always
 
-`tests/compliance/graph_store.py` and `tests/compliance/vector_store.py` are
+`src/redstring/testing/graph_store.py` and `src/redstring/testing/vector_store.py` are
 shared base classes, subclassed once by the in-memory adapter under
 `tests/unit/` and once by the real one under `tests/integration/`. Their
 `@given` methods are defined **once, on the base**, and hypothesis attaches

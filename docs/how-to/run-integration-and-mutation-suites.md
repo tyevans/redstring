@@ -410,7 +410,7 @@ hypothesis.errors.FailedHealthCheck: The method
 GraphStoreCompliance.test_… was called from multiple different executors
 ```
 
-The cause is in `tests/compliance/`. `GraphStoreCompliance` and
+The cause is in `src/redstring/testing/`. `GraphStoreCompliance` and
 `VectorStoreCompliance` are shared base classes — that is the whole point of
 them, and what stops two adapters diverging — so their `@given` methods are
 defined **once**, on the base. Hypothesis attaches its per-test state to the
@@ -467,7 +467,7 @@ property draws is the run's main cost knob:
 KG_COMPLIANCE_MAX_EXAMPLES=10 uv run pytest -m integration
 ```
 
-Both `tests/compliance/graph_store.py` and `tests/compliance/vector_store.py`
+Both `src/redstring/testing/graph_store.py` and `src/redstring/testing/vector_store.py`
 read it into `DEFAULT_MAX_EXAMPLES` and default to **50**. Measured cost on the
 graph suite: **25 s / 43 s / 66 s at 10 / 25 / 50**. The reason it is not
 linear is where the time goes — a real backend calls `new_store()` once per

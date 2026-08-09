@@ -1,6 +1,6 @@
 """The Postgres `ChunkStore` adapter against the shared compliance suite.
 
-Everything asserted about behaviour lives in `tests.compliance.chunk_store`.
+Everything asserted about behaviour lives in `redstring.testing.chunk_store`.
 This module supplies a store and adds only what is specific to *this*
 adapter -- schema, the column type the ordering depends on, and round-trip
 cost.
@@ -43,7 +43,7 @@ import pytest
 
 from redstring.chunks.adapters.postgres import PostgresChunkStore
 from redstring.domain.chunk import chunk_id
-from tests.compliance.chunk_store import ChunkStoreCompliance
+from redstring.testing.chunk_store import ChunkStoreCompliance
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

@@ -61,7 +61,7 @@ one.
 Five things, and nothing else:
 
 - **Two storage ports** — `GraphStore` and `VectorStore` — with a compliance
-  suite each (`tests/compliance/`) that is the actual definition of the
+  suite each (`src/redstring/testing/`) that is the actual definition of the
   contract. Adapters: in-memory (default gate), Neo4j, pgvector.
 - **A write model** of aggregates and events (`aggregates/`, `events/`) and a
   **read model** of projections (`projections/`). Extraction emits; projections

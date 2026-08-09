@@ -252,7 +252,7 @@ class VectorStore(VectorWriter, VectorReader, VectorPurge, Protocol):
     """Storage for entity embeddings, with similarity search.
 
     The whole port, composed from the three capabilities above. Adapters
-    implement this and `tests/compliance/vector_store.py` runs against it.
+    implement this and `redstring/testing/vector_store.py` runs against it.
 
     **Collaborators should not.** Every first-party consumer is covered
     exactly by one capability, which is what decided where the lines fell --
