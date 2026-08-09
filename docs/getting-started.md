@@ -114,6 +114,27 @@ chat_model = ChatOpenAI(model="qwen3-30b", base_url="http://localhost:8080/v1", 
 provider = LangChainLlmProvider(chat_model, model="openai-compatible/qwen3-30b")
 ```
 
+!!! tip "Extraction does not think, by default"
+
+    `openai_compatible` sends `enable_thinking: false`. On a reasoning model
+    that is worth a great deal: on the graded corpus it was **5.7x faster**
+    (155 s to 27 s) with **entity false positives cut from 9 to 3** and recall
+    unchanged. Reasoning does not help a task that asks only for what the text
+    states — it invents entities the text implies.
+
+    ```python
+    provider = LangChainLlmProvider.openai_compatible(
+        base_url=...,
+        model=...,
+        thinking=True,  # restore the server's default
+    )
+    ```
+
+    Pass `thinking=True` if you want the model to reason, **or if your backend
+    has no chat template to pass the flag to** — a hosted API such as OpenAI's
+    will reject the field with a 400 on the first call.
+    [ADR 0031](adr/0031-extraction-does-not-think.md).
+
 Constructing the chat model is the one step the example does not show, because
 it is langchain's step rather than this library's. Needs the `llm` extra — see
 [Installation](installation.md#the-extras).
