@@ -3,7 +3,7 @@
 This guide walks through adding a new backend behind one of `redstring`'s
 six ports — `GraphStore`, `VectorStore`, `ChunkStore`, `Cache`,
 `EmbeddingProvider`, or `LlmProvider` — and proving it correct against the
-shared compliance suites in `tests/compliance/`.
+shared compliance suites in `src/redstring/testing/`.
 
 Follow it when you want to store the graph in something other than the two
 adapters that ship (`redstring.graph.adapters.memory` and
@@ -65,7 +65,7 @@ buys structural conformance and nothing more: `mypy --strict` will confirm your
 `get_entity` has the right signature and cannot confirm it scopes by tenant,
 returns a copy, or sees a write that has already returned.
 
-The executable definition lives in `tests/compliance/`, and each suite's own
+The executable definition lives in `src/redstring/testing/`, and each suite's own
 docstring says so — "**Every `GraphStore` adapter must pass this suite
 unchanged.** It is the executable definition of the port; the prose in
 `redstring.ports.graph_store` describes what these tests enforce." Read the
@@ -89,7 +89,7 @@ Four requirements the `Protocol` cannot state, all asserted by the suites:
   state applying it once would. This is not a nicety: a store is a projection
   of the event log, and projection handlers replay.
 
-Two files in `tests/compliance/` are not suites: `strategies.py` supplies the
+Two files in `src/redstring/testing/` are not suites: `strategies.py` supplies the
 hypothesis strategies (including `vectors(dimension)`, which generates
 float32-representable components and excludes the zero vector, since cosine is
 undefined at the origin and the port rejects it), and `__init__.py` states the
@@ -99,18 +99,18 @@ class matches `Test*`, so a suite runs only where an adapter subclasses it.
 ### The six ports and what each requires
 
 Every port in `src/redstring/ports/` has a row here, and every compliance
-suite in `tests/compliance/` appears in the second column.
+suite in `src/redstring/testing/` appears in the second column.
 `tests/unit/test_the_adapter_guide_names_every_compliance_suite.py` is what
 keeps that true in both directions: a suite added without a row fails, and a
 row naming a suite that has been deleted fails too.
 
 | Port | Compliance suite | You supply | Shipped adapters |
 |---|---|---|---|
-| `GraphStore` | `tests.compliance.graph_store.GraphStoreCompliance` | `new_store()`, optionally `dispose(store)` | `graph.adapters.memory`, `graph.adapters.neo4j` |
-| `VectorStore` | `tests.compliance.vector_store.VectorStoreCompliance` | `new_store()` returning a store of `self.DIMENSION` | `vector.adapters.memory`, `vector.adapters.pgvector` |
-| `ChunkStore` | `tests.compliance.chunk_store.ChunkStoreCompliance` | `new_store()`, optionally `dispose(store)` | `chunks.adapters.memory`, `chunks.adapters.postgres` |
-| `Cache` | `tests.compliance.cache.CacheCompliance` | a `cache` fixture | `llm.cache.memory.MemoryCache`, `llm.cache.redis.RedisCache` |
-| `EmbeddingProvider` | `tests.compliance.embedding_provider.EmbeddingProviderCompliance` | a `provider` fixture | `llm.adapters.fake_embedding`, `llm.adapters.langchain_embedding` |
+| `GraphStore` | `redstring.testing.graph_store.GraphStoreCompliance` | `new_store()`, optionally `dispose(store)` | `graph.adapters.memory`, `graph.adapters.neo4j` |
+| `VectorStore` | `redstring.testing.vector_store.VectorStoreCompliance` | `new_store()` returning a store of `self.DIMENSION` | `vector.adapters.memory`, `vector.adapters.pgvector` |
+| `ChunkStore` | `redstring.testing.chunk_store.ChunkStoreCompliance` | `new_store()`, optionally `dispose(store)` | `chunks.adapters.memory`, `chunks.adapters.postgres` |
+| `Cache` | `redstring.testing.cache.CacheCompliance` | a `cache` fixture | `llm.cache.memory.MemoryCache`, `llm.cache.redis.RedisCache` |
+| `EmbeddingProvider` | `redstring.testing.embedding_provider.EmbeddingProviderCompliance` | a `provider` fixture | `llm.adapters.fake_embedding`, `llm.adapters.langchain_embedding` |
 | `LlmProvider` | *(none)* | adapter-specific tests plus the leak gate | `llm.adapters.fake`, `llm.adapters.langchain` |
 
 **`GraphStore`** is the largest surface — entities, aliases, relationships and
@@ -396,18 +396,18 @@ the method names exist. Everything above is step 2's job.
 
 Opting in is a subclass. You supply one thing — a way to build a fresh store,
 or a `cache` fixture — and inherit every assertion. Do not copy tests out of
-`tests/compliance/` into your module and do not override one to relax it: the
+`src/redstring/testing/` into your module and do not override one to relax it: the
 suite is what makes adapters interchangeable, and an adapter that needs a
 weakened test has found either a bug in itself or a genuine gap in the port.
 
-Nothing in `tests/compliance/` is collected on its own. No module there matches
+Nothing in `src/redstring/testing/` is collected on its own. No module there matches
 `test_*.py` and no class matches `Test*`, so a suite runs only where an adapter
 subclasses it under a `Test*` name.
 
 ### GraphStore: subclass `GraphStoreCompliance` and implement `new_store()`
 
 ```python
-from tests.compliance.graph_store import GraphStoreCompliance
+from redstring.testing.graph_store import GraphStoreCompliance
 
 
 class TestMemoryStore(GraphStoreCompliance):
@@ -888,7 +888,7 @@ appends to a list. See `.claude/rules/recurring-defects.md` (g).
 `oldest_hit(key, *, since)` take epoch floats from the caller. The suite
 anchors on `NOW = 1_700_000_000.0` and offsets from it, so "an event 600
 seconds ago" is `NOW - 600` — a number, not a ten-minute test. Import that same
-constant in adapter-specific tests (`from tests.compliance.cache import NOW`)
+constant in adapter-specific tests (`from redstring.testing.cache import NOW`)
 rather than inventing another anchor; `tests/unit/llm/test_memory_cache.py`
 does exactly that.
 
@@ -1134,7 +1134,7 @@ suites](run-integration-and-mutation-suites.md).
 **Step 5 — the tests the port cannot specify, and where the module sits.**
 Schema creation, encoding fidelity, connection ownership and query plans go in
 a `Test*Specifics` class beside your compliance subclass; anything true of the
-*port* goes up into `tests/compliance/` instead. Placement is decided by the
+*port* goes up into `src/redstring/testing/` instead. Placement is decided by the
 `lint-imports` contract in `pyproject.toml`, which runs on commit — and if your
 adapter brought a new driver with it, the dependency-confinement table in
 `tests/unit/test_dependencies_stay_confined.py` needs a row — the one gate you

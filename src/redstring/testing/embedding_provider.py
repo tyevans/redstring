@@ -38,7 +38,7 @@ satisfy — which is worse, because it would have been "fixed" by exempting the
 real adapter.
 
 So the shared claim is weakened exactly as far as the backend forces and no
-further, the same move `tests/compliance/vector_store.py` makes for float32
+further, the same move `redstring/testing/vector_store.py` makes for float32
 storage: **cosine similarity above `SAME_VECTOR_COSINE`**, with an explicit
 check that *mismatched* pairs fall far below it. Tolerance alone would not be
 a test — every vector from a poorly-centred model is somewhat similar to every
@@ -99,12 +99,14 @@ class EmbeddingProviderCompliance:
     def provider(self) -> EmbeddingProvider:  # pragma: no cover -- overridden
         raise NotImplementedError("supply a `provider` fixture")
 
-    async def test_one_vector_comes_back_per_text(self, provider):
+    async def test_one_vector_comes_back_per_text(self, provider: EmbeddingProvider) -> None:
         result = await provider.embed(DISTINCT_TEXTS)
 
         assert len(result) == len(DISTINCT_TEXTS)
 
-    async def test_every_vector_has_the_declared_dimension(self, provider):
+    async def test_every_vector_has_the_declared_dimension(
+        self, provider: EmbeddingProvider
+    ) -> None:
         """The port's central promise, and the one a store enforces later.
 
         Asserted with `!=` rather than `is not`, and stated here because the
@@ -117,7 +119,7 @@ class EmbeddingProviderCompliance:
         wrong = [len(v) for v in result if len(v) != provider.dimension]
         assert not wrong, f"expected width {provider.dimension}, got {wrong}"
 
-    async def test_order_is_preserved(self, provider):
+    async def test_order_is_preserved(self, provider: EmbeddingProvider) -> None:
         """Embed the same texts in two orders; the results must correspond.
 
         The discriminating case in this file. An adapter that returns results
@@ -145,7 +147,7 @@ class EmbeddingProviderCompliance:
             "above cannot tell a correct pairing from a scrambled one"
         )
 
-    async def test_the_same_text_gives_the_same_vector(self, provider):
+    async def test_the_same_text_gives_the_same_vector(self, provider: EmbeddingProvider) -> None:
         """Determinism within a run, to cosine tolerance.
 
         A provider free to return genuinely different vectors for one text
@@ -159,7 +161,9 @@ class EmbeddingProviderCompliance:
 
         assert _cosine(first[0], second[0]) >= SAME_VECTOR_COSINE
 
-    async def test_different_texts_give_different_vectors(self, provider):
+    async def test_different_texts_give_different_vectors(
+        self, provider: EmbeddingProvider
+    ) -> None:
         """Guards the guard.
 
         A provider returning one constant vector satisfies count, width, order
@@ -173,7 +177,7 @@ class EmbeddingProviderCompliance:
             "the provider returned duplicate vectors for distinct texts"
         )
 
-    async def test_an_empty_batch_returns_an_empty_list(self, provider):
+    async def test_an_empty_batch_returns_an_empty_list(self, provider: EmbeddingProvider) -> None:
         """Stated in the port because it must not become a round trip.
 
         A caller that filtered a batch down to nothing should not be charged
@@ -183,14 +187,14 @@ class EmbeddingProviderCompliance:
         """
         assert await provider.embed([]) == []
 
-    async def test_a_single_text_batch_works(self, provider):
+    async def test_a_single_text_batch_works(self, provider: EmbeddingProvider) -> None:
         """The other boundary, and the common case in practice."""
         result = await provider.embed(["Ada Lovelace"])
 
         assert len(result) == 1
         assert len(result[0]) == provider.dimension
 
-    async def test_vectors_are_finite(self, provider):
+    async def test_vectors_are_finite(self, provider: EmbeddingProvider) -> None:
         """No NaN, no infinity.
 
         A NaN component poisons every cosine computed against it and does so
@@ -203,12 +207,14 @@ class EmbeddingProviderCompliance:
         bad = [c for v in result for c in v if not math.isfinite(c)]
         assert not bad, f"non-finite components: {bad[:5]}"
 
-    async def test_the_model_name_is_not_blank(self, provider):
+    async def test_the_model_name_is_not_blank(self, provider: EmbeddingProvider) -> None:
         """It is stored next to vectors as provenance, and an empty string
         there is indistinguishable from "nobody recorded it"."""
         assert provider.model.strip()
 
-    async def test_the_dimension_is_positive_and_constant(self, provider):
+    async def test_the_dimension_is_positive_and_constant(
+        self, provider: EmbeddingProvider
+    ) -> None:
         """Read twice: a provider computing it lazily from the last response
         would satisfy one read and drift over a run."""
         first = provider.dimension

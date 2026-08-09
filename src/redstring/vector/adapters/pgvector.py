@@ -97,7 +97,7 @@ _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 #: The score expression, in one place. `<=>` is pgvector's **cosine distance**
 #: (`1 - cosine`), so this is `(1 + cosine) / 2` -- the scale the port defines.
 #: Getting this backwards is the silent-inversion bug the port warns about, and
-#: `tests/compliance/vector_store.py` pins the resulting numbers against
+#: `redstring/testing/vector_store.py` pins the resulting numbers against
 #: `redstring.domain.vector.cosine_score` rather than merely their order.
 _SCORE = "1 - (embedding <=> $2::vector) / 2"
 

@@ -22,7 +22,7 @@ is a *library* rather than a suite -- no `test_*.py` module, no `Test*` class,
 so pytest walks past it -- whose subject is what a port contract requires of an
 implementation. `NoOpLifetime` is imported by name where it is wanted and
 reaches nothing that does not ask for it. `BACKLOG.md` B107c predicted this
-home ("`tests/compliance/` is the likelier home than `conftest.py`") and said
+home ("`redstring/testing/` is the likelier home than `conftest.py`") and said
 to hoist when a fourth port grew capability doubles. The fourth already
 existed: `tests/unit/consolidation/test_graph_capability_segregation.py` spells
 the same three members inline on `BlockingGraph`, which is why the entry's

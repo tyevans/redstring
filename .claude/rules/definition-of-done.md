@@ -113,15 +113,15 @@ often:
   cannot catch the next one, which is the whole defect shape.
 
   The multi-implementation contracts in this project are the port compliance
-  suites under `tests/compliance/`, and they are where such a test goes:
+  suites under `src/redstring/testing/`, and they are where such a test goes:
 
   | Suite | Port | Implementations that run it |
   |---|---|---|
-  | `tests/compliance/graph_store.py` (`GraphStoreCompliance`) | `GraphStore` | `tests/unit/graph/test_memory_store.py`, `tests/integration/graph/test_neo4j_store.py` |
-  | `tests/compliance/vector_store.py` (`VectorStoreCompliance`) | `VectorStore` | `tests/unit/vector/test_memory_store.py`, `tests/integration/vector/test_pgvector_store.py` |
-  | `tests/compliance/chunk_store.py` (`ChunkStoreCompliance`) | `ChunkStore` | `tests/unit/chunks/test_memory_store.py`, `tests/integration/chunks/test_postgres_store.py` |
-  | `tests/compliance/cache.py` (`CacheCompliance`) | `Cache` | `tests/unit/llm/test_memory_cache.py`, `tests/integration/llm/test_redis_cache.py` |
-  | `tests/compliance/embedding_provider.py` (`EmbeddingProviderCompliance`) | `EmbeddingProvider` | `tests/unit/llm/test_fake_embedding_provider.py`, `tests/unit/llm/test_langchain_embedding_provider.py`, `tests/integration/llm/test_live_embeddings.py` |
+  | `src/redstring/testing/graph_store.py` (`GraphStoreCompliance`) | `GraphStore` | `tests/unit/graph/test_memory_store.py`, `tests/integration/graph/test_neo4j_store.py` |
+  | `src/redstring/testing/vector_store.py` (`VectorStoreCompliance`) | `VectorStore` | `tests/unit/vector/test_memory_store.py`, `tests/integration/vector/test_pgvector_store.py` |
+  | `src/redstring/testing/chunk_store.py` (`ChunkStoreCompliance`) | `ChunkStore` | `tests/unit/chunks/test_memory_store.py`, `tests/integration/chunks/test_postgres_store.py` |
+  | `src/redstring/testing/cache.py` (`CacheCompliance`) | `Cache` | `tests/unit/llm/test_memory_cache.py`, `tests/integration/llm/test_redis_cache.py` |
+  | `src/redstring/testing/embedding_provider.py` (`EmbeddingProviderCompliance`) | `EmbeddingProvider` | `tests/unit/llm/test_fake_embedding_provider.py`, `tests/unit/llm/test_langchain_embedding_provider.py`, `tests/integration/llm/test_live_embeddings.py` |
 
   An adapter opts in by subclassing and supplying one hook (`new_store` for
   the store suites, a `cache` or `provider` fixture for the other two); the
@@ -218,7 +218,7 @@ what makes one *done*.
    a heavy or optional package, re-raised with a message naming the extra to
    install. `RedisCache.from_url` and `LangChainProvider` both do this; copy
    the shape rather than letting a bare `ImportError` reach the caller.
-3. **Subclasses the parametrised compliance suite in `tests/compliance/` and
+3. **Subclasses the parametrised compliance suite in `src/redstring/testing/` and
    runs it unchanged** — `GraphStoreCompliance`, `VectorStoreCompliance` or
    `CacheCompliance`. Opting in is one hook: `new_store` for the store suites,
    a `cache` fixture for `CacheCompliance`. An adapter with only bespoke tests

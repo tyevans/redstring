@@ -12,7 +12,7 @@ list.
 
 `InMemoryVectorStore` is a complete implementation rather than a test double:
 both adapters are subclasses of the same compliance suite in
-`tests/compliance/vector_store.py`, and both pass its *tier 1* — exact
+`src/redstring/testing/vector_store.py`, and both pass its *tier 1* — exact
 membership, exact ordering, exact scores — not just the recall tier an
 approximate backend would be held to. So a single-process job that rebuilds
 its index each run needs nothing on this page, and moving to Postgres will not
@@ -911,7 +911,7 @@ matches = await store.search(query_vector, tenant_id, k=5, entity_types=["person
 
 Everything below is port behaviour, not pgvector behaviour: `InMemoryVectorStore`
 answers identically, and the shared compliance suite in
-`tests/compliance/vector_store.py` is what holds the two together.
+`src/redstring/testing/vector_store.py` is what holds the two together.
 
 ### Upsert semantics: last-write-wins, metadata replaced wholesale rather than merged
 

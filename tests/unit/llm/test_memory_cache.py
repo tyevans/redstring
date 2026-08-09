@@ -1,6 +1,6 @@
 """`MemoryCache` against the shared `Cache` compliance suite.
 
-Everything about behaviour lives in `tests.compliance.cache`. This module
+Everything about behaviour lives in `redstring.testing.cache`. This module
 supplies a cache and adds only what is specific to the in-memory adapter:
 that it is the default a caller gets with no infrastructure, and that its
 lazy expiry does not leak the one series that grows with traffic.
@@ -12,7 +12,7 @@ import pytest
 
 from redstring.llm.cache.memory import MemoryCache
 from redstring.ports.cache import Cache
-from tests.compliance.cache import NOW, CacheCompliance
+from redstring.testing.cache import NOW, CacheCompliance
 
 
 @pytest.fixture

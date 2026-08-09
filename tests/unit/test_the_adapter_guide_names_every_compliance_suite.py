@@ -25,7 +25,7 @@ needs a test that its entries still name something real.
 Both directions are checked, because a one-directional check rots into a
 passing one:
 
-- a suite in `tests/compliance/` with no row fails (the original defect);
+- a suite in `src/redstring/testing/` with no row fails (the original defect);
 - a row naming a suite that no longer exists fails (the defect a correction
   alone would leave open).
 
@@ -38,13 +38,13 @@ named once in a passing sentence is not a suite named in the table an
 implementer reads.
 
 So the match is on **the fully qualified compliance class, inside a markdown
-table row**: `tests.compliance.<module>.<Class>Compliance` on a line beginning
+table row**: `redstring.testing.<module>.<Class>Compliance` on a line beginning
 with `|`. That is exactly the cell an implementer copies into an `import`, it
 survives any reformatting of the table's other columns, and a mention in prose
 does not satisfy it.
 
 The suite list is likewise **derived from the tree, not hand-kept**: every
-module under `tests/compliance/` is parsed with `ast` and every top-level
+module under `src/redstring/testing/` is parsed with `ast` and every top-level
 class whose name ends in `Compliance` is a suite. A hand-kept list needs
 updating by the same person who forgot the table. `strategies.py` and
 `__init__.py` fall out on their own by declaring no such class, rather than
@@ -58,7 +58,7 @@ separately.
 
 A gate whose happy path is "the string is there" is the kind CLAUDE.md warns
 about, so each direction was watched failing: a fake
-`tests/compliance/widget_store.py` declaring `WidgetStoreCompliance` (the
+`src/redstring/testing/widget_store.py` declaring `WidgetStoreCompliance` (the
 suite direction), and the `ChunkStore` row deleted from the guide (the
 staleness direction, and the ports check with it).
 
@@ -81,20 +81,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 GUIDE = REPO_ROOT / "docs" / "how-to" / "implement-a-store-adapter.md"
 
-COMPLIANCE_DIR = REPO_ROOT / "tests" / "compliance"
+COMPLIANCE_DIR = REPO_ROOT / "src" / "redstring" / "testing"
 
 PORTS_DIR = REPO_ROOT / "src" / "redstring" / "ports"
 
 #: A dotted path to a compliance class, as written in the guide's table.
 #: Anchored on the package so a bare class name in prose does not match.
-_SUITE_IN_TABLE = re.compile(r"tests\.compliance\.[a-z_]+\.[A-Za-z]+Compliance")
+_SUITE_IN_TABLE = re.compile(r"redstring\.testing\.[a-z_]+\.[A-Za-z]+Compliance")
 
 #: The port's Protocol name in a backticked cell.
 _CODE_SPAN = re.compile(r"`([^`]+)`")
 
 
 def compliance_suites() -> set[str]:
-    """Every `<module>.<Class>` under `tests/compliance/`, found by parsing.
+    """Every `<module>.<Class>` under `src/redstring/testing/`, found by parsing.
 
     Derived rather than listed: a new suite is included the day it is written,
     which is the whole point. Modules declaring no `*Compliance` class -- so
@@ -122,7 +122,7 @@ def suites_named_in_the_guide() -> set[str]:
         if not line.lstrip().startswith("|"):
             continue
         for match in _SUITE_IN_TABLE.findall(line):
-            _, _, tail = match.partition("tests.compliance.")
+            _, _, tail = match.partition("redstring.testing.")
             named.add(tail)
     return named
 
@@ -258,7 +258,7 @@ def test_every_compliance_suite_is_named_in_the_guide() -> None:
         f"in its port table: {sorted(undocumented)}. An implementer reading the "
         f"guide written for their task would conclude no shared suite exists "
         f"and write bespoke tests, which is the divergence the suite prevents. "
-        f"Add a row naming `tests.compliance.<module>.<Class>`."
+        f"Add a row naming `redstring.testing.<module>.<Class>`."
     )
 
 
@@ -273,7 +273,7 @@ def test_the_guide_names_no_compliance_suite_that_has_gone() -> None:
 
     assert not stale, (
         f"{GUIDE.relative_to(REPO_ROOT)} names compliance suites that do not "
-        f"exist under tests/compliance/: {sorted(stale)}. Either the suite was "
+        f"exist under src/redstring/testing/: {sorted(stale)}. Either the suite was "
         f"renamed or deleted and the row was not, or the row has a typo -- "
         f"both send an implementer to an import that fails."
     )

@@ -217,7 +217,7 @@ class ChunkStore(ChunkWriter, ChunkReader, LexicalCandidateSource, ChunkPurge, P
     """Storage for the passages a document was split into.
 
     The whole port, composed from the four capabilities above. Adapters
-    implement this and `tests/compliance/chunk_store.py` runs against it.
+    implement this and `redstring/testing/chunk_store.py` runs against it.
 
     **Collaborators should not**, and the number here is worse than the one
     `GraphStore` records about itself. Nine methods; the only first-party
@@ -227,7 +227,7 @@ class ChunkStore(ChunkWriter, ChunkReader, LexicalCandidateSource, ChunkPurge, P
     projection to depend on them -- so `ChunkProjection` is a
     `StoreProjection[ChunkWriter]`.
 
-    The cost was concrete rather than stylistic: `tests/compliance/chunk_store.py`
+    The cost was concrete rather than stylistic: `redstring/testing/chunk_store.py`
     is over a thousand lines, so anyone writing a chunk store to serve only the
     corpus-write path owed a read, rank and delete surface they would never
     call.

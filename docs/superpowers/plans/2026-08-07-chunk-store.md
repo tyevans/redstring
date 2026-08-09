@@ -61,7 +61,7 @@ if a task's reasoning is unclear, but the tasks below are self-contained.
 | `src/redstring/aggregates/document.py` | `record_chunking` (modify) |
 | `src/redstring/projections/chunk.py` | `ChunkProjection` |
 | `src/redstring/composition/index_documents.py` | the LLM-free write path |
-| `tests/compliance/chunk_store.py` | shared suite, not collected directly |
+| `src/redstring/testing/chunk_store.py` | shared suite, not collected directly |
 | `tests/unit/chunks/test_compliance_coverage.py` | introspection gate |
 
 ---
@@ -715,7 +715,7 @@ git commit -m "Add the in-memory chunk store and place chunks on the contract"
 ### Task 4: The compliance suite and its coverage gate
 
 **Files:**
-- Create: `tests/compliance/chunk_store.py`,
+- Create: `src/redstring/testing/chunk_store.py`,
   `tests/unit/chunks/test_compliance_coverage.py`
 - Modify: `tests/unit/chunks/test_memory_store.py` (subclass the suite)
 
@@ -724,7 +724,7 @@ git commit -m "Add the in-memory chunk store and place chunks on the contract"
 - Produces: `ChunkStoreCompliance`, which Task 5's Postgres adapter subclasses
   with one `new_store` hook.
 
-Read `tests/compliance/vector_store.py` and
+Read `src/redstring/testing/vector_store.py` and
 `tests/unit/vector/test_compliance_coverage.py` first — this task mirrors both.
 The suite is **not** named `test_*.py`, so it is never collected directly; an
 adapter opts in by subclassing and supplying `async def new_store()` returning
@@ -886,7 +886,7 @@ non-vacuous — and restore it.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tests/compliance/chunk_store.py tests/unit/chunks
+git add src/redstring/testing/chunk_store.py tests/unit/chunks
 git commit -m "Pin the ChunkStore contract in a shared suite with a coverage gate"
 ```
 

@@ -91,6 +91,65 @@ print("OK")
 """
 
 
+#: Asserts the compliance suites are *in the wheel and importable from it*.
+#:
+#: The claim `redstring.testing` makes is entirely about the distribution: an
+#: adapter author outside this repository installs `redstring[test]` and
+#: subclasses `GraphStoreCompliance`. Every test in this repo imports the same
+#: classes from `src/`, so a build that dropped the package -- or a
+#: `[tool.hatch.build]` change that stopped selecting it -- leaves the whole
+#: suite green while the promise is false. This is the `py.typed` lesson
+#: applied to a second artifact-only claim: when a claim is about the
+#: artifact, only the artifact can falsify it.
+#:
+#: `pytest` and `hypothesis` are installed into the probe venv because the
+#: package imports them at module scope; that is the `test` extra's whole
+#: content, and importing without it is covered separately by
+#: `test_redstring_imports_without_the_test_extra`.
+COMPLIANCE_PROBE = """
+import redstring.testing as testing
+
+assert "site-packages" in testing.__file__, testing.__file__
+
+for name in testing.__all__:
+    assert hasattr(testing, name), f"{name} is in __all__ and not importable"
+
+# Named explicitly rather than trusted from `__all__`: a build that shipped an
+# empty package would satisfy the loop above and nothing else.
+from redstring.testing.graph_store import GraphStoreCompliance
+from redstring.testing.vector_store import VectorStoreCompliance
+from redstring.testing.chunk_store import ChunkStoreCompliance
+from redstring.testing.cache import CacheCompliance
+from redstring.testing.embedding_provider import EmbeddingProviderCompliance
+
+# The opt-in hook an adapter overrides. If this stops existing, the documented
+# two-line subclass in the how-to stops working.
+assert hasattr(GraphStoreCompliance, "new_store")
+print("OK")
+"""
+
+#: The other half, and the one a passing `COMPLIANCE_PROBE` cannot give:
+#: `import redstring` must not drag in `pytest`. The compliance suites are the
+#: only modules in the package that import a test library, and if anything
+#: else grows such an import, every consumer who did not install
+#: `redstring[test]` gets an `ImportError` from a library they installed for
+#: knowledge graphs.
+#:
+#: `tests/unit/test_dependencies_stay_confined.py` checks this by parsing the
+#: source. This checks it by *running* it in an environment where the libraries
+#: genuinely are not installed, which is the only way to catch an import
+#: reached at runtime rather than at module scope.
+NO_TEST_DEPS_PROBE = """
+import sys
+import redstring
+
+assert "site-packages" in redstring.__file__, redstring.__file__
+leaked = sorted(name for name in sys.modules if name.split(".")[0] in {"pytest", "hypothesis"})
+assert not leaked, f"importing redstring pulled in {leaked}"
+print("OK")
+"""
+
+
 @pytest.fixture(scope="module")
 def installed_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Build a wheel, install it into a throwaway venv, return that venv's python.
@@ -122,6 +181,86 @@ def installed_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
         assert step.returncode == 0, f"{' '.join(command[:2])} failed:\n{step.stderr}"
 
     return python
+
+
+@pytest.fixture(scope="module")
+def installed_wheel_with_test_extra(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The same wheel, installed as `redstring[test]`, in its own venv.
+
+    A second venv rather than a second install into the first: the point of
+    `installed_wheel` is that `pytest` and `hypothesis` are *absent* there, and
+    `test_redstring_imports_without_the_test_extra` is only meaningful while
+    that stays true. Installing the extra into it would quietly retire that
+    test, which is the kind of thing nothing would report.
+    """
+    tmp_path = tmp_path_factory.mktemp("wheel-test-extra")
+    build = subprocess.run(
+        ["uv", "build", "--wheel", "--out-dir", str(tmp_path)],
+        cwd=PROJECT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert build.returncode == 0, f"uv build failed:\n{build.stderr}"
+
+    wheels = list(tmp_path.glob("*.whl"))
+    assert len(wheels) == 1, f"expected exactly one wheel, got {[w.name for w in wheels]}"
+
+    venv = tmp_path / "venv"
+    python = venv / "bin" / "python"
+    for command in (
+        ["uv", "venv", str(venv)],
+        ["uv", "pip", "install", "--python", str(python), f"{wheels[0]}[test]"],
+    ):
+        step = subprocess.run(command, capture_output=True, text=True, check=False)
+        assert step.returncode == 0, f"{' '.join(command[:2])} failed:\n{step.stderr}"
+
+    return python
+
+
+@pytest.mark.integration
+def test_the_compliance_suites_ship_and_import_from_an_installed_wheel(
+    installed_wheel_with_test_extra: Path,
+) -> None:
+    """`redstring.testing` is a promise about the distribution, like `py.typed`.
+
+    Its entire purpose is an adapter written somewhere else, so a build that
+    stopped selecting the package would leave every test in this repository
+    green -- they all import the same classes from `src/` -- while the
+    documented two-line subclass in
+    `docs/how-to/implement-a-store-adapter.md` failed for everyone who
+    installed the library.
+    """
+    probe = subprocess.run(
+        [str(installed_wheel_with_test_extra), "-c", COMPLIANCE_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert probe.returncode == 0, (
+        f"the installed wheel does not carry usable compliance suites:\n"
+        f"{probe.stdout}\n{probe.stderr}"
+    )
+
+
+@pytest.mark.integration
+def test_redstring_imports_without_the_test_extra(installed_wheel: Path) -> None:
+    """The cost of shipping the suites, held to zero.
+
+    `redstring.testing` imports `pytest` and `hypothesis` at module scope and
+    neither is a dependency of `redstring`. If any other module in the package
+    grew such an import, `import redstring` would raise for every consumer who
+    installed it for knowledge graphs and not for testing.
+    """
+    probe = subprocess.run(
+        [str(installed_wheel), "-c", NO_TEST_DEPS_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert probe.returncode == 0, (
+        f"importing redstring reached a test dependency:\n{probe.stdout}\n{probe.stderr}"
+    )
 
 
 @pytest.mark.integration

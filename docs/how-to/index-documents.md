@@ -29,7 +29,7 @@ paying for.
 
 Swap `InMemoryChunkStore` for `PostgresChunkStore` when the corpus outlives
 the process; the port is the same, and the compliance suite in
-`tests/compliance/chunk_store.py` is what says so. `PostgresChunkStore` is not
+`src/redstring/testing/chunk_store.py` is what says so. `PostgresChunkStore` is not
 in `redstring.__all__` -- reach it by path,
 `redstring.chunks.adapters.postgres.PostgresChunkStore`, the way
 `Neo4jGraphStore`, `PgVectorStore`, `RedisCache` and `LangChainProvider` are

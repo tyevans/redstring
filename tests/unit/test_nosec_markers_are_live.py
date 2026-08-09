@@ -52,6 +52,7 @@ someone moves the code, not at review.
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import re
@@ -221,4 +222,50 @@ def test_no_finding_is_silenced_without_a_marker(findings: list[Finding]):
     assert not unmarked, (
         f"bandit findings with no `# nosec` on the line: {unmarked}. Either fix them, "
         f"or suppress each one where it happens with the reasoning inline."
+    )
+
+
+#: The one path-scoped bandit exemption, and what it silences.
+#:
+#: `[tool.bandit.assert_used] skips` in `pyproject.toml` turns off B101 for
+#: `redstring/testing/`, which is ~400 `assert` statements making up the port
+#: compliance suites. B101 exists to catch an `assert` load-bearing in
+#: production code, where `python -O` deletes it; nothing here runs under `-O`
+#: in anyone's product.
+#:
+#: The two tests below are the ADR 0014 pair the setting would otherwise
+#: lack. `test_no_finding_is_silenced_without_a_marker` above cannot see this
+#: one at all -- a config skip suppresses the finding *before* bandit reports
+#: it, so there is nothing on any line to check against.
+ASSERT_SKIP_PATH = PROJECT / "src" / "redstring" / "testing"
+
+
+def test_the_assert_exemption_still_names_a_real_directory():
+    """A skip glob matching nothing passes silently, forever."""
+    assert ASSERT_SKIP_PATH.is_dir(), (
+        f"{ASSERT_SKIP_PATH} does not exist, so the `assert_used` skip in "
+        f"pyproject.toml exempts nothing. Delete it."
+    )
+
+
+def test_the_assert_exemption_still_has_something_to_exempt():
+    """The other direction: the directory must still be full of `assert`.
+
+    Without this, a `redstring/testing/` that stopped using bare `assert`
+    would leave an exemption in place with nothing under it -- which is an
+    exemption over an empty set, and the thing it would then silence is
+    whatever someone adds next.
+
+    Counted by parsing rather than by running bandit with the skip removed,
+    because CLAUDE.md's rule about measuring an exemption applies here in
+    reverse: a bandit run *is* subject to the config, so it can only ever
+    report zero.
+    """
+    total = 0
+    for path in ASSERT_SKIP_PATH.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        total += sum(1 for node in ast.walk(tree) if isinstance(node, ast.Assert))
+    assert total > 100, (
+        f"only {total} `assert` statements under {ASSERT_SKIP_PATH.name}/ -- the "
+        f"B101 exemption in pyproject.toml is no longer earning its place"
     )

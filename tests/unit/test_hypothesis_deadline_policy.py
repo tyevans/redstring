@@ -14,7 +14,7 @@ tests, which detects nothing systematically and blocks a commit occasionally.
 It duly blocked one, with `FlakyFailure: ... this test took 276.11ms, which
 exceeded the deadline of 200.00ms, but on a subsequent run it took 1.28 ms` --
 first-call cost on a busy machine, reported as a failure naming the interval
-properties. `tests/compliance/graph_store.py` carries the same warning about
+properties. `redstring/testing/graph_store.py` carries the same warning about
 `max_examples` for the same reason, and this module is that warning made
 executable for `deadline`.
 
@@ -33,6 +33,15 @@ from hypothesis import settings
 
 TESTS = Path(__file__).resolve().parents[1]
 CONFTEST = TESTS / "conftest.py"
+REPO_ROOT = TESTS.parent
+
+#: The compliance suites are hypothesis-heavy and **do not live under
+#: `tests/`**: they ship inside the package, as `redstring.testing`, so an
+#: adapter written in someone else's repository can run them. A scanner rooted
+#: at `tests/` alone would walk straight past the one place a `deadline` would
+#: affect every adapter at once -- which is the same reason this module has
+#: always insisted on scanning by path rather than by pytest collection.
+SCANNED_ROOTS = (TESTS, REPO_ROOT / "src" / "redstring" / "testing")
 
 
 def _settings_calls_naming_a_deadline() -> list[str]:
@@ -43,7 +52,7 @@ def _settings_calls_naming_a_deadline() -> list[str]:
     explain *why* the policy is what it is -- cannot be mistaken for a setting.
     """
     offenders: list[str] = []
-    for path in sorted(TESTS.rglob("*.py")):
+    for path in sorted(path for root in SCANNED_ROOTS for path in root.rglob("*.py")):
         if path == CONFTEST:
             continue
         tree = ast.parse(path.read_text())
@@ -55,7 +64,7 @@ def _settings_calls_naming_a_deadline() -> list[str]:
             if name != "settings":
                 continue
             if any(kw.arg == "deadline" for kw in node.keywords):
-                offenders.append(f"{path.relative_to(TESTS.parent)}:{node.lineno}")
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
     return offenders
 
 
@@ -109,10 +118,33 @@ def test_the_detector_can_see_a_settings_call():
 
 
 def test_the_detector_reaches_every_test_tree():
-    """`tests/compliance/` holds no `test_*.py` and is never collected, so a
+    """The compliance suites hold no `test_*.py` and are never collected, so a
     checker written with pytest's collection in mind would walk straight past
-    the shared contract suites -- the one place a deadline would affect every
-    adapter at once."""
-    scanned = {p.relative_to(TESTS).parts[0] for p in TESTS.rglob("*.py")}
-    for required in ("unit", "compliance", "integration"):
-        assert required in scanned, f"{required}/ is not being scanned"
+    them -- the one place a deadline would affect every adapter at once.
+
+    They are also no longer under `tests/`. `redstring.testing` ships inside
+    the package so adapters elsewhere can run the same bodies, which means a
+    scanner rooted at `tests/` is now *two* steps from reaching them: the
+    directory is not collected and it is not in the tree. Asserting the
+    package path is reached is what stops the move from having silently
+    retired this gate.
+    """
+    scanned = {
+        path.relative_to(REPO_ROOT).parts[:2]
+        for root in SCANNED_ROOTS
+        for path in root.rglob("*.py")
+    }
+    required = {
+        ("tests", "unit"),
+        ("tests", "integration"),
+        ("src", "redstring"),
+    }
+    missing = required - set(scanned)
+    assert not missing, f"not being scanned: {sorted(missing)}"
+
+    compliance = list(SCANNED_ROOTS[1].rglob("*.py"))
+    assert len(compliance) >= 5, (
+        f"expected the compliance suites under {SCANNED_ROOTS[1]}, "
+        f"found {len(compliance)} modules -- the package moved and this gate "
+        f"went quiet"
+    )

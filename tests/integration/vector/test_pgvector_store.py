@@ -1,6 +1,6 @@
 """The pgvector `VectorStore` adapter against the shared compliance suite.
 
-Everything asserted about behaviour lives in `tests.compliance.vector_store`.
+Everything asserted about behaviour lives in `redstring.testing.vector_store`.
 This module supplies a store and adds only what is specific to *this*
 adapter -- schema, encoding fidelity, query plans and round-trip cost.
 
@@ -49,8 +49,8 @@ import pytest
 
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.vector import VectorRecord
+from redstring.testing.vector_store import VectorStoreCompliance
 from redstring.vector.adapters.pgvector import PgVectorStore
-from tests.compliance.vector_store import VectorStoreCompliance
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

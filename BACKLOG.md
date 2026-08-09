@@ -207,6 +207,40 @@ with whatever slice first needs it in anger.
 Code that may well be correct, with nothing that would tell us if it were not.
 These are the entries most likely to become section 1 without warning.
 
+### B119. The caller-owned resource checks are written in the form upstream refuted
+
+Three tests assert that an adapter handed a driver or pool leaves it alone,
+and all three ask the *wrong question*:
+
+| File | The assertion |
+|---|---|
+| `tests/integration/vector/test_pgvector_store.py:518` | `assert await pool.fetchval("SELECT 1") == 1` |
+| `tests/integration/graph/test_neo4j_store.py:256` | `session.run("RETURN 1 AS one")` |
+| `tests/integration/chunks/test_postgres_store.py:760` | same shape |
+
+Each runs a query against the caller's resource after the adapter's `close()`
+and takes success as proof the adapter did not close it.
+
+**eventsource-py measured that exact form and found it does not bite.** Its
+0.13.0 changelog records writing its `CallerOwnedResourceCase` this way first
+and watching the ownership mutant *survive*: a disposed SQLAlchemy
+`AsyncEngine` happily opens a new connection, so "can it still run a query"
+answers yes either way. The observable that worked was **pool identity**.
+
+For `asyncpg.Pool` and `neo4j.AsyncDriver` the query form plausibly does bite,
+because both close explicitly rather than swapping a pool underneath. But
+that is an argument, and CLAUDE.md's rule is that a passing check you have
+never seen fail is not yet evidence. Break each one on purpose — make the
+adapter close the resource it was handed — and watch the test fail, or
+replace the query with an identity check.
+
+Two things make this worth doing rather than filing and forgetting. It is
+three copies of one fact (`recurring-defects.md` §2), all `integration`-marked
+so none runs in the commit gate; and `src/redstring/testing/lifetime.py`
+holds only `NoOpLifetime`, a double mixin, with no lifetime *contract* suite
+at all — so the natural fix is one shared case in the shipped suite, which is
+also the shape eventsource landed.
+
 ### B12. The accuracy suite — built, and what it still cannot tell you
 
 **Closed by building it rather than by deleting the marker**, which was the
@@ -1172,6 +1206,43 @@ failing, because in CI it reads as infrastructure and gets retried.
 Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
+
+### B120. Two boundary decisions raised by a downstream consumer, unresolved
+
+Raised by the `research-team` project against redstring's 0.4.0 scope. Both
+are stated here as *their* argument, because the entry is worthless if the
+next reader has to go and re-derive it — and neither has been decided.
+
+**1. Their chunk-boundary heuristics are better than `SlidingWindowChunker`,
+and the answer is upstreaming rather than a private copy.** They cascade
+paragraph → sentence → word → hard cut, and report it is materially better
+for *citation quality* — a chunk that ends mid-sentence produces a quotation
+nobody can use. redstring's `Chunker` protocol is the substitution point that
+already exists for this (`src/redstring/extraction/protocols.py`), so the
+shape of the fix is: their heuristic lands here as a `Chunker`, and they
+consume it back rather than maintaining a fork. Their words: "That's an
+argument for pushing them upstream as a `Chunker` and then consuming them
+back, not for keeping a private copy."
+
+What has to be decided before that lands: whether it replaces
+`SlidingWindowChunker` or joins it, and what happens to chunk **ids** — they
+are content-addressed (`chunk_id(source_id, text)`), so changing where a
+boundary falls re-keys every chunk of every re-ingested document. That is not
+a migration, but it is a fact a caller has to be told.
+
+**2. The two write paths have deliberately different key spaces, and
+"extract, then index" discards entity links by design.** This is their read of
+redstring's current ordering, and their conclusion is that they get to pick
+their ordering once rather than inheriting one. The open question for
+redstring is whether the discard is *intended* — `index_documents` and
+`build_graph` are two composition entry points writing to two stores, and if
+one ordering loses `entity_ids` on chunks while the other does not, that is
+either a documented consequence or B97's neighbour.
+
+Neither of these was investigated during the 0.4.0 work; they arrived as
+feedback and are recorded so they are not lost. **Read the `research-team`
+implementations before deciding either** — the argument above is a summary of
+code this project has not looked at.
 
 ### B116. The carryover bound is recency-only, and evicts the protagonist
 

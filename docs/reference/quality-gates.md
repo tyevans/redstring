@@ -25,7 +25,7 @@ Every claim on this page is sourced from a file in the repository:
 | Coverage ratchet behaviour | `scripts/coverage_ratchet.py`, `.coverage-baseline` |
 | cosmic-ray session settings | `cosmic-ray.toml` |
 | Integration backends | `docker-compose.test.yml` |
-| Compliance-suite example count | `tests/compliance/graph_store.py`, `tests/compliance/vector_store.py` |
+| Compliance-suite example count | `src/redstring/testing/graph_store.py`, `src/redstring/testing/vector_store.py` |
 
 When this page and one of those files disagree, the file is right — say so in
 an issue rather than reading around it.
@@ -145,7 +145,7 @@ to.
 
 Everything else is a hard runtime dependency in `[project] dependencies` —
 pydantic, asyncpg, httpx, numpy, python-dateutil, dateparser, pyyaml,
-`redis[hiredis]`, jellyfish, and `eventsource-py>=0.9.1,<0.11`.
+`redis[hiredis]`, jellyfish, and `eventsource-py>=0.13.0,<0.14`.
 `eventsource-py` is deliberately *not* an extra: `redstring.__init__`
 exports `build_graph`, `Document`, `DocumentExtracted` and the two
 projections, all of which need it, and a public API that fails to import
@@ -793,7 +793,7 @@ compares wrongly. Tests need the naive form for two distinct reasons, and
 neither is a relaxation of the invariant:
 
 - `hypothesis`'s `st.datetimes(min_value=..., max_value=...)` **requires naive
-  bounds**. `tests/compliance/strategies.py` and
+  bounds**. `src/redstring/testing/strategies.py` and
   `tests/unit/domain/test_temporal.py` both build strategies this way
   (`min_value=datetime(1800, 1, 1)`, `min_value=datetime(1, 1, 1)` and
   similar), and there is no tz-aware spelling of those arguments.
@@ -1455,7 +1455,7 @@ decoration here — two deliberate structures in this suite depend on them, and
 both would break silently under a looser pattern.
 
 **`python_files = "test_*.py"` is what keeps the shared compliance suites from
-being collected.** `tests/compliance/` holds `graph_store.py`,
+being collected.** `src/redstring/testing/` holds `graph_store.py`,
 `vector_store.py`, `cache.py` and `strategies.py`; the first three define
 abstract suite classes (`GraphStoreCompliance` and friends) whose test methods
 are inherited by a concrete subclass per adapter. The files do not match
@@ -1512,7 +1512,7 @@ absence fails in the most confusing way available — pytest collects the
 coroutine, never awaits it, warns, and **passes**.
 
 `auto` also applies to the inherited compliance methods, which is what lets an
-abstract suite define `async def test_...` in `tests/compliance/` and have it
+abstract suite define `async def test_...` in `src/redstring/testing/` and have it
 run correctly from a subclass in a different package.
 
 Fourteen explicit `@pytest.mark.asyncio` marks remain — a `pytestmark` in
@@ -1872,7 +1872,7 @@ the standard local run.
 | `KG_TEST_POSTGRES_DSN` | `postgresql://postgres:redstring@localhost:5434/redstring_test` | `tests/integration/vector/test_pgvector_store.py` |
 | `KG_LLM_BASE_URL` | `http://192.168.1.14:8080/v1` | `tests/integration/llm/test_live_endpoint.py` |
 | `KG_LLM_MODEL` | `qwen3.6-27b-mtp` | same |
-| `KG_COMPLIANCE_MAX_EXAMPLES` | `50` | `tests/compliance/graph_store.py`, `vector_store.py` |
+| `KG_COMPLIANCE_MAX_EXAMPLES` | `50` | `src/redstring/testing/graph_store.py`, `vector_store.py` |
 
 The two `KG_LLM_*` defaults point at a host on the author's network. They are
 defaults, not a requirement: `langchain-openai` speaks to any
@@ -1962,8 +1962,8 @@ compliance_settings = settings(
 )
 ```
 
-That block appears verbatim in both `tests/compliance/graph_store.py` and
-`tests/compliance/vector_store.py`, and the resulting `compliance_settings`
+That block appears verbatim in both `src/redstring/testing/graph_store.py` and
+`src/redstring/testing/vector_store.py`, and the resulting `compliance_settings`
 decorates **21** property tests in the graph suite and **14** in the vector
 suite. Nothing else in the repository reads the variable; the other
 `max_examples` values in `tests/` (25, 50, 60, 300, 500) are hard-coded per
@@ -2037,7 +2037,7 @@ reaches the decorator:
 
 ```python
 def test_max_examples_is_tunable_without_editing_the_suite(self):
-    from tests.compliance import graph_store as suite
+    from redstring.testing import graph_store as suite
 
     assert suite.compliance_settings.max_examples == suite.DEFAULT_MAX_EXAMPLES
 ```
@@ -2073,7 +2073,7 @@ Two things follow:
   [proving the harness works before trusting a run](../how-to/run-integration-and-mutation-suites.md#step-1-prove-the-harness-works--run-the-configured-test-command-unmutated).
 - **Where a guard names a specific value, pin it as an example.**
   `test_k_zero_returns_nothing_rather_than_raising` in
-  `tests/compliance/vector_store.py` exists for precisely this, and its
+  `src/redstring/testing/vector_store.py` exists for precisely this, and its
   docstring says so: "A boundary that matters belongs in an example, not in a
   budget." Its assertions are independent of the budget, so it kills both
   mutants at any value of the variable, including 1. The general rule is in

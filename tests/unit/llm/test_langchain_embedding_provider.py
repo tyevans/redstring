@@ -24,7 +24,7 @@ import pytest
 from redstring.domain.exceptions import EmbeddingProviderError
 from redstring.llm.adapters.langchain_embedding import LangChainEmbeddingProvider
 from redstring.ports.embedding_provider import EmbeddingProvider
-from tests.compliance.embedding_provider import EmbeddingProviderCompliance
+from redstring.testing.embedding_provider import EmbeddingProviderCompliance
 
 DIMENSION = 768
 

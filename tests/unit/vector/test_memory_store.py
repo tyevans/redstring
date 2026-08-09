@@ -1,6 +1,6 @@
 """The in-memory `VectorStore` adapter against the shared compliance suite.
 
-Everything asserted about behaviour lives in `tests.compliance.vector_store`.
+Everything asserted about behaviour lives in `redstring.testing.vector_store`.
 This module supplies a store and adds only what is specific to *this*
 adapter -- namely that it holds no state outside itself.
 """
@@ -11,8 +11,8 @@ import pytest
 
 from redstring.domain.vector import VectorRecord
 from redstring.ports.vector_store import VectorStore
+from redstring.testing.vector_store import VectorStoreCompliance
 from redstring.vector.adapters.memory import InMemoryVectorStore
-from tests.compliance.vector_store import VectorStoreCompliance
 
 
 class TestMemoryVectorStore(VectorStoreCompliance):

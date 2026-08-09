@@ -40,7 +40,7 @@ import os
 import pytest
 
 from redstring.llm.adapters.langchain_embedding import LangChainEmbeddingProvider
-from tests.compliance.embedding_provider import (
+from redstring.testing.embedding_provider import (
     DISTINCT_TEXTS,
     SAME_VECTOR_COSINE,
     EmbeddingProviderCompliance,
@@ -139,7 +139,7 @@ class TestWhatOnlyALiveServerShows:
         assert similarity >= SAME_VECTOR_COSINE, (
             f"batching moved the vector further than the contract allows "
             f"(cosine {similarity:.6f} < {SAME_VECTOR_COSINE}); the tolerance "
-            f"in tests/compliance/embedding_provider.py needs revisiting, not "
+            f"in redstring/testing/embedding_provider.py needs revisiting, not "
             f"an exemption for this adapter"
         )
 

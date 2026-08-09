@@ -28,7 +28,7 @@ from redstring.domain.chunk import ChunkId, StoredChunk
 from redstring.domain.chunk_ranking import LexicalCandidates
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.ports.chunk_store import ChunkStore
-from tests.compliance.chunk_store import ChunkStoreCompliance
+from redstring.testing.chunk_store import ChunkStoreCompliance
 
 # The port annotates under `if TYPE_CHECKING`, so resolving its hints at
 # runtime needs the names supplied explicitly.

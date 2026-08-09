@@ -1,6 +1,6 @@
 """The in-memory `GraphStore` adapter against the shared compliance suite.
 
-Everything asserted about behaviour lives in `tests.compliance.graph_store`.
+Everything asserted about behaviour lives in `redstring.testing.graph_store`.
 This module supplies a store and adds only what is specific to *this*
 adapter -- namely that it holds no state outside itself.
 """
@@ -16,7 +16,7 @@ from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import AliasCycleError
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.ports.graph_store import GraphStore
-from tests.compliance.graph_store import GraphStoreCompliance
+from redstring.testing.graph_store import GraphStoreCompliance
 
 
 class TestMemoryStore(GraphStoreCompliance):
@@ -69,7 +69,7 @@ class TestComplianceHarness:
             assert isinstance(store, InMemoryGraphStore)
 
     def test_max_examples_is_tunable_without_editing_the_suite(self):
-        from tests.compliance import graph_store as suite
+        from redstring.testing import graph_store as suite
 
         assert suite.compliance_settings.max_examples == suite.DEFAULT_MAX_EXAMPLES
 

@@ -71,11 +71,11 @@ Four trees, and they are not interchangeable:
 | Tree | In the commit gate? | Needs |
 |---|---|---|
 | `tests/unit/` | yes | nothing external |
-| `tests/compliance/` | **never collected directly** | subclassed by unit and integration modules |
+| `src/redstring/testing/` | **never collected directly** | subclassed by unit and integration modules |
 | `tests/integration/` | no | backends from `docker-compose.test.yml` |
 | `tests/accuracy/` | no | it is empty — see below |
 
-`tests/compliance/` is the one to understand first. It is a *library*, not a
+`src/redstring/testing/` is the one to understand first. It is a *library*, not a
 suite: the contract classes become tests only where an adapter's own module
 subclasses them under a `Test*` name. **A regression on a shared contract goes
 there**, not into one adapter's test file — fixed in `test_memory_store.py` it

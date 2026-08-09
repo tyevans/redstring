@@ -551,6 +551,7 @@ Two things learned building check 1, both of which will recur:
 to lowest:
 
 ```
+testing
 composition
 extraction : consolidation : temporal : chunks : graph : vector : llm  (siblings)
 projections
@@ -560,7 +561,18 @@ ports
 domain
 ```
 
-**`composition` is the top layer, and every module in it names the pair of
+**`testing` is above everything, and the direction is the point.** It holds
+the port compliance suites, which ship so an adapter written in someone
+else's repository can run the same bodies this one does. Placing it at the
+top means nothing under `src/` may import it, so `import redstring` can never
+reach `pytest`. What it may import is pinned by a *separate* `forbidden`
+contract — `ports` and `domain` only — because a layers contract can state
+one direction or the other and this package needs both. A suite that could
+reach `redstring.graph` would be checking one implementation while claiming
+to check the contract, which is the failure the whole directory exists to
+prevent.
+
+**`composition` is the top layer of the library proper, and every module in it names the pair of
 layers it joins.** There are two. `build_graph` joins `extraction` and
 `projections`: extraction may not import projections — that is what keeps a
 store reference out of the pipeline — but something has to hold both or the
@@ -619,12 +631,21 @@ to a package that does not exist.
 `langchain*` or `neo4j` import appearing where it should not. That is what
 `tests/unit/test_dependencies_stay_confined.py` is for — it parses every module
 under `src/` and fails on a third-party leak outside the directory that library
-is confined to. It carries a **table**, currently four rows: `langchain*`/
-`openai` in `llm/adapters/`, `neo4j` in `graph/adapters/`, `asyncpg` in
-`vector/adapters/`, `redis` in `llm/cache/`.
+is confined to. It carries a **table**: `langchain*`/`openai` in
+`llm/adapters/`, `neo4j` in `graph/adapters/`, `asyncpg` in `vector/adapters/`,
+`redis` in `llm/cache/`, and `pytest` and `hypothesis` in `testing/`.
 
-**A new third-party client adds a row, in the same commit.** Three of those
-four were confined by convention alone until slice 11, each correctly placed
+The last two are the row where a leak is worst, and the only one that is not
+about an adapter. `redstring.testing` imports both at module scope and
+`redstring` depends on neither, so an import anywhere else makes
+`import redstring` raise for every consumer who did not install the `test`
+extra — a broken library rather than a broken adapter. They are listed as two
+rows rather than one because they share a directory and a reason but are not
+one seam: a directory that stopped importing one while still importing the
+other should fail rather than pass on its neighbour.
+
+**A new third-party client adds a row, in the same commit.** Three of the
+original four were confined by convention alone until slice 11, each correctly placed
 and each one commit from not being — which is `recurring-defects.md` §3 exactly:
 a rule that holds only because nobody has broken it is indistinguishable from
 no rule. Every row is guarded in both directions, so a row naming a directory

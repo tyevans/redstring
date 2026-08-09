@@ -1241,7 +1241,7 @@ failures = await self._cache.increment(self._key("failures"), ttl_seconds=self.r
 
 and the `Cache` port is explicit that `ttl_seconds` is applied when the key is
 **created**, not on every increment. Both adapters implement that promise, and
-`tests/compliance/cache.py` pins it for any third one — `MemoryCache.increment`
+`src/redstring/testing/cache.py` pins it for any third one — `MemoryCache.increment`
 keeps the existing deadline when the key is already live, and `RedisCache`
 issues its `PEXPIRE` only when the `INCR` returns `1`.
 

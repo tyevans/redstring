@@ -97,6 +97,27 @@ CONFINEMENTS = (
         directories=("llm/cache",),
         port="redstring.ports.cache",
     ),
+    # The one row that is not about an adapter, and the one where a leak is
+    # worst. `redstring.testing` ships the port compliance suites, so it
+    # imports `pytest` and `hypothesis` at module scope -- neither of which
+    # `redstring` depends on. A leak anywhere else makes `import redstring`
+    # raise `ModuleNotFoundError` for every consumer who did not install the
+    # `test` extra, which is a broken library rather than a broken adapter.
+    #
+    # `pytest` and `hypothesis` are named separately from the four above
+    # because they are not one seam: they share a directory and a reason, and
+    # a directory that stopped importing one of them while still importing
+    # the other should fail rather than pass on its neighbour.
+    Confinement(
+        packages=("pytest",),
+        directories=("testing",),
+        port="redstring.testing",
+    ),
+    Confinement(
+        packages=("hypothesis",),
+        directories=("testing",),
+        port="redstring.testing",
+    ),
 )
 
 #: Every `(confinement, directory)` pair, for the two guards that are about one

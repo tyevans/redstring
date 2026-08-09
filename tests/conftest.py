@@ -49,14 +49,14 @@ if TYPE_CHECKING:
 # property test has not become pathologically slow.** A per-example wall-clock
 # deadline was a poor detector of that anyway -- it cannot distinguish an
 # accidentally quadratic `relate` from a busy laptop -- but it was not nothing.
-# `tests/compliance/graph_store.py` already made the same trade in the same
+# `redstring/testing/graph_store.py` already made the same trade in the same
 # words: "a slow adapter is a performance finding, not a flaky test." A real
 # detector is a benchmark with a baseline, which this project does not have.
 #
 # **Do not put `deadline=` back into a `settings()` decorator.** An explicit
 # value there outranks every profile, which would make this block inert for
 # that test and unfixable from one place --the same trap `max_examples` carries
-# in `tests/compliance/graph_store.py`. `tests/unit/test_hypothesis_deadline_policy.py`
+# in `redstring/testing/graph_store.py`. `tests/unit/test_hypothesis_deadline_policy.py`
 # fails if one reappears.
 settings.register_profile("default", deadline=None)
 

@@ -31,7 +31,7 @@ segregation test quietly stops testing segregation.
 
 The double subclasses no *adapter*, per ADR 0026. Subclassing
 `InMemoryGraphStore` would satisfy every capability however the protocols were
-declared. What it does inherit is `tests/compliance/lifetime.NoOpLifetime`,
+declared. What it does inherit is `redstring/testing/lifetime.NoOpLifetime`,
 which supplies the `AsyncClosable` members ADR 0028 added and nothing else --
 shared rather than restated, per B107c.
 """
@@ -55,7 +55,7 @@ from redstring.ports.graph_store import (
     RelationshipStore,
     TenantPurge,
 )
-from tests.compliance.lifetime import NoOpLifetime
+from redstring.testing.lifetime import NoOpLifetime
 from tests.unit.consolidation.conftest import edge, entity
 
 if TYPE_CHECKING:
