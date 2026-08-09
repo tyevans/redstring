@@ -233,6 +233,7 @@ class ExtractionPipeline:
         skip_failed_chunks: bool = False,
         carryover_entities: int = DEFAULT_CARRYOVER_ENTITIES,
         gleanings: int = 0,
+        schema: type[Extraction] = Extraction,
     ) -> None:
         """Assemble a pipeline.
 
@@ -265,6 +266,14 @@ class ExtractionPipeline:
                 stops the loop for that chunk. Off by default because recall
                 is worth paying for and is not worth paying for by accident.
                 See `redstring.extraction.gleaning`.
+            schema: What the model is asked to fill in. `Extraction` -- the
+                default -- lets it name any entity type it likes. A subclass
+                from `redstring.extraction.constrained` admits only one
+                domain's declared ids, and admits them at the *server's*
+                decoder rather than in prose. A schema argument rather than a
+                flag because the pipeline has no domain to consult: it is
+                given a prompt, and this is the other half of the same
+                decision, made by whoever chose the prompt.
         """
         self._provider = provider
         self._chunker = chunker if chunker is not None else SlidingWindowChunker()
@@ -280,6 +289,7 @@ class ExtractionPipeline:
         if gleanings < 0:
             raise ValueError(f"gleanings must be >= 0, got {gleanings}")
         self._gleanings = gleanings
+        self._schema = schema
 
     @property
     def system_prompt(self) -> str:
@@ -333,7 +343,9 @@ class ExtractionPipeline:
         for chunk in chunks:
             prompt = self._system_prompt + carryover.block()
             try:
-                answer = await self._provider.extract(chunk.text, Extraction, system_prompt=prompt)
+                answer = await self._provider.extract(
+                    chunk.text, self._schema, system_prompt=prompt
+                )
             except LlmProviderError:
                 if not self._skip_failed:
                     raise
@@ -411,7 +423,7 @@ class ExtractionPipeline:
         for _ in range(self._gleanings):
             try:
                 extra = await self._provider.extract(
-                    text, Extraction, system_prompt=gleaning_prompt(prompt, answer)
+                    text, self._schema, system_prompt=gleaning_prompt(prompt, answer)
                 )
             except LlmProviderError:
                 failures += 1

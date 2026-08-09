@@ -154,12 +154,32 @@ print(report.domain, report.domain_confidence)
     includes every call that named its own `domain`, so filtering on `== 0.0`
     does not sweep those up.
 
-A schema **prompts the model; it does not constrain it.** An entity type the
-schema never mentions is not an error, and nothing validates the model's
-answer against the schema —
+By default a schema **prompts the model; it does not constrain it.** An
+entity type the schema never mentions is not an error, and nothing validates
+the model's answer against the schema —
 [ADR 0011](adr/0011-domain-schemas-prompt-but-do-not-constrain.md) records
 why. To write your own, see
 [Author a domain schema](how-to/author-a-domain-schema.md).
+
+If you would rather have consistency than coverage, ask for it:
+
+```python
+report = await build_graph(document, ..., domain="news_journalism", constrain_to_domain=True)
+```
+
+The domain's type ids then become an `enum` in the JSON Schema the server
+decodes against, so a model that would have answered `"chief executive"`
+answers `"person"` — no other token is decodable. It needs a `domain`, and
+saying so is a `ValueError` raised before the document reaches a model.
+
+!!! warning "A constrained run cannot discover a type the schema author missed"
+
+    That is the whole trade, and it does not announce itself. A news schema
+    with no `legislation` does not stop documents mentioning acts of
+    parliament: unconstrained the model says `legislation` and you learn
+    something, constrained it says `document` and the graph is quietly wrong.
+    Reach for this when you would rather have one label per kind of thing than
+    the right label. [ADR 0030](adr/0030-a-domain-schema-may-constrain-when-asked.md).
 
 ## Extraction across chunk boundaries
 

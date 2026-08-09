@@ -61,7 +61,7 @@ every window.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 from eventsource.adapters.memory import InMemoryEventStore, InMemorySnapshotStore
 from eventsource.domain.tenant_context import tenant_scope
@@ -76,8 +76,11 @@ from redstring.domain.vector import VectorRecord
 from redstring.events.streams import document_stream
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.classifier import ContentClassifier
+from redstring.extraction.constrained import constrained_extraction_for
+from redstring.extraction.domains.registry import get_domain_schema
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
+from redstring.extraction.schema import Extraction
 from redstring.projections.chunk import ChunkProjection
 from redstring.projections.graph import GraphProjection
 from redstring.projections.vector import VectorProjection
@@ -197,6 +200,7 @@ async def build_graph(
     allow_partial: bool = False,
     carryover_entities: int = DEFAULT_CARRYOVER_ENTITIES,
     gleanings: int = 0,
+    constrain_to_domain: bool = False,
     embedding_provider: EmbeddingProvider | None = None,
     vector_store: VectorStore | None = None,
     chunks: ChunkStore | None = None,
@@ -278,6 +282,14 @@ async def build_graph(
             Each pass is one more call per chunk, so this is the one argument
             here that changes what the run costs rather than only what it
             does. See `redstring.extraction.gleaning`.
+        constrain_to_domain: Admit only the `domain`'s declared entity and
+            relationship type ids, enforced by the server's structured
+            decoding rather than asked for in prose. Off by default, and
+            requires a `domain`: it trades coverage for consistency, since a
+            type the schema's author did not think of becomes the nearest
+            wrong answer instead of a new type.
+            `docs/adr/0011-domain-schemas-prompt-but-do-not-constrain.md`
+            remains the default's reasoning; ADR 0030 is this dial's.
 
     Returns:
         A `GraphBuildReport`. `report.event is None` means this document was
@@ -286,8 +298,9 @@ async def build_graph(
         one, and with an `event_store` is the ordinary outcome of a re-run.
 
     Raises:
-        ValueError: One of `embedding_provider` and `vector_store` was given
-            without the other, or their dimensions disagree. Both are checked
+        ValueError: `constrain_to_domain` was set with no `domain` to draw a
+            vocabulary from. Or one of `embedding_provider` and `vector_store`
+            was given without the other, or their dimensions disagree. Both are checked
             **before** anything is extracted: "I configured embeddings and got
             no vectors" is the failure this argument pair exists to prevent,
             and discovering it after a document has been through a model is
@@ -300,12 +313,16 @@ async def build_graph(
     """
     _check_embedding_wiring(embedding_provider, vector_store)
 
-    domain_id, confidence, system_prompt = await _resolve_prompt(domain, document, provider)
+    _check_vocabulary_wiring(domain, constrain_to_domain)
+
+    resolved = await _resolve_prompt(domain, document, provider)
+    domain_id, confidence = resolved.domain_id, resolved.confidence
 
     pipeline = ExtractionPipeline(
         provider,
         chunker=chunker,
-        system_prompt=system_prompt,
+        system_prompt=resolved.system_prompt,
+        schema=(constrained_extraction_for(resolved.schema) if constrain_to_domain else Extraction),
         skip_failed_chunks=skip_failed_chunks,
         carryover_entities=carryover_entities,
         gleanings=gleanings,
@@ -390,6 +407,27 @@ async def _persist(
         return
     async with tenant_scope(tenant_id):
         await repository.save(aggregate)
+
+
+def _check_vocabulary_wiring(
+    domain: str | DomainSchema | AutoDomain | None, constrain_to_domain: bool
+) -> None:
+    """Refuse `constrain_to_domain` with nothing to constrain to.
+
+    Checked **before** the document reaches a model, for the reason
+    `_check_embedding_wiring` is: "I asked for constrained extraction and got
+    free-form types" is the failure this argument pair exists to prevent, and
+    discovering it after paying for a document is discovering it too late.
+
+    Silently falling back to the unconstrained schema would be worse than
+    either -- the two runs are then indistinguishable except in the numbers
+    the caller was trying to move.
+    """
+    if constrain_to_domain and domain is None:
+        raise ValueError(
+            "constrain_to_domain=True needs a domain to take a vocabulary from; "
+            "pass domain=<id>, a DomainSchema, or AUTO"
+        )
 
 
 def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorStore | None) -> None:
@@ -496,24 +534,44 @@ async def _embed_entities(
     return len(vectors)
 
 
+class _ResolvedDomain(NamedTuple):
+    """What choosing a domain settled: what to say, and what to permit.
+
+    The schema comes back alongside the prompt because both are derived from
+    one choice and one of them is made by a classifier. Resolving the domain
+    id and then looking the schema up again at the call site would run
+    `AUTO`'s classifier once and its registry lookup twice, and would leave
+    two places that have to agree about what a missing domain means.
+    """
+
+    domain_id: str | None
+    confidence: float | None
+    system_prompt: str
+    #: `None` for the default prompt, which has no vocabulary to constrain to.
+    schema: DomainSchema | None
+
+
 async def _resolve_prompt(
     domain: str | DomainSchema | AutoDomain | None,
     document: SourceDocument,
     provider: LlmProvider,
-) -> tuple[str | None, float | None, str]:
-    """The domain chosen, how sure the classifier was, and the prompt to ask with."""
+) -> _ResolvedDomain:
+    """The domain chosen, how sure the classifier was, and what to ask with."""
     if domain is None:
-        return None, None, DEFAULT_SYSTEM_PROMPT
+        return _ResolvedDomain(None, None, DEFAULT_SYSTEM_PROMPT, None)
     if isinstance(domain, AutoDomain):
         classification = await ContentClassifier(provider).classify(document.text)
-        return (
+        return _ResolvedDomain(
             classification.domain,
             classification.confidence,
             domain_system_prompt(classification.domain),
+            get_domain_schema(classification.domain),
         )
     if isinstance(domain, str):
-        return domain, None, domain_system_prompt(domain)
-    return domain.domain_id, None, domain_system_prompt(domain)
+        return _ResolvedDomain(
+            domain, None, domain_system_prompt(domain), get_domain_schema(domain)
+        )
+    return _ResolvedDomain(domain.domain_id, None, domain_system_prompt(domain), domain)
 
 
 # ---------------------------------------------------------------------------

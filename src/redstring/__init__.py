@@ -245,6 +245,11 @@ from redstring.extraction.pipeline import (
 )
 from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.protocols import Chunker
+from redstring.extraction.schema import (
+    ExtractedEntity,
+    ExtractedRelationship,
+    Extraction,
+)
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
@@ -333,6 +338,9 @@ __all__ = [
     "EntityReader",
     "EntityTypeSchema",
     "EntityWriter",
+    "ExtractedEntity",
+    "ExtractedRelationship",
+    "Extraction",
     "ExtractionMethod",
     "ExtractionPipeline",
     "FakeEmbeddingProvider",

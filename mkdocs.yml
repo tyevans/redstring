@@ -167,4 +167,5 @@ nav:
       - "0027 · VectorStore is three capabilities": adr/0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md
       - "0028 · A capability declares its own release": adr/0028-a-capability-declares-its-own-release.md
       - "0029 · A chunk is not extracted alone": adr/0029-a-chunk-is-not-extracted-alone.md
+      - "0030 · A domain schema may constrain, when asked": adr/0030-a-domain-schema-may-constrain-when-asked.md
   - Contributing: contributing.md

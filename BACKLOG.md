@@ -1508,37 +1508,47 @@ owns". Both that file and `TemporalEventProperties` were deleted in slice 9 and
 neither exists anywhere in the tree. The recoverable copy is under
 `src/redstring/extraction/schemas.py` at `66f589d` or earlier.
 
-### B57. Extraction is not constrained to a domain's vocabulary, only prompted with it
+### B57. Constrained decoding is built and unmeasured
 
-Slice 10 wired domain-aware prompting: `domain_system_prompt` renders a
-`DomainSchema` into the `system_prompt` `ExtractionPipeline` already took, and
-`build_graph(..., domain=AUTO)` lets `ContentClassifier` choose it. What that
-gives the model is a *description* of the domain's entity and relationship
-types. It does not constrain the output to them: the JSON Schema the server
-decodes against comes from `extraction.schema.Extraction`, whose `entity_type`
-is a bare `str` (verified in slice 11).
+**The mechanism half is closed.** `extraction/constrained.py` builds an
+`Extraction` subclass whose `entity_type` and `relationship_type` are
+`Literal`s over a domain's declared ids, `ExtractionPipeline` takes it as
+`schema`, and `build_graph(..., constrain_to_domain=True)` wires it. See
+`docs/adr/0030-a-domain-schema-may-constrain-when-asked.md`, which amends 0011
+without superseding it: off is still the default.
 
-**The function that looked like it did this is gone, and could not have.**
-`prompt_generator.generate_json_schema` built a JSON Schema `dict` with the
-domain's type ids as an `enum` -- but `LlmProvider.extract` takes a pydantic
-*class*, so there was no parameter to pass a dict to, and the dict it built
-named its fields `type`/`source`/`target` where `Extraction` uses
-`entity_type`/`source_name`/`target_name`. A model that obeyed it would have
-produced output `map_extraction` cannot read. Recoverable from `e063faa`
-(verified in slice 11).
+It turned out to need no new machinery at all. `LlmProvider.extract` has
+always taken `type[S]`; the entry as written assumed `map_extraction` would
+have to become generic over the schema, and it does not, because subclassing
+`Extraction` inherits the field names the mapper reads.
 
-**What it would actually take.** Either a per-domain pydantic model built at
-runtime (`pydantic.create_model` with `entity_type: Literal[...]`), threaded
-through `ExtractionPipeline` as a schema argument rather than a prompt one --
-which makes `map_extraction` generic over the schema it maps, since it reads
-`Extraction`'s field names today. Or a validation pass after extraction that
-drops or re-labels out-of-vocabulary types, which needs a decision about
-whether an unexpected type is a finding or a defect.
+**What is still open is the question this entry said to answer first: does it
+extract better?** The instruction stands and is now actionable, because unlike
+ADR 0029's two mechanisms this one *is* visible to the graded corpus --
+`scoring.py` keys an entity on `(normalized name, lowercased type)` and
+`corpus.yaml` grades types as domain schema ids, so a model answering
+"executive" where the corpus says "person" costs a false positive and a false
+negative from one entity. Every document is single-chunk, which does not
+matter here.
 
-Not obviously worth it: a domain schema's entity list is a *hint* about what
-matters, and a hard enum turns everything the domain author did not think of
-into "custom" or into nothing. Measure first -- B12's accuracy suite is the
-place -- rather than assuming constrained decoding extracts better.
+Run it both ways and record the counts, not the F1:
+
+```
+KG_LLM_BASE_URL=http://host:8080/v1 uv run pytest -m accuracy tests/accuracy/
+```
+
+`tests/accuracy/runner.py` does not thread `constrain_to_domain` through
+today, so measuring means adding that keyword to `run_document`/`run_corpus`
+— deliberately not added in advance, because an argument no caller passes is
+the inert-parameter shape and the suite has enough of those already.
+
+Two ways the answer could come back "no", both worth stating before running
+it so the result is not read backwards: the bundled schemas' vocabularies may
+simply be too coarse for the corpus, in which case constrained recall falls
+and the default is vindicated; or the corpus's own grading may have been
+written against unconstrained output, in which case it measures agreement
+with a previous run rather than accuracy. Check the second before believing
+a large improvement.
 
 ### B44. Rejected merge candidates are discarded, not recorded
 
