@@ -39,15 +39,34 @@ from __future__ import annotations
 import os
 
 import pytest
+import pytest_asyncio
 
 from redstring.llm.adapters.langchain import LangChainLlmProvider
 from tests.accuracy.corpus import load_corpus
 from tests.accuracy.runner import run_corpus
 
-pytestmark = pytest.mark.accuracy
+#: `loop_scope="module"` is not decoration. `corpus_result` is module-scoped so
+#: the corpus runs once, and under `asyncio_default_fixture_loop_scope =
+#: "function"` a module-scoped async fixture and a function-scoped test want
+#: two different event loops -- which pytest-asyncio 1.3 reports as a bare
+#: `AssertionError` at *setup*, naming neither the fixture nor the loop. Every
+#: assertion below errored that way, and because `-m accuracy` is deselected on
+#: commit, nothing said so -- the suite that measures whether extraction finds
+#: the *right* things had not run at all, and its silence was indistinguishable
+#: from its passing.
+pytestmark = [pytest.mark.accuracy, pytest.mark.asyncio(loop_scope="module")]
 
 BASE_URL = os.environ.get("KG_LLM_BASE_URL", "http://192.168.1.14:8080/v1")
 MODEL = os.environ.get("KG_LLM_MODEL", "qwen3.6-27b-mtp")
+
+#: Overridable because the library default is not a property of every model.
+#: `DEFAULT_MAX_TOKENS` is 8192, which the reference reasoning model spends on
+#: chain of thought before `content` starts on the longer corpus documents --
+#: surfacing as `EmptyCompletionError(finish_reason='length')` out of the
+#: *fixture*, so all four floors error rather than one document scoring badly.
+#: A budget is an endpoint's business; hard-coding one here would make this
+#: suite a test of the endpoint, exactly as a tuned floor would.
+MAX_TOKENS = int(os.environ.get("KG_LLM_MAX_TOKENS", "16384"))
 
 #: Floors, not targets. Set where a regression trips them, not where a good
 #: model sits. Raising these to track a particular endpoint turns the suite
@@ -59,7 +78,7 @@ MIN_RELATIONSHIP_RECALL = 0.2
 
 def _provider() -> LangChainLlmProvider:
     return LangChainLlmProvider.openai_compatible(
-        base_url=BASE_URL, model=MODEL, api_key="not-needed"
+        base_url=BASE_URL, model=MODEL, api_key="not-needed", max_tokens=MAX_TOKENS
     )
 
 
@@ -88,7 +107,7 @@ async def _serving() -> bool:
     return entities.true_positives + entities.false_positives > 0
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def corpus_result():
     """Run the whole corpus once and share the result across assertions.
 

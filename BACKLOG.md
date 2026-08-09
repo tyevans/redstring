@@ -845,6 +845,41 @@ Traps in the harness. Several of these are filed specifically because they
 cause failures that read as infrastructure trouble and get retried rather than
 investigated.
 
+### B115. The graded corpus is single-chunk, so nothing gates cross-chunk extraction
+
+All five documents in `tests/accuracy/corpus.yaml` are between 81 and 134
+characters, and `SlidingWindowChunker`'s default window is 3000 — so every one
+of them is **one chunk**. Confirmed by running the chunker over the corpus,
+not inferred from the lengths.
+
+That makes the accuracy suite structurally unable to observe anything about
+chunk *n+1*, which is now two shipped mechanisms:
+`extraction/carryover.py` acts only on chunk 2 onwards, and a gleaning pass
+(`extraction/gleaning.py`) has no cross-chunk behaviour to be compared over.
+Both are proved wired and correct by `tests/unit/extraction/`, and neither is
+proved to *help* by anything that runs.
+
+**The trap is that the suite passes either way and reads as coverage.** A
+carryover regressed to a no-op would clear every floor in
+`test_extraction_accuracy.py`, because on a one-chunk document a working
+carryover and an absent one produce byte-identical prompts. This was measured
+by accident: an A/B run of the two settings over a 2831-character document
+returned identical entities, identical relationships and identical
+mis-spellings, and the reason was that the document was one chunk — the
+"result" was a control that had been mistaken for a measurement.
+
+What it takes: **one graded document long enough to split at the default
+window** — 4000+ characters — written so that later paragraphs refer to
+entities the earlier ones named in full ("Lovelace" after "Ada Lovelace",
+"the Engine" after "the Analytical Engine"). That is the only shape that makes
+the carryover's claim falsifiable. Grading it is the expensive part and is the
+reason this is filed rather than done: `corpus.yaml`'s rules say grade what
+the text states, and a 4000-character document has enough marginal entities
+that a second grader would disagree with the first on a dozen of them. Budget
+the grading, not the writing.
+
+Related: **B12** on what the corpus can and cannot tell you at all.
+
 ### B10m. Two adapters of one compliance suite cannot run in the same pytest invocation
 
 Measured, on both suites:
@@ -1092,6 +1127,52 @@ failing, because in CI it reads as infrastructure and gets retried.
 Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
+
+### B116. The carryover bound is recency-only, and evicts the protagonist
+
+`extraction/carryover.py` keeps the most recently *first seen*
+`DEFAULT_CARRYOVER_ENTITIES` (32) mentions and drops the rest. That is the
+right side to keep for the defect it was built for — an unresolved short form
+refers to something named nearby — and it is the wrong side for the entity a
+long document is actually about, which is named in full in paragraph one and
+by surname for the next eighty chunks.
+
+Deliberately not fixed, and the reason is that the obvious fix is worse.
+"Refresh a mention's position each time it recurs" was written, tested, and
+rejected: it makes an omnipresent entity permanently most-recent and evicts
+exactly the genuinely new entities the bound exists to admit.
+`tests/unit/extraction/test_carryover.py::test_a_repeated_mention_does_not_refresh_its_position`
+is that decision, pinned — it is the one case where the two implementations
+disagree, and every other test in the file passes under both.
+
+What a real fix looks like: a **frequency-weighted** bound, keeping the *k*
+most-mentioned alongside the *n* most-recent, which needs a mention count per
+key (cheap — the dict is already there) and a split of the budget between the
+two halves (not cheap — it is a number nobody has evidence for). Do not pick
+that split by intuition; it needs the multi-chunk graded document from **B115**
+to be measurable at all, which is why that entry blocks this one.
+
+### B117. The merge keeps one mention's description and discards the rest
+
+`extraction/merging.py` folds duplicate entities with
+`max(domain.preference)`, so the winning mention's `description` is the one
+that survives and every other mention's is dropped. Overlapping windows mean a
+boundary entity is described two or three times, each time from a different
+sentence, and the fold keeps one of them.
+
+Microsoft GraphRAG does the opposite: it concatenates every mention's
+description and runs an LLM summarisation pass over the accumulation. That is
+the shape to copy, and it is **not** a change to `merging.py` — an
+LLM call inside the fold would put a model call somewhere this library has
+deliberately kept model-free, and would make an order-independent pure
+function neither. The route back is a second projection or a consolidation-time
+step that reads the descriptions the log already carries, which is where
+`docs/adr/0004-consolidation-emits-events.md` says a judgement belongs.
+
+Not urgent: `description` is not read by anything that ranks or resolves
+today, so what is lost is text a caller might display. It becomes urgent the
+moment a description reaches an embedding or a lexical channel, because at
+that point the fold is silently choosing what the corpus can be searched by.
 
 ### B89. No chunk embeddings and no fused `retrieve_chunks` entry point — B2b
 
