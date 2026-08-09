@@ -46,6 +46,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from redstring.domain.blocking import blocking_keys_for
 from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.ids import EntityId, RelationshipId
 from redstring.domain.json_safety import has_unstorable_text
 from redstring.domain.normalization import normalize_name
 
@@ -62,9 +63,8 @@ from redstring.domain.temporal_parsing import AmbiguousReferenceDateError, parse
 
 if TYPE_CHECKING:
     from datetime import datetime
-    from uuid import UUID
 
-    from redstring.domain.ids import EntityId, SourceId, TenantId
+    from redstring.domain.ids import SourceId, TenantId
     from redstring.extraction.schema import ExtractedEntity, Extraction
 
 #: Roots the relationship id space. Fixed and arbitrary; it exists only so
@@ -128,16 +128,16 @@ def entity_id_for(
     """
     within_tenant = uuid5(tenant_id, source_id)
     within_document = uuid5(within_tenant, entity_type)
-    return uuid5(within_document, normalize_name(name))
+    return EntityId(uuid5(within_document, normalize_name(name)))
 
 
 def _relationship_id_for(
     *, source_entity_id: EntityId, target_entity_id: EntityId, relationship_type: str
-) -> UUID:
+) -> RelationshipId:
     """The id of one directed, typed edge. Nested for the reason above."""
     from_source = uuid5(_RELATIONSHIP_NAMESPACE, str(source_entity_id))
     to_target = uuid5(from_source, str(target_entity_id))
-    return uuid5(to_target, relationship_type)
+    return RelationshipId(uuid5(to_target, relationship_type))
 
 
 def map_extraction(
@@ -357,7 +357,7 @@ def _map_relationships(
                 return candidate_id
         return None
 
-    by_id: dict[UUID, Relationship] = {}
+    by_id: dict[RelationshipId, Relationship] = {}
     unresolved = 0
     self_loops = 0
     for stated in extraction.relationships:

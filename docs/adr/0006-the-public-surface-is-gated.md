@@ -3,7 +3,10 @@
 **Status:** accepted, slice 10 of the ring migration. **Amended by**
 [`0028` a capability declares its own release](0028-a-capability-declares-its-own-release.md),
 which put a type on the surface that check 1 as decided here could not see —
-see Consequences.
+see Consequences — and by
+[`0032` the id names are `NewType`s](0032-the-id-names-are-newtypes.md), which
+changed four exported names from aliases into distinct types without changing
+the exported set.
 
 **Why this is an ADR:** the three tests look redundant, and each is blind to
 the failures the other two catch. Deleting any one of them leaves a hole that

@@ -27,6 +27,8 @@ from redstring import (
     domain_system_prompt,
 )
 from redstring.domain.exceptions import LlmProviderError
+from redstring.extraction.constrained import permitted_entity_types
+from redstring.extraction.domains.registry import get_domain_schema
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, PartialExtractionError
 
 TENANT_ID = uuid4()
@@ -53,6 +55,11 @@ class CountingProvider:
         self._inner = FakeLlmProvider(by_substring={}, default=answer)
         self._fail_on = fail_on
         self.calls: list[tuple[str, str | None]] = []
+        #: The schema *class* each call was given. The vocabulary constraint
+        #: lives in the type rather than in the answer, so nothing about the
+        #: entities that come back can show whether it was applied -- this is
+        #: the only place the wiring is observable without a live server.
+        self.schemas: list[type] = []
 
     @property
     def model(self) -> str:
@@ -60,6 +67,7 @@ class CountingProvider:
 
     async def extract(self, text, schema, *, system_prompt=None):
         self.calls.append((text, system_prompt))
+        self.schemas.append(schema)
         if self._fail_on is not None and self._fail_on in text:
             raise LlmProviderError("the server said no", model=self.model)
         return await self._inner.extract(text, schema, system_prompt=system_prompt)
@@ -425,3 +433,107 @@ class TestTheCorpusIsOptionalAndSeparate:
         )
 
         assert await corpus.get_by_source("doc-1", uuid4()) == []
+
+
+class TestConstrainingToADomainsVocabulary:
+    async def test_it_is_off_by_default(self) -> None:
+        """The control. Every assertion below is about a difference from this,
+        and without it they could all be describing the default."""
+        provider = CountingProvider()
+
+        await build_graph(
+            document(),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain="news_journalism",
+        )
+
+        assert permitted_entity_types(provider.schemas[0]) == ()
+
+    async def test_asking_for_it_constrains_the_schema_the_provider_receives(self) -> None:
+        provider = CountingProvider(
+            answer={"entities": [{"name": "Maria Chen", "entity_type": "person"}]}
+        )
+
+        await build_graph(
+            document(),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain="news_journalism",
+            constrain_to_domain=True,
+        )
+
+        assert "person" in permitted_entity_types(provider.schemas[0])
+
+    async def test_it_is_refused_without_a_domain_before_any_model_call(self) -> None:
+        """Checked ahead of extraction, as the embedding pair is.
+
+        `provider.calls` is what makes this more than an argument-validation
+        test: raising *after* a document has been through a model is
+        discovering the misconfiguration too late, and costs exactly what the
+        check exists to save.
+        """
+        provider = CountingProvider()
+
+        with pytest.raises(ValueError, match="needs a domain"):
+            await build_graph(
+                document(),
+                provider=provider,
+                store=InMemoryGraphStore(),
+                tenant_id=TENANT_ID,
+                constrain_to_domain=True,
+            )
+
+        assert provider.calls == []
+
+    async def test_the_domain_the_classifier_chose_supplies_the_vocabulary(self) -> None:
+        """`AUTO` picks the domain, so it must pick the vocabulary with it.
+
+        The prompt and the schema come from one resolution. Looked up
+        separately they could disagree -- above all on the fallback path,
+        where the classifier's answer is discarded and the prompt is
+        `encyclopedia_wiki`'s while a second lookup would have no way to know.
+        """
+        provider = CountingProvider(
+            answer={"domain": "academic_research", "confidence": 0.9, "reasoning": "a paper"}
+        )
+
+        report = await build_graph(
+            document("Hamlet " * 40),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain=AUTO,
+            constrain_to_domain=True,
+        )
+
+        assert report.domain == "academic_research"
+        # The last call is the extraction; the first is the classification,
+        # which is asked for `ClassificationResult` and never for this.
+        assert permitted_entity_types(provider.schemas[-1]) == tuple(
+            t.id for t in get_domain_schema("academic_research").entity_types
+        )
+
+    async def test_a_schema_object_constrains_without_being_registered(self) -> None:
+        """`domain=` takes a `DomainSchema` as well as an id, and a caller
+        with their own YAML should not have to register it to constrain to
+        it. Resolving through the registry would break exactly that caller."""
+        schema = get_domain_schema("news_journalism")
+        provider = CountingProvider(
+            answer={"entities": [{"name": "Maria Chen", "entity_type": "person"}]}
+        )
+
+        await build_graph(
+            document(),
+            provider=provider,
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain=schema,
+            constrain_to_domain=True,
+        )
+
+        assert permitted_entity_types(provider.schemas[0]) == tuple(
+            t.id for t in schema.entity_types
+        )

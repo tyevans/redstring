@@ -1574,23 +1574,24 @@ That the payloads live in `domain` and not in `events` is the layering: the
 type can never name an event. A payload is therefore usable — and testable —
 without an event around it.
 
-### The three id aliases
+### The three id types
 
-`redstring/domain/ids.py` is nine lines and declares four aliases, three of
-which appear in the schema:
+`redstring/domain/ids.py` declares four names, three of which appear in the
+schema:
 
 ```python
-EntityId = UUID
-RelationshipId = UUID
-TenantId = UUID
-SourceId = str
+EntityId = NewType("EntityId", UUID)
+RelationshipId = NewType("RelationshipId", UUID)
+TenantId = NewType("TenantId", UUID)
+SourceId = NewType("SourceId", str)
 ```
 
-They are **plain aliases, not `NewType` and not wrapper classes**, so they
-carry no validation and no nominal typing: `EntityId` *is* `UUID`, and mypy
-will not complain about passing a `RelationshipId` where an `EntityId` is
-expected. They are documentation of intent at the point of declaration, and
-nothing more. Two consequences on the wire:
+They are **`NewType`s, not wrapper classes**, so they carry nominal typing and
+no validation: mypy rejects a `RelationshipId` where an `EntityId` is expected,
+and at runtime `EntityId(u)` is `u`. Nothing about the persisted log changes —
+`NewType` has no representation of its own — which is the property that matters
+here, because an event log already written cannot be migrated. Two consequences
+on the wire:
 
 - **`EntityId` and `TenantId` serialise as UUID strings; `SourceId` as an
   ordinary string.** There is no envelope in the JSON to distinguish them from
@@ -1601,7 +1602,14 @@ nothing more. Two consequences on the wire:
   [`DocumentExtracted`'s validator](#validator-_payloads_belong_to_this_document_and_tenant)
   is exact and un-normalised.
 
-`RelationshipId` is the fourth alias. It never appears as an event field, but
+**The event framework's own `tenant_id` is a bare `UUID`.** `TenantDomainEvent`
+comes from `eventsource-py` and cannot be annotated in redstring's vocabulary,
+so every projection handler names the role on the way out —
+`TenantId(event.tenant_id)` — before handing it to a store port. That wrapper
+is the boundary, and it is the reason the projections are the only modules in
+the library that call an id constructor for a value they did not build.
+
+`RelationshipId` is the fourth name. It never appears as an event field, but
 it is the type of `Relationship.id`, which is how a redirection identifies the
 edge it moves.
 

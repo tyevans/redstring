@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import NewType
 from uuid import UUID
 
-EntityId = UUID
-RelationshipId = UUID
-TenantId = UUID
-SourceId = str
+EntityId = NewType("EntityId", UUID)
+RelationshipId = NewType("RelationshipId", UUID)
+TenantId = NewType("TenantId", UUID)
+SourceId = NewType("SourceId", str)

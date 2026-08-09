@@ -1,6 +1,12 @@
 # ADR 0011: Domain schemas prompt the model, they do not constrain it
 
-**Status:** accepted, slice 10 of the ring migration (classifier half amended in the slice 11 fix round).
+**Status:** accepted, slice 10 of the ring migration (classifier half amended in the slice 11 fix round). **Amended by
+[`0030` a domain schema may constrain, when asked](0030-a-domain-schema-may-constrain-when-asked.md)**:
+the decision below remains the default and its reasoning is unchanged, but it
+is no longer the only available behaviour -- `constrain_to_domain=True` turns
+the vocabulary into an enum in the decoded schema. Nothing here is superseded;
+what changes is that "schemas do not constrain" describes a default rather
+than the library.
 
 **Why this is an ADR:** two decisions currently argued only in module
 docstrings — `extraction/prompt_generator.py` and `extraction/classifier.py`.

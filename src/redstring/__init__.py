@@ -224,6 +224,7 @@ from redstring.domain.vector import VectorMatch, VectorRecord
 from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.events.streams import document_stream
+from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.chunking import Chunk, ChunkingResult
 from redstring.extraction.domains.loader import load_schema_from_file, load_schema_from_string
 from redstring.extraction.domains.models import (
@@ -244,6 +245,11 @@ from redstring.extraction.pipeline import (
 )
 from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.protocols import Chunker
+from redstring.extraction.schema import (
+    ExtractedEntity,
+    ExtractedRelationship,
+    Extraction,
+)
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
@@ -281,6 +287,7 @@ __version__ = "0.3.0"
 
 __all__ = [
     "AUTO",
+    "DEFAULT_CARRYOVER_ENTITIES",
     "DEFAULT_SYSTEM_PROMPT",
     "EMPTY",
     "AdjudicationVerdict",
@@ -331,6 +338,9 @@ __all__ = [
     "EntityReader",
     "EntityTypeSchema",
     "EntityWriter",
+    "ExtractedEntity",
+    "ExtractedRelationship",
+    "Extraction",
     "ExtractionMethod",
     "ExtractionPipeline",
     "FakeEmbeddingProvider",

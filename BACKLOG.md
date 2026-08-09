@@ -845,6 +845,86 @@ Traps in the harness. Several of these are filed specifically because they
 cause failures that read as infrastructure trouble and get retried rather than
 investigated.
 
+### B115. The graded corpus is single-chunk, so nothing gates cross-chunk extraction
+
+All five documents in `tests/accuracy/corpus.yaml` are between 81 and 134
+characters, and `SlidingWindowChunker`'s default window is 3000 — so every one
+of them is **one chunk**. Confirmed by running the chunker over the corpus,
+not inferred from the lengths.
+
+That makes the accuracy suite structurally unable to observe anything about
+chunk *n+1*, which is now two shipped mechanisms:
+`extraction/carryover.py` acts only on chunk 2 onwards, and a gleaning pass
+(`extraction/gleaning.py`) has no cross-chunk behaviour to be compared over.
+Both are proved wired and correct by `tests/unit/extraction/`, and neither is
+proved to *help* by anything that runs.
+
+**The trap is that the suite passes either way and reads as coverage.** A
+carryover regressed to a no-op would clear every floor in
+`test_extraction_accuracy.py`, because on a one-chunk document a working
+carryover and an absent one produce byte-identical prompts. This was measured
+by accident: an A/B run of the two settings over a 2831-character document
+returned identical entities, identical relationships and identical
+mis-spellings, and the reason was that the document was one chunk — the
+"result" was a control that had been mistaken for a measurement.
+
+What it takes: **one graded document long enough to split at the default
+window** — 4000+ characters — written so that later paragraphs refer to
+entities the earlier ones named in full ("Lovelace" after "Ada Lovelace",
+"the Engine" after "the Analytical Engine"). That is the only shape that makes
+the carryover's claim falsifiable. Grading it is the expensive part and is the
+reason this is filed rather than done: `corpus.yaml`'s rules say grade what
+the text states, and a 4000-character document has enough marginal entities
+that a second grader would disagree with the first on a dozen of them. Budget
+the grading, not the writing.
+
+### What an off-corpus measurement showed, and exactly how far it goes
+
+Worth keeping, because whoever writes the graded document should know what to
+expect and what the trap is. A 2831-character Lovelace/Babbage passage,
+chunked at 900/100 into three chunks, `qwen3.6-27b-mtp`, each arm run twice:
+
+| | entities | relationships | fragment pairs | one name under two types |
+|---|---|---|---|---|
+| `carryover_entities=0` | 53 | 54 | 8 | 4 |
+| `carryover_entities=32` | 51 | 58 | 7 | 0 |
+
+Both repeats of each arm were **byte-identical**. That is not a suspicious
+result here — `LangChainLlmProvider.openai_compatible` defaults to
+`temperature=0.0`, so identical prompts give identical completions — and it
+settles something useful: the run-to-run noise floor on this rig is *zero*, so
+the whole of the difference above is attributable to the carryover and none of
+it to sampling.
+
+**It does not follow that this generalises.** Zero variance means repeating
+the run tells you nothing new; it does not turn one document into a sample.
+The direction matches what the mechanism predicts, and that is all it is.
+
+The clearest signal is the last column, not the first. The off arm produced
+the *same name under two different entity types* four times — `Analytical
+Engine`, `Engine`, `1871` and `funding` each appearing twice with different
+types, which is two ids for one thing — and the on arm produced none. That is
+the defect a `(name, entity_type)` carryover is shaped to fix, and it is worth
+grading for explicitly: **a graded document should contain at least one entity
+whose type a later chunk would plausibly assign differently.**
+
+The off arm also emitted `ine`, a truncated fragment, and
+`article on the Analytical Engine` as an entity in its own right. Neither is
+about the carryover; both are worth remembering when grading, because a corpus
+that never sees them cannot measure whether anything fixed them.
+
+**A second ceiling, found by running B57's measurement: entity recall is
+1.000 on every document in both arms.** There is no headroom, so this corpus
+cannot detect a recall *improvement* by construction -- which is a separate
+problem from the single-chunk one and disqualifies it for exactly the
+mechanism most likely to need measuring, ADR 0029's gleaning pass. A document
+added for B115 must therefore satisfy three things at once: long enough to
+split at the default window, containing entities a later chunk would plausibly
+re-name or re-type, and containing entities a good model plausibly *misses*.
+The third is the hardest to write on purpose and the easiest to forget.
+
+Related: **B12** on what the corpus can and cannot tell you at all.
+
 ### B10m. Two adapters of one compliance suite cannot run in the same pytest invocation
 
 Measured, on both suites:
@@ -1092,6 +1172,52 @@ failing, because in CI it reads as infrastructure and gets retried.
 Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
+
+### B116. The carryover bound is recency-only, and evicts the protagonist
+
+`extraction/carryover.py` keeps the most recently *first seen*
+`DEFAULT_CARRYOVER_ENTITIES` (32) mentions and drops the rest. That is the
+right side to keep for the defect it was built for — an unresolved short form
+refers to something named nearby — and it is the wrong side for the entity a
+long document is actually about, which is named in full in paragraph one and
+by surname for the next eighty chunks.
+
+Deliberately not fixed, and the reason is that the obvious fix is worse.
+"Refresh a mention's position each time it recurs" was written, tested, and
+rejected: it makes an omnipresent entity permanently most-recent and evicts
+exactly the genuinely new entities the bound exists to admit.
+`tests/unit/extraction/test_carryover.py::test_a_repeated_mention_does_not_refresh_its_position`
+is that decision, pinned — it is the one case where the two implementations
+disagree, and every other test in the file passes under both.
+
+What a real fix looks like: a **frequency-weighted** bound, keeping the *k*
+most-mentioned alongside the *n* most-recent, which needs a mention count per
+key (cheap — the dict is already there) and a split of the budget between the
+two halves (not cheap — it is a number nobody has evidence for). Do not pick
+that split by intuition; it needs the multi-chunk graded document from **B115**
+to be measurable at all, which is why that entry blocks this one.
+
+### B117. The merge keeps one mention's description and discards the rest
+
+`extraction/merging.py` folds duplicate entities with
+`max(domain.preference)`, so the winning mention's `description` is the one
+that survives and every other mention's is dropped. Overlapping windows mean a
+boundary entity is described two or three times, each time from a different
+sentence, and the fold keeps one of them.
+
+Microsoft GraphRAG does the opposite: it concatenates every mention's
+description and runs an LLM summarisation pass over the accumulation. That is
+the shape to copy, and it is **not** a change to `merging.py` — an
+LLM call inside the fold would put a model call somewhere this library has
+deliberately kept model-free, and would make an order-independent pure
+function neither. The route back is a second projection or a consolidation-time
+step that reads the descriptions the log already carries, which is where
+`docs/adr/0004-consolidation-emits-events.md` says a judgement belongs.
+
+Not urgent: `description` is not read by anything that ranks or resolves
+today, so what is lost is text a caller might display. It becomes urgent the
+moment a description reaches an embedding or a lexical channel, because at
+that point the fold is silently choosing what the corpus can be searched by.
 
 ### B89. No chunk embeddings and no fused `retrieve_chunks` entry point — B2b
 
@@ -1427,37 +1553,81 @@ owns". Both that file and `TemporalEventProperties` were deleted in slice 9 and
 neither exists anywhere in the tree. The recoverable copy is under
 `src/redstring/extraction/schemas.py` at `66f589d` or earlier.
 
-### B57. Extraction is not constrained to a domain's vocabulary, only prompted with it
+### B57. Constrained decoding is built and measured: it changes nothing here
 
-Slice 10 wired domain-aware prompting: `domain_system_prompt` renders a
-`DomainSchema` into the `system_prompt` `ExtractionPipeline` already took, and
-`build_graph(..., domain=AUTO)` lets `ContentClassifier` choose it. What that
-gives the model is a *description* of the domain's entity and relationship
-types. It does not constrain the output to them: the JSON Schema the server
-decodes against comes from `extraction.schema.Extraction`, whose `entity_type`
-is a bare `str` (verified in slice 11).
+**Both halves are closed.** `extraction/constrained.py` builds the enum-bearing
+schema, `build_graph(..., constrain_to_domain=True)` wires it, and
+`docs/adr/0030-a-domain-schema-may-constrain-when-asked.md` records the design.
+The measurement this entry demanded has been run **twice**, and the second run
+retracts the first.
 
-**The function that looked like it did this is gone, and could not have.**
-`prompt_generator.generate_json_schema` built a JSON Schema `dict` with the
-domain's type ids as an `enum` -- but `LlmProvider.extract` takes a pydantic
-*class*, so there was no parameter to pass a dict to, and the dict it built
-named its fields `type`/`source`/`target` where `Extraction` uses
-`entity_type`/`source_name`/`target_name`. A model that obeyed it would have
-produced output `map_extraction` cannot read. Recoverable from `e063faa`
-(verified in slice 11).
+**Current answer, against the thinking-off baseline ADR 0031 established:**
 
-**What it would actually take.** Either a per-domain pydantic model built at
-runtime (`pydantic.create_model` with `entity_type: Literal[...]`), threaded
-through `ExtractionPipeline` as a schema argument rather than a prompt one --
-which makes `map_extraction` generic over the schema it maps, since it reads
-`Extraction`'s field names today. Or a validation pass after extraction that
-drops or re-labels out-of-vocabulary types, which needs a decision about
-whether an unexpected type is a finding or a defect.
+| | entity tp/fp/fn | relationship tp/fp/fn |
+|---|---|---|
+| unconstrained | 12 / 3 / 0 | 5 / 6 / 1 |
+| constrained | 12 / 3 / 0 | 5 / 6 / 1 |
 
-Not obviously worth it: a domain schema's entity list is a *hint* about what
-matters, and a hard enum turns everything the domain author did not think of
-into "custom" or into nothing. Measure first -- B12's accuracy suite is the
-place -- rather than assuming constrained decoding extracts better.
+**Identical** -- not close, identical, down to which entity types each document
+produced. A model that is not reasoning its way into inventing types already
+answers in the schema's vocabulary, so the enum has nothing left to forbid.
+The flag costs nothing and buys nothing here. It stays off for that boring
+reason, and stays *available* for the unchanged reason: a caller with a coarse
+schema and a model that wanders may still want it, and nobody here can measure
+that for them.
+
+**What follows is the first measurement, kept because being wrong this way is
+the lesson.** It ran with the model thinking, and read a confounder as a
+mechanism.
+
+Graded corpus, `qwen3.6-27b-mtp`, `temperature=0.0`, **thinking on**:
+
+| | entity tp | entity fp | entity fn | rel tp | rel fp | rel fn |
+|---|---|---|---|---|---|---|
+| unconstrained | 12 | **8** | 0 | 5 | **6** | 1 |
+| constrained | 12 | **13** | 0 | 5 | **7** | 1 |
+
+Recall is identical and perfect in both arms. Precision is worse constrained.
+
+**The mechanism is the part worth keeping, because it is the opposite of the
+intuition.** An enum does not only forbid the types outside it -- it *advertises*
+the types inside it, and the model treats the list as a checklist. On
+`newsroom-event`, an 81-character sentence about a summit, the unconstrained
+run emitted four entity types and the constrained run emitted **all nine the
+`news_journalism` schema declares** -- inventing a `claim`, a `date`, a
+`quote`, a `source` and a `statistic` the text does not contain. The entire
+5-point rise in false positives is that one document.
+
+So the trade is not "coverage for consistency" as ADR 0030 and 0011 both
+describe it. It is that, *plus* a hallucination pressure proportional to how
+many types the schema declares and how few of them the document contains.
+A nine-type schema against a one-sentence document is the worst case, and it
+is not a rare one.
+
+**And that mechanism explains nothing, which is the correction.** The false
+positives it was invented to account for were the *reasoning trace* inventing
+entities; they vanished when thinking was turned off, not when the constraint
+was removed. The "checklist" story was persuasive enough to reach an ADR, this
+entry and a documentation warning before the confounder surfaced a day later.
+
+**A mechanism inferred from one measurement is a hypothesis, however well the
+story fits.** When a result comes with a satisfying explanation, the
+explanation is the part to distrust -- it is what stops you looking for the
+variable you did not control.
+
+**Two limits of the instrument, which matter more than the result.**
+
+1. **Entity recall is 1.000 on every document in both arms**, so this corpus
+   *cannot* detect a recall improvement -- there is no headroom. Anything
+   whose benefit is recall (ADR 0029's gleaning, above all) is unmeasurable
+   here for a reason entirely separate from B115's single-chunk problem. A
+   graded document needs entities a good model plausibly misses.
+2. The four false positives on `newsroom-quote` are present in both arms and
+   are unexamined. Some are likely grading gaps rather than hallucinations --
+   grading rule 3 says omission is a claim, and a 134-character sentence
+   naming a plant closure arguably states a `claim` and an `event` nobody
+   graded. Before quoting these precision numbers as a baseline, read the
+   eight and decide which are the corpus's fault.
 
 ### B44. Rejected merge candidates are discarded, not recorded
 

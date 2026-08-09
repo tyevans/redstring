@@ -27,6 +27,7 @@ from redstring.events import DocumentExtracted
 from redstring.events.streams import document_stream
 from redstring.extraction.chunkers import SlidingWindowChunker
 from redstring.extraction.pipeline import (
+    DEFAULT_SYSTEM_PROMPT,
     ExtractionPipeline,
     PartialExtractionError,
 )
@@ -586,5 +587,233 @@ class FailOnSubstring:
 
     async def extract(self, text, schema, *, system_prompt=None):
         if self._marker in text:
+            raise LlmProviderError("the server said no", model=self.model)
+        return await self._inner.extract(text, schema, system_prompt=system_prompt)
+
+
+class RecordingProvider:
+    """A real provider that keeps the system prompt it was sent per chunk.
+
+    `FakeLlmProvider` accepts `system_prompt` and ignores it deliberately, so
+    nothing in this suite could see the carryover block at all -- which is the
+    §3 shape waiting to happen: the whole feature could be wired to nothing
+    and every existing test would stay green.
+
+    It delegates rather than reimplements, so what the pipeline gets back is
+    still validated through the same gate the LangChain adapter uses.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        self._inner = FakeLlmProvider(**kwargs)
+        self.prompts: list[str] = []
+        self.texts: list[str] = []
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
+
+    async def extract(self, text, schema, *, system_prompt=None):
+        self.prompts.append(system_prompt or "")
+        self.texts.append(text)
+        return await self._inner.extract(text, schema, system_prompt=system_prompt)
+
+
+#: Two paragraphs, each short enough that `small_chunker` puts them in
+#: separate chunks and long enough that it does not merge them. Written so the
+#: *second* names nobody the first does: a document where every chunk mentions
+#: every entity cannot show that anything was carried.
+TWO_PARAGRAPHS = (
+    "Ada Lovelace wrote the first published algorithm, intended to be "
+    "carried out by a machine, in eighteen forty-three.\n\n"
+    "Charles Babbage designed that machine, and the two of them corresponded "
+    "about it for a great many years afterwards."
+)
+
+CARRYOVER_ANSWERS = {
+    "Lovelace": payload("Ada Lovelace"),
+    "Babbage": payload("Charles Babbage"),
+}
+
+
+class TestEachChunkIsToldWhatTheEarlierOnesFound:
+    async def test_the_first_chunk_gets_the_configured_prompt_unchanged(self, tenant_id):
+        """Nothing has been found yet, so there is nothing to append.
+
+        Pinned as *equality*, not as "starts with": it is what makes the first
+        chunk of a carryover run and of a baseline run the same request, so a
+        quality comparison between them is about the later chunks.
+        """
+        provider = RecordingProvider(by_substring=CARRYOVER_ANSWERS)
+        pipeline = ExtractionPipeline(provider, chunker=small_chunker())
+
+        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id)
+
+        assert len(provider.prompts) > 1, "the document must split for this test to mean anything"
+        assert provider.prompts[0] == DEFAULT_SYSTEM_PROMPT
+
+    async def test_a_later_chunk_is_told_what_an_earlier_one_named(self, tenant_id):
+        provider = RecordingProvider(by_substring=CARRYOVER_ANSWERS)
+        pipeline = ExtractionPipeline(provider, chunker=small_chunker())
+
+        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id)
+
+        babbage = next(i for i, text in enumerate(provider.texts) if "Babbage" in text)
+        assert "Ada Lovelace (Person)" in provider.prompts[babbage]
+
+    async def test_turning_it_off_sends_the_configured_prompt_to_every_chunk(self, tenant_id):
+        """`carryover_entities=0` is the pre-feature pipeline, byte for byte."""
+        provider = RecordingProvider(by_substring=CARRYOVER_ANSWERS)
+        pipeline = ExtractionPipeline(provider, chunker=small_chunker(), carryover_entities=0)
+
+        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id)
+
+        assert len(provider.prompts) > 1
+        assert set(provider.prompts) == {DEFAULT_SYSTEM_PROMPT}
+
+    async def test_a_row_the_mapper_refused_is_never_carried(self, tenant_id):
+        """The carryover is built from mapped entities, not from the answer.
+
+        A blank name is dropped and counted by `map_extraction`; carrying it
+        would offer later chunks a spelling no entity in this document has,
+        and would spend a slot of the bound on nothing. Built from the raw
+        answer this fails; built from the mapping it passes, and no other test
+        here distinguishes the two.
+        """
+        provider = RecordingProvider(
+            by_substring={
+                "Lovelace": {
+                    "entities": [
+                        {"name": "   ", "entity_type": "Person"},
+                        {"name": "Ada Lovelace", "entity_type": "Person"},
+                    ]
+                },
+                "Babbage": payload("Charles Babbage"),
+            }
+        )
+        pipeline = ExtractionPipeline(provider, chunker=small_chunker())
+
+        result = await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id)
+
+        assert result.dropped_entities == 1
+        babbage = next(i for i, text in enumerate(provider.texts) if "Babbage" in text)
+        assert "Ada Lovelace (Person)" in provider.prompts[babbage]
+        listed = [line for line in provider.prompts[babbage].splitlines() if line.startswith("- ")]
+        assert listed == ["- Ada Lovelace (Person)"]
+
+    def test_a_negative_bound_is_refused_at_construction(self):
+        """Not on the first document. A constructor argument that validates
+        later is one that validates in production."""
+        with pytest.raises(ValueError, match="must be >= 0"):
+            ExtractionPipeline(FakeLlmProvider(script=[{}]), carryover_entities=-1)
+
+
+class TestAskingTheSameChunkTwice:
+    async def test_off_by_default_means_one_call_per_chunk(self, tenant_id):
+        """`gleanings` costs money, so its default has to be observable.
+
+        A script is the right fake here precisely because the call *count* is
+        what is under test.
+        """
+        provider = FakeLlmProvider(script=[payload("Ada Lovelace")])
+        pipeline = ExtractionPipeline(provider)
+
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+
+        assert result.gleaning_passes == 0
+        assert [e.name for e in result.entities] == ["Ada Lovelace"]
+
+    async def test_a_second_pass_adds_what_the_first_missed(self, tenant_id):
+        provider = FakeLlmProvider(script=[payload("Ada Lovelace"), payload("Charles Babbage")])
+        pipeline = ExtractionPipeline(provider, gleanings=1)
+
+        result = await pipeline.extract(document("Ada Lovelace and Charles Babbage."), tenant_id)
+
+        assert sorted(e.name for e in result.entities) == ["Ada Lovelace", "Charles Babbage"]
+        assert result.gleaning_passes == 1
+
+    async def test_the_second_pass_is_shown_the_first_answer(self, tenant_id):
+        provider = RecordingProvider(script=[payload("Ada Lovelace"), payload("Charles Babbage")])
+        pipeline = ExtractionPipeline(provider, gleanings=1)
+
+        await pipeline.extract(document("Ada Lovelace and Charles Babbage."), tenant_id)
+
+        assert "- Ada Lovelace (Person)" in provider.prompts[1]
+        assert provider.texts[0] == provider.texts[1], "the same chunk, re-read"
+
+    async def test_an_edge_between_the_two_passes_resolves(self, tenant_id):
+        """The case that justifies combining before mapping rather than after.
+
+        The first pass names Ada; the second names Charles *and* the edge
+        between them. Folded after mapping, that edge has an endpoint the
+        second answer never listed and is counted unresolved.
+        """
+        provider = FakeLlmProvider(
+            script=[
+                payload("Ada Lovelace"),
+                payload(
+                    "Charles Babbage",
+                    links=[("Ada Lovelace", "Charles Babbage", "COLLABORATED_WITH")],
+                ),
+            ]
+        )
+        pipeline = ExtractionPipeline(provider, gleanings=1)
+
+        result = await pipeline.extract(document("Ada Lovelace and Charles Babbage."), tenant_id)
+
+        assert result.unresolved_relationships == 0
+        assert [r.relationship_type for r in result.relationships] == ["COLLABORATED_WITH"]
+
+    async def test_a_pass_that_finds_nothing_stops_the_loop(self, tenant_id):
+        """Two gleanings asked for, one spent: the script has three entries
+        and would raise if the pipeline called a fourth or a third time."""
+        provider = FakeLlmProvider(script=[payload("Ada Lovelace"), {}])
+        pipeline = ExtractionPipeline(provider, gleanings=2)
+
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+
+        assert result.gleaning_passes == 1
+        assert [e.name for e in result.entities] == ["Ada Lovelace"]
+
+    async def test_a_failed_gleaning_keeps_the_first_answer_and_is_counted(self, tenant_id):
+        """A failed second look is not a failed chunk.
+
+        `skip_failed_chunks` is off here on purpose: were the two treated
+        alike, this would raise and throw away a complete first answer over an
+        optional enhancement.
+        """
+        provider = GleaningFails(payload("Ada Lovelace"))
+        pipeline = ExtractionPipeline(provider, gleanings=1)
+
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+
+        assert result.failed_gleanings == 1
+        assert result.gleaning_passes == 0
+        assert result.failed_chunks == 0, "the chunk itself succeeded"
+        assert [e.name for e in result.entities] == ["Ada Lovelace"]
+
+    def test_a_negative_count_is_refused_at_construction(self):
+        with pytest.raises(ValueError, match="gleanings must be >= 0"):
+            ExtractionPipeline(FakeLlmProvider(script=[{}]), gleanings=-1)
+
+
+class GleaningFails:
+    """Answers the first call for any text and refuses every later one.
+
+    Keyed on the call count rather than on the prompt: a provider that failed
+    on seeing the gleaning instruction would make the instruction's wording
+    load-bearing in a test about failure handling.
+    """
+
+    def __init__(self, first: dict) -> None:
+        self._inner = FakeLlmProvider(by_substring={}, default=first)
+        self._calls = 0
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
+
+    async def extract(self, text, schema, *, system_prompt=None):
+        self._calls += 1
+        if self._calls > 1:
             raise LlmProviderError("the server said no", model=self.model)
         return await self._inner.extract(text, schema, system_prompt=system_prompt)

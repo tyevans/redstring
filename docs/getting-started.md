@@ -114,6 +114,27 @@ chat_model = ChatOpenAI(model="qwen3-30b", base_url="http://localhost:8080/v1", 
 provider = LangChainLlmProvider(chat_model, model="openai-compatible/qwen3-30b")
 ```
 
+!!! tip "Extraction does not think, by default"
+
+    `openai_compatible` sends `enable_thinking: false`. On a reasoning model
+    that is worth a great deal: on the graded corpus it was **5.7x faster**
+    (155 s to 27 s) with **entity false positives cut from 9 to 3** and recall
+    unchanged. Reasoning does not help a task that asks only for what the text
+    states — it invents entities the text implies.
+
+    ```python
+    provider = LangChainLlmProvider.openai_compatible(
+        base_url=...,
+        model=...,
+        thinking=True,  # restore the server's default
+    )
+    ```
+
+    Pass `thinking=True` if you want the model to reason, **or if your backend
+    has no chat template to pass the flag to** — a hosted API such as OpenAI's
+    will reject the field with a 400 on the first call.
+    [ADR 0031](adr/0031-extraction-does-not-think.md).
+
 Constructing the chat model is the one step the example does not show, because
 it is langchain's step rather than this library's. Needs the `llm` extra — see
 [Installation](installation.md#the-extras).
@@ -154,12 +175,104 @@ print(report.domain, report.domain_confidence)
     includes every call that named its own `domain`, so filtering on `== 0.0`
     does not sweep those up.
 
-A schema **prompts the model; it does not constrain it.** An entity type the
-schema never mentions is not an error, and nothing validates the model's
-answer against the schema —
+By default a schema **prompts the model; it does not constrain it.** An
+entity type the schema never mentions is not an error, and nothing validates
+the model's answer against the schema —
 [ADR 0011](adr/0011-domain-schemas-prompt-but-do-not-constrain.md) records
 why. To write your own, see
 [Author a domain schema](how-to/author-a-domain-schema.md).
+
+If you would rather have consistency than coverage, ask for it:
+
+```python
+report = await build_graph(document, ..., domain="news_journalism", constrain_to_domain=True)
+```
+
+The domain's type ids then become an `enum` in the JSON Schema the server
+decodes against, so a model that would have answered `"chief executive"`
+answers `"person"` — no other token is decodable. It needs a `domain`, and
+saying so is a `ValueError` raised before the document reaches a model.
+
+!!! warning "A constrained run cannot discover a type the schema author missed"
+
+    That is the whole trade, and it does not announce itself. A news schema
+    with no `legislation` does not stop documents mentioning acts of
+    parliament: unconstrained the model says `legislation` and you learn
+    something, constrained it says `document` and the graph is quietly wrong.
+    Reach for this when you would rather have one label per kind of thing than
+    the right label.
+
+!!! danger "Measured: it made precision *worse*, and the reason is not obvious"
+
+    An enum does not only forbid the types outside it — it **advertises the
+    types inside it**, and a model reads the list as a checklist. On one
+    81-character sentence, the unconstrained run emitted four entity types and
+    the constrained run emitted all nine the schema declares, inventing a
+    `claim`, a `date`, a `quote`, a `source` and a `statistic` the text does
+    not contain.
+
+    Against the graded corpus, recall was identical and entity false positives
+    rose from 8 to 13. That is five short documents and one model, so it is not
+    a universal verdict — but it is why this is off by default and why you
+    should measure on *your* corpus before turning it on. The expected penalty
+    grows with how many types your schema declares and how few of them a
+    typical document contains.
+    [ADR 0030](adr/0030-a-domain-schema-may-constrain-when-asked.md),
+    `BACKLOG.md` B57.
+
+## Extraction across chunk boundaries
+
+A document longer than the chunker's window is extracted one chunk at a time,
+and two things follow that are worth knowing before a long document surprises
+you.
+
+### Later chunks are told what earlier ones found — on by default
+
+Chunk two begins mid-argument. It says "Lovelace" where chunk one said
+"Ada Lovelace", and because an entity's id is derived from its normalized
+name, those are **two entities** that the extraction fold cannot combine —
+they reach consolidation, which pays a model call to decide they are one
+person.
+
+So each chunk's prompt carries a bounded list of the entities earlier chunks
+named, asking the model to reuse those spellings. It costs no extra model call
+and is on by default:
+
+```python
+report = await build_graph(document, ..., carryover_entities=32)  # the default
+report = await build_graph(document, ..., carryover_entities=0)  # off
+```
+
+Turn it off to reproduce the extraction of a run from before this existed —
+the prompt is then byte-identical.
+
+### A chunk can be asked twice — off by default
+
+A model asked once for the entities in a dense paragraph stops when the answer
+*feels* complete, not when the paragraph is exhausted. Showing it its own
+answer and asking what it missed reliably finds more:
+
+```python
+report = await build_graph(document, ..., gleanings=1)
+print(report.gleaning_passes, report.failed_gleanings)
+```
+
+!!! warning "Each pass is another model call per chunk"
+
+    `gleanings=1` roughly doubles what a document costs, because chunks are
+    extracted sequentially. That is why it is off by default rather than set
+    to a small number for you. A pass that finds nothing stops the loop for
+    that chunk, so the worst case is rarely the actual case.
+
+    A gleaning call that *fails* never fails the run — there is a complete
+    first answer in hand, and discarding it would trade a smaller extraction
+    for none. It is counted on `report.failed_gleanings` instead, because
+    "fewer entities" is also what a successful run looks like.
+
+Both are prompt content: neither validates anything, and a model that ignores
+either produces exactly what it produced before.
+[ADR 0029](adr/0029-a-chunk-is-not-extracted-alone.md) records the shape and
+what was rejected.
 
 ## Where this example stops
 

@@ -78,6 +78,38 @@ if TYPE_CHECKING:
 #: Room for a reasoning model to think and *then* answer. See the module docstring.
 DEFAULT_MAX_TOKENS: Final = 8192
 
+#: What `openai_compatible` sends to stop a reasoning model reasoning.
+#:
+#: `chat_template_kwargs` is a *chat template* variable rather than a sampling
+#: parameter, so it is understood by servers that render the model's own
+#: Jinja template -- llama.cpp, vLLM, SGLang -- and by the Qwen, DeepSeek and
+#: GLM families that read `enable_thinking` in theirs.
+#:
+#: **Off is the default because extraction is not a reasoning task**, and the
+#: measurement is unambiguous. On `qwen3.6-27b-mtp`, one graded corpus
+#: document, identical prompt, `temperature=0.0`:
+#:
+#: | | completion tokens | generation |
+#: |---|---|---|
+#: | thinking on | 2789, then 2239 | 40.7s, then 33.2s |
+#: | thinking off | 261, then 220 | 3.8s, then 5.7s |
+#:
+#: Six to ten times faster, and *steadier*: the two thinking-on runs disagreed
+#: with each other about how many entities the document held, at temperature
+#: zero, while the two thinking-off runs did not. A long reasoning trace
+#: appears to amplify divergence that a short structured answer does not, so
+#: turning it off buys reproducibility as well as latency -- which matters
+#: here, because every accuracy comparison in this repository is a difference
+#: between two runs.
+#:
+#: **A server that rejects unknown request fields will refuse this**, and
+#: OpenAI's own API is the one to expect: it has no chat template to pass
+#: kwargs to. Pass `thinking=True` there. That is a real cost of choosing this
+#: default and it is chosen anyway, because the local-server case is what this
+#: constructor is overwhelmingly used for and the failure is a loud 400 at the
+#: first call rather than a silent degradation. See `BACKLOG.md` B118.
+NO_THINKING: Final = {"chat_template_kwargs": {"enable_thinking": False}}
+
 
 class _NeverRaised(Exception):
     """Stands in for a vendor exception class that is not installed.
@@ -145,6 +177,7 @@ class LangChainLlmProvider:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.0,
         provider: str = "openai-compatible",
+        thinking: bool = False,
     ) -> LangChainLlmProvider:
         """Build a provider against any OpenAI-compatible server.
 
@@ -164,9 +197,20 @@ class LangChainLlmProvider:
                 with no compensating benefit.
             provider: Prefix for the provenance string, giving
                 `f"{provider}/{model}"`.
+            thinking: Let the model reason before answering. **Off by
+                default**, which is a deliberate reversal of the server's
+                default and is measured rather than assumed -- see
+                `NO_THINKING` below. Pass `True` to restore the server's own
+                behaviour, which is also what a backend that rejects unknown
+                request fields needs.
 
         Note:
             Deliberately not a passthrough for arbitrary `ChatOpenAI` kwargs.
+            `thinking` is one named field with a measured reason, not the
+            beginning of one --
+            a caller needing anything else still builds the chat model itself
+            and uses `__init__`, which is how `thinking` was measured before
+            it was added.
             A caller needing callbacks, proxies or a custom `http_client` can
             build the chat model itself and use `__init__`, which keeps this
             convenience constructor from slowly becoming a second, worse copy
@@ -199,6 +243,7 @@ class LangChainLlmProvider:
             api_key=api_key,
             max_tokens=max_tokens,
             temperature=temperature,
+            extra_body=None if thinking else dict(NO_THINKING),
         )
         return cls(chat, model=f"{provider}/{model}")
 

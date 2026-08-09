@@ -33,7 +33,7 @@ from redstring.domain.exceptions import (
     MalformedCompletionError,
     RefusedCompletionError,
 )
-from redstring.llm.adapters.langchain import LangChainLlmProvider
+from redstring.llm.adapters.langchain import NO_THINKING, LangChainLlmProvider
 from redstring.ports.llm_provider import LlmProvider
 
 if TYPE_CHECKING:
@@ -352,3 +352,81 @@ async def test_blank_text_is_refused_before_a_model_is_called():
         await provider.extract("   ", _Bag)
 
     assert chat.seen_messages == []
+
+
+class TestTheConvenienceConstructorsRequestBody:
+    """What `openai_compatible` puts on the wire, short of putting it there.
+
+    These read the constructed `ChatOpenAI`'s own configuration rather than
+    intercepting a request, which is the most that can be pinned without a
+    server. `tests/integration/llm/test_live_endpoint.py` is what proves a
+    real server honours it; this is what proves we sent it, and neither is
+    sufficient alone -- a default that never reaches the client and a server
+    that ignores the field look identical from the outside.
+    """
+
+    def test_thinking_is_off_by_default(self):
+        """The reversal of the server's own default, pinned.
+
+        Extraction is not a reasoning task, and on the reference model the
+        difference is 2789 completion tokens against 261. See `NO_THINKING`.
+        """
+        provider = LangChainLlmProvider.openai_compatible(
+            base_url="http://localhost:8080/v1", model="qwen3.6-27b-mtp"
+        )
+
+        assert provider._chat.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
+
+    def test_asking_for_thinking_sends_nothing_rather_than_the_opposite_flag(self):
+        """`thinking=True` restores the *server's* default, which is not the
+        same as asserting `enable_thinking: true`.
+
+        A backend with no chat template to pass kwargs to -- OpenAI's own API
+        -- rejects the field whichever value it carries, so the escape hatch
+        has to be an absent field rather than an inverted one. Sending
+        `{"enable_thinking": True}` would pass a test that only checked the
+        flag flipped, and would still 400.
+        """
+        provider = LangChainLlmProvider.openai_compatible(
+            base_url="http://localhost:8080/v1", model="qwen3.6-27b-mtp", thinking=True
+        )
+
+        assert provider._chat.extra_body is None
+
+    def test_the_module_constant_cannot_be_reconfigured_through_a_provider(self):
+        """`NO_THINKING` is module-level and mutable, so aliasing it into a
+        client would let one caller's edit reconfigure every provider in the
+        process -- including ones built before the change.
+
+        **Honest about what this pins.** `ChatOpenAI` is a pydantic model and
+        validation copies `extra_body`, so this passes whether or not
+        `openai_compatible` copies it as well -- removing the `dict(...)` was
+        tried, and this test did not notice. It is kept because the invariant
+        is real and depends on a *third-party* behaviour nothing else here
+        states: it fails if pydantic stops copying, which is the case where
+        the `dict(...)` starts being what saves us.
+        """
+        provider = LangChainLlmProvider.openai_compatible(
+            base_url="http://localhost:8080/v1", model="a"
+        )
+
+        provider._chat.extra_body["chat_template_kwargs"] = {"enable_thinking": True}
+
+        assert NO_THINKING == {"chat_template_kwargs": {"enable_thinking": False}}
+        other = LangChainLlmProvider.openai_compatible(
+            base_url="http://localhost:8080/v1", model="b"
+        )
+        assert other._chat.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
+
+    def test_building_the_chat_model_yourself_is_untouched(self):
+        """`__init__` takes a caller's own chat model and must not edit it.
+
+        The escape hatch the constructor's docstring points at has to stay
+        exactly what the caller configured, or "build it yourself" stops being
+        an answer to anything.
+        """
+        scripted = ScriptedChatModel(reply=AIMessage(content='{"entities": []}'))
+
+        provider = LangChainLlmProvider(scripted, model="test/v1")
+
+        assert provider._chat is scripted

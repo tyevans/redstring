@@ -33,6 +33,7 @@ from pathlib import Path
 
 import yaml
 
+from redstring.extraction.domains.registry import get_domain_schema
 from tests.accuracy.scoring import ExpectedEntity, ExpectedRelationship
 
 CORPUS_PATH = Path(__file__).parent / "corpus.yaml"
@@ -47,6 +48,21 @@ class GradedDocument:
     text: str
     entities: tuple[ExpectedEntity, ...]
     relationships: tuple[ExpectedRelationship, ...]
+
+
+def _check_declared(doc_id: str, what: str, graded: set[str], declared: set[str]) -> None:
+    """Refuse a graded value the named domain does not declare.
+
+    The message lists what *is* declared, because the overwhelmingly likely
+    cause is a grader reaching for the obvious English word rather than the
+    schema's id -- "company" for `organization`, "date" for `temporal`.
+    """
+    undeclared = sorted(graded - declared)
+    if undeclared:
+        raise ValueError(
+            f"{doc_id}: graded {what}(s) {undeclared} are not declared by that document's "
+            f"domain schema, which declares {sorted(declared)}"
+        )
 
 
 def load_corpus(path: Path | None = None) -> tuple[GradedDocument, ...]:
@@ -91,6 +107,27 @@ def load_corpus(path: Path | None = None) -> tuple[GradedDocument, ...]:
                         f"{doc_id}: relationship endpoint {endpoint!r} is not a "
                         f"graded entity of that document"
                     )
+
+        # Grading rule 2, enforced rather than stated. A graded type that no
+        # schema declares is unreachable for a *constrained* run by
+        # construction, so it would score as a false negative no model could
+        # ever avoid -- and the resulting "constrained extraction is worse"
+        # would be a property of the grading. Rule 4 above has been enforced
+        # since this loader was written; this one was prose until constrained
+        # decoding gave it teeth. See `BACKLOG.md` B57.
+        schema = get_domain_schema(entry["domain"])
+        _check_declared(
+            doc_id,
+            "entity type",
+            {e.entity_type for e in entities},
+            {t.id for t in schema.entity_types},
+        )
+        _check_declared(
+            doc_id,
+            "relationship type",
+            {r.relationship_type for r in relationships},
+            {t.id for t in schema.relationship_types},
+        )
 
         loaded.append(
             GradedDocument(

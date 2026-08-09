@@ -30,6 +30,7 @@ became of the mergers is `redstring.consolidation.policy`, which rebuilt
 their two-threshold policy where a judgement becomes an `EntitiesMerged`.
 """
 
+from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.chunkers import SlidingWindowChunker
 from redstring.extraction.chunking import Chunk, ChunkingResult
 from redstring.extraction.errors import ChunkerError, ChunkingError, ChunkSizeError
@@ -55,6 +56,7 @@ from redstring.extraction.schema_org import (
 )
 
 __all__ = [
+    "DEFAULT_CARRYOVER_ENTITIES",
     "DEFAULT_CONFIDENCE",
     "DEFAULT_SYSTEM_PROMPT",
     # Chunking
