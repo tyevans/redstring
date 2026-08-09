@@ -29,8 +29,8 @@ from uuid import uuid4
 from redstring.domain.ids import EntityId, TenantId
 from redstring.domain.vector import VectorMatch, VectorRecord
 from redstring.ports.vector_store import VectorStore
-from tests.compliance import strategies
-from tests.compliance.vector_store import VectorStoreCompliance
+from redstring.testing import strategies
+from redstring.testing.vector_store import VectorStoreCompliance
 
 # The port annotates under `if TYPE_CHECKING`, so resolving its hints at
 # runtime needs the names supplied explicitly.
@@ -177,6 +177,6 @@ class TestTheMetadataStrategyReachesTheReservedKey:
 
 class TestTheSuiteIsTunable:
     def test_max_examples_is_tunable_without_editing_the_suite(self):
-        from tests.compliance import vector_store as suite
+        from redstring.testing import vector_store as suite
 
         assert suite.compliance_settings.max_examples == suite.DEFAULT_MAX_EXAMPLES

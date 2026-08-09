@@ -26,7 +26,7 @@ from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, RelationshipId, TenantId
 from redstring.domain.relationship import Relationship
 from redstring.ports.graph_store import GraphStore
-from tests.compliance.graph_store import GraphStoreCompliance
+from redstring.testing.graph_store import GraphStoreCompliance
 
 # The port annotates under `if TYPE_CHECKING`, so resolving its hints at
 # runtime needs the names supplied explicitly.

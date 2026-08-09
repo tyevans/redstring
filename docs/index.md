@@ -92,7 +92,7 @@ log already written cannot be refactored.
 
 **Backends are ports.** `GraphStore` and `VectorStore` are Protocols with an
 in-memory implementation and a real one each (Neo4j, pgvector), and
-`tests/compliance/` is a shared contract suite that *both* run unchanged. Code
+`src/redstring/testing/` is a shared contract suite that *both* run unchanged. Code
 written against the interface in a test is the code that runs against the
 database in production — and a contract two implementations satisfy by
 accident is not a contract, which is why the in-memory adapter is never the

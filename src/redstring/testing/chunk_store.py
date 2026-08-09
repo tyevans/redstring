@@ -55,18 +55,17 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
 from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.chunk_ranking import rank_chunks
+from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.ports.chunk_store import ChunkStore
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
-
-    from redstring.domain.ids import SourceId, TenantId
 
 
 def _mutate(chunk: StoredChunk) -> None:
@@ -77,7 +76,7 @@ def _mutate(chunk: StoredChunk) -> None:
     only here, which is the whole point of the isolation tests.
     """
     chunk.text = "__tampered__"
-    chunk.entity_ids.append(uuid4())
+    chunk.entity_ids.append(EntityId(uuid4()))
     chunk.metadata["__tampered__"] = True
     for value in chunk.metadata.values():
         if isinstance(value, dict):
@@ -116,11 +115,11 @@ class ChunkStoreCompliance:
     @staticmethod
     def _chunk(
         tenant_id: TenantId,
-        source_id: SourceId,
+        source_id: str,
         text: str,
         *,
         chunk_index: int = 0,
-        entity_ids: list[UUID] | None = None,
+        entity_ids: list[EntityId] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> StoredChunk:
         """A chunk with its real content-addressed id.
@@ -129,10 +128,15 @@ class ChunkStoreCompliance:
         because that is what every caller of this port will store and it is
         what makes two tenants collide on the same passage.
         """
+        # `source_id` is taken as `str` and named here, once. Callers below
+        # write `"doc-1"` a hundred times over; wrapping at each of them would
+        # be ceremony, and this helper is the boundary where a test fixture
+        # becomes a domain object -- the same place the adapters name theirs.
+        source = SourceId(source_id)
         return StoredChunk(
-            id=chunk_id(source_id, text),
+            id=chunk_id(source, text),
             tenant_id=tenant_id,
-            source_id=source_id,
+            source_id=source,
             text=text,
             chunk_index=chunk_index,
             start_char=0,
@@ -153,8 +157,8 @@ class ChunkStoreCompliance:
     # ------------------------------------------------------------------
 
     async def test_upsert_many_then_get_round_trips(self, store: ChunkStore) -> None:
-        tenant = uuid4()
-        entity = uuid4()
+        tenant = TenantId(uuid4())
+        entity = EntityId(uuid4())
         written = self._chunk(
             tenant,
             "doc-1",
@@ -170,22 +174,24 @@ class ChunkStoreCompliance:
         assert found == written
 
     async def test_get_returns_none_for_an_unknown_id(self, store: ChunkStore) -> None:
-        assert await store.get(chunk_id("doc-1", "never stored"), uuid4()) is None
+        assert (
+            await store.get(chunk_id(SourceId("doc-1"), "never stored"), TenantId(uuid4())) is None
+        )
 
     async def test_get_by_source_returns_empty_for_an_unknown_source(
         self, store: ChunkStore
     ) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await store.upsert_many([self._chunk(tenant, "doc-1", "a")])
 
-        assert await store.get_by_source("doc-2", tenant) == []
+        assert await store.get_by_source(SourceId("doc-2"), tenant) == []
 
     async def test_upsert_many_with_no_items_is_not_an_error(self, store: ChunkStore) -> None:
         await store.upsert_many([])
 
     async def test_upsert_many_writes_chunks_of_different_tenants(self, store: ChunkStore) -> None:
         """Each element is keyed by *its own* `tenant_id`, not by a batch-wide one."""
-        left, right = uuid4(), uuid4()
+        left, right = TenantId(uuid4()), TenantId(uuid4())
         theirs = self._chunk(left, "doc-1", "left text")
         ours = self._chunk(right, "doc-2", "right text")
 
@@ -205,7 +211,7 @@ class ChunkStoreCompliance:
         The two elements share an id because they share `(source_id, text)`,
         which is exactly how a re-delivered event arrives.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         first = self._chunk(tenant, "doc-1", "same text", chunk_index=0, metadata={"n": 1})
         second = self._chunk(tenant, "doc-1", "same text", chunk_index=7, metadata={"n": 2})
         assert first.id == second.id
@@ -218,10 +224,10 @@ class ChunkStoreCompliance:
         assert found.chunk_index == 7
         # One row, not two: `get_by_source` would show a duplicate the single
         # `get` above cannot.
-        assert len(await store.get_by_source("doc-1", tenant)) == 1
+        assert len(await store.get_by_source(SourceId("doc-1"), tenant)) == 1
 
     async def test_upsert_many_is_last_write_wins_across_calls(self, store: ChunkStore) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         first = self._chunk(tenant, "doc-1", "same text", metadata={"n": 1})
         second = self._chunk(tenant, "doc-1", "same text", metadata={"n": 2})
 
@@ -231,7 +237,7 @@ class ChunkStoreCompliance:
         found = await store.get(first.id, tenant)
         assert found is not None
         assert found.metadata == {"n": 2}
-        assert len(await store.get_by_source("doc-1", tenant)) == 1
+        assert len(await store.get_by_source(SourceId("doc-1"), tenant)) == 1
 
     # ------------------------------------------------------------------
     # The composite key
@@ -247,14 +253,14 @@ class ChunkStoreCompliance:
         `(tenant_id, id)` key compared on `id` alone is a live defect here, not
         the astronomically-unlikely one `uuid4()` makes it elsewhere.
         """
-        left, right = uuid4(), uuid4()
-        shared = chunk_id("doc-1", "shared passage")
+        left, right = TenantId(uuid4()), TenantId(uuid4())
+        shared = chunk_id(SourceId("doc-1"), "shared passage")
         await store.upsert_many(
             [
                 StoredChunk(
                     id=shared,
                     tenant_id=left,
-                    source_id="doc-1",
+                    source_id=SourceId("doc-1"),
                     text="shared passage",
                     chunk_index=0,
                     start_char=0,
@@ -264,7 +270,7 @@ class ChunkStoreCompliance:
                 StoredChunk(
                     id=shared,
                     tenant_id=right,
-                    source_id="doc-1",
+                    source_id=SourceId("doc-1"),
                     text="shared passage",
                     chunk_index=0,
                     start_char=0,
@@ -303,19 +309,21 @@ class ChunkStoreCompliance:
         the first deletion returns 1 and leaves the second orphan behind,
         which no assertion about the survivor could see.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         first_orphan = self._chunk(tenant, "doc-1", "orphan one", chunk_index=0)
         survivor = self._chunk(tenant, "doc-1", "survivor", chunk_index=1)
         second_orphan = self._chunk(tenant, "doc-1", "orphan two", chunk_index=2)
         await store.upsert_many([first_orphan, survivor, second_orphan])
 
-        removed = await store.replace_source("doc-1", tenant, [survivor])
+        removed = await store.replace_source(SourceId("doc-1"), tenant, [survivor])
 
         assert removed == 2
         assert await store.get(first_orphan.id, tenant) is None
         assert await store.get(second_orphan.id, tenant) is None
         assert await store.get(survivor.id, tenant) == survivor
-        assert [chunk.id for chunk in await store.get_by_source("doc-1", tenant)] == [survivor.id]
+        assert [chunk.id for chunk in await store.get_by_source(SourceId("doc-1"), tenant)] == [
+            survivor.id
+        ]
 
     async def test_replace_source_leaves_no_orphan_in_the_term_index(
         self, store: ChunkStore
@@ -331,7 +339,7 @@ class ChunkStoreCompliance:
         even though the chunk itself is gone -- exactly the shape `ON DELETE
         CASCADE` exists to prevent.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         replaced = self._chunk(tenant, "doc-1", "orphanterm passage", chunk_index=0)
         await store.upsert_many([replaced])
         assert (await store.lexical_candidates(["orphanterm"], tenant, 10)).stats.doc_frequencies[
@@ -339,7 +347,7 @@ class ChunkStoreCompliance:
         ] == 1
 
         survivor = self._chunk(tenant, "doc-1", "replacement text", chunk_index=0)
-        removed = await store.replace_source("doc-1", tenant, [survivor])
+        removed = await store.replace_source(SourceId("doc-1"), tenant, [survivor])
         assert removed == 1
 
         result = await store.lexical_candidates(["orphanterm"], tenant, 10)
@@ -355,17 +363,17 @@ class ChunkStoreCompliance:
         no chunks -- and an adapter treating it as "nothing to do" leaves the
         old passages readable forever.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         held = [
             self._chunk(tenant, "doc-1", "one", chunk_index=0),
             self._chunk(tenant, "doc-1", "two", chunk_index=1),
         ]
         await store.upsert_many(held)
 
-        removed = await store.replace_source("doc-1", tenant, [])
+        removed = await store.replace_source(SourceId("doc-1"), tenant, [])
 
         assert removed == 2
-        assert await store.get_by_source("doc-1", tenant) == []
+        assert await store.get_by_source(SourceId("doc-1"), tenant) == []
         for chunk in held:
             assert await store.get(chunk.id, tenant) is None
 
@@ -378,34 +386,38 @@ class ChunkStoreCompliance:
         behind, so setup that quietly did nothing would go unnoticed. This one
         calls `replace_source` first, on an empty store.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         fresh = [
             self._chunk(tenant, "doc-new", "first", chunk_index=0),
             self._chunk(tenant, "doc-new", "second", chunk_index=1),
         ]
 
-        removed = await store.replace_source("doc-new", tenant, fresh)
+        removed = await store.replace_source(SourceId("doc-new"), tenant, fresh)
 
         assert removed == 0
-        assert [chunk.id for chunk in await store.get_by_source("doc-new", tenant)] == [
+        assert [chunk.id for chunk in await store.get_by_source(SourceId("doc-new"), tenant)] == [
             fresh[0].id,
             fresh[1].id,
         ]
 
     async def test_replace_source_leaves_another_source_alone(self, store: ChunkStore) -> None:
         """Two sources under one tenant; replacing one must not touch the other."""
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         replaced = self._chunk(tenant, "doc-1", "old", chunk_index=0)
         untouched = self._chunk(tenant, "doc-2", "kept", chunk_index=0)
         await store.upsert_many([replaced, untouched])
         fresh = self._chunk(tenant, "doc-1", "new", chunk_index=0)
 
-        removed = await store.replace_source("doc-1", tenant, [fresh])
+        removed = await store.replace_source(SourceId("doc-1"), tenant, [fresh])
 
         assert removed == 1
         assert await store.get(untouched.id, tenant) == untouched
-        assert [chunk.id for chunk in await store.get_by_source("doc-2", tenant)] == [untouched.id]
-        assert [chunk.id for chunk in await store.get_by_source("doc-1", tenant)] == [fresh.id]
+        assert [chunk.id for chunk in await store.get_by_source(SourceId("doc-2"), tenant)] == [
+            untouched.id
+        ]
+        assert [chunk.id for chunk in await store.get_by_source(SourceId("doc-1"), tenant)] == [
+            fresh.id
+        ]
 
     async def test_replace_source_leaves_another_tenant_alone(self, store: ChunkStore) -> None:
         """The same source id under two tenants is two chunkings.
@@ -414,18 +426,20 @@ class ChunkStoreCompliance:
         delete is scoped to `source_id` alone wipes a second tenant's document
         and still reports the right count for the first.
         """
-        ours, theirs = uuid4(), uuid4()
+        ours, theirs = TenantId(uuid4()), TenantId(uuid4())
         our_old = self._chunk(ours, "doc-1", "old", chunk_index=0)
         their_copy = self._chunk(theirs, "doc-1", "old", chunk_index=0)
         assert our_old.id == their_copy.id
         await store.upsert_many([our_old, their_copy])
         fresh = self._chunk(ours, "doc-1", "new", chunk_index=0)
 
-        removed = await store.replace_source("doc-1", ours, [fresh])
+        removed = await store.replace_source(SourceId("doc-1"), ours, [fresh])
 
         assert removed == 1
         assert await store.get(their_copy.id, theirs) == their_copy
-        assert [chunk.id for chunk in await store.get_by_source("doc-1", theirs)] == [their_copy.id]
+        assert [chunk.id for chunk in await store.get_by_source(SourceId("doc-1"), theirs)] == [
+            their_copy.id
+        ]
 
     async def test_replace_source_returns_the_orphan_count_not_the_write_count(
         self, store: ChunkStore
@@ -437,7 +451,7 @@ class ChunkStoreCompliance:
         before, 3 held after, 2 written new. Four counters all summed to the
         same number cannot tell you which line was wired to which field.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         carried = self._chunk(tenant, "doc-1", "carried over", chunk_index=0)
         dropped = self._chunk(tenant, "doc-1", "dropped", chunk_index=1)
         await store.upsert_many([carried, dropped])
@@ -446,10 +460,10 @@ class ChunkStoreCompliance:
             self._chunk(tenant, "doc-1", "added two", chunk_index=2),
         ]
 
-        removed = await store.replace_source("doc-1", tenant, [carried, *added])
+        removed = await store.replace_source(SourceId("doc-1"), tenant, [carried, *added])
 
         assert removed == 1
-        assert len(await store.get_by_source("doc-1", tenant)) == 3
+        assert len(await store.get_by_source(SourceId("doc-1"), tenant)) == 3
         assert await store.get(dropped.id, tenant) is None
 
     async def test_replace_source_returns_zero_on_a_redelivery(self, store: ChunkStore) -> None:
@@ -459,15 +473,15 @@ class ChunkStoreCompliance:
         readable: a caller distinguishing "the document was re-chunked" from
         "the event arrived twice" has only this return value to do it with.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         chunks = [
             self._chunk(tenant, "doc-1", "one", chunk_index=0),
             self._chunk(tenant, "doc-1", "two", chunk_index=1),
         ]
-        await store.replace_source("doc-1", tenant, chunks)
+        await store.replace_source(SourceId("doc-1"), tenant, chunks)
 
-        assert await store.replace_source("doc-1", tenant, chunks) == 0
-        assert len(await store.get_by_source("doc-1", tenant)) == 2
+        assert await store.replace_source(SourceId("doc-1"), tenant, chunks) == 0
+        assert len(await store.get_by_source(SourceId("doc-1"), tenant)) == 2
 
     async def test_replace_source_rejects_a_chunk_from_another_source(
         self, store: ChunkStore
@@ -478,16 +492,16 @@ class ChunkStoreCompliance:
         The stray is second, after a well-formed chunk, so an adapter
         validating only the first element fails here.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         good = self._chunk(tenant, "doc-1", "belongs here", chunk_index=0)
         stray = self._chunk(tenant, "doc-2", "belongs elsewhere", chunk_index=1)
 
         with pytest.raises(ValueError, match="doc-1"):
-            await store.replace_source("doc-1", tenant, [good, stray])
+            await store.replace_source(SourceId("doc-1"), tenant, [good, stray])
 
         # Rejected before anything was written: validation precedes the write.
         assert await store.get(good.id, tenant) is None
-        assert await store.get_by_source("doc-1", tenant) == []
+        assert await store.get_by_source(SourceId("doc-1"), tenant) == []
 
     async def test_replace_source_rejects_a_chunk_from_another_tenant(
         self, store: ChunkStore
@@ -499,12 +513,12 @@ class ChunkStoreCompliance:
         an adapter checking only the source accepts it and writes another
         tenant's passage under this one.
         """
-        ours, theirs = uuid4(), uuid4()
+        ours, theirs = TenantId(uuid4()), TenantId(uuid4())
         good = self._chunk(ours, "doc-1", "ours", chunk_index=0)
         stray = self._chunk(theirs, "doc-1", "theirs", chunk_index=1)
 
         with pytest.raises(ValueError, match=str(ours)):
-            await store.replace_source("doc-1", ours, [good, stray])
+            await store.replace_source(SourceId("doc-1"), ours, [good, stray])
 
         assert await store.get(good.id, ours) is None
         assert await store.get(stray.id, theirs) is None
@@ -519,13 +533,13 @@ class ChunkStoreCompliance:
         raises. `replace_source` is one operation; a caller retrying after
         `ValueError` must find the old chunking intact.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         held = self._chunk(tenant, "doc-1", "held", chunk_index=0)
         await store.upsert_many([held])
         stray = self._chunk(tenant, "doc-2", "stray", chunk_index=0)
 
         with pytest.raises(ValueError, match="doc-1"):
-            await store.replace_source("doc-1", tenant, [stray])
+            await store.replace_source(SourceId("doc-1"), tenant, [stray])
 
         assert await store.get(held.id, tenant) == held
 
@@ -544,12 +558,12 @@ class ChunkStoreCompliance:
         a text column returns chunk 10 before chunk 2, which is a real
         Postgres schema mistake and a silently reordered document.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         indices = [0, 1, 2, 3, 4, 10]
         chunks = [self._chunk(tenant, "doc-1", f"passage {i}", chunk_index=i) for i in indices]
         await store.upsert_many([chunks[5], chunks[3], chunks[0], chunks[4], chunks[1], chunks[2]])
 
-        found = await store.get_by_source("doc-1", tenant)
+        found = await store.get_by_source(SourceId("doc-1"), tenant)
 
         assert [chunk.chunk_index for chunk in found] == indices
         assert [chunk.id for chunk in found] == [chunk.id for chunk in chunks]
@@ -577,7 +591,7 @@ class ChunkStoreCompliance:
         contract. Pinning the tie-break to a *field* takes a case where the
         candidate fields disagree.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         # Ids ascend gamma < alpha < beta; texts ascend alpha < beta < gamma.
         low_tie = self._chunk(tenant, "doc-1", "passage gamma", chunk_index=3)
         high_tie = self._chunk(tenant, "doc-1", "passage alpha", chunk_index=3)
@@ -591,7 +605,7 @@ class ChunkStoreCompliance:
 
         await store.upsert_many([high_tie, low_tie, leader])
 
-        found = await store.get_by_source("doc-1", tenant)
+        found = await store.get_by_source(SourceId("doc-1"), tenant)
 
         assert [chunk.id for chunk in found] == [leader.id, low_tie.id, high_tie.id]
 
@@ -602,7 +616,7 @@ class ChunkStoreCompliance:
     async def test_get_never_crosses_tenants(self, store: ChunkStore) -> None:
         """The **same chunk id** under two tenants, so a leak cannot hide
         behind ids that differ anyway -- and here they genuinely coincide."""
-        ours, theirs, stranger = uuid4(), uuid4(), uuid4()
+        ours, theirs, stranger = TenantId(uuid4()), TenantId(uuid4()), TenantId(uuid4())
         mine = self._chunk(ours, "doc-1", "one passage", metadata={"owner": "ours"})
         yours = self._chunk(theirs, "doc-1", "one passage", metadata={"owner": "theirs"})
         await store.upsert_many([mine, yours])
@@ -615,7 +629,7 @@ class ChunkStoreCompliance:
         assert await store.get(mine.id, stranger) is None
 
     async def test_get_by_source_never_crosses_tenants(self, store: ChunkStore) -> None:
-        ours, theirs, stranger = uuid4(), uuid4(), uuid4()
+        ours, theirs, stranger = TenantId(uuid4()), TenantId(uuid4()), TenantId(uuid4())
         mine = self._chunk(ours, "doc-1", "ours only", chunk_index=0)
         yours = [
             self._chunk(theirs, "doc-1", "theirs one", chunk_index=0),
@@ -623,11 +637,13 @@ class ChunkStoreCompliance:
         ]
         await store.upsert_many([mine, *yours])
 
-        assert [chunk.id for chunk in await store.get_by_source("doc-1", ours)] == [mine.id]
-        assert {chunk.id for chunk in await store.get_by_source("doc-1", theirs)} == {
+        assert [chunk.id for chunk in await store.get_by_source(SourceId("doc-1"), ours)] == [
+            mine.id
+        ]
+        assert {chunk.id for chunk in await store.get_by_source(SourceId("doc-1"), theirs)} == {
             chunk.id for chunk in yours
         }
-        assert await store.get_by_source("doc-1", stranger) == []
+        assert await store.get_by_source(SourceId("doc-1"), stranger) == []
 
     # ------------------------------------------------------------------
     # Mutation isolation
@@ -640,12 +656,12 @@ class ChunkStoreCompliance:
         assertion, because handing back the stored object is correct on the
         read and wrong only afterwards.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         written = self._chunk(
             tenant,
             "doc-1",
             "a passage",
-            entity_ids=[uuid4()],
+            entity_ids=[EntityId(uuid4())],
             metadata={"nested": {"k": "v"}, "list": ["a"]},
         )
         pristine = written.model_copy(deep=True)
@@ -658,33 +674,33 @@ class ChunkStoreCompliance:
         assert await store.get(written.id, tenant) == pristine
 
     async def test_get_by_source_returns_copies(self, store: ChunkStore) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         written = self._chunk(
             tenant,
             "doc-1",
             "a passage",
-            entity_ids=[uuid4()],
+            entity_ids=[EntityId(uuid4())],
             metadata={"nested": {"k": "v"}, "list": ["a"]},
         )
         pristine = written.model_copy(deep=True)
         await store.upsert_many([written])
 
-        for chunk in await store.get_by_source("doc-1", tenant):
+        for chunk in await store.get_by_source(SourceId("doc-1"), tenant):
             _mutate(chunk)
 
-        assert await store.get_by_source("doc-1", tenant) == [pristine]
+        assert await store.get_by_source(SourceId("doc-1"), tenant) == [pristine]
         assert await store.get(written.id, tenant) == pristine
 
     async def test_mutating_the_argument_after_a_write_does_not_change_the_store(
         self, store: ChunkStore
     ) -> None:
         """The other direction: the store must not keep the caller's objects."""
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         written = self._chunk(
             tenant,
             "doc-1",
             "a passage",
-            entity_ids=[uuid4()],
+            entity_ids=[EntityId(uuid4())],
             metadata={"nested": {"k": "v"}},
         )
         pristine = written.model_copy(deep=True)
@@ -698,12 +714,16 @@ class ChunkStoreCompliance:
         self, store: ChunkStore
     ) -> None:
         """`replace_source` writes too, and it is a separate code path."""
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         written = self._chunk(
-            tenant, "doc-1", "a passage", entity_ids=[uuid4()], metadata={"nested": {"k": "v"}}
+            tenant,
+            "doc-1",
+            "a passage",
+            entity_ids=[EntityId(uuid4())],
+            metadata={"nested": {"k": "v"}},
         )
         pristine = written.model_copy(deep=True)
-        await store.replace_source("doc-1", tenant, [written])
+        await store.replace_source(SourceId("doc-1"), tenant, [written])
 
         _mutate(written)
 
@@ -716,7 +736,7 @@ class ChunkStoreCompliance:
     async def test_delete_by_source_removes_that_source_and_counts_it(
         self, store: ChunkStore
     ) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         doomed = [
             self._chunk(tenant, "doc-1", "one", chunk_index=0),
             self._chunk(tenant, "doc-1", "two", chunk_index=1),
@@ -724,8 +744,8 @@ class ChunkStoreCompliance:
         spared = self._chunk(tenant, "doc-2", "kept", chunk_index=0)
         await store.upsert_many([*doomed, spared])
 
-        assert await store.delete_by_source("doc-1", tenant) == 2
-        assert await store.get_by_source("doc-1", tenant) == []
+        assert await store.delete_by_source(SourceId("doc-1"), tenant) == 2
+        assert await store.get_by_source(SourceId("doc-1"), tenant) == []
         for chunk in doomed:
             assert await store.get(chunk.id, tenant) is None
         assert await store.get(spared.id, tenant) == spared
@@ -738,30 +758,30 @@ class ChunkStoreCompliance:
         Both flavours of "unknown": a source this tenant never held, and a
         source it held until the previous line.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         held = self._chunk(tenant, "doc-1", "one", chunk_index=0)
         await store.upsert_many([held])
 
-        assert await store.delete_by_source("doc-never", tenant) == 0
-        assert await store.delete_by_source("doc-1", tenant) == 1
-        assert await store.delete_by_source("doc-1", tenant) == 0
+        assert await store.delete_by_source(SourceId("doc-never"), tenant) == 0
+        assert await store.delete_by_source(SourceId("doc-1"), tenant) == 1
+        assert await store.delete_by_source(SourceId("doc-1"), tenant) == 0
         # The store is still usable, and the unknown-tenant case is 0 too.
-        assert await store.delete_by_source("doc-1", uuid4()) == 0
+        assert await store.delete_by_source(SourceId("doc-1"), TenantId(uuid4())) == 0
 
     async def test_delete_by_source_never_crosses_tenants(self, store: ChunkStore) -> None:
         """Same source id, same chunk ids, two tenants."""
-        ours, theirs = uuid4(), uuid4()
+        ours, theirs = TenantId(uuid4()), TenantId(uuid4())
         mine = self._chunk(ours, "doc-1", "one passage")
         yours = self._chunk(theirs, "doc-1", "one passage")
         assert mine.id == yours.id
         await store.upsert_many([mine, yours])
 
-        assert await store.delete_by_source("doc-1", ours) == 1
+        assert await store.delete_by_source(SourceId("doc-1"), ours) == 1
 
         assert await store.get(yours.id, theirs) == yours
 
     async def test_delete_by_tenant_touches_no_other_tenant(self, store: ChunkStore) -> None:
-        doomed, spared = uuid4(), uuid4()
+        doomed, spared = TenantId(uuid4()), TenantId(uuid4())
         # **Three chunks over two sources**, so the count cannot be mistaken
         # for a count of distinct sources -- with one chunk per source the two
         # numbers agree, which is `recurring-defects.md` §3's "four counters
@@ -781,18 +801,20 @@ class ChunkStoreCompliance:
 
         for chunk in theirs:
             assert await store.get(chunk.id, doomed) is None
-        assert await store.get_by_source("doc-1", doomed) == []
+        assert await store.get_by_source(SourceId("doc-1"), doomed) == []
         for chunk in ours:
             assert await store.get(chunk.id, spared) == chunk
-        assert [chunk.id for chunk in await store.get_by_source("doc-1", spared)] == [ours[0].id]
+        assert [chunk.id for chunk in await store.get_by_source(SourceId("doc-1"), spared)] == [
+            ours[0].id
+        ]
 
     async def test_delete_by_tenant_on_an_unknown_tenant_removes_nothing(
         self, store: ChunkStore
     ) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await store.upsert_many([self._chunk(tenant, "doc-1", "one")])
 
-        assert await store.delete_by_tenant(uuid4()) == 0
+        assert await store.delete_by_tenant(TenantId(uuid4())) == 0
         assert await store.delete_by_tenant(tenant) == 1
         assert await store.delete_by_tenant(tenant) == 0
 
@@ -827,7 +849,7 @@ class ChunkStoreCompliance:
     async def test_lexical_candidates_finds_chunks_containing_a_term(
         self, store: ChunkStore
     ) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         chunks = await self._corpus(store, tenant)
 
         result = await store.lexical_candidates(["rare"], tenant, 10)
@@ -836,7 +858,7 @@ class ChunkStoreCompliance:
 
     async def test_lexical_candidates_reports_term_frequencies(self, store: ChunkStore) -> None:
         """A chunk repeating a term reports the count, not `1`."""
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         chunks = await self._corpus(store, tenant)
 
         result = await store.lexical_candidates(["alpha"], tenant, 10)
@@ -848,7 +870,7 @@ class ChunkStoreCompliance:
     async def test_lexical_candidates_reports_doc_length_in_tokens(self, store: ChunkStore) -> None:
         """A chunk whose text contains stopwords reports the post-tokenization
         length, so a store counting words or characters fails."""
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         # "the" and "is" are stopwords: 4 words, 19 characters, 2 tokens.
         chunk = self._chunk(tenant, "doc-1", "the common is alpha")
         await store.upsert_many([chunk])
@@ -864,7 +886,7 @@ class ChunkStoreCompliance:
         """`n_docs` and `avg_doc_length` describe the whole corpus, asserted
         with a `limit` that truncates -- a store computing them over the
         survivors fails."""
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await self._corpus(store, tenant)
 
         result = await store.lexical_candidates(["common", "rare", "alpha", "beta"], tenant, 1)
@@ -876,7 +898,7 @@ class ChunkStoreCompliance:
     async def test_lexical_candidates_reports_zero_for_an_absent_term(
         self, store: ChunkStore
     ) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await self._corpus(store, tenant)
 
         result = await store.lexical_candidates(["zzz-absent"], tenant, 10)
@@ -887,7 +909,7 @@ class ChunkStoreCompliance:
     async def test_lexical_candidates_covers_exactly_the_requested_terms(
         self, store: ChunkStore
     ) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await self._corpus(store, tenant)
 
         result = await store.lexical_candidates(["common", "zzz-absent"], tenant, 10)
@@ -909,7 +931,7 @@ class ChunkStoreCompliance:
         chunk 2 and drops chunk 3; a `limit` of 1 keeps only the
         lower-`id` member of the tied pair.
         """
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         terms = ["common", "rare", "alpha", "beta"]
         chunks = await self._corpus(store, tenant)
         tied_low, tied_high = sorted((chunks[0].id, chunks[1].id))
@@ -931,7 +953,7 @@ class ChunkStoreCompliance:
         """Empty `terms` returns zeroed statistics and no candidates, without
         touching the store -- a non-empty corpus must not leak into the
         statistics regardless."""
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await self._corpus(store, tenant)
 
         result = await store.lexical_candidates([], tenant, 10)
@@ -944,7 +966,7 @@ class ChunkStoreCompliance:
     async def test_lexical_candidates_with_a_zero_limit_still_reports_statistics(
         self, store: ChunkStore
     ) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await self._corpus(store, tenant)
 
         result = await store.lexical_candidates(["common"], tenant, 0)
@@ -955,19 +977,19 @@ class ChunkStoreCompliance:
         assert result.stats.doc_frequencies == {"common": 4}
 
     async def test_lexical_candidates_rejects_a_negative_limit(self, store: ChunkStore) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await self._corpus(store, tenant)
 
         with pytest.raises(ValueError, match="-1"):
             await store.lexical_candidates(["common"], tenant, -1)
 
     async def test_lexical_candidates_returns_copies(self, store: ChunkStore) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         chunk = self._chunk(
             tenant,
             "doc-1",
             "common alpha",
-            entity_ids=[uuid4()],
+            entity_ids=[EntityId(uuid4())],
             metadata={"nested": {"k": "v"}, "list": ["a"]},
         )
         pristine = chunk.model_copy(deep=True)
@@ -983,7 +1005,7 @@ class ChunkStoreCompliance:
     async def test_lexical_candidates_never_crosses_tenants(self, store: ChunkStore) -> None:
         """Two tenants holding the same content-addressed chunk id -- the
         case that catches a key compared on `id` alone."""
-        left, right = uuid4(), uuid4()
+        left, right = TenantId(uuid4()), TenantId(uuid4())
         shared_text = "common rare alpha"
         left_chunk = self._chunk(left, "doc-1", shared_text, metadata={"owner": "left"})
         right_chunk = self._chunk(right, "doc-1", shared_text, metadata={"owner": "right"})
@@ -1004,8 +1026,8 @@ class ChunkStoreCompliance:
     async def test_get_by_entity_finds_chunks_mentioning_the_entity(
         self, store: ChunkStore
     ) -> None:
-        tenant = uuid4()
-        entity = uuid4()
+        tenant = TenantId(uuid4())
+        entity = EntityId(uuid4())
         mentioning = self._chunk(tenant, "doc-1", "mentions it", entity_ids=[entity])
         silent = self._chunk(tenant, "doc-1", "does not", chunk_index=1)
         await store.upsert_many([mentioning, silent])
@@ -1029,8 +1051,8 @@ class ChunkStoreCompliance:
         stable sort on `(source_id, chunk_index)` alone (insertion order)
         disagrees with the contract instead of agreeing with it by accident.
         """
-        tenant = uuid4()
-        entity = uuid4()
+        tenant = TenantId(uuid4())
+        entity = EntityId(uuid4())
         tied_a = self._chunk(tenant, "doc-1", "tie text alpha", chunk_index=5, entity_ids=[entity])
         tied_b = self._chunk(tenant, "doc-1", "tie text beta", chunk_index=5, entity_ids=[entity])
         tied_low, tied_high = sorted((tied_a, tied_b), key=lambda chunk: chunk.id)
@@ -1057,8 +1079,8 @@ class ChunkStoreCompliance:
         ]
 
     async def test_get_by_entity_ignores_other_entities(self, store: ChunkStore) -> None:
-        tenant = uuid4()
-        wanted, other = uuid4(), uuid4()
+        tenant = TenantId(uuid4())
+        wanted, other = EntityId(uuid4()), EntityId(uuid4())
         mentions_wanted = self._chunk(tenant, "doc-1", "wanted", entity_ids=[wanted])
         mentions_other = self._chunk(tenant, "doc-1", "other", chunk_index=1, entity_ids=[other])
         await store.upsert_many([mentions_wanted, mentions_other])
@@ -1068,14 +1090,14 @@ class ChunkStoreCompliance:
         assert [chunk.id for chunk in found] == [mentions_wanted.id]
 
     async def test_get_by_entity_of_an_unknown_entity_is_empty(self, store: ChunkStore) -> None:
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         await store.upsert_many([self._chunk(tenant, "doc-1", "no mentions here")])
 
-        assert await store.get_by_entity(uuid4(), tenant) == []
+        assert await store.get_by_entity(EntityId(uuid4()), tenant) == []
 
     async def test_get_by_entity_returns_copies(self, store: ChunkStore) -> None:
-        tenant = uuid4()
-        entity = uuid4()
+        tenant = TenantId(uuid4())
+        entity = EntityId(uuid4())
         written = self._chunk(
             tenant,
             "doc-1",
@@ -1094,8 +1116,8 @@ class ChunkStoreCompliance:
 
     async def test_get_by_entity_never_crosses_tenants(self, store: ChunkStore) -> None:
         """Same content-addressed chunk id, two tenants, same entity id."""
-        left, right = uuid4(), uuid4()
-        entity = uuid4()
+        left, right = TenantId(uuid4()), TenantId(uuid4())
+        entity = EntityId(uuid4())
         shared_text = "mentions it"
         left_chunk = self._chunk(left, "doc-1", shared_text, entity_ids=[entity])
         right_chunk = self._chunk(right, "doc-1", shared_text, entity_ids=[entity])
@@ -1111,66 +1133,96 @@ class ChunkStoreCompliance:
     # Ranking is identical across adapters
     # ------------------------------------------------------------------
 
-    async def test_ranking_is_identical_to_the_reference_adapter(self, store: ChunkStore) -> None:
-        """The property this whole design exists for.
+    async def test_truncation_follows_the_ports_stated_tie_break(self, store: ChunkStore) -> None:
+        """Which candidates survive `limit`, against a written-down oracle.
 
-        Build the same corpus in an `InMemoryChunkStore` -- the reference --
-        and run `lexical_candidates` + `rank_chunks` on both. The returned
-        `(id, score)` sequences must be **equal**, not approximately equal.
-        On the in-memory adapter this compares it with itself and is
-        trivially true; it exists so every *other* adapter is held to the
-        reference. The corpus must produce differing scores, or this passes
-        on a store that returns everything at score zero.
+        The port states the rule outright: order by the number of distinct
+        requested terms the chunk contains, descending, then by `id`
+        ascending, and return the first `limit`. So the expected survivors can
+        be written from the corpus, and this test is the place they are
+        written -- `_MATCH_COUNTS` below is read off the four texts by hand.
+
+        **This case used to compare the adapter under test against
+        `InMemoryChunkStore`**, and its own docstring conceded the problem:
+        "on the in-memory adapter this compares it with itself and is
+        trivially true". That is two defects in one, and the second is worse
+        than the first. Half the adapters running this suite got no assertion
+        at all -- and for the other half, the *contract* was whatever the
+        in-memory adapter happened to do, so a defect in the reference was a
+        defect in the port for everyone. An in-memory reference that is more
+        forgiving than a real backend is the exact failure this directory
+        exists to prevent; using one as the oracle builds it in.
+
+        It also could not ship. A suite an outside adapter runs cannot make
+        that adapter agree with an implementation detail of this repository's
+        in-memory store, and `lint-imports` now forbids the import that made
+        it possible.
 
         Truncation is exercised at **two** limits, and the second is the one
         that matters. `limit=3` cuts the single one-match chunk, which proves
-        the adapters agree about a cut but says nothing about *ties* -- chunks
-        0 and 1 both match three terms, so both survive at 3 whatever the
-        tie-break does. Only `limit=1` cuts through the tied pair, and which
-        member survives is precisely the divergence this case exists to
-        catch: Postgres offers candidates in whatever order the planner
-        produces, and the port's `id` tie-break is the only thing making the
-        two adapters agree.
+        a cut happens and says nothing about *ties* -- chunks 0 and 1 both
+        match three terms, so both survive at 3 whatever the tie-break does.
+        Only `limit=1` cuts through the tied pair, and which member survives
+        is precisely the divergence this case exists to catch: Postgres offers
+        candidates in whatever order the planner produces, and the port's `id`
+        tie-break is the only thing making two adapters agree.
 
-        `k` stays 10, above both limits, so `limit` and `k` can never be
-        silently wired to each other's argument without a test noticing.
-
-        The two stores are also loaded in **different insertion orders** --
-        `_corpus` writes the tied pair reversed into `store` while the
-        reference is written in list order -- so an adapter whose ordering
-        fell back on arrival order would disagree here rather than agreeing
-        by coincidence.
+        `_corpus` writes the tied pair in reverse id order, so an adapter
+        falling back on arrival order disagrees here rather than agreeing by
+        coincidence.
         """
-        # Local import: this module must stay import-order-safe for the
-        # reference adapter itself, and importing at module scope would
-        # create a cycle if `InMemoryChunkStore` ever imported this suite.
-        from redstring.chunks.adapters.memory import InMemoryChunkStore
-
-        tenant = uuid4()
+        tenant = TenantId(uuid4())
         chunks = await self._corpus(store, tenant)
-        reference = InMemoryChunkStore()
-        await reference.upsert_many(chunks)
-
         terms = ["common", "rare", "alpha", "beta"]
 
+        # Read off `_corpus`'s four texts by hand, not computed by anything
+        # under test: "common rare alpha alpha" matches common/rare/alpha,
+        # "common alpha beta" matches common/alpha/beta, "common beta beta
+        # beta beta" matches common/beta, and "common" matches common.
+        distinct_matches = {
+            chunks[0].id: 3,
+            chunks[1].id: 3,
+            chunks[2].id: 2,
+            chunks[3].id: 1,
+        }
+        expected = sorted(
+            distinct_matches, key=lambda chunk_id: (-distinct_matches[chunk_id], chunk_id)
+        )
+
+        # Guard the guard: the cut at limit=1 must fall *inside* a genuine
+        # tie, or the loop below proves no more than a truncation test with
+        # no tie-break in it at all.
+        assert distinct_matches[expected[0]] == distinct_matches[expected[1]]
+        assert expected[0] < expected[1]
+
         for limit in (3, 1):
-            under_test = await store.lexical_candidates(terms, tenant, limit)
-            from_reference = await reference.lexical_candidates(terms, tenant, limit)
+            result = await store.lexical_candidates(terms, tenant, limit)
+            assert {candidate.chunk.id for candidate in result.candidates} == set(
+                expected[:limit]
+            ), f"wrong candidates survived at limit={limit}"
 
-            ranked_under_test = rank_chunks(terms, under_test, 10)
-            ranked_reference = rank_chunks(terms, from_reference, 10)
+    async def test_ranking_over_the_candidates_is_not_degenerate(self, store: ChunkStore) -> None:
+        """`rank_chunks` separates this corpus, so the case above means something.
 
-            # A corpus where every chunk scores zero would pass this trivially.
-            assert any(ranked.score > 0.0 for ranked in ranked_under_test)
-            assert [(ranked.chunk.id, ranked.score) for ranked in ranked_under_test] == [
-                (ranked.chunk.id, ranked.score) for ranked in ranked_reference
-            ], f"adapters disagree at limit={limit}"
+        Every assertion about truncation is vacuous against a store that
+        returns everything at score zero -- the ids would still be right and
+        the ranking would still be useless. `rank_chunks` is a pure domain
+        function, so what is under test here is the *statistics* the adapter
+        supplies to it: an adapter reporting flat term frequencies or a wrong
+        `n_docs` produces scores that do not separate, and nothing about the
+        returned chunks shows it.
+        """
+        tenant = TenantId(uuid4())
+        await self._corpus(store, tenant)
+        terms = ["common", "rare", "alpha", "beta"]
 
-        # Guard the guard: at limit=1 the cut must fall *inside* the tied
-        # pair, or the loop above proves nothing more than the limit=3 pass
-        # already did. chunks[0] and chunks[1] both match three terms and
-        # chunks[0].id sorts below, so the contract names chunks[0].
-        survivor = await store.lexical_candidates(terms, tenant, 1)
-        assert [candidate.chunk.id for candidate in survivor.candidates] == [
-            min(chunks[0].id, chunks[1].id)
-        ]
+        result = await store.lexical_candidates(terms, tenant, 10)
+        ranked = rank_chunks(terms, result, 10)
+
+        assert len({ranked_chunk.score for ranked_chunk in ranked}) > 1, (
+            "every candidate scored the same -- the adapter's corpus statistics "
+            "cannot be distinguishing them"
+        )
+        assert [ranked_chunk.score for ranked_chunk in ranked] == sorted(
+            (ranked_chunk.score for ranked_chunk in ranked), reverse=True
+        )

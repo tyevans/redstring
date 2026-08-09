@@ -116,7 +116,7 @@ class Cache(KeyValueCache, HitWindow, Protocol):
     """Expiring shared state, in the terms the LLM transport needs.
 
     The whole port, composed from the three capabilities above. Adapters
-    implement this and `tests/compliance/cache.py` runs against it.
+    implement this and `redstring/testing/cache.py` runs against it.
 
     **Collaborators should not.** The split is not stylistic: the two
     first-party consumers partition these methods exactly, with no overlap

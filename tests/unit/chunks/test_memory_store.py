@@ -1,6 +1,6 @@
 """The in-memory `ChunkStore` adapter against the shared compliance suite.
 
-Everything asserted about behaviour lives in `tests.compliance.chunk_store`.
+Everything asserted about behaviour lives in `redstring.testing.chunk_store`.
 This module supplies a store and adds only what is specific to *this*
 adapter -- namely that it holds no state outside itself.
 """
@@ -14,7 +14,7 @@ import pytest
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
 from redstring.domain.chunk import StoredChunk
-from tests.compliance.chunk_store import ChunkStoreCompliance
+from redstring.testing.chunk_store import ChunkStoreCompliance
 
 if TYPE_CHECKING:
     from redstring.ports.chunk_store import ChunkStore

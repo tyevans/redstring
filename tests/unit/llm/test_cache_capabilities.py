@@ -19,7 +19,7 @@ Neither double subclasses an *adapter*, which is the same reasoning as
 `tests/unit/consolidation/test_substitution.py`: a double built by subclassing
 `MemoryCache` would satisfy the whole port however the protocols were
 declared, and could not tell you the split held. What they do inherit is
-`tests/compliance/lifetime.NoOpLifetime`, which supplies nothing but the
+`redstring/testing/lifetime.NoOpLifetime`, which supplies nothing but the
 `AsyncClosable` members ADR 0028 added -- shared rather than restated because
 three modules had grown the same nine lines (B107c).
 """
@@ -33,7 +33,7 @@ import pytest
 from redstring.llm.circuit_breaker import CircuitBreaker
 from redstring.llm.rate_limiter import RateLimiter, RateLimitExceeded
 from redstring.ports.cache import Cache, HitWindow, KeyValueCache
-from tests.compliance.lifetime import NoOpLifetime
+from redstring.testing.lifetime import NoOpLifetime
 
 
 class BreakerCache(NoOpLifetime):

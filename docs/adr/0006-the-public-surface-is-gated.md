@@ -6,7 +6,10 @@ which put a type on the surface that check 1 as decided here could not see —
 see Consequences — and by
 [`0032` the id names are `NewType`s](0032-the-id-names-are-newtypes.md), which
 changed four exported names from aliases into distinct types without changing
-the exported set.
+the exported set — and by
+[`0033` the compliance suites ship](0033-the-compliance-suites-ship.md), which
+adds a **second** promised surface, `redstring.testing.__all__`, gated
+separately because none of the three checks here can see it.
 
 **Why this is an ADR:** the three tests look redundant, and each is blind to
 the failures the other two catch. Deleting any one of them leaves a hole that

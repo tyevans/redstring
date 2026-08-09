@@ -3,7 +3,7 @@
 `ChunkStore` is nine methods. Its only first-party consumer is
 `ChunkProjection`, which calls `replace_source`. One of nine -- worse than the
 three-of-eighteen `ports/graph_store.py` records about itself, and paid in the
-same currency: `tests/compliance/chunk_store.py` is over a thousand lines, so
+same currency: `redstring/testing/chunk_store.py` is over a thousand lines, so
 an author writing a store to serve only the corpus-write path owed a read,
 rank and delete surface they would never call.
 
@@ -34,7 +34,7 @@ from redstring.ports.chunk_store import (
     LexicalCandidateSource,
 )
 from redstring.projections.chunk import ChunkProjection
-from tests.compliance.lifetime import NoOpLifetime
+from redstring.testing.lifetime import NoOpLifetime
 
 
 class WriteOnlyChunkStore(NoOpLifetime):

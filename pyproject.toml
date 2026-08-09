@@ -124,6 +124,29 @@ llm = [
     "langchain-core>=0.3,<2",
     "langchain-openai>=0.2,<2",
 ]
+# The port compliance suites, for an adapter written outside this repository.
+# `redstring.testing` imports pytest and hypothesis at module scope; nothing
+# else under `src/` imports either, which
+# `tests/unit/test_dependencies_stay_confined.py` asserts in both directions.
+#
+# **Ranges, not exact pins, and this is not an oversight** -- read the block
+# below before "fixing" it. The pinning rule underneath applies to *tooling*
+# extras, which nobody installs alongside their own code. This one a consumer
+# installs into the environment their own test suite runs in, so an exact
+# `pytest==9.1.1` would not be a policy, it would be a conflict: any project
+# already pinning a different pytest cannot install `redstring[test]` at all,
+# and the suites do not use a feature narrow enough to justify that.
+#
+# `pytest-asyncio` is here because every case is a bare `async def`. Under its
+# default strict mode those are collected and **skipped**, which reads as a
+# pass -- so a consuming project must set `asyncio_mode = "auto"`. The
+# dependency cannot set it; `redstring.testing`'s docstring says so and
+# `docs/how-to/implement-a-store-adapter.md` says so.
+test = [
+    "hypothesis>=6.100,<7",
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.24,<2",
+]
 all = [
     "redstring[neo4j,llm,pgvector,redis]",
 ]
@@ -393,6 +416,28 @@ also_copy = ["pyproject.toml", "tests/conftest.py"]
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "build", "dist"]
 
+# B101 (`assert_used`) is silenced for `redstring/testing/` and nowhere else.
+#
+# That package is the port compliance suites, which moved under `src/` so they
+# could ship to adapter authors outside this repository. They are test bodies:
+# `assert` is what they are made of, ~400 of them, and B101 exists to catch an
+# `assert` load-bearing in *production* code, where `python -O` deletes it.
+# Nothing here runs under `-O` in anyone's product.
+#
+# **A path skip, not `exclude_dirs`, and the difference is the whole point.**
+# Excluding the directory would drop it from every bandit check, so a real
+# finding -- a `subprocess` call, a hardcoded password, an `eval` -- would go
+# unseen forever. This silences one test id over one path and leaves the other
+# ~70 live: B311 in `vector_store.py` is still reported, and still carries a
+# `# nosec` with its reasoning inline.
+#
+# `tests/unit/test_nosec_markers_are_live.py` guards this both ways: that the
+# glob still matches a file, and that the file it matches still contains the
+# `assert` statements the skip is for. An exemption over an empty set is the
+# one CLAUDE.md says to delete.
+[tool.bandit.assert_used]
+skips = ["*/redstring/testing/*.py"]
+
 [tool.importlinter]
 root_packages = ["redstring"]
 include_external_packages = false
@@ -421,6 +466,16 @@ layers = [
     # If a third module wants in here, ask what it composes -- a candidate
     # that cannot name such a pair is a piece of one half placed above it for
     # convenience. See the ADR amending 0007.
+    # `testing` is above everything, and the direction is the point: nothing
+    # under `src/` may import it, so `import redstring` can never reach
+    # `pytest`. What it may import is constrained by the *forbidden* contract
+    # below rather than by this one -- a layers contract can pin one direction
+    # or the other and this package needs both pinned. Placing it at the top
+    # and forbidding downward reaches is the pair that says what is meant:
+    # the compliance suites test a *port*, so a suite reaching an adapter
+    # would be checking one implementation while claiming to check the
+    # contract.
+    "testing",
     "composition",
     # `services` was the top layer and is gone as of slice 9. There
     # is no service layer any more: the write model is `aggregates` + `events`,
@@ -484,3 +539,35 @@ layers = [
     "domain",
 ]
 exhaustive = true
+
+[[tool.importlinter.contracts]]
+name = "The compliance suites see only the ports and the domain"
+type = "forbidden"
+# The other half of `testing`'s placement in the layers contract above, which
+# only stops the library importing the suites and says nothing about what the
+# suites import.
+#
+# A compliance suite states what a *port* promises. If it could import
+# `redstring.graph`, the shortest route to a green suite would be to assert
+# against `InMemoryGraphStore`'s behaviour -- and the whole reason these
+# bodies are shared is that an in-memory reference which is more forgiving
+# than a real backend lets an adapter pass on behaviour production does not
+# have (`.claude/rules/recurring-defects.md` §1, and the `bytes`-not-`str`
+# case in `testing/cache.py`).
+#
+# `ports` and `domain` are absent from this list deliberately: the suites are
+# written in those two vocabularies and nothing else.
+source_modules = ["redstring.testing"]
+forbidden_modules = [
+    "redstring.composition",
+    "redstring.extraction",
+    "redstring.consolidation",
+    "redstring.temporal",
+    "redstring.chunks",
+    "redstring.graph",
+    "redstring.vector",
+    "redstring.llm",
+    "redstring.projections",
+    "redstring.aggregates",
+    "redstring.events",
+]

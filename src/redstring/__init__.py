@@ -62,7 +62,7 @@ could not be caught without a dotted import.
   is a `str`: a chunk is identified by the digest of its source and its text.
 - **Ports.** `GraphStore`, `VectorStore`, `ChunkStore`, `Cache`,
   `LlmProvider`, `EmbeddingProvider`, `Chunker`. Implement one to plug in a
-  backend of your own; the compliance suite in `tests/compliance` is what
+  backend of your own; the compliance suite in `redstring.testing` is what
   says whether you got it right.
 
   Four of them are **composed from capability protocols, and those are

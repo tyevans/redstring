@@ -3,7 +3,14 @@
 **Status:** accepted, slice 10 of the ring migration. Amended by
 [`0021` `composition` holds a second module](0021-composition-holds-a-second-module.md),
 which admits `retrieval` beside `build_graph` on the argument this document's
-own admission test asks for. Decision 1 below — that the layer holds exactly
+own admission test asks for, and by
+[`0033` the compliance suites ship](0033-the-compliance-suites-ship.md), which
+puts `testing` above `composition` in the import contract. The title is
+therefore no longer literally true of `pyproject.toml`: `composition` is the
+top layer of the *library*, and what sits above it composes nothing — it is
+the shipped port compliance suites, placed there so nothing under `src/` can
+import them. The admission test below is unaffected, and 0033 does not pass
+it: it is not a candidate for this layer. Decision 1 below — that the layer holds exactly
 one module — is superseded in fact; the reasoning that produced it stands and
 is what the second module was tested against.
 
