@@ -47,6 +47,34 @@ about correctness depends on the sequence -- but the reference deployment is a
 single-GPU llama.cpp server that processes one request at a time, and firing
 ten concurrent requests at it converts a queue into ten timeouts.
 
+## Each chunk is told what the ones before it found
+
+Not the whole prompt, and not the document: a bounded list of
+`(name, entity_type)` pairs appended to the system prompt, so a chunk that
+says "Lovelace" where an earlier one said "Ada Lovelace" is asked to spell it
+the earlier way. Identity here is derived from the name -- see
+`redstring.extraction.mapping.entity_id_for` -- so naming drift at a chunk
+boundary is not cosmetic: it manufactures a second entity that this module's
+fold cannot combine and that `consolidation` then pays a model call to
+resolve.
+
+`redstring.extraction.carryover` holds the mechanism and the reasoning,
+including why the list goes in the system prompt rather than into the chunk
+and why the bound keeps the most recent rather than the most frequent.
+
+**`system_prompt` reports the base and not what any particular chunk was
+sent.** A caller logging it sees the prompt the pipeline was configured with;
+the carryover block is per-chunk and is not configuration.
+
+## A chunk can be asked twice, and is not by default
+
+`gleanings` shows a chunk's own answer back to the model and asks what it
+missed -- GraphRAG's gleaning loop, Graphiti's reflexion step. It is off by
+default because it is one extra model call per chunk per pass and this
+pipeline is sequential over chunks: `gleanings=1` roughly doubles a run.
+`redstring.extraction.gleaning` holds the prompt and the fold, including why
+the two answers are combined as `Extraction`s rather than after mapping.
+
 ## The chunking is carried out, not stored
 
 `PipelineResult` gains the passages themselves and the signature they were
@@ -80,8 +108,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from redstring.domain.exceptions import LlmProviderError, RedstringError
+from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES, Carryover
 from redstring.extraction.chunkers import SlidingWindowChunker
 from redstring.extraction.corpus import chunking_digest, stored_chunks
+from redstring.extraction.gleaning import combine, found_nothing, gleaning_prompt
 from redstring.extraction.mapping import MappedExtraction, map_extraction
 from redstring.extraction.merging import merge_extractions
 from redstring.extraction.schema import Extraction
@@ -180,6 +210,15 @@ class PipelineResult(NamedTuple):
     #: Carries the model version, so an extraction and a bare indexing of one
     #: document never suppress each other.
     chunking_signature: str = ""
+    #: Second-pass model calls that returned an answer. Always 0 unless
+    #: `gleanings` is on. Less than `gleanings * total_chunks` whenever a pass
+    #: found nothing and the loop stopped early, which is the ordinary case.
+    gleaning_passes: int = 0
+    #: Second-pass model calls that failed and were abandoned. Non-zero means
+    #: some chunks got less scrutiny than asked for -- which is invisible in
+    #: the output, since the output simply has fewer entities. Never raises;
+    #: see `ExtractionPipeline.extract`.
+    failed_gleanings: int = 0
 
 
 class ExtractionPipeline:
@@ -192,6 +231,8 @@ class ExtractionPipeline:
         chunker: Chunker | None = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         skip_failed_chunks: bool = False,
+        carryover_entities: int = DEFAULT_CARRYOVER_ENTITIES,
+        gleanings: int = 0,
     ) -> None:
         """Assemble a pipeline.
 
@@ -211,11 +252,34 @@ class ExtractionPipeline:
                 failed, counting it. Off by default; see the module
                 docstring, and note that `record` still refuses the result
                 unless asked twice.
+            carryover_entities: How many previously-seen entities are named in
+                the next chunk's prompt, so the model spells a recurring
+                entity the way the earlier chunk spelled it. `0` disables it,
+                which restores the byte-for-byte prompt of every run before
+                this parameter existed. See `redstring.extraction.carryover`
+                for why the default is on and why the bound is by recency.
+            gleanings: How many times each chunk is shown its own answer and
+                asked what it missed. `0` -- the default -- is one call per
+                chunk, as before. Each pass is one more model call per chunk,
+                so `1` doubles the run at worst; a pass that finds nothing
+                stops the loop for that chunk. Off by default because recall
+                is worth paying for and is not worth paying for by accident.
+                See `redstring.extraction.gleaning`.
         """
         self._provider = provider
         self._chunker = chunker if chunker is not None else SlidingWindowChunker()
         self._system_prompt = system_prompt
         self._skip_failed = skip_failed_chunks
+        # Constructed and discarded, purely so a bad limit is refused here
+        # rather than on the first `extract` -- a constructor argument that
+        # validates a document later is a constructor argument that validates
+        # in production. The rule itself has one declaration site, in
+        # `Carryover`; this only makes it fire early.
+        Carryover(carryover_entities)
+        self._carryover_entities = carryover_entities
+        if gleanings < 0:
+            raise ValueError(f"gleanings must be >= 0, got {gleanings}")
+        self._gleanings = gleanings
 
     @property
     def system_prompt(self) -> str:
@@ -258,17 +322,26 @@ class ExtractionPipeline:
         # four's entities to chunk three.
         found_by_index: dict[int, list[EntityId]] = {}
         failed = 0
+        # One per document and discarded with the run. See
+        # `redstring.extraction.carryover` -- an instance that outlived this
+        # call would be doing cross-document entity resolution silently.
+        carryover = Carryover(self._carryover_entities)
+
+        gleaned = 0
+        failed_gleanings = 0
 
         for chunk in chunks:
+            prompt = self._system_prompt + carryover.block()
             try:
-                answer = await self._provider.extract(
-                    chunk.text, Extraction, system_prompt=self._system_prompt
-                )
+                answer = await self._provider.extract(chunk.text, Extraction, system_prompt=prompt)
             except LlmProviderError:
                 if not self._skip_failed:
                     raise
                 failed += 1
                 continue
+            answer, passes, glean_failures = await self._glean(chunk.text, prompt, answer)
+            gleaned += passes
+            failed_gleanings += glean_failures
             mapped = map_extraction(
                 answer,
                 tenant_id=tenant_id,
@@ -282,6 +355,11 @@ class ExtractionPipeline:
             # what. This is the last moment the answer and the chunk that
             # produced it are both in hand.
             found_by_index[chunk.chunk_index] = [entity.id for entity in mapped.entities]
+            # After mapping, not from `answer`: the mapper is what normalizes
+            # a name and drops a row the domain refuses, and a carryover built
+            # from the raw answer would offer later chunks a spelling that no
+            # entity in this document actually has.
+            carryover.remember(mapped.entities)
 
         merged = merge_extractions(parts)
         passages = stored_chunks(
@@ -303,7 +381,46 @@ class ExtractionPipeline:
             chunking_signature=(
                 f"{self._chunker.chunker_type}:{chunking_digest(chunking)}:{self._provider.model}"
             ),
+            gleaning_passes=gleaned,
+            failed_gleanings=failed_gleanings,
         )
+
+    async def _glean(
+        self, text: str, prompt: str, answer: Extraction
+    ) -> tuple[Extraction, int, int]:
+        """Ask again, up to `gleanings` times, and fold each answer in.
+
+        Returns the accumulated answer, how many passes returned something,
+        and how many failed.
+
+        **A failed gleaning never propagates, whatever `skip_failed_chunks`
+        says.** The two are not the same failure: a failed *chunk* is a hole
+        in the document, while a failed gleaning is a chunk that got one pass
+        instead of two -- there is a complete first answer in hand, and
+        discarding it because an optional second look failed would trade a
+        smaller extraction for none at all. It is counted rather than logged
+        so the degradation has a number, since fewer entities is exactly what
+        a successful run also looks like.
+
+        The stop condition is on the *pass*, not on the accumulated answer:
+        "this pass added nothing" is the signal that more passes are wasted,
+        and the accumulated answer is non-empty from the first pass onwards.
+        """
+        passes = 0
+        failures = 0
+        for _ in range(self._gleanings):
+            try:
+                extra = await self._provider.extract(
+                    text, Extraction, system_prompt=gleaning_prompt(prompt, answer)
+                )
+            except LlmProviderError:
+                failures += 1
+                break
+            passes += 1
+            if found_nothing(extra):
+                break
+            answer = combine(answer, extra)
+        return answer, passes, failures
 
     async def record(
         self,

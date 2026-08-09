@@ -161,6 +161,60 @@ answer against the schema —
 why. To write your own, see
 [Author a domain schema](how-to/author-a-domain-schema.md).
 
+## Extraction across chunk boundaries
+
+A document longer than the chunker's window is extracted one chunk at a time,
+and two things follow that are worth knowing before a long document surprises
+you.
+
+### Later chunks are told what earlier ones found — on by default
+
+Chunk two begins mid-argument. It says "Lovelace" where chunk one said
+"Ada Lovelace", and because an entity's id is derived from its normalized
+name, those are **two entities** that the extraction fold cannot combine —
+they reach consolidation, which pays a model call to decide they are one
+person.
+
+So each chunk's prompt carries a bounded list of the entities earlier chunks
+named, asking the model to reuse those spellings. It costs no extra model call
+and is on by default:
+
+```python
+report = await build_graph(document, ..., carryover_entities=32)  # the default
+report = await build_graph(document, ..., carryover_entities=0)  # off
+```
+
+Turn it off to reproduce the extraction of a run from before this existed —
+the prompt is then byte-identical.
+
+### A chunk can be asked twice — off by default
+
+A model asked once for the entities in a dense paragraph stops when the answer
+*feels* complete, not when the paragraph is exhausted. Showing it its own
+answer and asking what it missed reliably finds more:
+
+```python
+report = await build_graph(document, ..., gleanings=1)
+print(report.gleaning_passes, report.failed_gleanings)
+```
+
+!!! warning "Each pass is another model call per chunk"
+
+    `gleanings=1` roughly doubles what a document costs, because chunks are
+    extracted sequentially. That is why it is off by default rather than set
+    to a small number for you. A pass that finds nothing stops the loop for
+    that chunk, so the worst case is rarely the actual case.
+
+    A gleaning call that *fails* never fails the run — there is a complete
+    first answer in hand, and discarding it would trade a smaller extraction
+    for none. It is counted on `report.failed_gleanings` instead, because
+    "fewer entities" is also what a successful run looks like.
+
+Both are prompt content: neither validates anything, and a model that ignores
+either produces exactly what it produced before.
+[ADR 0029](adr/0029-a-chunk-is-not-extracted-alone.md) records the shape and
+what was rejected.
+
 ## Where this example stops
 
 It builds a graph from **one** document. Three things become real the moment

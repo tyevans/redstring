@@ -224,6 +224,7 @@ from redstring.domain.vector import VectorMatch, VectorRecord
 from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.events.streams import document_stream
+from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.chunking import Chunk, ChunkingResult
 from redstring.extraction.domains.loader import load_schema_from_file, load_schema_from_string
 from redstring.extraction.domains.models import (
@@ -281,6 +282,7 @@ __version__ = "0.3.0"
 
 __all__ = [
     "AUTO",
+    "DEFAULT_CARRYOVER_ENTITIES",
     "DEFAULT_SYSTEM_PROMPT",
     "EMPTY",
     "AdjudicationVerdict",

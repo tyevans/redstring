@@ -166,4 +166,5 @@ nav:
       - "0026 · ChunkStore and Cache are capabilities too": adr/0026-chunk-store-and-cache-are-capabilities-too.md
       - "0027 · VectorStore is three capabilities": adr/0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md
       - "0028 · A capability declares its own release": adr/0028-a-capability-declares-its-own-release.md
+      - "0029 · A chunk is not extracted alone": adr/0029-a-chunk-is-not-extracted-alone.md
   - Contributing: contributing.md

@@ -74,6 +74,7 @@ from redstring.consolidation.service import ConsolidationService
 from redstring.domain.exceptions import EmbeddingProviderError
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import document_stream
+from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
@@ -194,6 +195,8 @@ async def build_graph(
     chunker: Chunker | None = None,
     skip_failed_chunks: bool = False,
     allow_partial: bool = False,
+    carryover_entities: int = DEFAULT_CARRYOVER_ENTITIES,
+    gleanings: int = 0,
     embedding_provider: EmbeddingProvider | None = None,
     vector_store: VectorStore | None = None,
     chunks: ChunkStore | None = None,
@@ -262,6 +265,19 @@ async def build_graph(
             default, because recording a partial extraction marks this model
             version done and makes the retry that would repair it a silent
             no-op.
+        carryover_entities: How many entities found by earlier chunks are
+            named in the next chunk's prompt, so a recurring entity keeps one
+            spelling and therefore one id. `0` turns it off. Exposed here and
+            not left to `ExtractionPipeline` alone because this function
+            builds the pipeline, so a caller of `build_graph` would otherwise
+            have no way to reach it -- and because turning it off is what
+            makes a before/after quality comparison possible at all. See
+            `redstring.extraction.carryover`.
+        gleanings: How many times each chunk is shown its own answer and asked
+            what it missed. `0` -- the default -- is one model call per chunk.
+            Each pass is one more call per chunk, so this is the one argument
+            here that changes what the run costs rather than only what it
+            does. See `redstring.extraction.gleaning`.
 
     Returns:
         A `GraphBuildReport`. `report.event is None` means this document was
@@ -291,6 +307,8 @@ async def build_graph(
         chunker=chunker,
         system_prompt=system_prompt,
         skip_failed_chunks=skip_failed_chunks,
+        carryover_entities=carryover_entities,
+        gleanings=gleanings,
     )
     stream = document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id
     repository = document_repository(event_store) if event_store is not None else None
