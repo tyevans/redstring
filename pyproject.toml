@@ -58,11 +58,33 @@ dependencies = [
     # no-shim policy -- 0.12.0 alone renamed a keyword argument and changed an
     # abstract method's arity, neither with an alias. See BACKLOG B38.
     #
-    # **The floor is 0.12.0 because `redstring/projections/` imports
-    # `StoreProjection` from `eventsource.application.projections`**, which
-    # does not exist before it. This is the first bump where the floor moves
-    # because something here needs it rather than because the cap dragged it:
-    # both projections were built on a local copy of that class until 0.12.0
+    # **0.13.0 is the counter-example to that cap's own justification, and it
+    # is worth recording rather than quietly dropping.** It carries four
+    # breaking changes -- in-memory stores reject unregistered event types at
+    # append, `EventAppender.max_append_batch` is gone, and two read-model
+    # filter behaviours changed -- and redstring needed **no edit for any of
+    # them**. Every event here already carries `@register_event`, nothing
+    # implements `EventAppender`, and this library uses no eventsource read
+    # models. `StoreProjection`, `handles` and `replay` are untouched in
+    # 0.13.0, so ADR 0020's adoption stands.
+    #
+    # That is an argument for keeping the one-minor cap, not for widening it:
+    # the cap is what made someone read the changelog and find out. A clean
+    # review is the cap working, not the cap being unnecessary.
+    #
+    # **The floor moved to 0.13.0 with the cap** rather than staying at
+    # 0.12.0. Nothing here needs a 0.13.0 feature, so this is a deliberate
+    # choice to carry one supported version rather than a range -- the
+    # library is pre-1.0 on both sides and a two-version window is a two-
+    # version test matrix nobody runs. `tests/integration/
+    # test_declared_floors_work.py` installs the declared floor and builds a
+    # projection, so the floor is the version that is actually exercised.
+    #
+    # The floor was 0.12.0 because `redstring/projections/` imports
+    # `StoreProjection` from `eventsource.application.projections`, which does
+    # not exist before it -- the first bump where the floor moved because
+    # something here needed it rather than because the cap dragged it. Both
+    # projections were built on a local copy of that class until 0.12.0
     # upstreamed it, together with the `replay` driver this package also used
     # to carry. See docs/adr/0020.
     #
@@ -78,7 +100,7 @@ dependencies = [
     # CI resolves fresh and therefore always tests the *newest* permitted
     # version, so a too-low floor is invisible here by construction. See
     # BACKLOG B70 for the check that would measure it.
-    "eventsource-py>=0.12.0,<0.13",
+    "eventsource-py>=0.13.0,<0.14",
 ]
 
 [project.optional-dependencies]

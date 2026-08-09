@@ -145,7 +145,7 @@ to.
 
 Everything else is a hard runtime dependency in `[project] dependencies` —
 pydantic, asyncpg, httpx, numpy, python-dateutil, dateparser, pyyaml,
-`redis[hiredis]`, jellyfish, and `eventsource-py>=0.9.1,<0.11`.
+`redis[hiredis]`, jellyfish, and `eventsource-py>=0.13.0,<0.14`.
 `eventsource-py` is deliberately *not* an extra: `redstring.__init__`
 exports `build_graph`, `Document`, `DocumentExtracted` and the two
 projections, all of which need it, and a public API that fails to import
