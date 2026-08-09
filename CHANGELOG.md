@@ -12,6 +12,223 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [0.4.0] - 2026-08-09
+
+Forty names added to the public surface and none removed. The headline is
+that redstring now **stores passages and retrieves over them** — a chunk
+corpus, a BM25 lexical channel, and a hybrid entity retriever — and that
+extraction quality is measured rather than asserted.
+
+One change is invisible at runtime and visible to a type checker: the four id
+names are `NewType`s. See **Changed**.
+
+### Added
+
+- **Hybrid entity retrieval.** `Retriever.retrieve` fuses a semantic channel
+  (the vector store) and a lexical one (blocking keys plus Jaro-Winkler) into
+  a `RetrievalResult` of `ScoredEntity`. `RetrievalMode` selects `semantic`,
+  `lexical` or `hybrid`.
+
+  `ScoredEntity.score` is a **reciprocal-rank-fusion** score: ordinal,
+  unbounded, and *not* on `VectorMatch`'s cosine 0..1 scale. The two channels
+  share no unit — a weighted sum of them invents an exchange rate that is
+  wrong for some corpus and unfalsifiable for the rest — so ranks are fused
+  rather than scores. `semantic` and `lexical` are `None` when that channel
+  did not rank the entity and a float when it did; those are two different
+  facts a caller acts on differently.
+
+  Exported: `Retriever`, `RetrievalMode`, `RetrievalResult`, `ScoredEntity`.
+  See [ADR 0022](https://github.com/tyevans/redstring/blob/main/docs/adr/0022-the-lexical-channel-is-not-bm25.md).
+
+- **A chunk corpus.** `StoredChunk` is one passage of one document under one
+  tenant, behind the `ChunkStore` port with `InMemoryChunkStore` and a
+  Postgres adapter. `index_documents` chunks a corpus with **no model call
+  anywhere**, returning an `IndexReport`, so passages can be stored for every
+  document a caller holds and extraction run over whichever subset is worth
+  paying for.
+
+  Identity is **content-addressed**: `ChunkId` is a digest of the source id
+  and the text. Positional identity would make re-chunking an in-place
+  overwrite, so chunk 3 of a re-chunked document would be a different passage
+  wearing the same id — with the old entity links, and later the old
+  embedding, describing text that no longer says what they claim.
+
+  The port has **no search method**. Retrieval over the corpus was a separate,
+  later design, and guessing the signature would have given the port a method
+  no adapter could implement consistently.
+
+  Exported: `StoredChunk`, `ChunkId`, `ChunkStore`, `InMemoryChunkStore`,
+  `ChunkProjection`, `DocumentChunked`, `index_documents`, `IndexReport`.
+  See [ADR 0023](https://github.com/tyevans/redstring/blob/main/docs/adr/0023-the-chunk-corpus.md).
+
+- **BM25 over the chunk corpus, with the scorer in the domain.**
+  `rank_chunks` scores adapter-supplied `CorpusStats` into `RankedChunk`s, and
+  `tokenize` decides what a term is. Both live in `domain/` rather than in an
+  adapter, so every backend ranks identically and the compliance suite keeps
+  the gate that has caught every divergence so far.
+
+  Exported: `rank_chunks`, `RankedChunk`, `tokenize`, `CorpusStats`,
+  `LexicalCandidate`, `LexicalCandidates`, `LexicalCandidateSource`.
+  See [ADR 0024](https://github.com/tyevans/redstring/blob/main/docs/adr/0024-bm25-over-the-chunk-corpus.md).
+
+- **Two chunkers, both exported.** `SlidingWindowChunker` (unchanged default)
+  and `BoundaryPreferenceChunker`, contributed by a downstream consumer.
+  Both cascade paragraph → sentence → word → hard cut; the new one searches
+  the **whole window** for a boundary rather than its last 500 characters, and
+  recognises a sentence that ends the text or is followed by a closing quote.
+  Pass it when the passages will be quoted back to a reader: a chunk ending
+  mid-sentence produces a quotation nobody can use.
+
+  It is not the default because chunk ids are content-addressed, so moving a
+  boundary re-keys every chunk of every re-ingested document.
+
+- **Every port that can be substituted is now typed as a capability**, and the
+  capabilities are exported so a caller can implement the narrow one:
+  `ChunkReader`/`ChunkWriter`/`ChunkPurge`,
+  `VectorReader`/`VectorWriter`/`VectorPurge`, `KeyValueCache`/`HitWindow`
+  composing `Cache`, and `CandidateSource`/`MergeAdjudicator`/
+  `ConsolidationGraph` for consolidation.
+
+  Consolidation's two substitution points are the reason this matters rather
+  than being tidiness: `Consolidator.resolve` invited a caller to supply their
+  own blocking or their own adjudication, and annotated both against
+  *classes* whose constructors demand a `GraphStore` and an `LlmProvider`. The
+  two substitutions the docstring invited were the two the annotation
+  obstructed. See
+  [ADR 0025](https://github.com/tyevans/redstring/blob/main/docs/adr/0025-consolidation-substitution-is-two-protocols.md),
+  [0026](https://github.com/tyevans/redstring/blob/main/docs/adr/0026-chunk-store-and-cache-are-capabilities-too.md),
+  [0027](https://github.com/tyevans/redstring/blob/main/docs/adr/0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md).
+
+- **The resource-owning adapters are async context managers.**
+  `Neo4jGraphStore`, `PgVectorStore`, `PostgresChunkStore` and `RedisCache`
+  each held a driver, pool or client and offered only `close()`, so the
+  shipped usage was `connect()` plus a `try`/`finally` the caller had to
+  remember. `AsyncClosable` is exported as the shape.
+
+  Ownership still decides what closes: entering a block with an adapter built
+  around an *injected* driver leaves that driver open on the way out. And
+  `__aexit__` returns `None` deliberately — anything truthy would swallow what
+  the body raised, including `CancelledError`. See
+  [ADR 0028](https://github.com/tyevans/redstring/blob/main/docs/adr/0028-a-capability-declares-its-own-release.md).
+
+- **The port compliance suites ship, as `redstring.testing`.** They were under
+  `tests/` and therefore not in the wheel, so "a correct adapter runs the
+  shared suite unchanged" was a rule only this repository could obey. An
+  outside author had the Protocol — which pins signatures and says nothing
+  about semantics — and a how-to telling them to subclass a class they could
+  not import.
+
+  Install `redstring[test]`. Same bodies, not a reduced variant: a weaker
+  suite for outside adapters would make the port mean two different things.
+  `redstring.testing` sits **above** every other layer in the import contract,
+  so nothing under `src/` can reach it and `import redstring` can never pull
+  in `pytest`. See
+  [ADR 0033](https://github.com/tyevans/redstring/blob/main/docs/adr/0033-the-compliance-suites-ship.md).
+
+- **Carryover: a chunk is told what earlier chunks found.** On by default at
+  `DEFAULT_CARRYOVER_ENTITIES` (32). Chunk two says "Lovelace" where chunk one
+  said "Ada Lovelace", and ids derive from the normalized name — so that is
+  not a wobble, it manufactures a second entity that merging cannot combine
+  and that consolidation pays a model call to resolve.
+
+  The names go in the **system prompt**. Inside the chunk they are
+  indistinguishable from the document, and the model then reports carried
+  names as entities of a passage that never mentioned them. See
+  [ADR 0029](https://github.com/tyevans/redstring/blob/main/docs/adr/0029-a-chunk-is-not-extracted-alone.md).
+
+- **Gleaning — show a chunk its own answer and ask what it missed — off by
+  default.** One model call per chunk per pass, and a library that silently
+  doubles what a caller pays for a model has made the caller's decision.
+
+- **A domain schema can constrain the decode, when asked.** Opt-in; the
+  `LlmProvider` port needed no widening, because constraining the vocabulary
+  is a different *argument* to `extract`, not a different port. `Extraction`,
+  `ExtractedEntity` and `ExtractedRelationship` are exported. See
+  [ADR 0030](https://github.com/tyevans/redstring/blob/main/docs/adr/0030-a-domain-schema-may-constrain-when-asked.md).
+
+- **`list_available_domains`** returns a `DomainSummary` per bundled domain.
+  Previously the supported way to discover a valid id was to pass a wrong one
+  and read `UnknownDomainError` — the last guess-and-catch step in the public
+  surface.
+
+### Changed
+
+- **The four id names are `NewType`s.** `EntityId`, `RelationshipId` and
+  `TenantId` over `UUID`; `SourceId` over `str`. Three of them used to be
+  *the same object* — `EntityId is TenantId` was true — so transposing the
+  adjacent `(entity_id, tenant_id)` arguments every store port takes was a
+  tenant-isolation defect that type-checked cleanly.
+
+  **Nothing changes at runtime.** `NewType` has no representation of its own,
+  so no persisted event, no Neo4j property and no Postgres column moves, and
+  no existing log becomes unreadable. What changes is that a type checker now
+  rejects the swap.
+
+  *If you run mypy or pyright against redstring*, you may need to wrap
+  constructions: `EntityId(uuid4())` rather than a bare `uuid4()`. Untyped
+  callers are unaffected. See
+  [ADR 0032](https://github.com/tyevans/redstring/blob/main/docs/adr/0032-the-id-names-are-newtypes.md).
+
+- **Extraction no longer asks the model to think.** `openai_compatible` sends
+  `chat_template_kwargs: {enable_thinking: false}`; pass `thinking=True` to
+  restore the server's own behaviour.
+
+  Measured over the whole graded corpus, both arms in one run:
+
+  | | wall clock | entity tp/fp/fn | relationship tp/fp/fn |
+  |---|---|---|---|
+  | thinking | 155.1s | 12 / 9 / 0 | 5 / 11 / 1 |
+  | no thinking | 27.3s | 12 / **3** / 0 | 5 / **6** / 1 |
+
+  Recall identical and perfect, precision better on both, 5.7× faster. The
+  mechanism is not luck: extraction asks for what the text *states*, and a
+  model given room to deliberate uses it to infer — every inference is a
+  false positive under the corpus's first grading rule. See
+  [ADR 0031](https://github.com/tyevans/redstring/blob/main/docs/adr/0031-extraction-does-not-think.md).
+
+### Fixed
+
+- **`SlidingWindowChunker` silently discarded a document's final
+  characters.** It stopped once the unconsumed remainder was shorter than
+  `min_chunk_size`, under a comment claiming the last chunk already included
+  it. At `overlap=0, chunk_size=1000` a 5025-character document produced
+  5000 characters, with no error and no counter. A dropped span loses
+  entities in a way indistinguishable from a document that said less.
+
+- **The accuracy suite had been skipping rather than running.** Its provider
+  was constructed with the wrong arguments, raising `TypeError`
+  unconditionally, and a broad `except` turned that into a skip blaming the
+  endpoint. Every floor — entity recall and precision, relationship recall,
+  and the `empty-negative` document that is the only test of hallucination
+  here — was inert.
+
+- Four stale documentation claims, including a `LangChainLlmProvider`
+  construction shown three ways in `README.md`, `docs/getting-started.md` and
+  `docs/installation.md` that had never been valid.
+
+### Notes
+
+- **The accuracy suite exists now**, which retires the last line of the 0.1.0
+  notes below. It is five hand-graded documents — enough to catch a
+  regression, not a benchmark — and its floors are set where a regression
+  trips them rather than where a good model sits. Its scorer and corpus run in
+  the commit gate against a scripted provider, which is what makes any live
+  number believable: measuring nothing reports F1 = 0.0 and reads as a bad
+  model, and comparing the corpus against itself reports 1.0 and reads as a
+  good one.
+
+- **Two measured changes returned null results and are recorded as such.**
+  Constrained decoding changed nothing once thinking was off — identical
+  counts in both arms, and the mechanism first proposed for it turned out to
+  be describing the reasoning trace. That verdict was published and then
+  **retracted**; ADR 0030 keeps the original reasoning verbatim and says why
+  it was wrong. Gleaning likewise measured null, on a corpus that cannot show
+  its benefit, which is why the default is "off" rather than "no".
+
+- The `test` extra is new, and carries `pytest`, `hypothesis` and
+  `pytest-asyncio` for `redstring.testing`. It is not needed to use the
+  library.
+
 ## [0.3.0] - 2026-08-06
 
 ### Added
@@ -265,7 +482,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/tyevans/redstring/releases/tag/v0.4.0
 [0.3.0]: https://github.com/tyevans/redstring/releases/tag/v0.3.0
 [0.2.0]: https://github.com/tyevans/redstring/releases/tag/v0.2.0
 [0.1.0]: https://github.com/tyevans/redstring/releases/tag/v0.1.0
