@@ -1207,42 +1207,32 @@ Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
 
-### B120. Two boundary decisions raised by a downstream consumer, unresolved
+### B121. Should `BoundaryPreferenceChunker` become the default split?
 
-Raised by the `research-team` project against redstring's 0.4.0 scope. Both
-are stated here as *their* argument, because the entry is worthless if the
-next reader has to go and re-derive it — and neither has been decided.
+B120 upstreamed `research-team`'s boundary heuristic as a second `Chunker`
+rather than as a replacement, and left `SlidingWindowChunker` the default in
+both `index_documents` and `ExtractionPipeline`. That was the conservative
+half of the decision, not an argument that the default is right.
 
-**1. Their chunk-boundary heuristics are better than `SlidingWindowChunker`,
-and the answer is upstreaming rather than a private copy.** They cascade
-paragraph → sentence → word → hard cut, and report it is materially better
-for *citation quality* — a chunk that ends mid-sentence produces a quotation
-nobody can use. redstring's `Chunker` protocol is the substitution point that
-already exists for this (`src/redstring/extraction/protocols.py`), so the
-shape of the fix is: their heuristic lands here as a `Chunker`, and they
-consume it back rather than maintaining a fork. Their words: "That's an
-argument for pushing them upstream as a `Chunker` and then consuming them
-back, not for keeping a private copy."
+The case for switching: the new chunker is better on every axis measured —
+it reaches a boundary anywhere in the window rather than in its last 500
+characters, it recognises a sentence ending the text or followed by a closing
+quote, and it is a lossless partition at zero overlap. The case against, and
+the only one: chunk ids are content-addressed over the passage text, so
+changing the default re-keys every chunk of every re-ingested document. No
+migration is needed — `replace_source` deletes what the new split does not
+contain — but a caller storing citations as `(source_id, chunk_id)` finds
+them dangling, and nothing tells them.
 
-What has to be decided before that lands: whether it replaces
-`SlidingWindowChunker` or joins it, and what happens to chunk **ids** — they
-are content-addressed (`chunk_id(source_id, text)`), so changing where a
-boundary falls re-keys every chunk of every re-ingested document. That is not
-a migration, but it is a fact a caller has to be told.
+What has to be decided: whether that lands in a minor release with a note, or
+waits for a major. What is already true and worth not re-deriving: the two
+chunkers report different `chunker_type`s, so the chunking signature differs
+and a re-index is correctly recorded rather than suppressed as a repeat.
 
-**2. The two write paths have deliberately different key spaces, and
-"extract, then index" discards entity links by design.** This is their read of
-redstring's current ordering, and their conclusion is that they get to pick
-their ordering once rather than inheriting one. The open question for
-redstring is whether the discard is *intended* — `index_documents` and
-`build_graph` are two composition entry points writing to two stores, and if
-one ordering loses `entity_ids` on chunks while the other does not, that is
-either a documented consequence or B97's neighbour.
-
-Neither of these was investigated during the 0.4.0 work; they arrived as
-feedback and are recorded so they are not lost. **Read the `research-team`
-implementations before deciding either** — the argument above is a summary of
-code this project has not looked at.
+`research-team` also holds `Span`/`quote` in `application/corpus_spans.py` —
+offsets resolved on demand against retained source text. Deliberately **not**
+upstreamed: it depends on the caller holding the document, which is their
+composition decision and not something the `Chunker` port implies.
 
 ### B116. The carryover bound is recency-only, and evicts the protagonist
 
@@ -1406,28 +1396,6 @@ the chunk-lexical work and is unchanged by it; filed now because Task 6/7
 review is what noticed it. Fix, if picked up, is either shortening the
 generated suffixes or hashing the table name into the index name so length
 is bounded regardless of what the caller configures.
-
-### B88. `SlidingWindowChunker` is not exported, so tuning the split needs a dotted import
-
-`Chunker` is on the public surface and the bundled implementation is not, so a
-caller who wants anything other than the default window writes
-`from redstring.extraction.chunkers import SlidingWindowChunker` — a dotted
-path into a module `redstring/__init__.py` explicitly says may change in a
-patch release. `docs/how-to/index-documents.md` says so rather than showing the
-import, which is the honest interim but not a fix.
-
-Deferred rather than exported, and the reason is what makes it a decision
-rather than an oversight. Exporting it publishes its constructor —
-`chunk_size` and `overlap_size` — as a supported contract, and those are the
-two settings the chunking signature deliberately *stopped* being computed from
-(`extraction/corpus.py`, and ADR 0023's "the digest is over the split
-produced"). Publishing the parameters right after deciding they are not a
-reliable description of a chunking wants a moment's thought about what the
-supported surface for "split differently" actually is — plausibly a chunker
-protocol a caller implements, which is already exported, rather than ours.
-
-Cheap to fix if the answer is just "export it": one name, and the signature
-gate will name any closure it drags in.
 
 ### B76. A relationship says which document stated it, not which sentence
 
