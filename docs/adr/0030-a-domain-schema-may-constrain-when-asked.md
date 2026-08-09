@@ -111,10 +111,28 @@ once, and a second registry lookup at the call site could disagree with it
 about the fallback -- `ContentClassifier` returns `encyclopedia_wiki` on three
 different give-up paths, and only the resolution that ran knows.
 
-**No quality claim is made here.** B57 asked for a measurement before deciding
-whether constrained decoding extracts *better*, and building the mechanism is
-what makes that measurement possible; it is not the measurement. The graded
-corpus can see this change -- unlike
-[`0029`](0029-a-chunk-is-not-extracted-alone.md)'s, since every document is
-one chunk and scoring keys on type -- so the measurement is owed and is filed
-rather than assumed.
+**The measurement was run, and it argues for the default rather than against
+it.** Against the graded corpus at `temperature=0.0`, constrained decoding
+left recall identical (perfect in both arms) and made precision *worse*:
+entity false positives rose from 8 to 13, relationship false positives from 6
+to 7. Counts rather than F1, and `BACKLOG.md` B57 carries them with the limits
+of the instrument.
+
+The reason is a mechanism this decision did not anticipate and which belongs
+in the record. **An enum does not only forbid the types outside it; it
+advertises the types inside it**, and a model reads the list as a checklist.
+On an 81-character sentence the unconstrained run emitted four entity types
+and the constrained run emitted all nine the schema declares, inventing a
+`claim`, a `date`, a `quote`, a `source` and a `statistic` that the text does
+not contain.
+
+So the trade stated above -- coverage for consistency -- is incomplete. It is
+that, plus a hallucination pressure proportional to how many types the schema
+declares and how few of them the document actually contains. That does not
+retract the decision: the dial exists, it is off, and a caller who wants one
+label per kind of thing can still have it. It does mean the dial should be
+described as a specialised tool rather than as a quality improvement anyone
+should reach for by default.
+
+This is five documents against one model, so it settles that constrained
+decoding is not free here -- not that it loses everywhere.

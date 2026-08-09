@@ -179,7 +179,25 @@ saying so is a `ValueError` raised before the document reaches a model.
     parliament: unconstrained the model says `legislation` and you learn
     something, constrained it says `document` and the graph is quietly wrong.
     Reach for this when you would rather have one label per kind of thing than
-    the right label. [ADR 0030](adr/0030-a-domain-schema-may-constrain-when-asked.md).
+    the right label.
+
+!!! danger "Measured: it made precision *worse*, and the reason is not obvious"
+
+    An enum does not only forbid the types outside it — it **advertises the
+    types inside it**, and a model reads the list as a checklist. On one
+    81-character sentence, the unconstrained run emitted four entity types and
+    the constrained run emitted all nine the schema declares, inventing a
+    `claim`, a `date`, a `quote`, a `source` and a `statistic` the text does
+    not contain.
+
+    Against the graded corpus, recall was identical and entity false positives
+    rose from 8 to 13. That is five short documents and one model, so it is not
+    a universal verdict — but it is why this is off by default and why you
+    should measure on *your* corpus before turning it on. The expected penalty
+    grows with how many types your schema declares and how few of them a
+    typical document contains.
+    [ADR 0030](adr/0030-a-domain-schema-may-constrain-when-asked.md),
+    `BACKLOG.md` B57.
 
 ## Extraction across chunk boundaries
 

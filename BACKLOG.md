@@ -913,6 +913,16 @@ The off arm also emitted `ine`, a truncated fragment, and
 about the carryover; both are worth remembering when grading, because a corpus
 that never sees them cannot measure whether anything fixed them.
 
+**A second ceiling, found by running B57's measurement: entity recall is
+1.000 on every document in both arms.** There is no headroom, so this corpus
+cannot detect a recall *improvement* by construction -- which is a separate
+problem from the single-chunk one and disqualifies it for exactly the
+mechanism most likely to need measuring, ADR 0029's gleaning pass. A document
+added for B115 must therefore satisfy three things at once: long enough to
+split at the default window, containing entities a later chunk would plausibly
+re-name or re-type, and containing entities a good model plausibly *misses*.
+The third is the hardest to write on purpose and the easiest to forget.
+
 Related: **B12** on what the corpus can and cannot tell you at all.
 
 ### B10m. Two adapters of one compliance suite cannot run in the same pytest invocation
@@ -1543,47 +1553,58 @@ owns". Both that file and `TemporalEventProperties` were deleted in slice 9 and
 neither exists anywhere in the tree. The recoverable copy is under
 `src/redstring/extraction/schemas.py` at `66f589d` or earlier.
 
-### B57. Constrained decoding is built and unmeasured
+### B57. Constrained decoding is built, measured, and worse -- keep it off
 
-**The mechanism half is closed.** `extraction/constrained.py` builds an
-`Extraction` subclass whose `entity_type` and `relationship_type` are
-`Literal`s over a domain's declared ids, `ExtractionPipeline` takes it as
-`schema`, and `build_graph(..., constrain_to_domain=True)` wires it. See
-`docs/adr/0030-a-domain-schema-may-constrain-when-asked.md`, which amends 0011
-without superseding it: off is still the default.
+**Both halves are closed.** `extraction/constrained.py` builds the enum-bearing
+schema, `build_graph(..., constrain_to_domain=True)` wires it, and
+`docs/adr/0030-a-domain-schema-may-constrain-when-asked.md` records the design.
+The measurement this entry demanded before believing constrained decoding
+extracts better has been run, and the answer is that it does not.
 
-It turned out to need no new machinery at all. `LlmProvider.extract` has
-always taken `type[S]`; the entry as written assumed `map_extraction` would
-have to become generic over the schema, and it does not, because subclassing
-`Extraction` inherits the field names the mapper reads.
+Graded corpus, `qwen3.6-27b-mtp`, `temperature=0.0` so both arms are
+deterministic and no repeat is needed:
 
-**What is still open is the question this entry said to answer first: does it
-extract better?** The instruction stands and is now actionable, because unlike
-ADR 0029's two mechanisms this one *is* visible to the graded corpus --
-`scoring.py` keys an entity on `(normalized name, lowercased type)` and
-`corpus.yaml` grades types as domain schema ids, so a model answering
-"executive" where the corpus says "person" costs a false positive and a false
-negative from one entity. Every document is single-chunk, which does not
-matter here.
+| | entity tp | entity fp | entity fn | rel tp | rel fp | rel fn |
+|---|---|---|---|---|---|---|
+| unconstrained | 12 | **8** | 0 | 5 | **6** | 1 |
+| constrained | 12 | **13** | 0 | 5 | **7** | 1 |
 
-Run it both ways and record the counts, not the F1:
+Recall is identical and perfect in both arms. Precision is worse constrained.
 
-```
-KG_LLM_BASE_URL=http://host:8080/v1 uv run pytest -m accuracy tests/accuracy/
-```
+**The mechanism is the part worth keeping, because it is the opposite of the
+intuition.** An enum does not only forbid the types outside it -- it *advertises*
+the types inside it, and the model treats the list as a checklist. On
+`newsroom-event`, an 81-character sentence about a summit, the unconstrained
+run emitted four entity types and the constrained run emitted **all nine the
+`news_journalism` schema declares** -- inventing a `claim`, a `date`, a
+`quote`, a `source` and a `statistic` the text does not contain. The entire
+5-point rise in false positives is that one document.
 
-`tests/accuracy/runner.py` does not thread `constrain_to_domain` through
-today, so measuring means adding that keyword to `run_document`/`run_corpus`
-— deliberately not added in advance, because an argument no caller passes is
-the inert-parameter shape and the suite has enough of those already.
+So the trade is not "coverage for consistency" as ADR 0030 and 0011 both
+describe it. It is that, *plus* a hallucination pressure proportional to how
+many types the schema declares and how few of them the document contains.
+A nine-type schema against a one-sentence document is the worst case, and it
+is not a rare one.
 
-Two ways the answer could come back "no", both worth stating before running
-it so the result is not read backwards: the bundled schemas' vocabularies may
-simply be too coarse for the corpus, in which case constrained recall falls
-and the default is vindicated; or the corpus's own grading may have been
-written against unconstrained output, in which case it measures agreement
-with a previous run rather than accuracy. Check the second before believing
-a large improvement.
+**Do not read this as settled for every model or corpus.** Constrained
+decoding is a well-attested technique and this is five short documents against
+one 27B model. What is settled is that it is not a free improvement here, so
+the default stays off and the burden is on the next person to show a case
+where it wins.
+
+**Two limits of the instrument, which matter more than the result.**
+
+1. **Entity recall is 1.000 on every document in both arms**, so this corpus
+   *cannot* detect a recall improvement -- there is no headroom. Anything
+   whose benefit is recall (ADR 0029's gleaning, above all) is unmeasurable
+   here for a reason entirely separate from B115's single-chunk problem. A
+   graded document needs entities a good model plausibly misses.
+2. The four false positives on `newsroom-quote` are present in both arms and
+   are unexamined. Some are likely grading gaps rather than hallucinations --
+   grading rule 3 says omission is a claim, and a 134-character sentence
+   naming a plant closure arguably states a `claim` and an `event` nobody
+   graded. Before quoting these precision numbers as a baseline, read the
+   eight and decide which are the corpus's fault.
 
 ### B44. Rejected merge candidates are discarded, not recorded
 
