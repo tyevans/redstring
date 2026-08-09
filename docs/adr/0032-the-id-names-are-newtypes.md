@@ -1,4 +1,4 @@
-# ADR 0031: The id names are `NewType`s
+# ADR 0032: The id names are `NewType`s
 
 ## Status
 
