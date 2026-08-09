@@ -1499,6 +1499,24 @@ whole failure mode: no exception, just a circuit that never opens.
 shared client closed by whichever component finished first is a bug that only
 appears under shutdown.
 
+### `async with`, for a cache whose lifetime is a block
+
+```python
+async with RedisCache.from_url("redis://localhost:6379/0") as cache:
+    limiter = RateLimiter(rpm=60, cache=cache)
+    ...
+```
+
+`__aenter__` returns the cache; `__aexit__` calls `close()` and returns `None`,
+which is falsy — so the block releases the client and **suppresses nothing**,
+including a cancellation delivered while the body is suspended. Ownership is
+unchanged by the block, because exit goes through `close()`: a cache built with
+`owns_client=False` leaves your client open on the way out.
+
+`close()` stays public for the common case where the cache outlives any one
+block — a limiter and a breaker sharing one cache for the life of the process,
+which the next section is about.
+
 ### One cache or two, and shutting down
 
 The limiter and the breaker use different key prefixes (`"kg:ratelimit"` and
@@ -1506,11 +1524,47 @@ The limiter and the breaker use different key prefixes (`"kg:ratelimit"` and
 also fine — use them when you want the two to live in different Redis
 databases.
 
-`RateLimiter.close()` and `CircuitBreaker.close()` both call through to the
-cache's `close()`. That is only meaningful for a cache the object created
-itself: **if you pass one cache to both and call `close()` on each, the second
-call closes an already-closed cache.** Own the lifecycle yourself instead —
-construct the cache, pass it in, and close the cache at shutdown.
+**`close()` releases only a cache the component created.** Pass one in and it
+is yours: `RateLimiter.close()` and `CircuitBreaker.close()` leave it open, so
+the arrangement above — one `RedisCache`, both components — is safe to shut
+down in any order. Close the cache yourself when you are finished with it.
+
+```python
+cache = RedisCache.from_url("redis://localhost:6379/0")
+limiter = RateLimiter(rpm=60, cache=cache)
+breaker = CircuitBreaker(failure_threshold=5, cache=cache)
+try:
+    ...
+finally:
+    await limiter.close()  # no-op: the limiter did not build this cache
+    await breaker.close()  # no-op, likewise
+    await cache.close()  # yours to close, and the only call that closes it
+```
+
+This used to close unconditionally, and it made the recommendation on this
+page a bug: whichever component shut down first took the other's state with
+it, so a breaker could forget it was open and admit traffic to a model it had
+just decided was down. That is the same defect `owns_client` prevents one
+layer down, and it is fixed the same way.
+
+A component you gave no cache built its own `MemoryCache`, and `close()` does
+release that one — so the default single-process arrangement still cleans up
+after itself.
+
+### `async with`, for a limiter or breaker whose lifetime is a block
+
+```python
+async with CircuitBreaker(failure_threshold=5) as breaker:
+    ...
+```
+
+Both classes carry `__aenter__`/`__aexit__` with exactly the adapters'
+semantics: `__aenter__` returns the component, `__aexit__` calls `close()` and
+returns `None`, so the block suppresses nothing — including a cancellation
+delivered while the body is suspended. Ownership is unchanged by the block,
+because exit goes through `close()`: a component holding *your* cache leaves
+it open on the way out, which is what makes the block form safe to use on a
+component sharing one cache with another.
 
 ## Verifying your wiring
 

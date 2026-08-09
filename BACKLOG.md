@@ -1693,7 +1693,6 @@ calls `asyncpg` "a core dependency" in the module's own reference prose. It is
 not -- it is what the `pgvector` extra installs, same as `neo4j`. Predates this
 branch; fix both when the extras get their proper rename.
 
-
 ### B42. `ANN401` is silenced on `domain/merge_strategy.py::resolve`
 
 Three `# noqa: ANN401` on `resolve` and `_union`. Silencing is correct here
@@ -2365,3 +2364,45 @@ changed, a shape this project has already been bitten by once (the
 `InMemoryVectorStore.search`). Fix: `avg(doc_length::float8)` on the
 Postgres side makes both adapters do the same float arithmetic instead of
 routing one of them through `numeric`.
+
+### B107b. `LlmProvider` and `EmbeddingProvider` have no declared lifetime
+
+ADR 0028 deliberately stopped at the four store-shaped ports.
+`tests/unit/test_ports_declare_the_block_form.py::TestOnlyTheStoreShapedPortsAreClaimed`
+asserts the two provider ports are *not* `AsyncClosable`, so the exclusion is a
+decision rather than an omission -- but it is an open one.
+
+What makes them different, and why copying the decision across would be wrong
+rather than merely premature: `LangChainProvider` and the embedding adapters
+hold an HTTP client, so `close()` there is not the honest no-op it is on
+`InMemoryGraphStore`. It is a real release with a real ownership question --
+did the adapter build the client, or was it handed one? -- and that is the
+question `RedisCache.owns_client` answers and that B108 had to answer for
+`CircuitBreaker` and `RateLimiter`. Grant the pair before answering it and the
+adapter ships four methods that look like a lifetime and are not one.
+
+So the order is: decide ownership on the provider adapters, then extend 0028
+and delete the exclusion test in the same commit.
+
+### B114. `index_documents` takes a whole `ChunkStore` and drives a `ChunkWriter`
+
+`src/redstring/composition/index_documents.py:114` declares `store: ChunkStore`
+and does one thing with it: `ChunkProjection(store)`, which ADR 0026 narrowed
+to `ChunkWriter`. So the composition entry point is the wider of the two, and
+the narrowing stops one line short of the front door.
+
+It is exempt in `tests/unit/test_collaborators_declare_their_capability.py`
+rather than narrowed, because the argument is genuinely two-sided and the gate
+landed in a test-only wave that did not own `src/`. For narrowing: the function
+uses one capability, and `build_graph`'s `chunks: ChunkStore | None` is in the
+same position for the same reason. Against: this is the public surface a caller
+hands their corpus to, the docstring says "The corpus. Any `ChunkStore`", and a
+caller who then wants to *read* the corpus holds the whole port anyway -- so
+narrowing here buys a smaller signature and no removed authority, unlike
+`CandidateFinder`, where the point was declining `TenantPurge`.
+
+Decide it deliberately: either narrow both entry points to `ChunkWriter` and
+delete the exemption, or record in the exemption's reason that the whole port
+is the intended front-door contract. Do not leave it as neither. Note that
+narrowing changes a signature in `redstring.__all__`'s closure, so check
+`tests/unit/test_public_surface_is_self_contained.py` in the same edit.

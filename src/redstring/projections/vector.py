@@ -15,6 +15,11 @@ the wrong length raises `DimensionMismatchError`, which is a poison event and
 goes to the DLQ: it means the store and the emitter disagree about which model
 is in play, and quietly accepting it would produce plausible nonsense rather
 than an error.
+
+The store is annotated `VectorWriter` and not `VectorStore`. One of the port's
+seven methods is called here; the other six exist for library users, which is
+a reason for the *port* to have them and none at all for this fold to depend
+on them. `ChunkProjection` is the same shape for the same reason.
 """
 
 from __future__ import annotations
@@ -22,10 +27,10 @@ from __future__ import annotations
 from eventsource.application.projections import StoreProjection, handles
 
 from redstring.events.document import EntitiesEmbedded
-from redstring.ports.vector_store import VectorStore
+from redstring.ports.vector_store import VectorWriter
 
 
-class VectorProjection(StoreProjection[VectorStore]):
+class VectorProjection(StoreProjection[VectorWriter]):
     """Maintains a `VectorStore` from the event log."""
 
     @handles(EntitiesEmbedded)

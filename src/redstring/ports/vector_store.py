@@ -83,6 +83,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from redstring.ports.lifecycle import AsyncClosable
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -115,8 +117,8 @@ def entity_type_of(metadata: dict[str, Any]) -> str | None:
 
 
 @runtime_checkable
-class VectorStore(Protocol):
-    """Storage for entity embeddings, with similarity search."""
+class VectorWriter(AsyncClosable, Protocol):
+    """Putting embeddings in. What a projection needs, and all of it."""
 
     @property
     def dimension(self) -> int:
@@ -154,6 +156,23 @@ class VectorStore(Protocol):
         Embedding batches are thousands of rows, so an adapter over a database
         must send this as one statement, not a loop.
         """
+        ...
+
+
+@runtime_checkable
+class VectorReader(AsyncClosable, Protocol):
+    """Getting embeddings back, by id or by proximity.
+
+    `get` and `search` stay together rather than splitting into a lookup and a
+    query protocol, for the reason `ports/graph_store.py` keeps
+    `RelationshipStore` whole: the split is by *who calls what*, not by
+    symmetry. `CandidateFinder` reads the subject's own vector and then asks
+    what is near it, in that order, and neither half is useful to it alone.
+    """
+
+    @property
+    def dimension(self) -> int:
+        """The vector length this store accepts. Fixed at construction."""
         ...
 
     async def get(self, entity_id: EntityId, tenant_id: TenantId) -> VectorRecord | None:
@@ -200,6 +219,18 @@ class VectorStore(Protocol):
         """
         ...
 
+
+@runtime_checkable
+class VectorPurge(AsyncClosable, Protocol):
+    """Removing embeddings, one at a time or a whole tenant's worth.
+
+    The only capability here that declares no `dimension`, and the line is the
+    port's own: `upsert`, `upsert_many` and `search` are the three methods
+    whose contract is stated in terms of it, because they are the three that
+    accept or return a vector. Both methods below name ids and nothing else,
+    so a caller who can only delete has no vector length to agree about.
+    """
+
     async def delete(self, entity_id: EntityId, tenant_id: TenantId) -> bool:
         """Delete one record; return whether it existed.
 
@@ -214,3 +245,42 @@ class VectorStore(Protocol):
         No other tenant is touched.
         """
         ...
+
+
+@runtime_checkable
+class VectorStore(VectorWriter, VectorReader, VectorPurge, Protocol):
+    """Storage for entity embeddings, with similarity search.
+
+    The whole port, composed from the three capabilities above. Adapters
+    implement this and `tests/compliance/vector_store.py` runs against it.
+
+    **Collaborators should not.** Every first-party consumer is covered
+    exactly by one capability, which is what decided where the lines fell --
+    `VectorProjection` writes, `Retriever` and `CandidateFinder` read, and
+    nothing here purges. `VectorProjection` calls `upsert_many` and nothing
+    else, so it is a `StoreProjection[VectorWriter]`, the same narrowing
+    `ChunkProjection` got for the same reason.
+
+    `dimension` is on two capabilities rather than one or three, and the rule
+    is the port's own: the methods that accept or return a vector -- `upsert`,
+    `upsert_many`, `search` -- are exactly the methods whose contract says
+    `DimensionMismatchError`, so writing and reading each declare the length
+    they agree about and `VectorPurge` does not. `ports/cache.py` records the
+    same shape reached the other way round, where `close` belongs to *both*
+    halves; the lesson both times is that the answer comes from what the
+    methods say, not from a preference for the smallest protocol.
+
+    The reasoning that was tried and dropped: a `VectorSearcher` holding
+    `search` alone, on the symmetry of `ChunkStore`'s `LexicalCandidateSource`.
+    It does not carry over. `lexical_candidates` is separable because BM25
+    ranking genuinely needs recall and statistics from anywhere, chunk store or
+    not; `search` here has no such caller, and both of its consumers reach for
+    `get` or `dimension` in the same breath. A capability nobody can request is
+    the inert-code shape wearing a Protocol.
+
+    Splitting changes nothing for an adapter. `VectorStore` still names every
+    method through its bases, `runtime_checkable` still works, and
+    `tests/unit/vector/test_compliance_coverage.py` still finds `get` and
+    `search`, because `inspect.getmembers` and `typing.get_type_hints` both
+    walk the MRO. See `ports/graph_store.py`, which made this move first.
+    """

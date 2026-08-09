@@ -20,12 +20,13 @@ Two design notes:
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Self
 
 from redstring.domain.exceptions import AliasCycleError, MissingEntityError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from types import TracebackType
 
     from redstring.domain.alias import Alias
     from redstring.domain.entity import Entity
@@ -311,3 +312,30 @@ class InMemoryGraphStore:
         self._relationships.pop(tenant_id, None)
         self._aliases.pop(tenant_id, None)
         return removed
+
+    # ------------------------------------------------------------------
+    # Lifetime
+    # ------------------------------------------------------------------
+
+    async def close(self) -> None:
+        """Nothing to release: this adapter holds dictionaries the interpreter
+        already owns.
+
+        A no-op rather than an omission. `GraphStore` declares the release
+        half through `AsyncClosable` so a caller can write one lifetime
+        discipline against the port whichever adapter is behind it; an adapter
+        that owns no driver, pool or client satisfies "release what you hold"
+        by doing nothing, and saying so here is more honest than making the
+        caller find out by reading the class.
+        """
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.close()

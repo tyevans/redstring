@@ -296,6 +296,73 @@ def test_exported_name_mentions_only_reachable_types(name: str) -> None:
     )
 
 
+def _public_first_party_bases(name: str) -> list[type]:
+    """The `redstring` bases of an exported class that a caller could name."""
+    obj = getattr(redstring, name)
+    if not inspect.isclass(obj):
+        return []
+    return [
+        klass
+        for klass in inspect.getmro(obj)[1:]
+        if getattr(klass, "__module__", "").startswith("redstring")
+        and not klass.__name__.startswith("_")
+    ]
+
+
+@pytest.mark.parametrize("name", GATED_NAMES)
+def test_exported_class_inherits_only_reachable_types(name: str) -> None:
+    """A base a caller uses is part of the surface, and no annotation says so.
+
+    `AsyncClosable` is the case that made this. Every capability protocol
+    inherits it (ADR 0028), so `async with store` is a supported thing to
+    write against a `GraphStore` -- but the type appears in no *parameter* and
+    no *return*, only in a base list. The annotation gate above is therefore
+    structurally blind to it, in exactly the way it was blind to
+    `RefusedCompletionError`: the caller who writes
+    `async def shutdown(s: AsyncClosable)` has to reach into
+    `redstring.ports.lifecycle` for the name.
+
+    This is the MRO lesson from ADR 0006 in a second place. There it was that
+    a class's *inherited* annotations are part of its surface; here it is that
+    the inherited *types themselves* are.
+
+    ## What is walked, and what is not
+
+    **The MRO, not the written base list.** A base two levels up is as
+    nameable as a direct one, and `getmro` is what the annotation walk above
+    already uses.
+
+    **Only `redstring` bases.** `Protocol`, `Generic`, `object`, pydantic's
+    `BaseModel`, `Enum` and eventsource's `StoreProjection` are all bases of
+    something exported here, and none of them is a type a caller must name to
+    use the subclass -- `Entity(...)` needs no reference to `BaseModel`.
+    `DOCUMENTED_FOREIGN_TYPES` exists for foreign types a *signature* forces a
+    caller to name, which is a different obligation; folding base classes into
+    it would fill it with entries nobody has to import.
+
+    **Not private names.** `VectorRecord` and `VectorMatch` inherit
+    `_HasPortableMetadata`, a shared validator with a leading underscore --
+    the language's own way of saying it is unnameable. Nothing is lost: its
+    one field is annotated, so the annotation gate already walks it through
+    the same MRO. Requiring an export here would either publish an
+    implementation detail or push someone to weaken the check, and a gate that
+    over-fires gets weakened rather than obeyed.
+    """
+    leaks = [
+        f"{base.__module__}.{base.__name__}"
+        for base in _public_first_party_bases(name)
+        if base.__name__ not in EXPORTED
+    ]
+    assert not leaks, (
+        f"`{name}` is exported but inherits types a caller cannot reach:\n  "
+        + "\n  ".join(sorted(leaks))
+        + "\n\nA base is part of the surface even when no annotation mentions it: "
+        "a caller may narrow to it, and cannot narrow to a type they may not "
+        "import. Export it from `redstring/__init__.py`, or make it private if "
+        "it is genuinely an implementation detail."
+    )
+
+
 def test_no_documented_foreign_type_is_stale() -> None:
     """A list that outlives what it describes stops being documentation.
 

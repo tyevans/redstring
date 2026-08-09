@@ -1,15 +1,18 @@
 # Implement a store adapter
 
 This guide walks through adding a new backend behind one of `redstring`'s
-four ports — `GraphStore`, `VectorStore`, `Cache`, or `LlmProvider` — and
-proving it correct against the shared compliance suites in `tests/compliance/`.
+six ports — `GraphStore`, `VectorStore`, `ChunkStore`, `Cache`,
+`EmbeddingProvider`, or `LlmProvider` — and proving it correct against the
+shared compliance suites in `tests/compliance/`.
 
 Follow it when you want to store the graph in something other than the two
 adapters that ship (`redstring.graph.adapters.memory` and
 `redstring.graph.adapters.neo4j`), keep vectors somewhere other than
-`redstring.vector.adapters.memory` or `.pgvector`, coordinate the LLM
-transport through something other than the default in-process cache, or speak
-to a model without going through the LangChain adapter.
+`redstring.vector.adapters.memory` or `.pgvector`, retain passages somewhere
+other than `redstring.chunks.adapters.memory` or `.postgres`, coordinate the
+LLM transport through something other than the default in-process cache,
+embed text through something other than the LangChain embedding adapter, or
+speak to a model without going through the LangChain adapter.
 
 The work is the same shape every time:
 
@@ -32,8 +35,14 @@ read-your-writes, strict tenant scoping, and returning copies rather than live
 internal state are all requirements a `Protocol` cannot express and a passing
 `mypy --strict` run will not notice.
 
-Steps 1–4 are the required path for every adapter. Steps 5 and 6 are what stop
-a correct adapter from being an unusable one.
+Steps 1–4 are the required path for every adapter. Step 5 is what stops a
+correct adapter from being an unusable one. Steps 1 and 2 are the two that are
+specific to writing an adapter, so they get the long sections below; steps 3
+to 5 are already defined elsewhere in the repository, and the "Steps 3 to 5"
+section at the end of this page says where each one lives rather than
+restating it here. A
+procedure copied into a second place is a procedure that will disagree with
+itself.
 
 ## Before you start
 
@@ -43,10 +52,11 @@ Have a venv synced with **`uv sync --all-extras`** — not `--extra dev`. The
 reads as a green run that quietly tested nothing.
 
 Decide which port you are implementing before you write anything, because the
-opt-in mechanics differ: `GraphStore` and `VectorStore` compliance builds a
-store per hypothesis example through a `new_store()` method you implement,
-`Cache` compliance takes a `cache` fixture, and `LlmProvider` has no compliance
-suite at all.
+opt-in mechanics differ: `GraphStore`, `VectorStore` and `ChunkStore`
+compliance builds a store per hypothesis example through a `new_store()`
+method you implement, `Cache` compliance takes a `cache` fixture,
+`EmbeddingProvider` compliance takes a `provider` fixture, and `LlmProvider`
+has no compliance suite at all.
 
 ### What the compliance suites are (and why the port docstring is not the contract)
 
@@ -86,14 +96,22 @@ undefined at the origin and the port rejects it), and `__init__.py` states the
 package is deliberately not collected — no module matches `test_*.py` and no
 class matches `Test*`, so a suite runs only where an adapter subclasses it.
 
-### The four ports and what each requires: GraphStore, VectorStore, Cache, LlmProvider
+### The six ports and what each requires
+
+Every port in `src/redstring/ports/` has a row here, and every compliance
+suite in `tests/compliance/` appears in the second column.
+`tests/unit/test_the_adapter_guide_names_every_compliance_suite.py` is what
+keeps that true in both directions: a suite added without a row fails, and a
+row naming a suite that has been deleted fails too.
 
 | Port | Compliance suite | You supply | Shipped adapters |
 |---|---|---|---|
 | `GraphStore` | `tests.compliance.graph_store.GraphStoreCompliance` | `new_store()`, optionally `dispose(store)` | `graph.adapters.memory`, `graph.adapters.neo4j` |
 | `VectorStore` | `tests.compliance.vector_store.VectorStoreCompliance` | `new_store()` returning a store of `self.DIMENSION` | `vector.adapters.memory`, `vector.adapters.pgvector` |
+| `ChunkStore` | `tests.compliance.chunk_store.ChunkStoreCompliance` | `new_store()`, optionally `dispose(store)` | `chunks.adapters.memory`, `chunks.adapters.postgres` |
 | `Cache` | `tests.compliance.cache.CacheCompliance` | a `cache` fixture | `llm.cache.memory.MemoryCache`, `llm.cache.redis.RedisCache` |
-| `LlmProvider` | *(none)* | adapter-specific tests plus the leak gate | the LangChain adapter |
+| `EmbeddingProvider` | `tests.compliance.embedding_provider.EmbeddingProviderCompliance` | a `provider` fixture | `llm.adapters.fake_embedding`, `llm.adapters.langchain_embedding` |
+| `LlmProvider` | *(none)* | adapter-specific tests plus the leak gate | `llm.adapters.fake`, `llm.adapters.langchain` |
 
 **`GraphStore`** is the largest surface — entities, aliases, relationships and
 neighbour traversal, plus `delete_by_tenant`. `find_by_blocking_key` and
@@ -108,6 +126,36 @@ opt-out. [ADR 0012: no ANN index in a multi-tenant vector
 store](../adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md) is the
 reasoning behind the shape; [Use the pgvector
 store](use-the-pgvector-store.md) is the worked backend.
+
+**`ChunkStore`** is the passage corpus: `upsert_many`, `replace_source`,
+`get`, `get_by_source`, `get_by_entity`, `lexical_candidates`,
+`delete_by_source` and `delete_by_tenant`, declared as four capability
+protocols (`ChunkWriter`, `ChunkReader`, `LexicalCandidateSource`,
+`ChunkPurge`) composed into one. Three of its rules have no analogue in the
+other store ports. Ids are **content-addressed** — `chunk_id(source_id, text)`
+— so the same passage of the same document under two tenants has the *same
+id*, which makes a `(tenant_id, id)` key compared on `id` alone a live defect
+here rather than a `uuid4()`-improbable one. `replace_source` is **one
+atomic operation**, not an `upsert_many` followed by a `delete`, and an empty
+`chunks` argument legally means "this source now has no chunks". And
+`lexical_candidates` returns term statistics and **does not rank** — ranking
+is `domain/chunk_ranking.py`, so that two adapters cannot disagree about
+relevance. Because `chunk_index` is not unique, `get_by_source` orders by
+`(chunk_index, id)`.
+
+**`EmbeddingProvider`** is two properties and one method: `model`,
+`dimension`, and `embed(texts)`. The contract its suite exists to hold is
+**positional** — one vector per input, in input order — because an adapter
+that batches, retries a partial failure, or deduplicates identical texts can
+return the right vectors in the wrong order and a caller zipping them onto
+entities will store the mismatch without raising. Note that the suite compares
+by **cosine, not `==`**: a real server's floating-point accumulation depends
+on how a batch was packed, so the same text embedded alone and inside a batch
+differs in the low bits. `dimension` is declared by the provider (see [ADR
+0017](../adr/0017-the-embedding-provider-port.md)) and is realistic, not
+small — `FakeEmbeddingProvider` defaults to 768 on purpose, because a fake at
+width 8 invites a check written with `is not` that passes on every integer
+CPython caches and rejects every real vector.
 
 **`Cache`** is deliberately not a general cache. Alongside `get`/`set`/
 `increment`/`delete`/`close` it carries `record_hit(key, *, at, ttl_seconds)`,
@@ -135,16 +183,28 @@ ports rather than one.
 ## Step 1: Write the adapter against the Protocol in `src/redstring/ports/`
 
 Open the port module and write a plain class with the same methods. There is
-nothing to inherit — `GraphStore`, `VectorStore`, `Cache` and `LlmProvider` are
-`runtime_checkable` `Protocol`s, so conformance is structural. `InMemoryGraphStore`
-does not import `GraphStore` at all; it is a `GraphStore` because its methods
-match.
+nothing to inherit — all six ports are `runtime_checkable` `Protocol`s, so
+conformance is structural. `InMemoryGraphStore` does not import `GraphStore`
+at all; it is a `GraphStore` because its methods match.
+
+**Four of the six ports are composed from smaller capability protocols**, and
+the other two are single capabilities rather than an oversight: `GraphStore`
+is five ([ADR 0016](../adr/0016-graph-store-is-five-capabilities.md)),
+`ChunkStore` four and `Cache` two ([ADR
+0026](../adr/0026-chunk-store-and-cache-are-capabilities-too.md)),
+`VectorStore` three ([ADR
+0027](../adr/0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md)),
+while `LlmProvider` and `EmbeddingProvider` are one method and a property
+apiece with nothing to slice. The decomposition changes nothing for an adapter
+implementing a whole port — you write every method either way — and it lets a
+caller depend on only the slice it uses.
 
 Put the module where the layer contract expects it: `graph/adapters/`,
-`vector/adapters/`, `llm/cache/`, `llm/adapters/`. Step 6 covers what
-`lint-imports` will say if you put it elsewhere.
+`vector/adapters/`, `chunks/adapters/`, `llm/cache/`, `llm/adapters/`. The
+`lint-imports` contract in `pyproject.toml` is the authority on where a new
+module may sit, and it runs on commit.
 
-Four things hold for every method on both store ports:
+Four things hold for every method on all three store ports:
 
 - **Everything is `async`**, including the in-memory adapters. A synchronous
   reference implementation would make callers write two code paths.
@@ -163,6 +223,73 @@ Four things hold for every method on both store ports:
   lets them mutate it afterwards. A database-backed adapter gets this for
   free by deserialising; an in-process one has to do it deliberately. Step 3
   is the gate that checks you did.
+
+### Every adapter owes a lifetime: `close()`, `__aenter__` and `__aexit__`
+
+`GraphStore`, `VectorStore`, `ChunkStore` and `Cache` all declare the release
+trio, because every capability protocol inherits
+`redstring.ports.lifecycle.AsyncClosable` ([ADR
+0028](../adr/0028-a-capability-declares-its-own-release.md)). So this is not a
+choice your adapter makes — the port already promised it, and an adapter
+offering only `close()` is the odd one out rather than the norm.
+
+```python
+async def close(self) -> None:
+    """Release the pool. Safe to call twice."""
+    if self._owns_pool:
+        await self._pool.close()
+
+
+async def __aenter__(self) -> Self:
+    return self
+
+
+async def __aexit__(
+    self,
+    exc_type: type[BaseException] | None,
+    exc: BaseException | None,
+    tb: TracebackType | None,
+) -> None:
+    await self.close()
+```
+
+Four rules, each of which one of the shipped adapters exists to demonstrate:
+
+- **`__aenter__` returns the store**, not `None`, so `async with ... as store`
+  binds something usable.
+- **`__aexit__` returns `None` and never suppresses.** The annotation is
+  `None` rather than `bool` on purpose: `bool` invites `return True`, which
+  reads as "handled" and silently eats every exception raised in the body —
+  including the `CancelledError` of a request that timed out, whose caller
+  would then be told the work completed.
+- **Exit goes through `close()`, so ownership still decides.** An adapter
+  handed a driver or pool it did not create leaves it open, inside a block as
+  much as outside one — `Neo4jGraphStore` flips that flag only in `connect()`,
+  and `RedisCache` takes `owns_client=False` by default. Without the ownership
+  check, a per-example `dispose` in the compliance suite takes the whole
+  session's shared connection down with it and every later example fails on a
+  closed connection.
+- **An adapter that owns nothing writes all three anyway, as honest no-ops.**
+  `InMemoryGraphStore` holds dictionaries the interpreter already owns, so
+  "release what you hold" is satisfied by doing nothing — and it must still
+  *work* after its own block, because "drop everything on close" is the
+  available over-implementation. `MemoryCache` deliberately does discard state,
+  which is right for expiring state and wrong for a store. Keeping the
+  in-memory adapters out of the promise would be the same thing as not making
+  it: a caller cannot write one lifetime discipline against a port whose
+  adapters disagree about whether it has one.
+
+`tests/unit/test_ports_declare_the_block_form.py` and
+`tests/unit/test_adapters_close_on_block_exit.py` are the gates. Their subject
+set is derived structurally — every class satisfying a capability — so a fifth
+adapter is caught by being written rather than by someone remembering the
+file, and `LlmProvider` and `EmbeddingProvider` are asserted *not* to be
+closable so that "not yet" and "deliberately not" stay distinguishable.
+
+For what the block form looks like from the caller's side, see the worked
+sections in [the Neo4j graph store reference](../reference/neo4j-graph-store.md),
+[Use the pgvector store](use-the-pgvector-store.md) and [Harden model
+calls](harden-model-calls.md).
 
 ### GraphStore
 
@@ -594,6 +721,64 @@ adapter to make a comparison pass. The tolerance is already there for the
 precision, and rounding is what turns a well-separated ranking into a tie the
 `entity_id` tie-break then decides.
 
+### ChunkStore: subclass `ChunkStoreCompliance` and implement `new_store()`
+
+Mechanically identical to the two suites above — a fresh, empty, mutually
+isolated store per hypothesis example, `dispose` a no-op unless `new_store()`
+acquired a connection:
+
+```python
+class TestMemoryChunkStore(ChunkStoreCompliance):
+    async def new_store(self) -> ChunkStore:
+        return InMemoryChunkStore()
+```
+
+`tests/integration/chunks/test_postgres_store.py::TestPostgresChunkStore` is
+the same class with the autouse `_pool` fixture and a `_truncate` in
+`new_store`, exactly as `TestPgVectorStore` does it.
+
+Build chunks through `ChunkStoreCompliance._chunk`, which sets the id to the
+real `chunk_id(source_id, text)` rather than an arbitrary string. That is not
+tidiness: the content-addressed id is what makes
+`test_two_tenants_hold_the_same_chunk_id_independently` a genuine collision,
+and it is the single most important case in the file — a suite whose ids come
+from `uuid4()` cannot observe a composite key compared on `id` alone.
+
+`tests/unit/chunks/test_compliance_coverage.py` is this port's introspective
+gate, the same shape as the graph and vector ones: it derives the read-method
+list from the Protocol and fails until each has
+`test_<method>_returns_copies` and `test_<method>_never_crosses_tenants` on
+the compliance class.
+
+### EmbeddingProvider: subclass `EmbeddingProviderCompliance` and supply a `provider` fixture
+
+```python
+class TestFakeEmbeddingProvider(EmbeddingProviderCompliance):
+    @pytest.fixture
+    def provider(self) -> EmbeddingProvider:
+        return FakeEmbeddingProvider()
+```
+
+**Put the fixture on the class, not at module scope.**
+`EmbeddingProviderCompliance` declares its own `provider` placeholder that
+raises `NotImplementedError`, and a fixture on the class shadows one in the
+module while a module-level one does not shadow the base class's. The
+placeholder is deliberate — a subclass that forgot to supply an adapter must
+fail rather than silently test nothing — but it means a module-level fixture
+looks like it works and yields `NotImplementedError` from the base class.
+`tests/integration/llm/test_live_embeddings.py::TestLiveEmbeddings` records
+that, and runs the whole suite unchanged against a real server.
+
+Two things about the suite are worth knowing before you write the adapter.
+**Every multi-text case uses inputs that differ from each other**, because a
+suite embedding `["a", "a", "a"]` cannot observe a reordering — three
+identical inputs give three identical vectors and every permutation passes.
+And equality is by **cosine with a tolerance**, not `==`, because batch
+composition perturbs the low bits on a real server; `test_order_is_preserved`
+keeps that honest by asserting the *wrong* pairings are dissimilar as well as
+the right ones being similar, so an adapter returning
+similar-but-wrong vectors cannot pass on the tolerance alone.
+
 ### Cache: subclass `CacheCompliance` and supply a `cache` fixture
 
 `Cache` opts in differently from the two store ports. There is no
@@ -787,7 +972,7 @@ It is a table, one row per confined library:
 |---|---|---|
 | `langchain*`, `openai` | `llm/adapters/` | `llm_provider`, `embedding_provider` |
 | `neo4j` | `graph/adapters/` | `graph_store` |
-| `asyncpg` | `vector/adapters/` | `vector_store` |
+| `asyncpg` | `vector/adapters/`, `chunks/adapters/` | `vector_store`, `chunk_store` |
 | `redis` | `llm/cache/` | `cache` |
 
 **A new adapter with a new driver adds a row**, and that is the whole edit —
@@ -847,6 +1032,12 @@ Plus one guard shared by every row: `test_the_walk_finds_the_library` asserts
 the walk found more than fifty files and that `ports/llm_provider.py` is among
 them, so a wrong `SOURCE_ROOT` fails loudly rather than passing over an empty
 list.
+
+`directories` is a tuple because `asyncpg` genuinely backs two ports — the
+pgvector `VectorStore` and the Postgres `ChunkStore` are two adapters sharing
+one driver. **Every named directory is guarded in both directions**, so a
+second entry that stops importing the library fails rather than quietly
+widening the first.
 
 Note what a row is scoped to. It is a whole **directory**, not a file list, so
 `llm/adapters/fake.py` sits inside its row and imports no LangChain — which is
@@ -911,6 +1102,43 @@ test would pass against a merge that is not order-independent at all.
 [ADR 0008: the two non-store ports](../adr/0008-the-two-non-store-ports.md)
 has the rest of the reasoning for why this port is one property and one
 method.
+
+## Steps 3 to 5: where the rest of the path is defined
+
+The remaining three steps are required, and none of them is written out here.
+Each is already defined somewhere that a change to the rule would be made, and
+a second copy on this page would be the copy that goes stale — one fact, one
+declaration site.
+
+**Step 3 — the isolation and tenant tests.** Every read method on a store port
+needs a `test_<method>_returns_copies` and a
+`test_<method>_never_crosses_tenants` on the compliance class. Follow that
+naming and there is nothing to configure: `tests/unit/graph/`,
+`tests/unit/vector/` and `tests/unit/chunks/test_compliance_coverage.py`
+derive the read-method list from the Protocol by introspection and fail until
+both exist. The rule, and the four read methods that shipped without it, are
+in `.claude/rules/definition-of-done.md` under "New port adapter"; the reason a
+behavioural test cannot substitute is in the "Copies, not live internal state"
+bullet above.
+
+**Step 4 — running the suite.** Sync with `uv sync --all-extras`, run one
+adapter per pytest invocation, and reach for `KG_COMPLIANCE_MAX_EXAMPLES`
+rather than `-n auto` when a real backend makes the run slow. All three are
+constraints of the *runner* rather than of your adapter, and each has a
+measured failure behind it (36 parallel failures on the shared Neo4j database;
+34 `FailedHealthCheck: called from multiple different executors` when a unit
+and an integration subclass of one suite share a process). The runbook is
+[Run the integration and mutation
+suites](run-integration-and-mutation-suites.md).
+
+**Step 5 — the tests the port cannot specify, and where the module sits.**
+Schema creation, encoding fidelity, connection ownership and query plans go in
+a `Test*Specifics` class beside your compliance subclass; anything true of the
+*port* goes up into `tests/compliance/` instead. Placement is decided by the
+`lint-imports` contract in `pyproject.toml`, which runs on commit — and if your
+adapter brought a new driver with it, the dependency-confinement table in
+`tests/unit/test_dependencies_stay_confined.py` needs a row — the one gate you
+are most likely to miss, covered in step 2 above.
 
 ## Related reading
 

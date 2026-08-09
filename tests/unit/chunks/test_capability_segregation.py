@@ -34,9 +34,10 @@ from redstring.ports.chunk_store import (
     LexicalCandidateSource,
 )
 from redstring.projections.chunk import ChunkProjection
+from tests.compliance.lifetime import NoOpLifetime
 
 
-class WriteOnlyChunkStore:
+class WriteOnlyChunkStore(NoOpLifetime):
     """`ChunkWriter` and not one method more."""
 
     def __init__(self) -> None:

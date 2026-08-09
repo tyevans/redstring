@@ -192,6 +192,19 @@ class TestSharing:
 
 
 async def test_closing_releases_the_cache(tenant):
+    """Only a cache this limiter built. See B108 and the module named below.
+
+    This asserted nothing at all -- it constructed a limiter, called
+    `close()`, and passed on any implementation that did not raise, including
+    the one that closed a cache the caller owned.
+    `tests/unit/llm/test_resilience_cache_ownership.py` states both halves;
+    what is left here is the owning half, with an assertion, because
+    `MemoryCache.close()` drops every key and the window is observable.
+    """
     limiter = RateLimiter(rpm=1)
+    await limiter.acquire(tenant)
+    assert await limiter.remaining(tenant) == 0, "arrange failed: nothing recorded"
 
     await limiter.close()
+
+    assert await limiter.remaining(tenant) == 1

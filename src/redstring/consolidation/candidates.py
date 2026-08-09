@@ -14,6 +14,15 @@ returns scored pairs; `redstring.consolidation.policy` decides what to do with
 them and `ConsolidationService` emits the event. A finder that also merged
 would make "what would this merge?" unanswerable without merging.
 
+## "Never writes" is now a fact about the signature
+
+`CandidateFinder` took a whole `GraphStore` while its docstring promised it
+never writes -- so the promise was prose, and `EntityWriter` and `TenantPurge`
+were both in reach of a class that wanted neither. It takes a
+`ConsolidationGraph` -- the three capabilities it does call, composed, declared
+in `redstring.consolidation.protocols` beside the other shapes this package
+names for itself. The vector side is narrowed the same way, to `VectorReader`.
+
 ## Aliases are excluded, and that is not an optimisation
 
 An entity already merged away is not a merge candidate: `ConsolidationLog`
@@ -50,10 +59,10 @@ from redstring.domain.similarity import (
 )
 
 if TYPE_CHECKING:
+    from redstring.consolidation.protocols import ConsolidationGraph
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
-    from redstring.ports.graph_store import GraphStore
-    from redstring.ports.vector_store import VectorStore
+    from redstring.ports.vector_store import VectorReader
 
 #: How many nearest vectors the embedding step asks for.
 #:
@@ -85,9 +94,9 @@ class CandidateFinder:
 
     def __init__(
         self,
-        graph_store: GraphStore,
+        graph_store: ConsolidationGraph,
         *,
-        vector_store: VectorStore | None = None,
+        vector_store: VectorReader | None = None,
         weights: FeatureWeights | None = None,
         use_graph_signal: bool = True,
     ) -> None:

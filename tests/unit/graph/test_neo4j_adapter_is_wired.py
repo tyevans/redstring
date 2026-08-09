@@ -119,11 +119,18 @@ class TestTheAdapterImplementsThePort:
     def test_it_implements_nothing_the_port_does_not_declare(self):
         """A public method the port has no name for is a leak of backend detail.
 
-        `connect`, `close` and `ensure_schema` are lifecycle, which the port
-        deliberately says nothing about; anything else means a caller could
-        come to depend on Neo4j-shaped API.
+        `connect` and `ensure_schema` are lifecycle the port deliberately says
+        nothing about -- one takes a URI and the other is a Neo4j DDL concern;
+        anything else means a caller could come to depend on Neo4j-shaped API.
+
+        `close` was in this set until ADR 0028 and is not any more, because
+        the port now declares it (with `__aenter__`/`__aexit__`, through
+        `AsyncClosable`), so it arrives via `_port_methods()` instead of being
+        excused. That is the assertion doing its job in the direction nobody
+        writes it for: exempting a name the port has since adopted would leave
+        the exemption matching something it no longer needs to.
         """
-        lifecycle = {"connect", "close", "ensure_schema"}
+        lifecycle = {"connect", "ensure_schema"}
         public = {
             name
             for name, _ in inspect.getmembers(adapter.Neo4jGraphStore, inspect.isfunction)
