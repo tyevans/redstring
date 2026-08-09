@@ -878,6 +878,41 @@ the text states, and a 4000-character document has enough marginal entities
 that a second grader would disagree with the first on a dozen of them. Budget
 the grading, not the writing.
 
+### What an off-corpus measurement showed, and exactly how far it goes
+
+Worth keeping, because whoever writes the graded document should know what to
+expect and what the trap is. A 2831-character Lovelace/Babbage passage,
+chunked at 900/100 into three chunks, `qwen3.6-27b-mtp`, each arm run twice:
+
+| | entities | relationships | fragment pairs | one name under two types |
+|---|---|---|---|---|
+| `carryover_entities=0` | 53 | 54 | 8 | 4 |
+| `carryover_entities=32` | 51 | 58 | 7 | 0 |
+
+Both repeats of each arm were **byte-identical**. That is not a suspicious
+result here — `LangChainLlmProvider.openai_compatible` defaults to
+`temperature=0.0`, so identical prompts give identical completions — and it
+settles something useful: the run-to-run noise floor on this rig is *zero*, so
+the whole of the difference above is attributable to the carryover and none of
+it to sampling.
+
+**It does not follow that this generalises.** Zero variance means repeating
+the run tells you nothing new; it does not turn one document into a sample.
+The direction matches what the mechanism predicts, and that is all it is.
+
+The clearest signal is the last column, not the first. The off arm produced
+the *same name under two different entity types* four times — `Analytical
+Engine`, `Engine`, `1871` and `funding` each appearing twice with different
+types, which is two ids for one thing — and the on arm produced none. That is
+the defect a `(name, entity_type)` carryover is shaped to fix, and it is worth
+grading for explicitly: **a graded document should contain at least one entity
+whose type a later chunk would plausibly assign differently.**
+
+The off arm also emitted `ine`, a truncated fragment, and
+`article on the Analytical Engine` as an entity in its own right. Neither is
+about the carryover; both are worth remembering when grading, because a corpus
+that never sees them cannot measure whether anything fixed them.
+
 Related: **B12** on what the corpus can and cannot tell you at all.
 
 ### B10m. Two adapters of one compliance suite cannot run in the same pytest invocation
