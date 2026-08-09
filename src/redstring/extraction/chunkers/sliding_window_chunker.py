@@ -36,7 +36,7 @@ class SlidingWindowChunker:
         default_overlap: Default overlap between chunks
         respect_sentence_boundaries: Whether to avoid mid-sentence splits
         respect_paragraph_boundaries: Whether to prefer paragraph breaks
-        min_chunk_size: Minimum chunk size (avoids tiny final chunks)
+        min_chunk_size: Floor on `default_chunk_size`, refused at construction
 
     Example:
         chunker = SlidingWindowChunker(default_chunk_size=3000, default_overlap=200)
@@ -64,7 +64,9 @@ class SlidingWindowChunker:
             default_overlap: Default overlap between chunks (default: 200)
             respect_sentence_boundaries: Try not to split mid-sentence (default: True)
             respect_paragraph_boundaries: Prefer paragraph breaks as boundaries (default: True)
-            min_chunk_size: Minimum chunk size to avoid tiny chunks (default: 100)
+            min_chunk_size: Floor on `default_chunk_size` (default: 100). It
+                bounds the *configuration* and nothing else -- a final chunk
+                shorter than this is emitted rather than dropped.
 
         Raises:
             ChunkSizeError: If configuration is invalid
@@ -236,15 +238,15 @@ class SlidingWindowChunker:
             if next_start <= start:
                 next_start = end
 
-            # If remaining text is too small, we're done (last chunk already includes it)
-            remaining = text_len - next_start
-            if remaining <= 0:
-                break
-
-            # If remaining text is very small, extend current chunk instead of creating tiny chunk
-            if remaining < self._min_chunk_size and end < text_len:
-                # This shouldn't happen often due to break point logic,
-                # but handle it anyway
+            # Done once nothing is left. A short remainder is still emitted:
+            # this used to stop early when it was shorter than
+            # `min_chunk_size`, under a comment claiming the last chunk
+            # already covered it. It did not -- the tail was silently
+            # dropped, which loses a document's closing sentence with no
+            # error anywhere. A small final chunk is a cheap model call;
+            # extending the previous one instead would push a chunk past the
+            # size ceiling the caller asked for, which is worse.
+            if text_len - next_start <= 0:
                 break
 
             start = next_start

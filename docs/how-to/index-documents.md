@@ -42,11 +42,26 @@ its own defaults — the same splitter `ExtractionPipeline` uses, so a document
 indexed and later extracted is split the same way.
 
 `Chunker` is exported and is the whole contract: a `chunk(text)` returning a
-`ChunkingResult`. The bundled sliding-window implementation is reached by path
-(`redstring.extraction.chunkers`) rather than exported, so a caller who wants
-different window settings is writing against an internal name — which is
-recorded as B88 in `BACKLOG.md` and worth knowing before you depend on it.
-Your own `Chunker` needs no dotted import at all.
+`ChunkingResult`. Your own `Chunker` needs no dotted import at all, and the
+two bundled ones are exported:
+
+```python
+from redstring import BoundaryPreferenceChunker, SlidingWindowChunker
+```
+
+`BoundaryPreferenceChunker` is the one to pass when the passages will be
+**quoted back to a reader**. Both cascade paragraph → sentence → word → hard
+cut; it differs in searching the whole window for a boundary rather than its
+last 500 characters, and in recognising a sentence that ends the text or is
+followed by a closing quote. A chunk that ends mid-sentence produces a
+quotation nobody can use, which is the cost `SlidingWindowChunker`'s narrower
+search pays at its own default size of 3000.
+
+It is **not** the default, and the reason is chunk ids: they are
+content-addressed over the passage text, so moving a boundary re-keys every
+chunk of every document re-ingested with the other chunker. That is not a
+migration — `replace_source` handles it, and the old passages go — but it is
+a fact to know before switching a corpus that something else cites into.
 
 Re-indexing with a different chunker replaces that source's passages
 wholesale: the new split is a different chunking, so it is recorded and

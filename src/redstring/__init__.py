@@ -107,7 +107,12 @@ could not be caught without a dotted import.
   `RelationshipTypeSchema`, `PropertySchema` and `ConfidenceThresholds`.
 - **Pieces, for callers who want the steps rather than the whole.**
   `ExtractionPipeline` (`PipelineResult`, `DEFAULT_SYSTEM_PROMPT`),
-  `Chunk`/`ChunkingResult`, `GraphProjection`, `VectorProjection`,
+  `Chunk`/`ChunkingResult` and the two chunkers producing them --
+  `SlidingWindowChunker`, the default everywhere, and
+  `BoundaryPreferenceChunker`, which searches the whole window for a clean
+  break instead of its last 500 characters and is the one to pass when the
+  passages will be quoted back to a reader --
+  `GraphProjection`, `VectorProjection`,
   `ChunkProjection`, and
   `Document` with `document_stream` to address it.
 - **Errors.** `RedstringError` and everything under it that a caller can
@@ -225,6 +230,7 @@ from redstring.events.document import DocumentChunked, DocumentExtracted, Entiti
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.events.streams import document_stream
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
+from redstring.extraction.chunkers import BoundaryPreferenceChunker, SlidingWindowChunker
 from redstring.extraction.chunking import Chunk, ChunkingResult
 from redstring.extraction.domains.loader import load_schema_from_file, load_schema_from_string
 from redstring.extraction.domains.models import (
@@ -297,6 +303,7 @@ __all__ = [
     "AliasStore",
     "AsyncClosable",
     "AutoDomain",
+    "BoundaryPreferenceChunker",
     "Bounds",
     "Cache",
     "CandidateFinder",
@@ -384,6 +391,7 @@ __all__ = [
     "ScoredCandidate",
     "ScoredEntity",
     "SimilarityFeatures",
+    "SlidingWindowChunker",
     "SourceDocument",
     "SourceId",
     "StoredChunk",

@@ -166,6 +166,28 @@ class TestProperties:
 
         assert covered == set(range(len(text)))
 
+    def test_a_tail_shorter_than_the_minimum_chunk_is_still_emitted(self):
+        """The dropped tail the property above can only find by luck.
+
+        `_generate_chunks` used to stop once the unconsumed remainder was
+        shorter than `min_chunk_size`, under a comment claiming the last
+        chunk already included it. It did not: the final characters were
+        never emitted by anything, and a document's closing sentence is a
+        span extraction simply never sees.
+
+        The property *can* reach this -- with `overlap=40` and
+        `min_chunk_size=100` a remainder under 60 characters triggers it --
+        and across 60 sampled examples it did not, which is this project's
+        standing rule about pinning a boundary as an example rather than
+        trusting a sampler.
+        """
+        text = "word " * 1000 + "the tail"
+        chunker = SlidingWindowChunker(default_chunk_size=1000, default_overlap=0)
+
+        result = chunker.chunk(text)
+
+        assert "".join(produced.text for produced in result.chunks) == text
+
     @given(text=texts(min_size=1))
     @settings(max_examples=60)
     def test_chunking_the_same_text_twice_gives_the_same_chunks(self, text):
