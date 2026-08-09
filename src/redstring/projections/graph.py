@@ -89,6 +89,7 @@ from uuid import NAMESPACE_OID, uuid5
 from eventsource.application.projections import StoreProjection, handles
 
 from redstring.domain.alias import Alias
+from redstring.domain.ids import TenantId
 from redstring.events.document import DocumentExtracted
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.ports.graph_store import GraphStore
@@ -96,7 +97,7 @@ from redstring.ports.graph_store import GraphStore
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from redstring.domain.ids import EntityId, TenantId
+    from redstring.domain.ids import EntityId
     from redstring.domain.relationship import Relationship
 
 
@@ -112,7 +113,7 @@ class GraphProjection(StoreProjection[GraphStore]):
     async def _apply_extraction(self, _context: object, event: DocumentExtracted) -> None:
         await self._store.upsert_entities(event.entities)
         await self._store.upsert_relationships(
-            await self._resolved(event.relationships, event.tenant_id)
+            await self._resolved(event.relationships, TenantId(event.tenant_id))
         )
 
     async def _resolved(
@@ -159,14 +160,20 @@ class GraphProjection(StoreProjection[GraphStore]):
         # the next `DocumentExtracted`, and writing them first means a handler
         # that fails part-way leaves the store closer to correct rather than
         # further from it.
-        absorbed = await self._store.get_entities(event.merged_entity_ids, event.tenant_id)
+        #
+        # `TenantId(...)` once, here, rather than at each of the four uses
+        # below: `eventsource-py` types `TenantDomainEvent.tenant_id` as a
+        # bare `UUID`, so this line is the seam between its vocabulary and
+        # this library's. See ADR 0031.
+        tenant_id = TenantId(event.tenant_id)
+        absorbed = await self._store.get_entities(event.merged_entity_ids, tenant_id)
         names = {entity.id: entity for entity in absorbed}
         for entity_id in event.merged_entity_ids:
             entity = names.get(entity_id)
             await self._store.upsert_alias(
                 Alias(
-                    id=_alias_id(event.tenant_id, entity_id),
-                    tenant_id=event.tenant_id,
+                    id=_alias_id(tenant_id, entity_id),
+                    tenant_id=tenant_id,
                     canonical_entity_id=event.canonical_entity_id,
                     alias_entity_id=entity_id,
                     alias_name=None if entity is None else entity.name,
@@ -199,7 +206,7 @@ class GraphProjection(StoreProjection[GraphStore]):
         # not, and a comment asserting a constraint that does not exist is how
         # a later reader comes to believe the fold resolves here too.
         for entity_id in event.unmerged_entity_ids:
-            await self._store.remove_alias(entity_id, event.tenant_id)
+            await self._store.remove_alias(entity_id, TenantId(event.tenant_id))
         await self._store.upsert_relationships(event.restored_relationships)
 
     async def _truncate_read_models(self) -> None:

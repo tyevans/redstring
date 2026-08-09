@@ -92,19 +92,20 @@ sections then name them rather than repeating them.
 
 ## Identifiers
 
-`redstring.domain.ids` declares four names. All four are plain type aliases —
-no wrapper classes, no `NewType`, no validation of their own:
+`redstring.domain.ids` declares four names. All four are `NewType`s — distinct
+to a type checker, identical to their base at runtime, with no wrapper classes
+and no validation of their own:
 
 ```python
-EntityId = UUID
-RelationshipId = UUID
-TenantId = UUID
-SourceId = str
+EntityId = NewType("EntityId", UUID)
+RelationshipId = NewType("RelationshipId", UUID)
+TenantId = NewType("TenantId", UUID)
+SourceId = NewType("SourceId", str)
 ```
 
 ### EntityId, RelationshipId, TenantId (UUID) and SourceId (str)
 
-| Alias | Underlying type | Appears on |
+| Name | Base type | Appears on |
 |---|---|---|
 | `EntityId` | `uuid.UUID` | `Entity.id`, `Relationship.source_entity_id` / `target_entity_id`, `Alias.canonical_entity_id` / `alias_entity_id`, `VectorRecord.entity_id`, `VectorMatch.entity_id` |
 | `RelationshipId` | `uuid.UUID` | `Relationship.id` |
@@ -113,12 +114,27 @@ SourceId = str
 
 There is no `AliasId`: `Alias.id` is annotated as a bare `uuid.UUID`.
 
-Because they are aliases rather than distinct types, they are
-interchangeable at runtime and to a type checker: `EntityId` *is* `UUID`, so
-passing a `TenantId` where an `EntityId` is expected is not a type error.
-Nothing in the library guards against it. The distinction the aliases carry
-is documentary — they say which of the four roles a `UUID` is playing at a
-given position, and they give the store ports a vocabulary to be written in.
+**A type checker distinguishes them; the runtime does not.** `TenantId(u)`
+returns `u` itself — `NewType` compiles to the identity function — so every
+`isinstance(x, UUID)` check, every dict keyed on an id, and every existing
+call site passing a bare `uuid4()` keeps working unchanged. What changes is
+that `mypy` now rejects passing a `TenantId` where an `EntityId` is expected,
+which is the swap the store ports are most exposed to: they key entities on
+`(tenant_id, id)` and take both as arguments, adjacent, of what used to be one
+type.
+
+The direction of the asymmetry is worth stating, because it is what keeps the
+change from being a break. A `TenantId` **is** a `UUID` to mypy, so handing one
+to anything expecting a plain `UUID` is fine; a plain `UUID` is *not* a
+`TenantId`, so producing one requires naming the role. That puts the annotation
+burden exactly at the boundaries where a raw UUID enters the domain — a Neo4j
+row, an event field typed by the event framework — and nowhere else. Those
+call sites are the only ones in `src/` that had to change.
+
+They still carry no validation. `EntityId("not a uuid")` is not an error at
+runtime and not an error to mypy either (mypy checks the argument against
+`UUID` — a `str` there *is* an error, but a malformed `UUID` cannot exist).
+The nominal typing is the whole of what they add.
 
 The three UUID aliases are UUIDs because the library never allocates
 identifiers from a store. An id is chosen by the caller (or by extraction)

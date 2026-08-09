@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from eventsource.application.projections import StoreProjection, handles
 
+from redstring.domain.ids import TenantId
 from redstring.events.document import DocumentChunked
 from redstring.ports.chunk_store import ChunkWriter
 
@@ -35,7 +36,7 @@ class ChunkProjection(StoreProjection[ChunkWriter]):
 
     @handles(DocumentChunked)
     async def _apply_chunking(self, _context: object, event: DocumentChunked) -> None:
-        await self._store.replace_source(event.source_id, event.tenant_id, event.chunks)
+        await self._store.replace_source(event.source_id, TenantId(event.tenant_id), event.chunks)
 
     async def _truncate_read_models(self) -> None:
         """Not supported; see `GraphProjection._truncate_read_models`.

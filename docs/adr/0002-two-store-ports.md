@@ -2,7 +2,13 @@
 
 **Status:** accepted, slices 3-5 of the ring migration; scope extended through
 slices 6-7 to cover the alias surface on `GraphStore` and the closure of
-`BACKLOG` B34.
+`BACKLOG` B34. **Amended in typing only by**
+[`0027` `VectorStore` is three capabilities](0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md),
+[`0028` a capability declares its own release](0028-a-capability-declares-its-own-release.md)
+and
+[`0031` the id names are `NewType`s](0031-the-id-names-are-newtypes.md).
+None of the three changes a method, an argument, or a stored shape; the
+decision below stands as written.
 
 The extension is deliberate rather than a later amendment. The no-`delete_entity`
 argument below was always conditional on something keeping the merge fact

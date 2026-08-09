@@ -48,6 +48,7 @@ from neo4j import AsyncGraphDatabase
 from redstring.domain.alias import Alias
 from redstring.domain.entity import Entity, ExtractionMethod
 from redstring.domain.exceptions import AliasCycleError, MissingEntityError
+from redstring.domain.ids import EntityId, RelationshipId, TenantId
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import TemporalExtent
 
@@ -58,8 +59,6 @@ if TYPE_CHECKING:
     from neo4j import AsyncDriver, Record
     from neo4j.graph import Node
     from neo4j.graph import Relationship as Edge
-
-    from redstring.domain.ids import EntityId, RelationshipId, TenantId
 
 #: The single relationship type. See the module docstring.
 EDGE = "RELATES_TO"
@@ -479,7 +478,7 @@ class Neo4jGraphStore:
         for entity_id in wanted:
             record = by_id[str(entity_id)]
             if record["canonical"] is not None:
-                resolved[entity_id] = UUID(record["canonical"])
+                resolved[entity_id] = EntityId(UUID(record["canonical"]))
             elif record["is_alias"]:
                 # It has an outgoing edge but no chain end: a cycle.
                 raise AliasCycleError(entity_id=entity_id, tenant_id=tenant_id)
@@ -731,8 +730,8 @@ def _entity_row(entity: Entity) -> dict[str, Any]:
 def _entity_from(node: Node) -> Entity:
     temporal = node.get("temporal_json")
     return Entity(
-        id=UUID(node["id"]),
-        tenant_id=UUID(node["tenant_id"]),
+        id=EntityId(UUID(node["id"])),
+        tenant_id=TenantId(UUID(node["tenant_id"])),
         name=node["name"],
         normalized_name=node["normalized_name"],
         entity_type=node["entity_type"],
@@ -789,9 +788,9 @@ def _alias_row(alias: Alias) -> dict[str, Any]:
 def _alias_from(edge: Edge) -> Alias:
     return Alias(
         id=UUID(edge["id"]),
-        tenant_id=UUID(edge["tenant_id"]),
-        canonical_entity_id=UUID(edge["canonical_entity_id"]),
-        alias_entity_id=UUID(edge["alias_entity_id"]),
+        tenant_id=TenantId(UUID(edge["tenant_id"])),
+        canonical_entity_id=EntityId(UUID(edge["canonical_entity_id"])),
+        alias_entity_id=EntityId(UUID(edge["alias_entity_id"])),
         # `.get`, because Neo4j drops a property written as null and both
         # names are legitimately absent -- the fold writes an alias with no
         # name when the absorbed entity's extraction has not been folded yet.
@@ -820,10 +819,10 @@ def _relationship_row(relationship: Relationship) -> dict[str, Any]:
 
 def _relationship_from(edge: Edge) -> Relationship:
     return Relationship(
-        id=UUID(edge["id"]),
-        tenant_id=UUID(edge["tenant_id"]),
-        source_entity_id=UUID(edge["source_entity_id"]),
-        target_entity_id=UUID(edge["target_entity_id"]),
+        id=RelationshipId(UUID(edge["id"])),
+        tenant_id=TenantId(UUID(edge["tenant_id"])),
+        source_entity_id=EntityId(UUID(edge["source_entity_id"])),
+        target_entity_id=EntityId(UUID(edge["target_entity_id"])),
         relationship_type=edge["relationship_type"],
         # `.get`, not `[]`: Neo4j drops a property written as null, and an
         # edge written before this field existed has none either.

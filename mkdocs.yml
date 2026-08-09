@@ -168,4 +168,5 @@ nav:
       - "0028 · A capability declares its own release": adr/0028-a-capability-declares-its-own-release.md
       - "0029 · A chunk is not extracted alone": adr/0029-a-chunk-is-not-extracted-alone.md
       - "0030 · A domain schema may constrain, when asked": adr/0030-a-domain-schema-may-constrain-when-asked.md
+      - "0031 · The id names are NewTypes": adr/0031-the-id-names-are-newtypes.md
   - Contributing: contributing.md
