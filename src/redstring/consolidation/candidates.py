@@ -50,6 +50,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from redstring.domain.normalization import normalize_name
 from redstring.domain.similarity import (
     FeatureWeights,
     SimilarityFeatures,
@@ -106,11 +107,16 @@ class CandidateFinder:
         structure; requiring the store would make the cheap configuration
         impossible rather than merely less accurate.
 
-        `use_graph_signal` exists because the graph feature costs one
-        `get_relationships_for` per subject and one per candidate, which is the
-        expensive part of scoring. Turning it off is a caller's trade, not a
-        silent degradation -- the feature goes absent and `combined_score`
+        `use_graph_signal` exists because the graph feature costs two reads
+        per subject and two per candidate -- `get_relationships` for the edges
+        and a batched `get_entities` for the neighbours they name -- which is
+        the expensive part of scoring. Turning it off is a caller's trade, not
+        a silent degradation -- the feature goes absent and `combined_score`
         renormalizes, so scores stay on the same scale.
+
+        It was one read per side until neighbours started being compared by
+        name; `_graph_feature` has the argument for why the cheaper comparison
+        was answering a question nobody asked.
         """
         self._graph = graph_store
         self._vectors = vector_store
@@ -132,7 +138,7 @@ class CandidateFinder:
             return []
 
         embedding_scores = await self._embedding_scores(subject)
-        subject_neighbours = await self._neighbours(subject.id, subject.tenant_id)
+        subject_neighbours = await self._neighbour_names(subject.id, subject.tenant_id)
 
         scored = []
         for candidate in blocked:
@@ -201,16 +207,17 @@ class CandidateFinder:
         return {match.entity_id: match.score for match in matches}
 
     async def _graph_feature(
-        self, subject_neighbours: list[EntityId] | None, candidate: Entity
+        self, subject_neighbours: list[str] | None, candidate: Entity
     ) -> float | None:
         """The graph signal for one candidate, or `None` when there is none.
 
-        Three cases, and the third is the one that was wrong.
+        Three cases, and both of the last two have been wrong.
 
         1. **The signal is off.** `subject_neighbours is None`; nobody asked.
-        2. **At least one side has neighbours.** Jaccard overlap, including
-           `0.0` when the two sets are disjoint -- that is a real finding
-           about two entities that both have structure and share none of it.
+        2. **At least one side has neighbours.** Jaccard overlap of the two
+           neighbour *names*, including `0.0` when they are disjoint -- that
+           is a real finding about two entities that both have structure and
+           share none of it.
         3. **Neither side has any neighbours.** Previously this also scored
            `0.0`, and `graph_similarity` documents that choice deliberately:
            "nothing is known about either" must not read as "these agree
@@ -234,29 +241,88 @@ class CandidateFinder:
         The reason no test caught it: every existing consolidation test builds
         its finder with `use_graph_signal=False`, so nothing in the suite ever
         reached this branch with two isolated entities.
+
+        ## Case 2 compared ids, and so could not see agreement across documents
+
+        Fixing case 3 left case 2 stating its defence too broadly. "Both have
+        structure and share none of it" is a finding when the two neighbour
+        sets *could* have overlapped, and `extraction.mapping.entity_id_for`
+        guarantees they could not: it seeds its `uuid5` chain with `source_id`
+        on purpose, so that deciding `doc-1`'s "Ada" and `doc-2`'s "Ada" are
+        one person stays consolidation's judgement rather than something
+        extraction settles by choosing an id.
+
+        Every entity id is therefore namespaced by document, and so is every
+        neighbour id. Two extractions of one neighbour from two documents have
+        different ids **by construction**, which made the Jaccard numerator
+        structurally empty for exactly the pairs consolidation exists to find.
+        The result was the same 0.7143 as case 3 and the same silent rejection
+        below `LOW_SIMILARITY` -- reached this time by every cross-document
+        duplicate that has *any* edges at all, which is the normal case rather
+        than the first-extraction one. It was also circular: the evidence that
+        would have raised the score was the merge the score was blocking.
+
+        Worse than the cutoff, and the part that shows the feature was close
+        to inverted for its main use: with the signal on, a cross-document
+        pair could not reach `HIGH_SIMILARITY` (0.92) at all. A perfect name
+        and a perfect embedding ceiling out at 0.8 against `graph=0.0`, so
+        auto-merge across documents was unreachable regardless of the
+        evidence.
+
+        So neighbours are compared by normalized name, which is the property
+        two extractions of one neighbour actually share. Nothing branches on
+        `source_id`: comparing names is simply a comparison the id namespacing
+        cannot defeat, and it leaves the within-document discrimination case 2
+        was written for exactly as it was -- two different neighbours have two
+        different names whichever documents they came from.
+
+        What it costs is that two *distinct* neighbours sharing a name now
+        read as agreement. That is the same fallibility `string_similarity`
+        already has ("fooled by two different people with the same name"), now
+        reaching a second feature, and it is bounded by the graph weight --
+        0.2 by default. `BACKLOG.md` B123 carries the sharper key that would
+        not have it, and B124 the alias resolution this does not do.
         """
         if subject_neighbours is None:
             return None
-        candidate_neighbours = await self._neighbours(candidate.id, candidate.tenant_id) or ()
+        candidate_neighbours = await self._neighbour_names(candidate.id, candidate.tenant_id) or ()
         if not subject_neighbours and not candidate_neighbours:
             return None
         return graph_similarity(subject_neighbours, candidate_neighbours)
 
-    async def _neighbours(self, entity_id: EntityId, tenant_id: TenantId) -> list[EntityId] | None:
-        """Ids adjacent to `entity_id`, or `None` when the signal is off.
+    async def _neighbour_names(self, entity_id: EntityId, tenant_id: TenantId) -> list[str] | None:
+        """Normalized names adjacent to `entity_id`, or `None` when off.
 
         `None` and `[]` are different and both occur: the first means nobody
         asked, the second means the entity has no neighbours. `graph_similarity`
         would score two of the second at 0.0, which is right, and scoring two
         of the first at 0.0 would be evidence invented out of a configuration
         flag.
+
+        Names rather than ids, and one batched read rather than a loop: see
+        `_graph_feature` for why the ids cannot answer the question, and
+        `GraphStore.get_entities`, which exists so that consolidation is not a
+        loop over `get_entity`.
+
+        An edge naming an entity this tenant does not hold contributes
+        nothing, because `get_entities` omits ids it cannot find. That is a
+        change from returning the dangling id: a subject whose every edge
+        dangles now has *no* neighbours rather than a set of unmatchable ones,
+        so a pair of them reaches case 3 and scores absent instead of `0.0`.
+        Both readings are defensible and this one is consistent with the rest
+        of the method -- an id nothing can be learned about is not evidence of
+        disagreement.
         """
         if not self._use_graph_signal:
             return None
         edges = await self._graph.get_relationships(entity_id, tenant_id)
-        return [
+        neighbour_ids = {
             other
             for edge in edges
             for other in (edge.source_entity_id, edge.target_entity_id)
             if other != entity_id
-        ]
+        }
+        if not neighbour_ids:
+            return []
+        neighbours = await self._graph.get_entities(sorted(neighbour_ids), tenant_id)
+        return [normalize_name(neighbour.name) for neighbour in neighbours]

@@ -260,6 +260,74 @@ class TestScoring:
         assert found.features.graph == 0.0
         assert found.score < 1.0
 
+    async def test_the_same_entity_in_two_documents_is_not_scored_as_disagreement(self):
+        """The case `test_a_disjoint_neighbourhood_still_scores_zero` cannot
+        see, and the one consolidation exists for.
+
+        `extraction.mapping.entity_id_for` seeds its `uuid5` chain with
+        `source_id`, deliberately -- deciding that `doc-1`'s "Ada" and
+        `doc-2`'s "Ada" are one person is consolidation's judgement, not
+        extraction's. So *every* entity id is namespaced by document, and so
+        is every neighbour id. Two extractions of the same neighbour from two
+        documents have different ids by construction.
+
+        Comparing neighbour sets by id therefore cannot score a cross-document
+        duplicate above zero, no matter how completely the two agree: the
+        Jaccard numerator is structurally empty. "Both have structure and
+        share none of it" is a real finding within one document and an
+        id-namespacing artefact across two, and the feature could not tell
+        them apart.
+
+        Here both entities name the same neighbour, "Charles Babbage", once
+        each from their own document. That is total agreement about the
+        surrounding graph and must score `1.0`.
+        """
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace", source_id="doc-1")
+        other = keyed(tenant, "Ada Lovelace", source_id="doc-2")
+        left = keyed(tenant, "Charles Babbage", source_id="doc-1", entity_type="person")
+        right = keyed(tenant, "Charles Babbage", source_id="doc-2", entity_type="person")
+        store = await _store_with(subject, other, left, right)
+        await store.upsert_relationships(
+            [
+                edge(tenant, source=subject.id, target=left.id),
+                edge(tenant, source=other.id, target=right.id),
+            ]
+        )
+
+        scored = await CandidateFinder(store).candidates(subject)
+        found = next(c for c in scored if c.entity.id == other.id)
+
+        assert found.features.graph == 1.0
+        assert found.score == 1.0
+
+    async def test_different_neighbours_across_two_documents_still_score_zero(self):
+        """The discrimination survives the fix in the case that motivated it.
+
+        Same shape as the test above and the same two documents, but the two
+        neighbours are different people. Nothing about crossing a document
+        boundary makes disagreement stop being disagreement -- what changed is
+        only that agreement can now be *seen*.
+        """
+        tenant = uuid4()
+        subject = keyed(tenant, "Ada Lovelace", source_id="doc-1")
+        other = keyed(tenant, "Ada Lovelace", source_id="doc-2")
+        left = keyed(tenant, "Charles Babbage", source_id="doc-1", entity_type="person")
+        right = keyed(tenant, "Mary Somerville", source_id="doc-2", entity_type="person")
+        store = await _store_with(subject, other, left, right)
+        await store.upsert_relationships(
+            [
+                edge(tenant, source=subject.id, target=left.id),
+                edge(tenant, source=other.id, target=right.id),
+            ]
+        )
+
+        scored = await CandidateFinder(store).candidates(subject)
+        found = next(c for c in scored if c.entity.id == other.id)
+
+        assert found.features.graph == 0.0
+        assert found.score < 1.0
+
     async def test_the_graph_signal_can_be_turned_off(self):
         """And when it is, the feature is absent rather than zero -- a zero
         would be evidence invented out of a configuration flag."""

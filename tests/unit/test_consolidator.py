@@ -374,7 +374,7 @@ class TestTheStoresTheCallerSupplies:
         constructs the normal way is a value nothing checks.
 
         Observed through the store rather than by reading the flag back:
-        `CandidateFinder._neighbours` short-circuits before touching the graph
+        `CandidateFinder._neighbour_names` short-circuits before touching the graph
         when the signal is off, so a call to `get_relationships` is the
         behaviour the default actually buys.
         """

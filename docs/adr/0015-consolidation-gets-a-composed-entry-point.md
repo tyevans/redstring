@@ -6,6 +6,16 @@ retypes `resolve`'s `finder` and `adjudicator` against one-method protocols.
 The Decision below stands unchanged: same entry point, same arguments, same
 defaults, same banding.
 
+Also amended by [`0034` neighbours are compared by
+name](0034-neighbours-are-compared-by-name.md). The decision this ADR is
+named for — an *absent* graph signal must not read as zero — stands entirely.
+What 0034 corrects is the clause immediately after it, that a disjoint
+neighbourhood with structure on either side "still scores `0.0`, because that
+is a real finding about two entities". Ids are namespaced per document by
+`entity_id_for`, so across two documents that disjointness was an artefact
+rather than a finding, and it scored the same 0.7143 rejection this ADR was
+written to remove.
+
 **Why this is an ADR:** it changes the public surface, and it changes what a
 merge decision is. Either alone would qualify under
 `.claude/rules/definition-of-done.md`; they are one ADR because the second was
@@ -98,6 +108,13 @@ adjudicated** — by a feature that had nothing to say.
 The finder now returns `None` for that case. A disjoint neighbourhood where at
 least one side *has* structure still scores `0.0`, because that is a real
 finding about two entities.
+
+**That last sentence is true of one document and was not true across two; see
+[`0034`](0034-neighbours-are-compared-by-name.md).** Neighbours were compared
+by id, and ids are namespaced by `source_id`, so two extractions of one
+neighbour could not overlap however completely they agreed. The reasoning here
+is unchanged — disagreement is still disagreement — but the comparison could
+not tell disagreement from an id scheme.
 
 ## Consequences
 

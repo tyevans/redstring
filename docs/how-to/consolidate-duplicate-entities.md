@@ -258,18 +258,23 @@ finder = CandidateFinder(graph_store, use_graph_signal=False)
 ```
 
 The graph feature is Jaccard overlap of two neighbour sets, derived from
-`GraphStore.get_relationships` — one call for the subject, plus **one more per
-candidate**, awaited one at a time inside the scoring loop. That is the
-expensive part of scoring: a subject blocked against 200 candidates makes 201
-sequential round trips before a single score exists. Neither the embedding
+`GraphStore.get_relationships` for the edges plus a batched
+`GraphStore.get_entities` for the neighbours they name — **two calls for the
+subject and two more per candidate**, awaited one pair at a time inside the
+scoring loop. That is the expensive part of scoring: a subject blocked against
+200 candidates makes 402 sequential round trips before a single score exists.
+(The second call per side is what
+[ADR 0034](../adr/0034-neighbours-are-compared-by-name.md) bought, and the
+neighbour fetch is batched precisely so it stays one round trip rather than
+one per neighbour.) Neither the embedding
 step (one `get` and one `search`, whatever the block size) nor the name step
 (pure computation, no I/O) scales with the block that way. `use_graph_signal`
 is therefore the lever that matters for a large sweep.
 
 Turning it off makes the feature **absent (`None`), not `0.0`** — the same
-distinction the embedding signal makes, for the same reason. `_neighbours`
-returns `None` when the signal is off and `[]` when the entity genuinely has
-no neighbours, and `combined_score` renormalizes over the features actually
+distinction the embedding signal makes, for the same reason.
+`_neighbour_names` returns `None` when the signal is off and `[]` when the
+entity genuinely has no neighbours, and `combined_score` renormalizes over the features actually
 present. So a name-and-embedding score still lands on `0..1`, and the `high`
 and `low` thresholds of Step 5 keep their meaning instead of drifting down by
 the weight of the missing third. Setting `FeatureWeights(graph=0.0)` gets you
@@ -297,15 +302,32 @@ Two cautions:
   scores up, and dropping one that usually agreed pushes them down. `0.92`
   means something different against two features than against three.
 
-One asymmetry worth knowing when you read `features.graph` with the signal
-left **on**: **two entities with no neighbours at all score `0.0`, not the
-conventional Jaccard `1.0`.** That convention is deliberately rejected in
-`domain/similarity.py` — "nothing is known about either" must not read as
-"these agree perfectly", or every pair of freshly extracted entities would
-arrive at the top of your candidate list on the strength of knowing nothing.
-So on a graph you have only just populated, the graph signal costs you its
-round trips and returns `0.0` for almost everything; that is the case where
-turning it off is closest to free.
+Two things worth knowing when you read `features.graph` with the signal left
+**on**, because both are cases where the honest answer is "no evidence"
+rather than a number:
+
+- **Two entities with no neighbours at all score `None`, not `0.0` and not
+  the conventional Jaccard `1.0`.** The `1.0` convention is deliberately
+  rejected in `domain/similarity.py` — "nothing is known about either" must
+  not read as "these agree perfectly". But passing the resulting `0.0`
+  through was the same mistake mirrored, reading as "these positively
+  disagree" and rejecting identical-name pairs below `low` without
+  adjudicating them, so the finder reports the feature as absent and
+  `combined_score` renormalizes. See
+  [ADR 0015](../adr/0015-consolidation-gets-a-composed-entry-point.md).
+- **Neighbours are compared by name, not by id**, and that is not a detail.
+  `extraction.mapping.entity_id_for` namespaces every entity id by
+  `source_id`, so two extractions of one neighbour from two documents have
+  different ids by construction — an id comparison scored *every*
+  cross-document duplicate `0.0` and put `high` out of reach for them
+  entirely. See
+  [ADR 0034](../adr/0034-neighbours-are-compared-by-name.md). The cost of the
+  name key is that two genuinely different neighbours who share a name read
+  as agreement, bounded by the graph weight.
+
+So on a graph you have only just populated, most pairs have no neighbours on
+either side, the graph signal costs you its round trips and returns `None` for
+almost everything; that is the case where turning it off is closest to free.
 
 ### Overriding `FeatureWeights`
 
@@ -336,7 +358,7 @@ exactly that. Five things to know before changing them:
   filter survived every test, because there was nothing for it to change.
 - **A zero weight buys you nothing in I/O.** `use_graph_signal=False` and
   `FeatureWeights(graph=0.0)` produce identical scores, but only the first
-  skips the per-candidate `get_relationships` calls. If your reason for
+  skips the per-candidate `get_relationships` and `get_entities` calls. If your reason for
   dropping a signal is cost, use the flag; use a zero weight only when you want
   the arithmetic without restructuring the finder.
 - **Weights are bounded below at zero, and all-zero is rejected.** Each field

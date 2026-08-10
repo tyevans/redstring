@@ -745,6 +745,66 @@ being re-opened by a fourth caller in a year.
 Nothing here is slow at any size this project has measured. Each entry records
 the shape of the cost and what would have to be true before paying to fix it.
 
+### B123. The graph feature's neighbour key is a name, so two distinct neighbours sharing one inflate it
+
+`consolidation/candidates.py::CandidateFinder._neighbour_names` returns
+`normalize_name(neighbour.name)` and `_graph_feature` takes the Jaccard of
+those. It compares names because ids **cannot** answer the question — see ADR
+0034 and that method's docstring: `extraction.mapping.entity_id_for`
+namespaces every id by `source_id`, so two extractions of one neighbour have
+different ids by construction and an id comparison scored every
+cross-document duplicate `0.0`.
+
+What the name key costs: two *genuinely different* neighbours who share a
+name — two people called "John Smith", a company and the town it is named
+after — read as agreement. The graph feature then reports overlap that is not
+there.
+
+**Why it was accepted rather than fixed.** It is the same fallibility
+`string_similarity` already documents ("fooled by two different people with
+the same name") reaching a second feature, it is bounded by the graph weight
+(0.2 by default), and every alternative key available today is worse: the id
+is provably useless here, and `(entity_type, normalized_name)` — the obvious
+sharpening — only helps when the two collide on name and differ on type,
+which is the *rarer* half of the collision. Do that one anyway if you touch
+this; it is a two-line change and strictly better, it just does not close the
+entry.
+
+**What would close it:** a neighbour key that survives both the document
+namespacing and a name collision. The honest one is the neighbour's own
+consolidated identity — i.e. run consolidation on the neighbours first and
+key on canonical id — which is the ordering problem B124 is the first half
+of. Do not reach for blocking keys as the key: `blocking_keys_for` is
+deliberately lossy, so it collides *more* than the name does, not less.
+
+### B124. The graph feature does not resolve neighbours through aliases
+
+`_neighbour_names` reads edges with `get_relationships` and fetches the
+entities those name, without passing the ids through
+`GraphStore.resolve_entity_ids` first. So when consolidation has already
+merged two neighbours, the edge still carries the absorbed entity's id and
+this method reads the absorbed entity's *name*.
+
+Mostly invisible, which is why it was left: two merged neighbours usually
+have similar names, and `normalize_name` plus the set collapse means
+"Charles Babbage" absorbed into "Charles Babbage" already counts once. It
+bites when a merge joined two genuinely different spellings — "Chas Babbage"
+absorbed into "Charles Babbage" — where the subject's side reports one name
+and the candidate's the other, and the pair scores as disagreement on a point
+the graph has already settled.
+
+**What to do:** resolve `neighbour_ids` before `get_entities`, then fetch the
+canonical ids. `_block` already does exactly this one line up, so the shape is
+in the file. It costs a third store round-trip per candidate on top of the two
+the signal now takes, which is the only reason it is not already there —
+`use_graph_signal`'s docstring prices the feature and this would raise it by
+half again for a case nobody has measured the frequency of.
+
+**Measure before paying.** Count, over a real corpus, how many neighbour ids
+on scored edges are aliases at all. If it is near zero the entry is closable
+as "not worth a round trip" rather than by doing the work — and record the
+number, because that is the fact this entry is missing.
+
 ### B48. Temporal query is a full tenant scan
 
 `temporal/query.py::TemporalQuery.entities_in_interval` pages
