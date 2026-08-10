@@ -12,6 +12,71 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [0.5.0] - 2026-08-10
+
+One behaviour change, and it changes which entities get merged. Nothing was
+added to or removed from the public surface; the bump is minor rather than a
+patch because a corpus consolidated on 0.4.0 and on 0.5.0 can differ, in the
+direction of merging more.
+
+### Changed
+
+- **Consolidation's graph signal compares neighbours by name, not by id, and
+  cross-document duplicates stop scoring zero.**
+
+  `extraction.mapping.entity_id_for` namespaces every entity id by
+  `source_id`, deliberately — deciding that `doc-1`'s "Ada" and `doc-2`'s
+  "Ada" are one person is consolidation's judgement rather than something
+  extraction settles by choosing an id. Neighbour ids are namespaced with
+  everything else, so two extractions of one neighbour had different ids **by
+  construction** and the Jaccard overlap of two neighbour *id* sets was
+  structurally empty for every cross-document pair.
+
+  The graph feature therefore reported maximum disagreement on exactly the
+  pairs consolidation exists to find, and its disagreement was an artefact of
+  an id scheme rather than a finding about the world. Two documents each
+  naming "Ada Lovelace" alongside "Charles Babbage" scored `graph=0.0` and a
+  combined `0.7143` — below `LOW_SIMILARITY` (0.75), so the pair was rejected
+  outright rather than adjudicated.
+
+  Worse than the cutoff: with the signal on, a cross-document pair could not
+  reach `HIGH_SIMILARITY` (0.92) **at all**, because a perfect name and a
+  perfect embedding ceiling out at 0.8 against a structural zero. Auto-merge
+  across documents was unreachable regardless of the evidence.
+
+  Neighbours are now compared by normalized name, which is the property two
+  extractions of one neighbour actually share. Within a single document
+  nothing changes — two different neighbours have two different names — so
+  the discrimination [ADR 0015](https://github.com/tyevans/redstring/blob/main/docs/adr/0015-consolidation-gets-a-composed-entry-point.md)
+  protected is kept, by the same mechanism as before.
+
+  **What to check on upgrade.** If you run `CandidateFinder` with
+  `use_graph_signal=True` over a multi-document corpus, expect more merges and
+  more traffic in the adjudication band, and re-check `high` and `low` against
+  your own corpus — the scale is unchanged but the distribution is not. If you
+  had worked around this with a score floor, that floor is not made redundant:
+  it is a statement about which pairs deserve a model's attention.
+
+  Two costs are recorded rather than fixed, in `BACKLOG.md`: two genuinely
+  different neighbours sharing a name now read as agreement, bounded by the
+  graph weight (B123), and neighbours are not resolved through aliases before
+  being compared (B124).
+
+  See [ADR 0034](https://github.com/tyevans/redstring/blob/main/docs/adr/0034-neighbours-are-compared-by-name.md),
+  which amends 0015's disjoint-neighbourhood clause.
+
+- The graph signal now costs **two store reads per side** rather than one:
+  `get_relationships` for the edges and a batched `get_entities` for the
+  neighbours they name. `use_graph_signal=False` remains the lever for a large
+  sweep, and it is still the only way to skip the round trips —
+  `FeatureWeights(graph=0.0)` produces identical scores and pays for them.
+
+### Fixed
+
+- `docs/how-to/consolidate-duplicate-entities.md` claimed that two entities
+  with no neighbours score `0.0`. That has been `None` since 0.4.0 shipped ADR
+  0015; the page was stale for the whole release.
+
 ## [0.4.0] - 2026-08-09
 
 Forty names added to the public surface and none removed. The headline is
@@ -482,7 +547,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/tyevans/redstring/releases/tag/v0.5.0
 [0.4.0]: https://github.com/tyevans/redstring/releases/tag/v0.4.0
 [0.3.0]: https://github.com/tyevans/redstring/releases/tag/v0.3.0
 [0.2.0]: https://github.com/tyevans/redstring/releases/tag/v0.2.0
