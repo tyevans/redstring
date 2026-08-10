@@ -939,6 +939,57 @@ Traps in the harness. Several of these are filed specifically because they
 cause failures that read as infrastructure trouble and get retried rather than
 investigated.
 
+### B125. The coverage ratchet measures a sampled quantity, so it ratchets to the luckiest run
+
+`scripts/coverage_ratchet.py` raises `.coverage-baseline` whenever a run
+exceeds it and stages the new value. That is only sound if total coverage is a
+function of the tree, and it is not: the suite runs under `pytest-randomly`
+and `-n auto`, and the compliance suites draw hypothesis examples, so which
+lines execute varies run to run.
+
+**Measured, three consecutive runs on an unchanged tree at 8460e88: 96.30,
+96.27, 96.30.** The committed baseline was **96.33** — above all three,
+because the run that happened to earn it was the one that got lucky. Cutting
+0.5.0 then failed the gate on a commit touching only a version string and the
+CHANGELOG, reporting `96.30% is below the baseline of 96.33%`. `TOLERANCE` is
+0.01 and the observed spread is ~0.06, so the slack is a factor of six too
+small for the noise it is absorbing.
+
+Baseline history shows this has happened before and was papered over:
+`96.24 -> 96.32 -> 96.30 -> 96.33`, and a ratchet cannot lower itself, so the
+0.4.0 release edited 96.32 down to 96.30 by hand. Same failure, same manual
+correction, not recorded as a defect either time.
+
+**`TOLERANCE` is now 0.1, which is the cheapest of the three fixes below and
+all that has been done.** Lowering the baseline by hand was tried first and
+does not work: `TOLERANCE` governs the raise as well as the failure, so at
+0.01 the next run measured over the lowered value and the ratchet staged the
+high-water mark straight back into the same commit. An unstable quantity
+ratcheted to its maximum converges on its maximum. Widening the slack fixes
+both directions, because the ratchet now declines to chase noise upward.
+
+What it costs, stated plainly: a real regression under 0.1pp now passes. That
+is the width of the noise, so it was not being detected before either — 0.01
+bought false precision rather than sensitivity — but the window is real and
+this entry stays open until the measurement is deterministic enough to close
+it.
+
+**What would fix it properly.** In rough order of cost:
+
+- ~~Raise `TOLERANCE` to cover the measured spread.~~ **Done.** Treats the
+  symptom; the number remains noisy and the window remains 0.1pp wide.
+- Take the *minimum* of N runs before ratcheting up. Correct, and it makes the
+  commit hook N times slower, which is the whole reason not to.
+- Make the measurement deterministic: pin the hypothesis seed for the coverage
+  run specifically, or exclude the sampled suites from the number. Note this
+  conflicts with `.claude/rules/testing.md`'s "order-dependent tests are bugs,
+  do not pin the seed" — the rule is about *tests*, and this would be pinning
+  the *measurement*, but the distinction needs stating in the script or the
+  next reader will correctly object.
+
+**Do not close this by raising the baseline back.** The number is not the
+problem; ratcheting an unstable quantity is.
+
 ### B115. The graded corpus is single-chunk, so nothing gates cross-chunk extraction
 
 All five documents in `tests/accuracy/corpus.yaml` are between 81 and 134
