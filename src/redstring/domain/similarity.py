@@ -10,7 +10,8 @@ Three signals, deliberately independent, because they fail in different places:
   provider and a store; `combined_score` takes it as a number.
 - **graph** -- `graph_similarity`, Jaccard over neighbour sets. Catches the
   case the other two cannot: two records that barely look alike but sit in the
-  same part of the graph.
+  same part of the graph. What identifies a neighbour is the caller's
+  decision and a load-bearing one; see the function.
 
 `combined_score` weighs whichever are available. Everything in this module is
 a function of its arguments, with no store, no provider, and no I/O -- which
@@ -44,9 +45,7 @@ from pydantic import BaseModel, Field, model_validator
 from redstring.domain.normalization import normalize_name
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
-
-    from redstring.domain.ids import EntityId
+    from collections.abc import Collection, Hashable
 
 
 def string_similarity(left: str, right: str) -> float:
@@ -64,13 +63,23 @@ def string_similarity(left: str, right: str) -> float:
     return jellyfish.jaro_winkler_similarity(normalize_name(left), normalize_name(right))
 
 
-def graph_similarity(left: Collection[EntityId], right: Collection[EntityId]) -> float:
+def graph_similarity(left: Collection[Hashable], right: Collection[Hashable]) -> float:
     """Jaccard overlap of two entities' neighbour sets, on `0..1`.
 
     Takes the neighbours rather than the entities and a store: this is a
     function of two sets, and giving it a `GraphStore` would make it untestable
     without one and unusable inside a scoring loop that has already fetched
     them.
+
+    **The caller chooses what identifies a neighbour, and the choice is not
+    free.** This was annotated `Collection[EntityId]`, which read as the
+    obvious type and quietly made the function useless for its main caller:
+    `extraction.mapping.entity_id_for` namespaces every entity id by
+    `source_id`, so two extractions of one neighbour from two documents have
+    different ids and this returns `0.0` however completely they agree.
+    `CandidateFinder` passes normalized *names* for that reason. The
+    annotation is `Hashable` because the function genuinely is set overlap and
+    the identity key is the caller's decision -- not because any key will do.
 
     **Two empty sets score `0.0`, not the conventional `1.0`.** See the module
     docstring: "nothing is known about either" must not read as "these agree
