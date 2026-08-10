@@ -2766,3 +2766,61 @@ delete the exemption, or record in the exemption's reason that the whole port
 is the intended front-door contract. Do not leave it as neither. Note that
 narrowing changes a signature in `redstring.__all__`'s closure, so check
 `tests/unit/test_public_surface_is_self_contained.py` in the same edit.
+
+### B117. Three documents disagree about numbers the mutation campaign produced
+
+Found while writing
+`docs/history/2026-08-property-and-mutation-testing-impact.md`, which had to
+pick a figure three times and could not do it from the documents alone.
+Deferred rather than fixed because two of the three need a *measurement* to
+resolve, not an edit, and guessing which side is right is how the drift got
+here.
+
+**1. `.claude/rules/recurring-defects.md:282` calls it "the eighteen-row
+table". It has nineteen rows** — `CLAUDE.md:210` says "nineteen times" and
+`CLAUDE.md:279` says "Five of the nineteen rows", and both are correct:
+
+```
+awk '/\| Test used \|/,/^$/' CLAUDE.md | grep '^  |' | grep -v '\-\-\-' | grep -v 'Test used' | wc -l
+→ 19
+```
+
+This is the cheap one — a one-word fix. It is also `recurring-defects.md` §5
+("docs rotting the moment a sweep names specifics") happening *inside
+`recurring-defects.md`*, which makes it a better worked example of that
+section than the ones it currently carries. Consider citing it there rather
+than only correcting it. Better still, the count is derivable: a test that
+asserts the prose figure matches the row count would stop this recurring,
+and there are now three prose sites naming it.
+
+**2. B54's region table and its own prose disagree, and the "run" rows do not
+sum to the headline.** The table (`BACKLOG.md:422`) lists `ranges` at **161**
+mutants where the prose below it reports "the range run: **268** mutants", and
+`render_temporal` at **126** against a prose figure of **159**. The rows marked
+"run" sum to 410 (+27 verified from render) against a headline of **391
+verified**.
+
+The entry already warns that the bands drift under edits to the module and
+tells you to re-measure before choosing one — so the *table* is the side more
+likely to be stale, and the prose figures are each attached to a specific
+session that produced a specific survivor classification. **Do not simply
+overwrite one with the other.** Re-run `cosmic-ray init` at HEAD, re-measure
+the bands, and record the measurement commit next to the table so the next
+reader can tell staleness from disagreement. The mutant counts per region are
+what someone budgets a session against; being wrong by 40% in either direction
+picks the wrong region.
+
+**3. `BACKLOG.md:56` says coverage is 94.05%; `.coverage-baseline` says
+96.33.** Six ratchet raises have landed since that paragraph was written
+(94.05 → 94.08 → 94.22 → 94.41 → ... → 96.33). The test-count figures in the
+same "State of the tree" section (2209 / 250 / 4) were last re-measured in
+`014daea` and have the same exposure — that commit's message records finding
+them stale in three separate ways and re-measuring, which is the second time
+this section has rotted.
+
+The section is a hand-maintained copy of numbers that exist in machine-readable
+form (`.coverage-baseline`, and `pytest --collect-only -q`). **The fix worth
+making is not another re-measurement.** Either generate the paragraph, or
+assert it: a test that reads `.coverage-baseline` and fails when the prose
+disagrees costs about ten lines and ends the category. Prefer that to a fourth
+manual sync.
