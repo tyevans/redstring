@@ -15,8 +15,33 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BASELINE_PATH = REPO_ROOT / ".coverage-baseline"
 
-# Floating-point slack so an identical run never trips the ratchet.
-TOLERANCE = 0.01
+#: Slack, in percentage points, on **both** comparisons below: a run fails only
+#: if it is more than this under the baseline, and raises the baseline only if
+#: it is more than this over it.
+#:
+#: **This is measurement noise, not floating-point slack**, which is what it was
+#: originally sized for at 0.01. Total coverage is not a function of the tree
+#: here: the suite runs under `pytest-randomly` and `-n auto`, and the
+#: compliance suites draw hypothesis examples, so which lines execute varies
+#: run to run. Three consecutive runs on one unchanged tree measured 96.30,
+#: 96.27 and 96.30.
+#:
+#: At 0.01 that spread broke the gate in both directions at once, and the
+#: second direction is the one that is easy to miss. A lucky run ratcheted the
+#: baseline to 96.33 -- above every subsequent measurement of the same tree --
+#: so the next commit failed at 96.30 having changed nothing but a version
+#: string. Lowering the baseline by hand did not help either: the next run
+#: measured over it and the ratchet staged the high-water mark straight back.
+#: **An unstable quantity ratcheted to its maximum converges on its maximum**,
+#: and then blocks everything.
+#:
+#: 0.1 covers the measured spread with room. The cost is honest and worth
+#: stating: a real regression smaller than 0.1pp now passes. That is the width
+#: of the noise, so it was never actually being detected -- what 0.01 bought
+#: was false precision, not sensitivity. `BACKLOG.md` B125 carries the fixes
+#: that would let this be tightened again, all of which mean making the
+#: measurement deterministic rather than widening the window further.
+TOLERANCE = 0.1
 
 PYTEST_ARGS = [
     "pytest",
