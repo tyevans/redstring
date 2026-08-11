@@ -32,6 +32,7 @@ from redstring.domain.exceptions import (
     LlmProviderError,
     MalformedCompletionError,
     RefusedCompletionError,
+    UnstructuredCompletionError,
 )
 from redstring.llm.adapters.langchain import NO_THINKING, LangChainLlmProvider
 from redstring.ports.llm_provider import LlmProvider
@@ -240,6 +241,40 @@ async def test_content_that_is_not_json_raises_malformed_and_names_the_schema():
         await provider_replying("I'm sorry, I can't help with that.").extract("Ada.", _Bag)
 
     assert caught.value.schema == "_Bag"
+
+
+async def test_content_that_is_not_json_at_all_is_unstructured_not_merely_malformed():
+    """Fluent prose instead of JSON is a different failure from bad JSON.
+
+    This is the failure a server ignoring `response_format` actually produces
+    -- see `docs`/the module docstring on the langchain adapter -- and it used
+    to read exactly like a schema-validation failure, because both went
+    through `pydantic.ValidationError`. Pinning `UnstructuredCompletionError`
+    (still an `except MalformedCompletionError`, since it subclasses it) and
+    asserting the message names the *server*, not the schema, is the point of
+    the distinction: someone reading this exception should check whether the
+    server compiled a grammar, not stare at `_Bag`.
+    """
+    markdown = (
+        "## Extraction results\n\n"
+        "I found the following entities in the text:\n\n"
+        "- **Ada Lovelace** -- a mathematician\n"
+        "- **Charles Babbage** -- an inventor\n\n"
+        "They worked together on the Analytical Engine."
+    )
+
+    with pytest.raises(UnstructuredCompletionError) as caught:
+        await provider_replying(markdown).extract("Ada and Charles.", _Bag)
+
+    assert isinstance(caught.value, MalformedCompletionError)
+    assert "response_format" in caught.value.cause
+    assert "grammar" in caught.value.cause
+
+
+async def test_a_json_array_is_unstructured_too_not_a_validation_failure():
+    """`Extraction` and `_Bag` are objects; a bare array is not a wrong shape, it is no shape."""
+    with pytest.raises(UnstructuredCompletionError):
+        await provider_replying('["Ada", "Charles"]').extract("Ada.", _Bag)
 
 
 async def test_json_of_the_wrong_shape_raises_malformed_and_not_a_partial_object():

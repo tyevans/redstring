@@ -28,13 +28,33 @@ while a genuinely broken completion still fails on the shape.
 
 `name`, `entity_type` and the two endpoint names have no default: an entity
 with no name is not a partial answer, it is nothing at all.
+
+## `entities` and `relationships` keep their Python defaults but not their JSON-Schema ones
+
+`Extraction()` is used throughout the test suite -- and by `gleaning.py`,
+which builds one incrementally -- so the pydantic-level `default_factory`
+stays. What changed is the emitted JSON Schema: pydantic omits any field with
+a default from `required`, which for a *root* schema means the schema-legal
+completion `{}` exists. Fed through a real grammar compiler this is not
+theoretical -- `{}` is a legal parse of the root rule pydantic's own schema
+produces -- and a model that legally emits `{}` reports "this document
+contained nothing" indistinguishably from one that actually found nothing.
+
+`_require_extraction_keys` below forces both keys into `required` on the
+*outer* schema only, via `model_config`'s `json_schema_extra` hook. An empty
+*list* for either key is still legal -- `[]` satisfies `list[...]`, and gleaning
+depends on that -- it is only the absent *key* that stops being legal. Nested
+schemas (`ExtractedEntity`, `ExtractedRelationship`) are untouched: their
+optional fields exist precisely so one sloppy field does not cost a whole
+extraction, per the section above, and that reasoning does not apply to the
+two keys naming what was found at all.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 #: What a model gets when it declines to say how sure it is.
 #:
@@ -98,6 +118,22 @@ class ExtractedRelationship(BaseModel):
     )
 
 
+def _require_extraction_keys(schema: dict[str, Any], _model: type[BaseModel]) -> None:
+    """Force `entities` and `relationships` into the root schema's `required`.
+
+    Both fields keep a `default_factory` for Python construction -- see the
+    module docstring -- so pydantic's generator leaves them out of `required`
+    by its own rule ("a field with a default is optional"). That rule is
+    right for a normal model and wrong for this one: this schema is not read
+    back by pydantic alone, it is compiled into a decoding grammar, and a
+    grammar where the whole body is optional accepts `{}` as a complete
+    answer. Mutating the emitted schema in place (rather than dropping the
+    defaults) keeps `Extraction()` and `Extraction(entities=[...])` working
+    everywhere they are already used.
+    """
+    schema["required"] = list(schema.get("properties", {}))
+
+
 class Extraction(BaseModel):
     """Everything a model found in one piece of text.
 
@@ -106,6 +142,8 @@ class Extraction(BaseModel):
     descriptions above are part of that schema and reach the model -- they are
     prompt, not documentation, and editing one changes extraction output.
     """
+
+    model_config = ConfigDict(json_schema_extra=_require_extraction_keys)
 
     entities: list[ExtractedEntity] = Field(
         default_factory=list, description="Every entity present in the text"
