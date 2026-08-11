@@ -78,7 +78,9 @@ if TYPE_CHECKING:
 #: Room for a reasoning model to think and *then* answer. See the module docstring.
 DEFAULT_MAX_TOKENS: Final = 8192
 
-#: What `openai_compatible` sends to stop a reasoning model reasoning.
+#: What `openai_compatible` sends to stop a reasoning model reasoning, and to
+#: stop a server that reasons anyway from splitting that off where the
+#: extraction grammar never constrains it.
 #:
 #: `chat_template_kwargs` is a *chat template* variable rather than a sampling
 #: parameter, so it is understood by servers that render the model's own
@@ -102,13 +104,36 @@ DEFAULT_MAX_TOKENS: Final = 8192
 #: here, because every accuracy comparison in this repository is a difference
 #: between two runs.
 #:
+#: `reasoning_format` is a different knob on the same problem, sent for the
+#: same reason and gated by the same `thinking` flag: it is llama.cpp's own
+#: top-level request field (`tools/server/server-schema.cpp`'s
+#: `reasoning_format`, not a chat-template kwarg), and it controls whether the
+#: server parses a `<think>`-style channel *out* of `content` at all.
+#: `enable_thinking: False` asks the model not to reason; `reasoning_format:
+#: "none"` is the belt for that suspenders -- caught on the inference box
+#: serving the reference model: a reasoning model whose chat template resolves
+#: to a tool-calling PEG format can still emit a reasoning channel regardless
+#: of `enable_thinking`, and if the server is left to split it out with its
+#: default parser, the grammar that constrains `content` was never applied to
+#: whatever the model actually decided to answer with -- the same "fluent
+#: prose where JSON was requested" symptom this module's docstring already
+#: describes, from a second, independent cause. `"none"` folds the whole
+#: response into `content` unparsed, which is what the *unconstrained-content*
+#: reasoning path in `common/chat.cpp` produces regardless -- so this does not
+#: change what a well-behaved response looks like, only stops a mis-split one
+#: from hiding the model's actual answer in a field `_parse` never reads.
+#:
 #: **A server that rejects unknown request fields will refuse this**, and
 #: OpenAI's own API is the one to expect: it has no chat template to pass
-#: kwargs to. Pass `thinking=True` there. That is a real cost of choosing this
-#: default and it is chosen anyway, because the local-server case is what this
-#: constructor is overwhelmingly used for and the failure is a loud 400 at the
-#: first call rather than a silent degradation. See `BACKLOG.md` B118.
-NO_THINKING: Final = {"chat_template_kwargs": {"enable_thinking": False}}
+#: kwargs to, and no `reasoning_format` field either. Pass `thinking=True`
+#: there. That is a real cost of choosing this default and it is chosen
+#: anyway, because the local-server case is what this constructor is
+#: overwhelmingly used for and the failure is a loud 400 at the first call
+#: rather than a silent degradation. See `BACKLOG.md` B118.
+NO_THINKING: Final = {
+    "chat_template_kwargs": {"enable_thinking": False},
+    "reasoning_format": "none",
+}
 
 
 class _NeverRaised(Exception):

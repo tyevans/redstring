@@ -375,7 +375,31 @@ class TestTheConvenienceConstructorsRequestBody:
             base_url="http://localhost:8080/v1", model="qwen3.6-27b-mtp"
         )
 
-        assert provider._chat.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
+        assert provider._chat.extra_body == {
+            "chat_template_kwargs": {"enable_thinking": False},
+            "reasoning_format": "none",
+        }
+
+    def test_reasoning_format_none_is_sent_alongside_no_thinking(self):
+        """The second, independent fix for the same symptom -- pinned on its own.
+
+        `enable_thinking: False` asks the model not to reason; this is the
+        belt for that suspenders, telling llama.cpp not to split a reasoning
+        channel out of `content` even if the model reasons anyway. Caught on
+        the inference box serving the reference model: a reasoning model can
+        emit a reasoning channel regardless of `enable_thinking`, and a server
+        left to split it out with its default parser applies the extraction
+        grammar to a channel the model never treated as the answer. This is a
+        `llama.cpp` top-level request field, not a `chat_template_kwargs`
+        entry -- see `NO_THINKING`'s docstring and
+        `tools/server/server-schema.cpp` in llama.cpp for where the server
+        reads it.
+        """
+        provider = LangChainLlmProvider.openai_compatible(
+            base_url="http://localhost:8080/v1", model="qwen3.6-27b-mtp"
+        )
+
+        assert provider._chat.extra_body["reasoning_format"] == "none"
 
     def test_asking_for_thinking_sends_nothing_rather_than_the_opposite_flag(self):
         """`thinking=True` restores the *server's* default, which is not the
@@ -412,11 +436,17 @@ class TestTheConvenienceConstructorsRequestBody:
 
         provider._chat.extra_body["chat_template_kwargs"] = {"enable_thinking": True}
 
-        assert NO_THINKING == {"chat_template_kwargs": {"enable_thinking": False}}
+        assert NO_THINKING == {
+            "chat_template_kwargs": {"enable_thinking": False},
+            "reasoning_format": "none",
+        }
         other = LangChainLlmProvider.openai_compatible(
             base_url="http://localhost:8080/v1", model="b"
         )
-        assert other._chat.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
+        assert other._chat.extra_body == {
+            "chat_template_kwargs": {"enable_thinking": False},
+            "reasoning_format": "none",
+        }
 
     def test_building_the_chat_model_yourself_is_untouched(self):
         """`__init__` takes a caller's own chat model and must not edit it.
