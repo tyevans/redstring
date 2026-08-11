@@ -12,6 +12,83 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [0.6.0] - 2026-08-11
+
+One new exported exception and two behaviour changes, neither of which
+removes or renames anything on the public surface. The bump is minor rather
+than a patch because `ConsolidationService.resolve` now succeeds where it
+used to raise, so a caller that was catching `MergeIntoAliasError` around it
+will find that path stops being reached.
+
+### Added
+
+- **`UnstructuredCompletionError`**, exported alongside its siblings, raised
+  when a completion is not JSON at all (or is JSON that is not an object)
+  rather than JSON of the wrong shape.
+
+  It is a **subclass** of `MalformedCompletionError`, deliberately: an
+  existing `except MalformedCompletionError` keeps catching this case instead
+  of quietly starting to miss it. The narrower type exists because the two
+  failures want different investigations — "the server accepted
+  `response_format` and never applied it" is a server or chat-template
+  problem, and "the model got a field wrong" is a prompt or schema one. They
+  used to report identically, off the same `pydantic.ValidationError`, and
+  that cost one investigation a detour through a schema that was fine. The
+  message now names the likely cause and what to check: whether a grammar was
+  compiled in the server's logs, and whether the chat-template handler wires
+  `response_format` at all.
+
+### Changed
+
+- **`ConsolidationService.resolve` resolves an aliased subject to its
+  terminal canonical instead of raising `MergeIntoAliasError`.**
+
+  If A was merged into B, consolidating around A means consolidating around
+  B — the merge already asserted they are the same entity. The docstring
+  previously documented the workaround it demanded of every caller ("a caller
+  sweeping a whole tenant should resolve its ids first"), which was the tell:
+  the library was asking callers to do something it could do itself, with a
+  capability (`GraphStore.resolve_entity_ids`) it already used for the
+  symmetric case. Candidate selection has excluded aliased candidates through
+  exactly that call since `CandidateFinder` existed; only the *subject* side
+  was left unresolved.
+
+  Resolution happens before candidates are fetched, rather than by catching
+  the exception afterwards. An aliased subject's own edges were redirected
+  away by the merge that made it an alias, so scoring against it directly
+  starves the graph feature of neighbours the real canonical does have.
+  Chains resolve to their terminal canonical, not one hop.
+
+  `MergeIntoAliasError` can still surface from `resolve`, but now only from a
+  genuine race — the resolved canonical becoming an alias between that
+  resolution and the append inside `merge`. That is retried once against the
+  newer canonical; a second failure is let through.
+
+  **What to check on upgrade.** Nothing about the absorbed entity changes:
+  its relationships and properties were folded into the canonical by the
+  earlier merge, and this call neither re-derives nor re-applies that. The
+  explicit path, `Consolidator.merge` / `ConsolidationService.merge`, is
+  untouched and still raises on an aliased `canonical_entity_id` — that call
+  is for a caller who already knows which id should be canonical, and
+  resolving it silently would override a decision that may be deliberately
+  correcting an earlier merge.
+
+- **`Extraction`'s emitted JSON Schema requires `entities` and
+  `relationships`.**
+
+  pydantic omits any field with a default from `required`, and both use
+  `default_factory=list` — so `{}` was a grammar-legal completion wherever
+  the schema is compiled into one. A model could answer "found nothing"
+  without having looked, indistinguishable from a document that genuinely
+  held nothing.
+
+  The defaults are unchanged at the pydantic level; a `json_schema_extra`
+  hook sets `required` on the emitted dict only. `Extraction()` still
+  constructs, an empty list for either key is still legal, and only the
+  *absent* key is not. Nested schemas are untouched: their optional fields
+  exist so one sloppy field does not cost a whole extraction, which does not
+  apply to the two keys naming what was found at all.
+
 ## [0.5.0] - 2026-08-10
 
 One behaviour change, and it changes which entities get merged. Nothing was
@@ -547,7 +624,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/tyevans/redstring/releases/tag/v0.6.0
 [0.5.0]: https://github.com/tyevans/redstring/releases/tag/v0.5.0
 [0.4.0]: https://github.com/tyevans/redstring/releases/tag/v0.4.0
 [0.3.0]: https://github.com/tyevans/redstring/releases/tag/v0.3.0
