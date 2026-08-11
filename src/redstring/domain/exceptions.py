@@ -145,6 +145,44 @@ class MalformedCompletionError(LlmProviderError):
         super().__init__(f"returned content that is not a valid {schema}: {cause}", model=model)
 
 
+class UnstructuredCompletionError(MalformedCompletionError):
+    """Content came back that is not a JSON object at all -- not "wrong shape", *no shape*.
+
+    A subclass of `MalformedCompletionError` rather than a sibling, on
+    purpose: `_parse` used to raise `MalformedCompletionError` unconditionally
+    for every non-conforming completion, so a caller with `except
+    MalformedCompletionError` must keep catching this one too, or it starts
+    missing failures it used to catch. What changes is that this case is
+    reported for what it almost always is.
+
+    `schema.model_validate_json(content)` folds two different failures into
+    one `pydantic.ValidationError`: JSON that parses but has the wrong fields
+    (a model that answered the question badly), and content that is not JSON
+    at all (a model, or a server, that never answered the question). The
+    second one overwhelmingly means the transport ignored `response_format`
+    rather than that the model misbehaved -- an OpenAI-compatible server can
+    accept `response_format` and reply 200 with fluent prose if the request
+    never reaches its grammar compiler, which happens per chat-template
+    handler and has nothing to do with this library's schema. Reporting both
+    cases as "did not validate against the requested schema" sends the reader
+    to look at the schema or the prompt, when what actually needs checking is
+    the server: whether it logs a compiled grammar for this request, and
+    whether the model's chat-template handler wires `response_format` into
+    its grammar at all. See `docs/adr` history and this project's own
+    diagnosis of exactly this failure against a live llama.cpp server.
+    """
+
+    def __init__(self, *, model: str, schema: str, content: str) -> None:
+        preview = content if len(content) <= 200 else f"{content[:200]}..."
+        cause = (
+            f"content is not a JSON object ({preview!r}); the server most likely accepted "
+            "response_format and never applied it -- check whether it logs a compiled "
+            "grammar for this request, and whether the model's chat-template handler wires "
+            "response_format into its grammar at all"
+        )
+        super().__init__(model=model, schema=schema, cause=cause)
+
+
 class EmbeddingProviderError(RedstringError):
     """An `EmbeddingProvider` could not produce usable vectors.
 

@@ -60,6 +60,7 @@ matters.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, Final
 
 from pydantic import ValidationError
@@ -68,6 +69,7 @@ from redstring.domain.exceptions import (
     EmptyCompletionError,
     MalformedCompletionError,
     RefusedCompletionError,
+    UnstructuredCompletionError,
 )
 
 if TYPE_CHECKING:
@@ -287,8 +289,20 @@ class LangChainLlmProvider:
                 model=self._model,
                 finish_reason=reply.response_metadata.get("finish_reason"),
             )
+        # Parsed separately from validation so the two failure modes below
+        # can be told apart. `schema.model_validate_json` folds "not JSON at
+        # all" and "JSON, wrong shape" into the same `ValidationError`, and
+        # they call for opposite reactions -- see `UnstructuredCompletionError`.
         try:
-            return schema.model_validate_json(content)
+            raw = json.loads(content)
+        except json.JSONDecodeError:
+            raw = None
+        if not isinstance(raw, dict):
+            raise UnstructuredCompletionError(
+                model=self._model, schema=schema.__name__, content=content
+            )
+        try:
+            return schema.model_validate(raw)
         except ValidationError as error:
             raise MalformedCompletionError(
                 model=self._model, schema=schema.__name__, cause=str(error)

@@ -216,6 +216,7 @@ from redstring.domain.exceptions import (
     RefusedCompletionError,
     UnknownDomainError,
     UnknownMergeError,
+    UnstructuredCompletionError,
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.interval import Bounds, TemporalRelation
@@ -403,6 +404,7 @@ __all__ = [
     "UncertaintyMarker",
     "UnknownDomainError",
     "UnknownMergeError",
+    "UnstructuredCompletionError",
     "VectorMatch",
     "VectorProjection",
     "VectorPurge",
