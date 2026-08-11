@@ -63,6 +63,7 @@ from redstring.consolidation.policy import (
     MergeDecision,
     decide,
 )
+from redstring.domain.exceptions import MergeIntoAliasError, MissingEntityError
 from redstring.events.streams import consolidation_stream
 
 if TYPE_CHECKING:
@@ -73,11 +74,14 @@ if TYPE_CHECKING:
     from eventsource.ports.store import AggregateStore
 
     from redstring.consolidation.candidates import ScoredCandidate
-    from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
+    from redstring.consolidation.protocols import (
+        CandidateSource,
+        ConsolidationGraph,
+        MergeAdjudicator,
+    )
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
     from redstring.events.merge import EntitiesMerged, MergeUndone
-    from redstring.ports.graph_store import RelationshipStore
 
 
 class ConsolidationService:
@@ -88,8 +92,14 @@ class ConsolidationService:
         *,
         event_store: AggregateStore,
         snapshot_store: SnapshotStore,
-        graph_store: RelationshipStore,
+        graph_store: ConsolidationGraph,
     ) -> None:
+        """`graph_store` is the wider `ConsolidationGraph` slice, not just `RelationshipStore`.
+
+        `resolve` needs to read entities and resolve aliases before it plans
+        redirections, not only edges -- see `resolve`'s handling of a subject
+        that has itself been merged away.
+        """
         self._graph = graph_store
         self._log = consolidation_repository(event_store, snapshot_store)
 
@@ -158,16 +168,34 @@ class ConsolidationService:
                 entity, so a caller choosing which of two duplicates to pass is
                 choosing which survives.
 
-                An entity that has itself been merged away raises
-                `MergeIntoAliasError` rather than returning `None`, and that
-                asymmetry with the *candidates* -- which are silently excluded
-                -- is deliberate. An aliased candidate is one of many and
-                dropping it costs nothing; an aliased subject means the caller
-                asked to consolidate around an entity that no longer stands
-                for itself, and answering `None` would be indistinguishable
-                from "no duplicates found". A caller sweeping a whole tenant
-                should resolve its ids first: `find_entities` returns absorbed
-                entities too, because a merge is not a delete.
+                **Resolved to its terminal canonical first, if it has itself
+                been merged away.** If A was merged into B, consolidating
+                around A means consolidating around B -- a merge is exactly
+                the assertion that they are one entity, so a new duplicate C
+                belongs with B whichever of A or B the caller happened to
+                pass. Resolution is transitive
+                (`GraphStore.resolve_entity_ids` follows a chain to its end,
+                not one hop -- `B -> A` then `A -> C` resolves to `C`) and
+                terminates by construction: `ConsolidationLog.merge` refuses
+                to merge *into* an alias, so no chain can point back on
+                itself, and adapters bound the walk anyway and raise
+                `AliasCycleError` on data that violates that invariant rather
+                than trust it and risk a hang on a corrupt row. This does not
+                touch anything about the entity that resolved through -- its
+                relationships and properties were already folded into the
+                canonical by the merge that made it an alias, and this call
+                neither re-derives nor re-applies that; it only decides which
+                entity *new* duplicates, if any, get merged into. Resolved
+                before `finder` is even asked for candidates, not by catching
+                `MergeIntoAliasError` after the fact, so a resolved subject is
+                scored with the neighbours it actually has -- an alias's own
+                edges have already been redirected away, so scoring against
+                it directly would starve the graph feature for no reason.
+                `MergeIntoAliasError` can still surface, but only from a
+                genuine race (the resolved canonical becoming an alias
+                itself between this resolution and the merge below); that
+                case is retried once against the newer canonical rather than
+                surfaced, since the caller did nothing wrong.
             finder: Supplies and scores the candidates.
             adjudicator: Consulted for the band between `low` and `high`.
                 Without one the band is **rejected**, not merged: the whole
@@ -188,6 +216,8 @@ class ConsolidationService:
         rejections are the training data for tuning the thresholds, and they
         are being thrown away.
         """
+        subject = await self._resolved_subject(subject)
+
         # `minimum_score=low` means `decide` below can never answer `REJECT`:
         # the finder has already dropped everything under the low threshold.
         # Worth knowing, because it is why two cosmic-ray mutants rewriting the
@@ -223,12 +253,55 @@ class ConsolidationService:
 
         if not confirmed:
             return None
-        return await self.merge(
-            tenant_id=subject.tenant_id,
-            canonical_entity_id=subject.id,
-            merged_entity_ids=[candidate.entity.id for candidate, _ in confirmed],
-            merge_reason="; ".join(reason for _, reason in confirmed),
-        )
+
+        confirmed_ids = [candidate.entity.id for candidate, _ in confirmed]
+        merge_reason = "; ".join(reason for _, reason in confirmed)
+        try:
+            return await self.merge(
+                tenant_id=subject.tenant_id,
+                canonical_entity_id=subject.id,
+                merged_entity_ids=confirmed_ids,
+                merge_reason=merge_reason,
+            )
+        except MergeIntoAliasError:
+            # `subject` was already resolved to its canonical above, before
+            # `finder` ran, so this is not the stale-subject case -- it is a
+            # genuine race: something merged this call's canonical into
+            # something else in the window between that resolution and the
+            # append inside `merge`. Retried once against the new canonical,
+            # because the caller did nothing wrong the first time either.
+            # Not retried a second time: two races on one call is not the
+            # same event happening twice, it is a sign something is
+            # genuinely wrong, and that should surface rather than loop.
+            subject = await self._resolved_subject(subject)
+            return await self.merge(
+                tenant_id=subject.tenant_id,
+                canonical_entity_id=subject.id,
+                merged_entity_ids=confirmed_ids,
+                merge_reason=merge_reason,
+            )
+
+    async def _resolved_subject(self, subject: Entity) -> Entity:
+        """`subject`, or the entity now standing for it if it was itself merged away.
+
+        See `resolve`'s docstring for why following the alias chain here is
+        transitive, terminates by construction, and is safe to call more than
+        once for the same subject (idempotent once resolution reaches a
+        canonical -- `resolve_entity_ids` maps a canonical id to itself).
+        """
+        resolved = await self._graph.resolve_entity_ids([subject.id], subject.tenant_id)
+        canonical_id = resolved[subject.id]
+        if canonical_id == subject.id:
+            return subject
+        canonical = await self._graph.get_entity(canonical_id, subject.tenant_id)
+        if canonical is None:
+            # `resolve_entity_ids` named a canonical the store has no row
+            # for. A merge is not a delete, so the canonical of a live alias
+            # should always be readable -- this is the log and the graph
+            # disagreeing, not a routine miss, and `MissingEntityError`
+            # already names exactly that shape of inconsistency.
+            raise MissingEntityError(entity_id=canonical_id, tenant_id=subject.tenant_id)
+        return canonical
 
     async def undo(self, *, tenant_id: TenantId, merge_event_id: UUID) -> MergeUndone:
         """Reverse the merge `merge_event_id` recorded.

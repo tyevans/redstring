@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest
 from eventsource.adapters.memory import (
     InMemoryCheckpointRepository,
     InMemoryDLQRepository,
@@ -293,17 +292,17 @@ class TestResolveRespectsTheInvariants:
         assert again is None
         assert len([e for e in await rig.events() if isinstance(e, EntitiesMerged)]) == 1
 
-    async def test_an_aliased_subject_raises_rather_than_returning_none(self):
-        """The asymmetry with candidates, pinned. An aliased *candidate* is
-        dropped silently -- it is one of many. An aliased *subject* means the
-        caller asked to consolidate around an entity that no longer stands for
-        itself, and `None` there is indistinguishable from "no duplicates".
+    async def test_an_aliased_subject_resolves_to_its_canonical_rather_than_raising(self):
+        """Reproduces the reported bug first: `MergeIntoAliasError` from a subject
+        that had itself already been merged away, e.g. by a caller re-resolving
+        entities read off a stale prior extraction.
 
-        A caller sweeping a tenant has to resolve its ids first, because
-        `find_entities` returns absorbed entities too: a merge is not a delete.
+        The fix -- if A was merged into B, consolidating around A means
+        consolidating around B, since a merge is exactly the claim that they
+        are one entity. `third` should end up merged into `canonical`, not
+        into `absorbed`, and no exception should reach the caller for the
+        ordinary case of an already-merged subject.
         """
-        from redstring.domain.exceptions import MergeIntoAliasError
-
         rig, tenant = Rig(), uuid4()
         canonical = keyed(tenant, "Ada Lovelace")
         absorbed = keyed(tenant, "Ada Lovelace")
@@ -317,8 +316,77 @@ class TestResolveRespectsTheInvariants:
         )
         await rig.catch_up()
 
-        with pytest.raises(MergeIntoAliasError):
-            await rig.service.resolve(absorbed, finder=rig.finder)
+        event = await rig.service.resolve(absorbed, finder=rig.finder)
+
+        assert event is not None
+        assert event.canonical_entity_id == canonical.id
+        assert event.merged_entity_ids == [third.id]
+
+    async def test_a_two_deep_alias_chain_resolves_to_the_terminal_canonical(self):
+        """A single-hop resolve would fix the reported case and leave this one
+        broken: `absorbed` is an alias of `also_absorbed`, which is itself an
+        alias of `canonical`. Passing `absorbed` as subject must still land the
+        merge on `canonical`, the chain's actual end, not on `also_absorbed`.
+        """
+        rig, tenant = Rig(), uuid4()
+        canonical = keyed(tenant, "Ada Lovelace")
+        also_absorbed = keyed(tenant, "Ada Lovelace")
+        absorbed = keyed(tenant, "Ada Lovelace")
+        third = keyed(tenant, "Ada Lovelace")
+        await rig.seed(canonical, also_absorbed, absorbed, third)
+
+        # Built in this order deliberately: `ConsolidationLog.merge` refuses
+        # to merge *into* an alias, so the chain has to be grown from its
+        # near end outward -- `also_absorbed` absorbs `absorbed` while it is
+        # still canonical, and only then does `canonical` absorb
+        # `also_absorbed`. Merging `canonical` first would try to merge
+        # *into* `also_absorbed` after it is already an alias, which
+        # `ConsolidationLog` refuses (that refusal is what stops a cycle from
+        # forming in the first place).
+        await rig.service.merge(
+            tenant_id=tenant,
+            canonical_entity_id=also_absorbed.id,
+            merged_entity_ids=[absorbed.id],
+        )
+        await rig.catch_up()
+        await rig.service.merge(
+            tenant_id=tenant,
+            canonical_entity_id=canonical.id,
+            merged_entity_ids=[also_absorbed.id],
+        )
+        await rig.catch_up()
+
+        event = await rig.service.resolve(absorbed, finder=rig.finder)
+
+        assert event is not None
+        assert event.canonical_entity_id == canonical.id
+        assert event.merged_entity_ids == [third.id]
+
+    async def test_the_absorbed_entitys_own_relationships_and_properties_are_untouched(self):
+        """Resolving `subject` to its canonical must not re-derive or re-apply
+        anything about the entity it resolved through -- that already happened
+        when the earlier merge made it an alias. This call only decides which
+        entity a *new* duplicate belongs with.
+        """
+        rig, tenant = Rig(), uuid4()
+        canonical = keyed(tenant, "Ada Lovelace", properties={"born": "1815"})
+        absorbed = keyed(tenant, "Ada Lovelace", properties={"title": "Countess"})
+        third = keyed(tenant, "Ada Lovelace")
+        await rig.seed(canonical, absorbed, third)
+
+        await rig.service.merge(
+            tenant_id=tenant,
+            canonical_entity_id=canonical.id,
+            merged_entity_ids=[absorbed.id],
+        )
+        await rig.catch_up()
+        before = await rig.graph_store.get_entity(absorbed.id, tenant)
+
+        await rig.service.resolve(absorbed, finder=rig.finder)
+        await rig.catch_up()
+
+        after = await rig.graph_store.get_entity(absorbed.id, tenant)
+        assert after == before, "resolving through an alias must not rewrite the alias row"
 
     async def test_a_resolved_merge_can_be_undone(self):
         """The property the deleted in-extraction resolver could not have: a

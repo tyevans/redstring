@@ -768,8 +768,17 @@ class Consolidator:
         not symmetric when no adjudicator is configured.
 
         Args:
-            subject: The entity that survives. Its duplicates are absorbed
-                into it.
+            subject: The entity to consolidate around. **If `subject` has
+                itself already been merged away, its terminal canonical
+                survives instead** -- so `report.canonical_entity_id` can
+                differ from `subject.id`. See
+                `ConsolidationService.resolve`'s docstring for why that is
+                the right reading of a merge (A merged into B means new
+                duplicates of A belong with B too) and why it is safe
+                (transitive, terminating by construction). A caller sweeping
+                a whole tenant no longer needs to pre-resolve its own ids for
+                this reason alone, though `find_entities` returning absorbed
+                entities is still the way to discover them at all.
             finder: Overrides the default built from this consolidator's
                 stores. Supply one to change the weights or the blocking.
             adjudicator: Asked about the middle band, in batches. Omit it and
