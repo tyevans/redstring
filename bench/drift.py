@@ -17,6 +17,10 @@ something.
 `dudley` / `dudley dursley`, where one name's tokens are a strict subset of
 the other's. It cannot see `mum` / `mom`, or `dahl` / `roald dahl` where the
 shorter is not a subset. Report it as a lower bound and never as a total.
+
+**Expects lowercase input.** This function receives `normalized_name` from the
+runner, which is already lowercased. Calling with mixed-case names would see
+them as different tokens and give different results.
 """
 
 from __future__ import annotations

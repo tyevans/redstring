@@ -41,9 +41,25 @@ def test_identical_names_are_not_a_pair() -> None:
     assert variant_pairs(["harry potter", "harry potter"]) == 0
 
 
+def test_equal_token_sets_with_different_order_are_not_a_pair() -> None:
+    """Transposition is not a subset. Same tokens in different order do not
+    make a strict subset, so they are not counted as a variant pair.
+
+    Note: this is currently correct-but-arguable -- equal token sets in a
+    different order are almost certainly the same entity, and B-BENCH-4 names
+    transposition as a known blind spot that could be improved.
+    """
+    assert variant_pairs(["dudley dursley", "dursley dudley"]) == 0
+
+
 def test_possessives_and_hyphens_are_normalised_before_comparing() -> None:
-    """`harry's` and `harry` are one name spelled two ways."""
-    assert variant_pairs(["harrys wand", "harrys wand extra"]) == 1
+    """`harry's` and `harry` are one name spelled two ways.
+
+    Each half needs the punctuation actually present and differing between the
+    two names -- otherwise the plain token-subset rule carries the assertion
+    and the normalisation is untested.
+    """
+    assert variant_pairs(["harry's wand", "harry wand extra"]) == 1
     assert variant_pairs(["half-blood prince", "the half blood prince"]) == 1
 
 
