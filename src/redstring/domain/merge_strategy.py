@@ -121,11 +121,26 @@ def _order_key(claim: PropertyClaim) -> tuple[datetime, float, str]:
     and preferring the surer one is the only meaningful thing left to say.
 
     `str(origin)` carries no meaning at all and is here solely so that no two
-    distinct claims compare equal. The moment two do, `max` returns whichever
+    claims *from distinct entities* compare equal -- which is every pair
+    `claims_for` can produce, since it takes one claim per entity. That is the
+    scope of the guarantee and the sentence is narrow on purpose: the key does
+    not read `value`, so two claims constructed by hand with the same origin
+    and different values do tie, and this order says nothing about which of
+    those wins. The moment two claims do compare equal, `max` returns whichever
     arrived first and the winner depends on the order a caller happened to list
     the merged entities -- in a durable, replayable log. That is ADR 0010's
     argument, and it composes the same way `duplicate_preference` does: a
     meaningful order with an id appended.
+
+    The totality property cannot exhibit the same-origin case and is not
+    evidence about it: it draws `origin` from `st.uuids()`, which collides with
+    probability nothing, so every generated pair differs in the third component
+    before the first two are consulted. Widening it to a small `sampled_from`
+    set of origins would reach the case -- and would then be asserting totality
+    of an order that is *not* total over hand-built claims, so the property
+    would have to change shape rather than merely its strategy. Left as is,
+    with the claim narrowed to match, because `claims_for` is the only
+    supported constructor and the narrower claim is the true one.
 
     Deliberately *not* `domain.preference.preference`, which orders whole
     entities on `name`, `description` and `temporal` -- fields one property's
@@ -134,7 +149,7 @@ def _order_key(claim: PropertyClaim) -> tuple[datetime, float, str]:
     return (claim.provenance.observed_at, claim.provenance.confidence, str(claim.origin))
 
 
-# ANN401 (`Any` in a signature) is silenced on the next two functions, and it
+# ANN401 (`Any` in a signature) is silenced on `resolve` below, and it
 # is correct to silence it here rather than to narrow the type. The values are
 # `Entity.properties` and `Entity.external_ids` entries, which are
 # `dict[str, Any]` by declaration and hold whatever an extraction found -- a
