@@ -9,6 +9,7 @@ differently than it does.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -23,6 +24,10 @@ from redstring.extraction.schema import ExtractedEntity, Extraction
 TENANT = UUID("11111111-1111-1111-1111-111111111111")
 SOURCE = "doc-1"
 
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 10, 11, 7, tzinfo=UTC)
+
 
 def found(*pairs: tuple[str, str]):
     """Domain entities for `(name, type)` pairs, through the real mapper."""
@@ -32,6 +37,7 @@ def found(*pairs: tuple[str, str]):
         source_id=SOURCE,
         model="fake/canned-v1",
         reference_date=None,
+        observed_at=OBSERVED,
     ).entities
 
 

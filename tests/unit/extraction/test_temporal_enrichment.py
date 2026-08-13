@@ -21,6 +21,11 @@ TENANT = uuid4()
 SOURCE = "doc-1"
 PUBLISHED = datetime(2020, 6, 15, tzinfo=UTC)
 
+#: Record time, and deliberately nothing like `PUBLISHED`, which is world
+#: time. Fixed rather than `datetime.now(UTC)`: a fixture that varies per run
+#: makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 5, 11, 7, tzinfo=UTC)
+
 
 def extraction(*entities: ExtractedEntity) -> Extraction:
     return Extraction(entities=list(entities))
@@ -33,6 +38,7 @@ def mapped(*entities: ExtractedEntity, reference_date=PUBLISHED):
         source_id=SOURCE,
         model="test-model",
         reference_date=reference_date,
+        observed_at=OBSERVED,
     )
 
 
@@ -230,5 +236,6 @@ class TestMappingStillRefusesWhatItAlwaysDid:
                 source_id=SOURCE,
                 model=None,
                 reference_date=PUBLISHED,
+                observed_at=OBSERVED,
                 method=ExtractionMethod.LLM,
             )

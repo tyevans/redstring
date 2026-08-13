@@ -9,13 +9,14 @@ depending on which type it arrived in.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 
 from redstring.domain.entity import Entity
 from redstring.domain.json_safety import reject_unstorable_text
-from redstring.domain.provenance import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 
 #: Every nesting a free-form value can take. A NUL three levels down breaks a
@@ -37,15 +38,32 @@ NESTINGS = [
 ]
 
 
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 13, 11, 7, tzinfo=UTC)
+
+#: The free-form fields that live on `Provenance` rather than on `Entity`.
+#: `_entity` routes an override for one of these into the nested model, so the
+#: parametrised test below can keep naming a flat field per case -- the
+#: question it asks ("can a NUL reach the log through this field") is
+#: unchanged by which model happens to hold it.
+ON_PROVENANCE = {"source_id", "source_text", "model", "extraction_method", "confidence"}
+
+
 def _entity(**overrides: object) -> Entity:
+    provenance: dict[str, object] = {
+        "observed_at": OBSERVED,
+        "extraction_method": ExtractionMethod.PATTERN,
+        "confidence": 1.0,
+    }
+    provenance.update({k: overrides.pop(k) for k in list(overrides) if k in ON_PROVENANCE})
     fields: dict[str, object] = {
         "id": uuid4(),
         "tenant_id": uuid4(),
         "name": "Ada",
         "normalized_name": "ada",
         "entity_type": "person",
-        "extraction_method": ExtractionMethod.PATTERN,
-        "confidence": 1.0,
+        "provenance": Provenance(**provenance),  # type: ignore[arg-type]
     }
     return Entity(**{**fields, **overrides})  # type: ignore[arg-type]
 

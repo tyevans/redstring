@@ -86,19 +86,25 @@ def preference(entity: Entity) -> tuple[float, bool, int, bool, str, str, str, i
     Within one id bucket, every field of an `Entity` is in one of three
     groups:
 
-    - **Fixed by the caller.** `_build_entity` sets `tenant_id`, `source_id`,
-      `entity_type`, `extraction_method` and `model` identically for every
-      mention in a bucket.
+    - **Fixed by the caller.** `_build_entity` sets `tenant_id`,
+      `entity_type` and the whole of `provenance` except `confidence` --
+      `source_id`, `extraction_method`, `model` and `observed_at` --
+      identically for every mention in a bucket. `observed_at` is worth
+      naming: it is one instant per document by construction, taken from
+      `map_extraction`'s argument rather than a clock, so two mentions of one
+      entity cannot disagree about it and it does not belong in the order.
+      Were it read per chunk it would be an independently-supplied field and
+      would have to be.
     - **Derived from fields the id already fixes.** `normalized_name` and
       `blocking_keys` are pure functions of `name` and `entity_type`, both of
       which are inputs to `entity_id_for` -- so two mentions in one bucket
       cannot disagree about them. This group is the one to check when adding
       a field: a derived field is safe, an independently-supplied one is not.
-    - **Never populated.** `external_ids` and `source_text`.
+    - **Never populated.** `external_ids` and `provenance.source_text`.
 
-    What is left -- `confidence`, `name`, `description`, `properties` and
-    `temporal` -- is exactly what two mappings of one entity can disagree
-    about, and all five are here.
+    What is left -- `provenance.confidence`, `name`, `description`,
+    `properties` and `temporal` -- is exactly what two mappings of one entity
+    can disagree about, and all five are here.
 
     `temporal` joined that list in slice 8, when extraction began parsing the
     model's temporal expression into an extent. It is the second field to move
@@ -141,7 +147,7 @@ def preference(entity: Entity) -> tuple[float, bool, int, bool, str, str, str, i
     about which mention wins is a difference nobody would go looking for.
     """
     return (
-        entity.confidence,
+        entity.provenance.confidence,
         entity.temporal is not None,
         len(entity.description or ""),
         entity.description is not None,

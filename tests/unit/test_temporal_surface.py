@@ -35,12 +35,17 @@ from redstring import (
     Entity,
     ExtractionMethod,
     InMemoryGraphStore,
+    Provenance,
     TemporalExtent,
     TemporalQuery,
     TemporalRelation,
     infer_relations,
 )
 from redstring.testing.strategies import aware_datetimes, distinct_tenant_pairs, entities
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 3, 11, 7, tzinfo=UTC)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -51,16 +56,19 @@ def dated(tenant_id, name, year, *, end_year=None, precision=DatePrecision.YEAR)
     return Entity(
         id=uuid4(),
         tenant_id=tenant_id,
-        source_id="doc-1",
         name=name,
         normalized_name=name.lower(),
         entity_type="event",
-        extraction_method=ExtractionMethod.MANUAL,
-        confidence=1.0,
         temporal=TemporalExtent(
             start_date=datetime(year, 1, 1, tzinfo=UTC),
             end_date=datetime(end_year, 12, 31, tzinfo=UTC) if end_year else None,
             precision=precision,
+        ),
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.MANUAL,
+            confidence=1.0,
+            source_id="doc-1",
         ),
     )
 
@@ -69,12 +77,15 @@ def undated(tenant_id, name):
     return Entity(
         id=uuid4(),
         tenant_id=tenant_id,
-        source_id="doc-1",
         name=name,
         normalized_name=name.lower(),
         entity_type="event",
-        extraction_method=ExtractionMethod.MANUAL,
-        confidence=1.0,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.MANUAL,
+            confidence=1.0,
+            source_id="doc-1",
+        ),
     )
 
 

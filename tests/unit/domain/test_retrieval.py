@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
 from redstring.domain.entity import Entity
-from redstring.domain.provenance import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 14, 11, 7, tzinfo=UTC)
 
 
 def _entity(**overrides):
@@ -19,8 +24,11 @@ def _entity(**overrides):
         "name": "Ada Lovelace",
         "normalized_name": "ada lovelace",
         "entity_type": "person",
-        "extraction_method": ExtractionMethod.LLM,
-        "confidence": 0.9,
+        "provenance": Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.LLM,
+            confidence=0.9,
+        ),
     }
     fields.update(overrides)
     return Entity(**fields)

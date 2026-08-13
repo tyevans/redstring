@@ -618,7 +618,7 @@ thousand entities. Three consequences a consumer should know:
   of the same name.
 - **The value is the provider's model id, not a schema version.**
   `ExtractionPipeline` passes `self._provider.model`, and the convention
-  (stated on `Entity.model`) is provider-qualified and versioned —
+  (stated on `Entity.provenance.model`) is provider-qualified and versioned —
   `"ollama/qwen3.6-27b-mtp"`, not `"qwen"`. These values are durable log
   contents; an unversioned name makes "re-extract everything the old model
   touched" unanswerable.
@@ -647,7 +647,7 @@ was since absorbed into a canonical entity lands on the canonical one.
 
 Field-level detail on the payload types is in [domain value
 types](domain-value-types.md); the constraints that matter here are that
-`Entity.source_id` is `SourceId | None` on the type but effectively required
+`Entity.provenance.source_id` is `SourceId | None` on the type but effectively required
 in this event (the validator rejects any entity whose `source_id` differs from
 the event's — including, since `None != source_id`, an entity carrying none),
 and that both types carry their own `tenant_id`, which is what the validator
@@ -677,7 +677,7 @@ fragment rather than the whole line.
 |---|---|---|
 | 1 | every `Entity` carries the event's `tenant_id` | `entities` |
 | 2 | every `Relationship` carries the event's `tenant_id` | `relationships` |
-| 3 | every `Entity.source_id` equals the event's `source_id` | `entities` |
+| 3 | every `Entity.provenance.source_id` equals the event's `source_id` | `entities` |
 | 4 | every `Relationship.source_id` is `None` or equals the event's `source_id` | `relationships` |
 
 **Rules 3 and 4 are not the same rule.** Rule 3 rejects an absent
@@ -751,10 +751,10 @@ case-sensitive, and un-normalised, consistent with
 [`document_stream`](#document_stream-tenant_id-source_id) hashing the id
 exactly as given. `"doc-1"` and `" doc-1"` are two documents here as well.
 
-One consequence to note: `Entity.source_id` is typed `SourceId | None` with a
+One consequence to note: `Entity.provenance.source_id` is typed `SourceId | None` with a
 default of `None`, so an entity is constructible without one — but
 `None != "<source_id>"` holds, so **this validator rejects it**. Inside a
-`DocumentExtracted`, `Entity.source_id` is effectively required, and the
+`DocumentExtracted`, `Entity.provenance.source_id` is effectively required, and the
 message names `None` among the strays.
 
 #### 4 — relationships name it too, or name nothing

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -22,7 +23,11 @@ from redstring.domain.blocking import (
     soundex_key_for_name,
 )
 from redstring.domain.entity import Entity
-from redstring.domain.provenance import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod, Provenance
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 13, 11, 7, tzinfo=UTC)
 
 
 def _entity(name: str, entity_type: str = "person") -> Entity:
@@ -32,8 +37,11 @@ def _entity(name: str, entity_type: str = "person") -> Entity:
         name=name,
         normalized_name=name.lower(),
         entity_type=entity_type,
-        extraction_method=ExtractionMethod.MANUAL,
-        confidence=1.0,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.MANUAL,
+            confidence=1.0,
+        ),
     )
 
 

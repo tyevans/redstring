@@ -53,7 +53,9 @@ could not be caught without a dotted import.
   scale: `ScoredEntity.score` is a fused *rank* score, ordinal and
   unbounded, and is not on `VectorMatch`'s 0..1.
 - **What you put in.** `SourceDocument`.
-- **What comes out.** `Entity`, `Relationship`, `Alias`, `ExtractionMethod`,
+- **What comes out.** `Entity` (whose `provenance` is a `Provenance`:
+  where the claim came from, when, how and how sure),
+  `Relationship`, `Alias`, `ExtractionMethod`,
   `TemporalExtent` (with `DatePrecision` and `UncertaintyMarker`),
   `VectorRecord`, `VectorMatch`, `StoredChunk`, and the `DocumentExtracted`,
   `EntitiesEmbedded` and `DocumentChunked` events carrying them. `EntityId`, `RelationshipId`,
@@ -220,7 +222,7 @@ from redstring.domain.exceptions import (
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.interval import Bounds, TemporalRelation
-from redstring.domain.provenance import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
 from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
@@ -378,6 +380,7 @@ __all__ = [
     "PartialExtractionError",
     "PipelineResult",
     "PropertySchema",
+    "Provenance",
     "RankedChunk",
     "RedstringError",
     "RefusedCompletionError",

@@ -20,7 +20,7 @@ from hypothesis import strategies as st
 from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
-from redstring.domain.provenance import MODEL_BEARING_METHODS, ExtractionMethod
+from redstring.domain.provenance import MODEL_BEARING_METHODS, ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 
@@ -123,16 +123,25 @@ def entities(
         entity_type=draw(entity_types),
         original_entity_type=draw(st.none() | names),
         description=draw(st.none() | text(max_size=40)),
-        source_id=draw(st.none() | text(min_size=1, max_size=12).map(SourceId)),
-        source_text=draw(st.none() | text(max_size=40)),
         external_ids=draw(st.dictionaries(text(max_size=6), text(max_size=12), max_size=3)),
         properties=draw(property_dicts),
-        extraction_method=method,
-        # `Entity` rejects `model` for methods that invoke none; the strategy
-        # mirrors the validator rather than restating it, so widening the rule
-        # in one place cannot silently stop being generated in the other.
-        model=draw(st.none() | model_names) if method in MODEL_BEARING_METHODS else None,
-        confidence=draw(confidences),
+        provenance=Provenance(
+            # **Drawn, not fixed.** A generator handing every entity the same
+            # instant makes every `observed_at` comparison a tie, and the
+            # compliance suites would then pass against an adapter that
+            # dropped the field entirely -- the round trip would compare equal
+            # because there is only one value in play.
+            observed_at=draw(aware_datetimes),
+            extraction_method=method,
+            confidence=draw(confidences),
+            source_id=draw(st.none() | text(min_size=1, max_size=12).map(SourceId)),
+            source_text=draw(st.none() | text(max_size=40)),
+            # `Provenance` rejects `model` for methods that invoke none; the
+            # strategy mirrors the validator rather than restating it, so
+            # widening the rule in one place cannot silently stop being
+            # generated in the other.
+            model=draw(st.none() | model_names) if method in MODEL_BEARING_METHODS else None,
+        ),
         temporal=draw(st.none() | temporal_extents()),
         blocking_keys=draw(st.none() | st.frozensets(blocking_key_values, max_size=4)),
     )

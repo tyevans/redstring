@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 
 from redstring.domain.entity import Entity
 from redstring.domain.interval import Bounds, TemporalRelation, relate_bounds
-from redstring.domain.provenance import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.temporal.inference import (
     _CANONICAL,
@@ -19,6 +19,10 @@ from redstring.temporal.inference import (
     InferredRelation,
     infer_relations,
 )
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 15, 11, 7, tzinfo=UTC)
 
 TENANT = uuid4()
 
@@ -34,10 +38,13 @@ def dated(name: str, extent: TemporalExtent | None) -> Entity:
         name=name,
         normalized_name=name.lower(),
         entity_type="Event",
-        source_id="doc-1",
         temporal=extent,
-        extraction_method=ExtractionMethod.PATTERN,
-        confidence=0.9,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=0.9,
+            source_id="doc-1",
+        ),
     )
 
 

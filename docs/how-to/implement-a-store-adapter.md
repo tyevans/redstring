@@ -1053,7 +1053,7 @@ See [quality gates](../reference/quality-gates.md).
 #### `model` is provenance, and empty output is an error
 
 **`model` is provider-qualified and versioned** — `"ollama/qwen3.6-27b-mtp"`,
-not `"qwen"`. It is not configuration: the value lands on `Entity.model` and
+not `"qwen"`. It is not configuration: the value lands on `Entity.provenance.model` and
 into a durable event log where "re-extract everything the old model touched"
 has to stay answerable, and the provider is the only thing that knows its own
 identity, so it exposes it rather than making each caller pass a string it

@@ -17,6 +17,7 @@ implementation would fail them:
 from __future__ import annotations
 
 import random
+from datetime import UTC, datetime
 from itertools import pairwise
 from uuid import UUID
 
@@ -40,6 +41,12 @@ TENANT = UUID("11111111-1111-1111-1111-111111111111")
 SOURCE = "doc-1"
 MODEL = "fake/canned-v1"
 
+#: One instant for every chunk, which is what the pipeline does. Fixed rather
+#: than `datetime.now(UTC)`: the order-independence property below permutes
+#: chunks and compares the results, so a per-call clock would make every
+#: entity differ and the property would pass vacuously.
+OBSERVED = datetime(2026, 2, 6, 11, 7, tzinfo=UTC)
+
 
 def chunk(*entities: ExtractedEntity, links: list[ExtractedRelationship] | None = None):
     return map_extraction(
@@ -48,6 +55,7 @@ def chunk(*entities: ExtractedEntity, links: list[ExtractedRelationship] | None 
         source_id=SOURCE,
         model=MODEL,
         reference_date=None,
+        observed_at=OBSERVED,
     )
 
 
@@ -232,7 +240,7 @@ class TestChoosingBetweenTwoReports:
             ]
         )
 
-        assert [e.confidence for e in merged.entities] == [0.95]
+        assert [e.provenance.confidence for e in merged.entities] == [0.95]
 
 
 class TestCounters:
@@ -482,5 +490,7 @@ def test_the_tie_break_is_reached_at_all_in_the_realistic_case():
     """
     parts = [chunk(entity("Ada Lovelace")), chunk(entity("Ada Lovelace"))]
 
-    assert {e.confidence for part in parts for e in part.entities} == {DEFAULT_CONFIDENCE}
+    assert {e.provenance.confidence for part in parts for e in part.entities} == {
+        DEFAULT_CONFIDENCE
+    }
     assert len(merge_extractions(parts).entities) == 1

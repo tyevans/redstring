@@ -12,6 +12,7 @@ three survives" would be asserting nothing about which chunk it came from.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -34,6 +35,12 @@ from redstring.extraction.pipeline import (
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider
 
 MODEL = "fake/canned-v1"
+
+#: The observation instant every call here supplies. Fixed rather than
+#: `datetime.now(UTC)`: several tests below compare two extractions of the
+#: same document for equality, and a per-call clock would make them differ for
+#: a reason that has nothing to do with what they are testing.
+OBSERVED = datetime(2026, 2, 9, 11, 7, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -69,7 +76,9 @@ class TestOneChunk:
     async def test_a_short_document_yields_the_entities_the_model_found(self, tenant_id):
         pipeline = ExtractionPipeline(FakeLlmProvider(script=[payload("Ada Lovelace")]))
 
-        result = await pipeline.extract(document("Ada Lovelace was a mathematician."), tenant_id)
+        result = await pipeline.extract(
+            document("Ada Lovelace was a mathematician."), tenant_id, observed_at=OBSERVED
+        )
 
         assert [e.name for e in result.entities] == ["Ada Lovelace"]
 
@@ -78,16 +87,60 @@ class TestOneChunk:
             FakeLlmProvider(model="fake/v7", script=[payload("Ada Lovelace")])
         )
 
-        result = await pipeline.extract(document("Ada was a mathematician.", "essay-9"), tenant_id)
+        result = await pipeline.extract(
+            document("Ada was a mathematician.", "essay-9"), tenant_id, observed_at=OBSERVED
+        )
 
         [ada] = result.entities
-        assert (ada.source_id, ada.model, ada.tenant_id) == ("essay-9", "fake/v7", tenant_id)
+        assert (ada.provenance.source_id, ada.provenance.model, ada.tenant_id) == (
+            "essay-9",
+            "fake/v7",
+            tenant_id,
+        )
+
+    async def test_the_pipeline_stamps_every_entity_with_the_observation_instant(self, tenant_id):
+        """The instant comes from the caller and reaches every entity.
+
+        Asserted as a *set* over several entities rather than on one, because
+        the claim is that they all share one instant: an implementation
+        reading a clock per entity would satisfy a single-entity assertion and
+        fail this.
+        """
+        text = "Ada Lovelace. " * 12 + "Charles Babbage. " * 12
+        pipeline = ExtractionPipeline(
+            FakeLlmProvider(
+                by_substring={
+                    "Ada Lovelace": payload("Ada Lovelace"),
+                    "Charles Babbage": payload("Charles Babbage"),
+                }
+            ),
+            chunker=small_chunker(),
+        )
+
+        result = await pipeline.extract(document(text), tenant_id, observed_at=OBSERVED)
+
+        assert len(result.entities) > 1
+        assert {e.provenance.observed_at for e in result.entities} == {OBSERVED}
+
+    async def test_two_extractions_of_one_document_agree_on_observed_at(self, tenant_id):
+        """The determinism `observed_at` being an argument buys. A clock below
+        `composition` would make these differ, and nothing else in this file
+        would notice."""
+        pipeline = ExtractionPipeline(FakeLlmProvider(script=[payload("Ada"), payload("Ada")]))
+        doc = document("Ada Lovelace was a mathematician.")
+
+        first = await pipeline.extract(doc, tenant_id, observed_at=OBSERVED)
+        second = await pipeline.extract(doc, tenant_id, observed_at=OBSERVED)
+
+        assert first.entities == second.entities
 
     async def test_a_document_the_model_found_nothing_in_extracts_to_nothing(self, tenant_id):
         """Not an error. This is the outcome every failure path must stay distinct from."""
         pipeline = ExtractionPipeline(FakeLlmProvider(script=[payload()]))
 
-        result = await pipeline.extract(document("The weather was fine."), tenant_id)
+        result = await pipeline.extract(
+            document("The weather was fine."), tenant_id, observed_at=OBSERVED
+        )
 
         assert result.entities == []
         assert result.failed_chunks == 0
@@ -106,7 +159,7 @@ class TestManyChunks:
             chunker=small_chunker(),
         )
 
-        result = await pipeline.extract(document(text), tenant_id)
+        result = await pipeline.extract(document(text), tenant_id, observed_at=OBSERVED)
 
         assert sorted(e.name for e in result.entities) == ["Ada Lovelace", "Charles Babbage"]
 
@@ -124,7 +177,7 @@ class TestManyChunks:
             chunker=small_chunker(),
         )
 
-        result = await pipeline.extract(document(text), tenant_id)
+        result = await pipeline.extract(document(text), tenant_id, observed_at=OBSERVED)
 
         assert [e.name for e in result.entities] == ["Ada Lovelace"]
 
@@ -149,7 +202,7 @@ class TestManyChunks:
             chunker=small_chunker(),
         )
 
-        result = await pipeline.extract(document(text), tenant_id)
+        result = await pipeline.extract(document(text), tenant_id, observed_at=OBSERVED)
 
         assert result.relationships == []
         assert result.unresolved_relationships >= 1
@@ -171,7 +224,9 @@ class TestFailingChunks:
 
         with pytest.raises(EmptyCompletionError):
             await pipeline.extract(
-                document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12), tenant_id
+                document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12),
+                tenant_id,
+                observed_at=OBSERVED,
             )
 
     async def test_a_malformed_chunk_also_fails_the_document_by_default(self, tenant_id):
@@ -180,7 +235,7 @@ class TestFailingChunks:
         )
 
         with pytest.raises(MalformedCompletionError):
-            await pipeline.extract(document("Ada Lovelace."), tenant_id)
+            await pipeline.extract(document("Ada Lovelace."), tenant_id, observed_at=OBSERVED)
 
     async def test_skipping_failed_chunks_keeps_the_rest_and_counts_the_losses(self, tenant_id):
         pipeline = ExtractionPipeline(
@@ -190,7 +245,9 @@ class TestFailingChunks:
         )
 
         result = await pipeline.extract(
-            document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12), tenant_id
+            document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12),
+            tenant_id,
+            observed_at=OBSERVED,
         )
 
         assert [e.name for e in result.entities] == ["Charles Babbage"]
@@ -203,7 +260,9 @@ class TestRecording:
             FakeLlmProvider(script=[payload("Ada Lovelace", "Charles Babbage")])
         )
 
-        event = await pipeline.record(aggregate, document("Ada and Charles."), tenant_id)
+        event = await pipeline.record(
+            aggregate, document("Ada and Charles."), tenant_id, observed_at=OBSERVED
+        )
 
         assert isinstance(event, DocumentExtracted)
         assert sorted(e.name for e in event.entities) == ["Ada Lovelace", "Charles Babbage"]
@@ -218,7 +277,7 @@ class TestRecording:
             FakeLlmProvider(model="fake/v7", script=[payload("Ada Lovelace")])
         )
 
-        event = await pipeline.record(aggregate, document("Ada."), tenant_id)
+        event = await pipeline.record(aggregate, document("Ada."), tenant_id, observed_at=OBSERVED)
 
         assert event.model_version == "fake/v7"
 
@@ -228,9 +287,12 @@ class TestRecording:
                 by_substring={"Ada": payload("Ada Lovelace")},
             )
         )
-        await pipeline.record(aggregate, document("Ada."), tenant_id)
+        await pipeline.record(aggregate, document("Ada."), tenant_id, observed_at=OBSERVED)
 
-        assert await pipeline.record(aggregate, document("Ada."), tenant_id) is None
+        assert (
+            await pipeline.record(aggregate, document("Ada."), tenant_id, observed_at=OBSERVED)
+            is None
+        )
 
     async def test_a_partial_extraction_is_refused_rather_than_recorded_as_complete(
         self, aggregate, tenant_id
@@ -250,7 +312,10 @@ class TestRecording:
 
         with pytest.raises(PartialExtractionError):
             await pipeline.record(
-                aggregate, document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12), tenant_id
+                aggregate,
+                document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12),
+                tenant_id,
+                observed_at=OBSERVED,
             )
 
     async def test_a_partial_extraction_can_be_recorded_when_asked_for_explicitly(
@@ -267,6 +332,7 @@ class TestRecording:
             document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12),
             tenant_id,
             allow_partial=True,
+            observed_at=OBSERVED,
         )
 
         assert event is not None
@@ -281,7 +347,10 @@ class TestRecording:
 
         with pytest.raises(PartialExtractionError):
             await pipeline.record(
-                aggregate, document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12), tenant_id
+                aggregate,
+                document("Ada Lovelace. " * 12 + "Charles Babbage. " * 12),
+                tenant_id,
+                observed_at=OBSERVED,
             )
 
         assert aggregate.uncommitted_events == []
@@ -294,7 +363,9 @@ class TestRecording:
         """
         pipeline = ExtractionPipeline(FakeLlmProvider(script=[payload()]))
 
-        event = await pipeline.record(aggregate, document("The weather was fine."), tenant_id)
+        event = await pipeline.record(
+            aggregate, document("The weather was fine."), tenant_id, observed_at=OBSERVED
+        )
 
         assert event is not None
         assert event.entities == []
@@ -328,7 +399,7 @@ class TestPromptIsExtractionsBusiness:
         )
 
         assert pipeline.system_prompt == "Extract only mathematicians."
-        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id, observed_at=OBSERVED)
         assert [e.name for e in result.entities] == ["Ada Lovelace"]
 
     def test_there_is_a_default_prompt_and_it_is_not_empty(self):
@@ -366,7 +437,9 @@ class TestRecordRefusesAResultFromAnotherDocument:
 
     async def test_a_result_for_a_different_document_is_refused(self, tenant_id) -> None:
         pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={"Ada": ONE_ENTITY}))
-        other = await pipeline.extract(SourceDocument(id="doc-2", text="Ada."), tenant_id)
+        other = await pipeline.extract(
+            SourceDocument(id="doc-2", text="Ada."), tenant_id, observed_at=OBSERVED
+        )
 
         with pytest.raises(ValueError, match="doc-2"):
             await pipeline.record(
@@ -379,7 +452,7 @@ class TestRecordRefusesAResultFromAnotherDocument:
     async def test_the_matching_result_is_accepted(self, tenant_id) -> None:
         pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={"Ada": ONE_ENTITY}))
         document = SourceDocument(id="doc-1", text="Ada.")
-        result = await pipeline.extract(document, tenant_id)
+        result = await pipeline.extract(document, tenant_id, observed_at=OBSERVED)
 
         event = await pipeline.record(
             Document(document_stream(tenant_id=tenant_id, source_id="doc-1").aggregate_id),
@@ -397,7 +470,7 @@ class TestRecordRefusesAResultFromAnotherDocument:
         # not an error. The guard must not turn it into one.
         pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={}, default={}))
         document = SourceDocument(id="doc-1", text="Nothing here.")
-        result = await pipeline.extract(document, tenant_id)
+        result = await pipeline.extract(document, tenant_id, observed_at=OBSERVED)
 
         assert result.entities == []
         assert (
@@ -433,7 +506,7 @@ class TestTheChunkingIsCarriedOut:
             chunker=small_chunker(),
         )
 
-        result = await pipeline.extract(document(text), tenant_id)
+        result = await pipeline.extract(document(text), tenant_id, observed_at=OBSERVED)
 
         by_id = {entity.id: entity.name for entity in result.entities}
         named = [{by_id[entity_id] for entity_id in chunk.entity_ids} for chunk in result.chunks]
@@ -472,7 +545,7 @@ class TestTheChunkingIsCarriedOut:
             chunker=small_chunker(),
         )
 
-        result = await pipeline.extract(document(text), tenant_id)
+        result = await pipeline.extract(document(text), tenant_id, observed_at=OBSERVED)
 
         barren = [c for c in result.chunks if "Ada Lovelace" not in c.text]
         productive = [c for c in result.chunks if "Ada Lovelace" in c.text]
@@ -495,7 +568,7 @@ class TestTheChunkingIsCarriedOut:
             skip_failed_chunks=True,
         )
 
-        result = await pipeline.extract(document(text), tenant_id)
+        result = await pipeline.extract(document(text), tenant_id, observed_at=OBSERVED)
 
         assert result.failed_chunks
         assert len(result.chunks) == result.total_chunks
@@ -505,7 +578,9 @@ class TestTheChunkingIsCarriedOut:
     async def test_every_passage_carries_the_document_and_the_tenant(self, tenant_id):
         pipeline = ExtractionPipeline(FakeLlmProvider(script=[payload("Ada Lovelace")]))
 
-        result = await pipeline.extract(document("Ada Lovelace.", "essay-9"), tenant_id)
+        result = await pipeline.extract(
+            document("Ada Lovelace.", "essay-9"), tenant_id, observed_at=OBSERVED
+        )
 
         assert [(c.source_id, c.tenant_id) for c in result.chunks] == [("essay-9", tenant_id)]
 
@@ -520,7 +595,7 @@ class TestTheChunkingIsCarriedOut:
             FakeLlmProvider(model="fake/v7", script=[payload("Ada Lovelace")])
         )
 
-        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id, observed_at=OBSERVED)
 
         assert result.chunking_signature.endswith(":fake/v7")
         assert result.chunking_signature.startswith("sliding_window:")
@@ -532,9 +607,11 @@ class TestTheChunkingIsCarriedOut:
         text = "Ada Lovelace. " * 12
         answer = FakeLlmProvider(by_substring={"Ada": payload("Ada Lovelace")})
 
-        one = await ExtractionPipeline(answer).extract(document(text), tenant_id)
+        one = await ExtractionPipeline(answer).extract(
+            document(text), tenant_id, observed_at=OBSERVED
+        )
         many = await ExtractionPipeline(answer, chunker=small_chunker()).extract(
-            document(text), tenant_id
+            document(text), tenant_id, observed_at=OBSERVED
         )
 
         assert one.total_chunks != many.total_chunks
@@ -545,10 +622,10 @@ class TestTheChunkingIsCarriedOut:
         answer = FakeLlmProvider(by_substring={"Ada": payload("Ada Lovelace")})
 
         first = await ExtractionPipeline(answer, chunker=small_chunker()).extract(
-            document(text), tenant_id
+            document(text), tenant_id, observed_at=OBSERVED
         )
         second = await ExtractionPipeline(answer, chunker=small_chunker()).extract(
-            document(text), tenant_id
+            document(text), tenant_id, observed_at=OBSERVED
         )
 
         assert first.chunking_signature == second.chunking_signature
@@ -563,7 +640,9 @@ class TestTheChunkingIsCarriedOut:
             ),
         )
 
-        result = await pipeline.extract(document("Ada Lovelace. " * 4), tenant_id)
+        result = await pipeline.extract(
+            document("Ada Lovelace. " * 4), tenant_id, observed_at=OBSERVED
+        )
 
         assert result.total_chunks > len(result.chunks)
         assert len({chunk.id for chunk in result.chunks}) == len(result.chunks)
@@ -646,7 +725,7 @@ class TestEachChunkIsToldWhatTheEarlierOnesFound:
         provider = RecordingProvider(by_substring=CARRYOVER_ANSWERS)
         pipeline = ExtractionPipeline(provider, chunker=small_chunker())
 
-        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id)
+        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id, observed_at=OBSERVED)
 
         assert len(provider.prompts) > 1, "the document must split for this test to mean anything"
         assert provider.prompts[0] == DEFAULT_SYSTEM_PROMPT
@@ -655,7 +734,7 @@ class TestEachChunkIsToldWhatTheEarlierOnesFound:
         provider = RecordingProvider(by_substring=CARRYOVER_ANSWERS)
         pipeline = ExtractionPipeline(provider, chunker=small_chunker())
 
-        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id)
+        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id, observed_at=OBSERVED)
 
         babbage = next(i for i, text in enumerate(provider.texts) if "Babbage" in text)
         assert "Ada Lovelace (Person)" in provider.prompts[babbage]
@@ -665,7 +744,7 @@ class TestEachChunkIsToldWhatTheEarlierOnesFound:
         provider = RecordingProvider(by_substring=CARRYOVER_ANSWERS)
         pipeline = ExtractionPipeline(provider, chunker=small_chunker(), carryover_entities=0)
 
-        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id)
+        await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id, observed_at=OBSERVED)
 
         assert len(provider.prompts) > 1
         assert set(provider.prompts) == {DEFAULT_SYSTEM_PROMPT}
@@ -692,7 +771,7 @@ class TestEachChunkIsToldWhatTheEarlierOnesFound:
         )
         pipeline = ExtractionPipeline(provider, chunker=small_chunker())
 
-        result = await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id)
+        result = await pipeline.extract(document(TWO_PARAGRAPHS), tenant_id, observed_at=OBSERVED)
 
         assert result.dropped_entities == 1
         babbage = next(i for i, text in enumerate(provider.texts) if "Babbage" in text)
@@ -717,7 +796,7 @@ class TestAskingTheSameChunkTwice:
         provider = FakeLlmProvider(script=[payload("Ada Lovelace")])
         pipeline = ExtractionPipeline(provider)
 
-        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id, observed_at=OBSERVED)
 
         assert result.gleaning_passes == 0
         assert [e.name for e in result.entities] == ["Ada Lovelace"]
@@ -726,7 +805,9 @@ class TestAskingTheSameChunkTwice:
         provider = FakeLlmProvider(script=[payload("Ada Lovelace"), payload("Charles Babbage")])
         pipeline = ExtractionPipeline(provider, gleanings=1)
 
-        result = await pipeline.extract(document("Ada Lovelace and Charles Babbage."), tenant_id)
+        result = await pipeline.extract(
+            document("Ada Lovelace and Charles Babbage."), tenant_id, observed_at=OBSERVED
+        )
 
         assert sorted(e.name for e in result.entities) == ["Ada Lovelace", "Charles Babbage"]
         assert result.gleaning_passes == 1
@@ -735,7 +816,9 @@ class TestAskingTheSameChunkTwice:
         provider = RecordingProvider(script=[payload("Ada Lovelace"), payload("Charles Babbage")])
         pipeline = ExtractionPipeline(provider, gleanings=1)
 
-        await pipeline.extract(document("Ada Lovelace and Charles Babbage."), tenant_id)
+        await pipeline.extract(
+            document("Ada Lovelace and Charles Babbage."), tenant_id, observed_at=OBSERVED
+        )
 
         assert "- Ada Lovelace (Person)" in provider.prompts[1]
         assert provider.texts[0] == provider.texts[1], "the same chunk, re-read"
@@ -758,7 +841,9 @@ class TestAskingTheSameChunkTwice:
         )
         pipeline = ExtractionPipeline(provider, gleanings=1)
 
-        result = await pipeline.extract(document("Ada Lovelace and Charles Babbage."), tenant_id)
+        result = await pipeline.extract(
+            document("Ada Lovelace and Charles Babbage."), tenant_id, observed_at=OBSERVED
+        )
 
         assert result.unresolved_relationships == 0
         assert [r.relationship_type for r in result.relationships] == ["COLLABORATED_WITH"]
@@ -769,7 +854,7 @@ class TestAskingTheSameChunkTwice:
         provider = FakeLlmProvider(script=[payload("Ada Lovelace"), {}])
         pipeline = ExtractionPipeline(provider, gleanings=2)
 
-        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id, observed_at=OBSERVED)
 
         assert result.gleaning_passes == 1
         assert [e.name for e in result.entities] == ["Ada Lovelace"]
@@ -784,7 +869,7 @@ class TestAskingTheSameChunkTwice:
         provider = GleaningFails(payload("Ada Lovelace"))
         pipeline = ExtractionPipeline(provider, gleanings=1)
 
-        result = await pipeline.extract(document("Ada Lovelace."), tenant_id)
+        result = await pipeline.extract(document("Ada Lovelace."), tenant_id, observed_at=OBSERVED)
 
         assert result.failed_gleanings == 1
         assert result.gleaning_passes == 0

@@ -49,7 +49,7 @@ from redstring.domain.alias import Alias
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import AliasCycleError, MissingEntityError
 from redstring.domain.ids import EntityId, RelationshipId, TenantId
-from redstring.domain.provenance import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import TemporalExtent
 
@@ -711,11 +711,22 @@ def _entity_row(entity: Entity) -> dict[str, Any]:
         "entity_type": entity.entity_type,
         "original_entity_type": entity.original_entity_type,
         "description": entity.description,
-        "source_id": entity.source_id,
-        "source_text": entity.source_text,
-        "extraction_method": entity.extraction_method.value,
-        "model": entity.model,
-        "confidence": entity.confidence,
+        # Provenance is flattened onto the node rather than stored as one JSON
+        # blob: `extraction_method` and `model` are what "re-extract
+        # everything the old model touched" queries on, and a blob is not
+        # queryable in Cypher. Every key is written on every upsert because
+        # `SET e = row` replaces the whole property set -- an omitted key is
+        # not left alone, it is erased.
+        "source_id": entity.provenance.source_id,
+        "source_text": entity.provenance.source_text,
+        "extraction_method": entity.provenance.extraction_method.value,
+        "model": entity.provenance.model,
+        "confidence": entity.provenance.confidence,
+        # ISO text rather than a native `DateTime`, for the reason `_alias_row`
+        # gives about `merged_at`: the driver's round-trip is lossy for offsets
+        # Python spells differently, and the port compares entities for
+        # equality.
+        "observed_at": entity.provenance.observed_at.isoformat(),
         # A list, so `find_by_blocking_key` can filter on it in Cypher. Sorted
         # for a stable stored form; the domain type is a set either way.
         # `None` is left as null (Neo4j drops the property) while an empty set
@@ -738,13 +749,17 @@ def _entity_from(node: Node) -> Entity:
         entity_type=node["entity_type"],
         original_entity_type=node.get("original_entity_type"),
         description=node.get("description"),
-        source_id=node.get("source_id"),
-        source_text=node.get("source_text"),
         external_ids=json.loads(node["external_ids_json"]),
         properties=json.loads(node["properties_json"]),
-        extraction_method=ExtractionMethod(node["extraction_method"]),
-        model=node.get("model"),
-        confidence=node["confidence"],
+        provenance=Provenance(
+            observed_at=datetime.fromisoformat(node["observed_at"]),
+            extraction_method=ExtractionMethod(node["extraction_method"]),
+            confidence=node["confidence"],
+            # `.get`, because Neo4j drops a property written as null.
+            source_id=node.get("source_id"),
+            source_text=node.get("source_text"),
+            model=node.get("model"),
+        ),
         temporal=None if temporal is None else TemporalExtent.model_validate_json(temporal),
         blocking_keys=(
             None if node.get("blocking_keys") is None else frozenset(node["blocking_keys"])

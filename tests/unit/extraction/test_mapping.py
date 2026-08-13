@@ -10,6 +10,7 @@ counted**, which is what keeps a dangling edge out of `GraphStore`.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -32,10 +33,19 @@ OTHER_TENANT = UUID("22222222-2222-2222-2222-222222222222")
 SOURCE = "doc-1"
 MODEL = "ollama/qwen3.6-27b-mtp"
 
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 4, 11, 7, tzinfo=UTC)
+
 
 def mapped(extraction: Extraction, *, tenant=TENANT, source=SOURCE, model=MODEL):
     return map_extraction(
-        extraction, tenant_id=tenant, source_id=source, model=model, reference_date=None
+        extraction,
+        tenant_id=tenant,
+        source_id=source,
+        model=model,
+        reference_date=None,
+        observed_at=OBSERVED,
     )
 
 
@@ -54,10 +64,10 @@ class TestEntities:
         [ada] = mapped(Extraction(entities=[entity("Ada Lovelace")])).entities
 
         assert ada.tenant_id == TENANT
-        assert ada.source_id == SOURCE
+        assert ada.provenance.source_id == SOURCE
         assert ada.normalized_name == "ada lovelace"
-        assert ada.extraction_method is ExtractionMethod.LLM
-        assert ada.model == MODEL
+        assert ada.provenance.extraction_method is ExtractionMethod.LLM
+        assert ada.provenance.model == MODEL
 
     def test_what_the_model_did_say_survives_unchanged(self):
         said = entity(
@@ -71,14 +81,14 @@ class TestEntities:
         [ada] = mapped(Extraction(entities=[said])).entities
 
         assert (ada.name, ada.entity_type) == ("Ada Lovelace", "Mathematician")
-        assert (ada.description, ada.confidence) == ("A mathematician.", 0.9)
+        assert (ada.description, ada.provenance.confidence) == ("A mathematician.", 0.9)
         assert ada.properties == {"born": 1815}
 
     def test_an_unstated_confidence_is_the_midpoint_rather_than_certainty(self):
         """Reading silence as 1.0 would rank unmarked guesses above stated ones."""
         [ada] = mapped(Extraction(entities=[entity("Ada Lovelace")])).entities
 
-        assert ada.confidence == DEFAULT_CONFIDENCE
+        assert ada.provenance.confidence == DEFAULT_CONFIDENCE
 
     def test_a_blank_name_is_dropped_rather_than_crashing_the_extraction(self):
         """`Entity` refuses a blank name, and one bad row must not cost the rest.
@@ -579,11 +589,12 @@ class TestProvenance:
             source_id=SOURCE,
             model=None,
             reference_date=None,
+            observed_at=OBSERVED,
             method=ExtractionMethod.PATTERN,
         ).entities
 
-        assert ada.model is None
-        assert ada.extraction_method is ExtractionMethod.PATTERN
+        assert ada.provenance.model is None
+        assert ada.provenance.extraction_method is ExtractionMethod.PATTERN
 
     def test_an_llm_extraction_without_a_model_string_is_refused(self):
         """Provenance is the point of recording `model` at all.
@@ -600,6 +611,7 @@ class TestProvenance:
                 source_id=SOURCE,
                 model=None,
                 reference_date=None,
+                observed_at=OBSERVED,
             )
 
 

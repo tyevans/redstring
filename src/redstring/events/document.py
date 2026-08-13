@@ -115,7 +115,11 @@ class DocumentExtracted(TenantDomainEvent):
     def _payloads_belong_to_this_document_and_tenant(self) -> DocumentExtracted:
         _reject_foreign_tenants(self, self.entities, "entities")
         _reject_foreign_tenants(self, self.relationships, "relationships")
-        strays = {e.source_id for e in self.entities if e.source_id != self.source_id}
+        strays = {
+            e.provenance.source_id
+            for e in self.entities
+            if e.provenance.source_id != self.source_id
+        }
         if strays:
             raise ValueError(
                 f"entities must be attributed to the document they were extracted "

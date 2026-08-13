@@ -14,10 +14,14 @@ import pytest
 from redstring.domain.alias import Alias
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import AliasCycleError
-from redstring.domain.provenance import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.ports.graph_store import GraphStore
 from redstring.testing.graph_store import GraphStoreCompliance
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 12, 11, 7, tzinfo=UTC)
 
 
 class TestMemoryStore(GraphStoreCompliance):
@@ -149,8 +153,11 @@ class TestMemoryStoreSpecifics:
             name="Ada",
             normalized_name="ada",
             entity_type="person",
-            extraction_method=ExtractionMethod.MANUAL,
-            confidence=1.0,
+            provenance=Provenance(
+                observed_at=OBSERVED,
+                extraction_method=ExtractionMethod.MANUAL,
+                confidence=1.0,
+            ),
         )
         await one.upsert_entity(entity)
 

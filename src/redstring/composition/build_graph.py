@@ -61,6 +61,7 @@ every window.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from eventsource.adapters.memory import InMemoryEventStore, InMemorySnapshotStore
@@ -205,6 +206,7 @@ async def build_graph(
     vector_store: VectorStore | None = None,
     chunks: ChunkStore | None = None,
     event_store: AggregateStore | None = None,
+    observed_at: datetime | None = None,
 ) -> GraphBuildReport:
     """Extract `document` and write the result into `store`.
 
@@ -224,6 +226,14 @@ async def build_graph(
             choice -- `0.0` is a give-up.
         chunker: How to split the document. A `SlidingWindowChunker` with its
             own defaults when None.
+        observed_at: When this library was told, stamped onto every entity's
+            `Provenance`. `None` reads the clock here, which is the only place
+            in the library permitted to: everything below `composition` takes
+            the instant as a required argument, so a re-extraction of one
+            document produces identical entities whenever it runs. Pass a
+            value when you need that determinism -- a test, a backfill
+            re-stating when the observation actually happened, or a batch that
+            should share one instant across documents.
         embedding_provider: Embeds each entity's name so the extraction lands
             in a `VectorStore` as well as the graph. Must be given together
             with `vector_store`.
@@ -339,7 +349,9 @@ async def build_graph(
     # again -- see the `result` parameter there. `record` asks the aggregate
     # for an event and writes nothing itself, which is the property the whole
     # re-architecture rests on.
-    result = await pipeline.extract(document, tenant_id)
+    result = await pipeline.extract(
+        document, tenant_id, observed_at=observed_at or datetime.now(UTC)
+    )
     event = await pipeline.record(
         aggregate, document, tenant_id, allow_partial=allow_partial, result=result
     )

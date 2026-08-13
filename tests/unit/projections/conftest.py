@@ -10,6 +10,7 @@ test, which would make the test worthless.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -25,13 +26,17 @@ from eventsource.ports.positions import ExpectedVersion
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
 from redstring.domain.entity import Entity
-from redstring.domain.provenance import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.events import DocumentExtracted
 from redstring.events.streams import document_stream
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.projections import ChunkProjection, GraphProjection, VectorProjection
 from redstring.vector.adapters.memory import InMemoryVectorStore
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 4, 11, 7, tzinfo=UTC)
 
 #: Vector length for every embedding in this suite.
 DIMENSION = 4
@@ -244,9 +249,12 @@ def poison_entity(source_id, name):
         name=name,
         normalized_name=name.lower(),
         entity_type="thing",
-        source_id=source_id,
-        extraction_method=ExtractionMethod.PATTERN,
-        confidence=0.5,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=0.5,
+            source_id=source_id,
+        ),
     )
 
 
