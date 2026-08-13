@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from itertools import pairwise
 from uuid import UUID
 
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from redstring.extraction.mapping import (
@@ -480,6 +480,59 @@ class TestProperties:
         went_in = {e.id for part in parts for e in part.entities}
 
         assert {e.id for e in merge_extractions(parts).entities} == went_in
+
+
+def _colliding_parts(count: int, seed: int) -> list:
+    """`count` parts that collide on entity id, with a forced confidence tie.
+
+    "Ada Lovelace" is in every part, so `entity_id_for` gives every mention
+    the same id and the fold has something to resolve. The first two parts
+    pin her confidence to the same value regardless of `seed` -- a tie is not
+    left to chance, because a generator that only *sometimes* produces one
+    would make this property pass by luck on some draws and prove nothing on
+    others. Descriptions are unique per part so the tied mentions are not
+    fully equal objects, which would make "first wins" and "last wins" agree
+    for any implementation. Later parts add a random subset of two more names
+    with random confidence, purely to vary the shape of what is folded.
+    """
+    rng = random.Random(seed)
+    pool = ["Charles Babbage", "Alan Turing"]
+    parts = []
+    for i in range(count):
+        confidence = 0.5 if i < 2 else rng.choice([0.1, 0.3, 0.5, 0.7, 0.9])
+        mentions = [entity("Ada Lovelace", confidence=confidence, description=f"mention {i}")]
+        for name in rng.sample(pool, k=rng.randint(0, len(pool))):
+            mentions.append(
+                entity(name, confidence=rng.uniform(0.0, 1.0), description=f"{name} {i}")
+            )
+        parts.append(chunk(*mentions))
+    return parts
+
+
+@given(st.integers(min_value=2, max_value=5), st.integers(min_value=0, max_value=120))
+@settings(max_examples=25)
+def test_the_fold_does_not_depend_on_the_order_of_its_parts(count: int, seed: int) -> None:
+    """Bounded concurrency reorders when chunks are mapped, and this is the
+    property that makes that safe.
+
+    `merge_extractions` takes parts "in any order" and resolves collisions
+    with `domain.preference`, a documented *total* order. Both halves matter:
+    a partial order would fall through to "keep the one already there", which
+    is order-dependent exactly where two mentions tie -- and two mentions of
+    one entity tie whenever the model declined to score confidence, which is
+    the common case. See ADR 0010.
+    """
+    parts = _colliding_parts(count, seed)
+    forward = merge_extractions(parts)
+    backward = merge_extractions(list(reversed(parts)))
+
+    # Entity order in the result follows dict-insertion order, which tracks
+    # which part happened to be folded first -- that is allowed to differ.
+    # What must not differ is *which* entity won each id bucket.
+    assert {e.id for e in forward.entities} == {e.id for e in backward.entities}
+    assert {e.id: e for e in forward.entities} == {e.id: e for e in backward.entities}
+    assert forward.dropped_entities == backward.dropped_entities
+    assert forward.unresolved_relationships == backward.unresolved_relationships
 
 
 def test_the_tie_break_is_reached_at_all_in_the_realistic_case():
