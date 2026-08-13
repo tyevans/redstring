@@ -42,7 +42,6 @@ class TimingProvider:
         #: Which phase the caller believes is running. The runner sets it;
         #: nothing in the library knows about it.
         self.phase = "extract"
-        self.call_starts: list[float] = []
 
     @property
     def model(self) -> str:
@@ -69,7 +68,6 @@ class TimingProvider:
         """
         started = self._clock()
         self.calls += 1
-        self.call_starts.append(started)
         current = self.phase
         try:
             return await self._inner.extract(text, schema, system_prompt=system_prompt)
