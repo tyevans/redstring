@@ -34,7 +34,7 @@ Subclass and supply `new_store`::
 
     class TestMemoryChunkStore(ChunkStoreCompliance):
         async def new_store(self) -> ChunkStore:
-            return InMemoryChunkStore()
+            return InMemoryChunkStore(dimension=self.DIMENSION)
 
 `new_store` must return an **empty** store, and each call must return one
 isolated from every other. A store built for `semantic_candidates` must be

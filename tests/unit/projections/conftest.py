@@ -90,7 +90,7 @@ def fresh_rig() -> Rig:
     """
     graph_store = InMemoryGraphStore()
     vector_store = InMemoryVectorStore(dimension=DIMENSION)
-    chunk_store = InMemoryChunkStore()
+    chunk_store = InMemoryChunkStore(dimension=DIMENSION)
     dlq = InMemoryDLQRepository()
     return Rig(
         event_store=InMemoryEventStore(),

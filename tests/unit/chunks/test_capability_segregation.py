@@ -156,7 +156,7 @@ class TestTheComposedPortStillBindsEveryCapability:
         # does, on the `SemanticCandidateSource` line and again on the final
         # `ChunkStore` line. Not weakened to duck the failure; see the ADR
         # and the commit that added `SemanticCandidateSource` to the port.
-        store = InMemoryChunkStore()
+        store = InMemoryChunkStore(dimension=4)
 
         for capability in (
             ChunkWriter,

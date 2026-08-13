@@ -50,7 +50,7 @@ def small_chunker() -> SlidingWindowChunker:
 
 class TestThereIsNoModel:
     async def test_indexing_a_document_stores_its_passages_without_an_llm(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         report = await index_documents([document()], store=corpus, tenant_id=TENANT_ID)
 
@@ -69,7 +69,7 @@ class TestThereIsNoModel:
         assert not {p for p in parameters if "provider" in p.lower() or "llm" in p.lower()}
 
     async def test_indexed_chunks_carry_no_entity_ids(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         await index_documents(
             [long_document()], store=corpus, tenant_id=TENANT_ID, chunker=small_chunker()
@@ -95,7 +95,7 @@ class TestRepeats:
         signatures between them; without one the refusal has no state to live
         in, which the test below pins rather than leaving to the docstring.
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         log = InMemoryEventStore()
 
         first = await index_documents(
@@ -121,7 +121,7 @@ class TestRepeats:
         `documents_indexed` cannot be read as "work that needed doing". A
         docstring saying so is not a test; this is.
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         first = await index_documents([long_document()], store=corpus, tenant_id=TENANT_ID)
         second = await index_documents([long_document()], store=corpus, tenant_id=TENANT_ID)
@@ -133,7 +133,7 @@ class TestRepeats:
         assert len(await corpus.get_by_source("doc-1", TENANT_ID)) == first.chunks_written
 
     async def test_a_document_listed_twice_in_one_call_is_indexed_once(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         report = await index_documents(
             [long_document(), long_document()], store=corpus, tenant_id=TENANT_ID
@@ -143,7 +143,7 @@ class TestRepeats:
         assert report.documents_skipped == 1
 
     async def test_re_indexing_with_different_settings_replaces_the_passages(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         log = InMemoryEventStore()
 
         whole = await index_documents(
@@ -170,7 +170,7 @@ class TestRepeats:
 
     async def test_a_second_document_is_not_a_repeat_of_the_first(self) -> None:
         """Guards the tests above: idempotence is per document, not per call."""
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         log = InMemoryEventStore()
 
         report = await index_documents(
@@ -198,7 +198,7 @@ class TestTheTwoOrderings:
     """
 
     async def test_extracting_after_indexing_preserves_the_entity_links(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         graph = InMemoryGraphStore()
         log = InMemoryEventStore()
 
@@ -227,7 +227,7 @@ class TestTheTwoOrderings:
         Without this, "the signatures differ" would be satisfied by a
         signature that differs from everything, including itself.
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         log = InMemoryEventStore()
         provider = FakeLlmProvider(by_substring={}, default=ADA)
 
@@ -263,7 +263,7 @@ class TestTheTwoOrderings:
         text is still there is what distinguishes "the links were dropped"
         from "the corpus was emptied".
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         graph = InMemoryGraphStore()
         log = InMemoryEventStore()
 
@@ -296,7 +296,7 @@ class TestTheReport:
         The two numbers must differ, or a report wiring both fields to one
         count passes. The chunker is sized so each document really does split.
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         # Every sentence distinct. Repeated text collapses under content
         # addressing, so `"...". * 24` yields no more *rows* than `* 12` and
         # the two lengths come out equal -- which is the assertion below
@@ -317,7 +317,7 @@ class TestTheReport:
 
     async def test_documents_skipped_is_zero_when_nothing_was_a_repeat(self) -> None:
         """The sibling counters must not all move together."""
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         report = await index_documents(
             [long_document()], store=corpus, tenant_id=TENANT_ID, chunker=small_chunker()
@@ -328,12 +328,12 @@ class TestTheReport:
         assert report.documents_skipped == 0
 
     async def test_an_empty_corpus_is_reported_as_zero_of_everything(self) -> None:
-        report = await index_documents([], store=InMemoryChunkStore(), tenant_id=TENANT_ID)
+        report = await index_documents([], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID)
 
         assert report == IndexReport(documents_indexed=0, chunks_written=0, documents_skipped=0)
 
     async def test_the_report_cannot_be_edited_after_the_fact(self) -> None:
-        report = await index_documents([], store=InMemoryChunkStore(), tenant_id=TENANT_ID)
+        report = await index_documents([], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID)
 
         try:
             report.documents_indexed = 99  # type: ignore[misc]
@@ -344,7 +344,7 @@ class TestTheReport:
 
 class TestTenants:
     async def test_the_corpus_is_scoped_to_the_tenant_that_indexed_it(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         await index_documents([document()], store=corpus, tenant_id=TENANT_ID)
 
@@ -354,7 +354,7 @@ class TestTenants:
         """The chunk id is the same for both -- it is the digest of the source
         and the text, and neither carries the tenant. Only the store's
         `(tenant_id, id)` key keeps them apart."""
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         other = uuid4()
 
         await index_documents([document()], store=corpus, tenant_id=TENANT_ID)

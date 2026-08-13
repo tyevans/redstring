@@ -22,12 +22,12 @@ if TYPE_CHECKING:
 
 class TestMemoryChunkStore(ChunkStoreCompliance):
     async def new_store(self) -> ChunkStore:
-        return InMemoryChunkStore()
+        return InMemoryChunkStore(dimension=self.DIMENSION)
 
 
 @pytest.mark.unit
 async def test_a_fresh_store_holds_nothing() -> None:
-    store = InMemoryChunkStore()
+    store = InMemoryChunkStore(dimension=4)
     assert await store.get_by_source("doc-1", uuid4()) == []
 
 
@@ -35,7 +35,7 @@ async def test_a_fresh_store_holds_nothing() -> None:
 async def test_it_holds_no_state_outside_itself() -> None:
     """Two stores are independent; nothing is class-level or module-level."""
     tenant = uuid4()
-    first, second = InMemoryChunkStore(), InMemoryChunkStore()
+    first, second = InMemoryChunkStore(dimension=4), InMemoryChunkStore(dimension=4)
     await first.upsert_many(
         [
             StoredChunk(

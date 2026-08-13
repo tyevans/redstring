@@ -225,7 +225,7 @@ def _memory_adapters():
     return {
         "InMemoryGraphStore": InMemoryGraphStore,
         "InMemoryVectorStore": lambda: InMemoryVectorStore(dimension=8),
-        "InMemoryChunkStore": InMemoryChunkStore,
+        "InMemoryChunkStore": lambda: InMemoryChunkStore(dimension=8),
         "MemoryCache": MemoryCache,
     }
 
@@ -342,7 +342,7 @@ class TestTheBlockDoesSomething:
         get to make that choice quietly, so this pins the difference rather
         than leaving it to whoever reads the two classes next.
         """
-        store = InMemoryChunkStore()
+        store = InMemoryChunkStore(dimension=8)
         async with store:
             pass
         assert await store.get_by_source("s", "t") == []  # type: ignore[arg-type]

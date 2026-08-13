@@ -21,7 +21,10 @@ from typing import TYPE_CHECKING, Self
 from redstring.chunks.provenance import reject_foreign_chunks
 from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk_ranking import LexicalCandidate, LexicalCandidates
+from redstring.domain.chunk_retrieval import SemanticCandidate
+from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.tokenize import tokenize
+from redstring.domain.vector import cosine_score
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -34,8 +37,15 @@ if TYPE_CHECKING:
 class InMemoryChunkStore:
     """A `ChunkStore` backed by plain dictionaries."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, dimension: int) -> None:
+        if dimension <= 0:
+            raise ValueError(f"dimension must be positive, not {dimension}")
+        self._dimension = dimension
         self._chunks: dict[TenantId, dict[ChunkId, StoredChunk]] = {}
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
 
     async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
         for chunk in chunks:
@@ -164,6 +174,38 @@ class InMemoryChunkStore:
             for chunk, length, matched_terms in matches[:limit]
         ]
         return LexicalCandidates(stats=stats, candidates=candidates)
+
+    async def semantic_candidates(
+        self,
+        vector: Sequence[float],
+        tenant_id: TenantId,
+        limit: int,
+        *,
+        min_score: float | None = None,
+    ) -> list[SemanticCandidate]:
+        # Both guards run before anything touches `self._chunks`, matching
+        # `lexical_candidates` and `InMemoryVectorStore._check`.
+        if limit < 0:
+            raise ValueError(f"limit must not be negative, got {limit}")
+        if len(vector) != self._dimension:
+            raise DimensionMismatchError(expected=self._dimension, actual=len(vector))
+
+        # Chunks with `embedding is None` are not candidates -- skipped
+        # rather than scored zero, per the port's contract.
+        scored = [
+            SemanticCandidate(chunk=chunk.model_copy(deep=True), score=cosine_score(vector, chunk.embedding))
+            for chunk in self._chunks.get(tenant_id, {}).values()
+            if chunk.embedding is not None
+        ]
+
+        if min_score is not None:
+            scored = [candidate for candidate in scored if candidate.score >= min_score]
+
+        # Total order: score descending, then id ascending -- without the
+        # tie-break two adapters would cut different chunks from an equally
+        # scoring pair.
+        scored.sort(key=lambda candidate: (-candidate.score, candidate.chunk.id))
+        return scored[:limit]
 
     async def delete_by_source(self, source_id: SourceId, tenant_id: TenantId) -> int:
         tenant = self._chunks.get(tenant_id, {})
