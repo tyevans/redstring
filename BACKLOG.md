@@ -1392,15 +1392,20 @@ today, so what is lost is text a caller might display. It becomes urgent the
 moment a description reaches an embedding or a lexical channel, because at
 that point the fold is silently choosing what the corpus can be searched by.
 
-### B89. No chunk embeddings and no fused `retrieve_chunks` entry point — B2b
+### B89. No fused `retrieve_chunks` entry point — B2b
 
 B1 built the corpus (`docs/adr/0023-the-chunk-corpus.md`) and B2a built a real
 term-weighted ranker over it — BM25, scored in the domain, with the tokenizer
 and truncation cost it depends on
-(`docs/adr/0024-bm25-over-the-chunk-corpus.md`). **B2a has landed.** What is
-still missing is chunk embeddings, a `ScoredChunk`, a `retrieve_chunks` entry
-point, and fusion with the RRF that `composition/retrieval.py` already does
-for entities. None of that exists.
+(`docs/adr/0024-bm25-over-the-chunk-corpus.md`). **B2a has landed.** The
+chunk-semantic-channel work (`docs/adr/XXXX-the-chunks-vector-lives-on-the-chunk.md`)
+landed chunk embeddings themselves: `StoredChunk.embedding`, the
+`SemanticCandidateSource` capability on `ChunkStore`, both adapters
+implementing it, and the owed `doc_length`/`embedding` schema migration on
+`PostgresChunkStore` (see the closed migration note below). **Still missing:
+a `ScoredChunk`, a `retrieve_chunks` entry point, and fusion with the RRF
+that `composition/retrieval.py` already does for entities.** None of that
+exists yet.
 
 What B1 and B2a decided that B2b inherits, and would otherwise have to
 rediscover:
@@ -1432,24 +1437,16 @@ rediscover:
   `redstring.composition`'s public surface, and only needs a `CASES` entry
   naming its own callable.
 
-`PostgresChunkStore` stores no vector column today, so B2b also has a schema
-migration for a table that is already shipped and already has an integration
-suite pinning its DDL.
-
-**A second migration is already owed, ahead of B2b's vector column.** Every
-statement in `_schema_statements` is `IF NOT EXISTS`, so `ensure_schema` run
-against a `kg_chunks` table created before the chunk-lexical work (56542ba)
-adds `kg_chunks_terms` and leaves the existing `kg_chunks` table alone --
-after which every query naming `_COLUMNS` fails with "column doc_length does
-not exist", because the new `doc_length` column was never added to a table
-`CREATE TABLE IF NOT EXISTS` declines to touch. And even with the column
-added by hand, existing rows have no term rows and `doc_length = 0`, so they
-rank as empty documents until backfilled. Whoever writes B2b's `ALTER TABLE`
-for the vector column should add `doc_length` and a `<table>_terms` backfill
-in the same migration rather than treating this as separate follow-up --
-`kg_chunks` has never appeared in a tagged release, so today this affects
-only a deployment tracking `main`, but that stops being true the moment a
-release ships it.
+**The owed migration has landed.** `PostgresChunkStore._schema_statements`
+now carries `ALTER TABLE ... ADD COLUMN IF NOT EXISTS doc_length` and the
+matching `embedding` column, both proved against a table built by hand with
+neither column
+(`tests/integration/chunks/test_postgres_store.py::test_ensure_schema_repairs_a_table_created_without_the_new_columns`).
+`backfill_lexical_index()` repairs a pre-migration row's `doc_length` and
+term index from stored `text`, proved by ranking the same row wrong before
+and right after
+(`test_backfill_lexical_index_makes_a_pre_migration_row_rankable`). Both
+close what this entry used to call "a second migration already owed".
 
 ### B92. Corpus statistics are recomputed per query, not maintained incrementally
 

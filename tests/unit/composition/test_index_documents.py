@@ -328,12 +328,16 @@ class TestTheReport:
         assert report.documents_skipped == 0
 
     async def test_an_empty_corpus_is_reported_as_zero_of_everything(self) -> None:
-        report = await index_documents([], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID)
+        report = await index_documents(
+            [], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID
+        )
 
         assert report == IndexReport(documents_indexed=0, chunks_written=0, documents_skipped=0)
 
     async def test_the_report_cannot_be_edited_after_the_fact(self) -> None:
-        report = await index_documents([], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID)
+        report = await index_documents(
+            [], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID
+        )
 
         try:
             report.documents_indexed = 99  # type: ignore[misc]

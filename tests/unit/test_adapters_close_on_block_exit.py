@@ -116,7 +116,7 @@ def _pgvector(resource: _Resource, *, owned: bool) -> _Closeable:
 
 
 def _chunks(resource: _Resource, *, owned: bool) -> _Closeable:
-    store = PostgresChunkStore(cast("Any", resource))
+    store = PostgresChunkStore(cast("Any", resource), dimension=8)
     store._owns_pool = owned
     return store
 

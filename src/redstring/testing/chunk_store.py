@@ -579,9 +579,7 @@ class ChunkStoreCompliance:
 
         assert await store.get(held.id, tenant) == held
 
-    async def test_replace_source_rejects_a_zero_norm_embedding(
-        self, store: ChunkStore
-    ) -> None:
+    async def test_replace_source_rejects_a_zero_norm_embedding(self, store: ChunkStore) -> None:
         """The same write-time guard `upsert_many` states applies to
         `replace_source`'s elements too -- it is the same write path."""
         tenant = TenantId(uuid4())
@@ -1086,9 +1084,7 @@ class ChunkStoreCompliance:
     # determinism against itself.
     # ------------------------------------------------------------------
 
-    async def test_semantic_candidates_orders_by_score_descending(
-        self, store: ChunkStore
-    ) -> None:
+    async def test_semantic_candidates_orders_by_score_descending(self, store: ChunkStore) -> None:
         """Three genuinely different similarities -- a store returning them
         in insertion or storage order rather than by score fails here."""
         tenant = TenantId(uuid4())
@@ -1107,9 +1103,7 @@ class ChunkStoreCompliance:
         assert scores == sorted(scores, reverse=True)
         assert scores[0] > scores[1] > scores[2]
 
-    async def test_semantic_candidates_breaks_ties_on_id_ascending(
-        self, store: ChunkStore
-    ) -> None:
+    async def test_semantic_candidates_breaks_ties_on_id_ascending(self, store: ChunkStore) -> None:
         """Two chunks at an identical similarity order by id, not by insertion.
 
         The vectors are chosen so the similarities are *equal*, and the ids are
@@ -1127,12 +1121,8 @@ class ChunkStoreCompliance:
         """
         tenant = TenantId(uuid4())
         query = [1.0, 0.0, 0.0, 0.0]
-        alpha = self._chunk(
-            tenant, "doc-1", "tie candidate alpha", embedding=[1.0, 1.0, 0.0, 0.0]
-        )
-        beta = self._chunk(
-            tenant, "doc-1", "tie candidate beta", embedding=[1.0, -1.0, 0.0, 0.0]
-        )
+        alpha = self._chunk(tenant, "doc-1", "tie candidate alpha", embedding=[1.0, 1.0, 0.0, 0.0])
+        beta = self._chunk(tenant, "doc-1", "tie candidate beta", embedding=[1.0, -1.0, 0.0, 0.0])
         assert beta.id < alpha.id
         await store.upsert_many([alpha, beta])
 
@@ -1141,9 +1131,7 @@ class ChunkStoreCompliance:
         assert [candidate.chunk.id for candidate in result] == [beta.id, alpha.id]
         assert result[0].score == result[1].score
 
-    async def test_semantic_candidates_skips_unembedded_chunks(
-        self, store: ChunkStore
-    ) -> None:
+    async def test_semantic_candidates_skips_unembedded_chunks(self, store: ChunkStore) -> None:
         """A chunk with no vector is absent, not present with score 0."""
         tenant = TenantId(uuid4())
         query = [1.0, 0.0, 0.0, 0.0]
@@ -1206,9 +1194,7 @@ class ChunkStoreCompliance:
 
         assert result == []
 
-    async def test_semantic_candidates_rejects_a_negative_limit(
-        self, store: ChunkStore
-    ) -> None:
+    async def test_semantic_candidates_rejects_a_negative_limit(self, store: ChunkStore) -> None:
         tenant = TenantId(uuid4())
         query = [1.0, 0.0, 0.0, 0.0]
 
@@ -1228,9 +1214,7 @@ class ChunkStoreCompliance:
         assert raised.value.expected == self.DIMENSION
         assert raised.value.actual == len(narrow)
 
-    async def test_semantic_candidates_rejects_a_zero_norm_query(
-        self, store: ChunkStore
-    ) -> None:
+    async def test_semantic_candidates_rejects_a_zero_norm_query(self, store: ChunkStore) -> None:
         """Cosine is undefined at zero magnitude; `VectorStore.search` already
         rejects a zero-norm query and this port makes the same choice, per
         the module docstring."""
@@ -1272,9 +1256,7 @@ class ChunkStoreCompliance:
         assert again[0].chunk == pristine
         assert again[0].chunk.embedding == pristine.embedding
 
-    async def test_semantic_candidates_never_crosses_tenants(
-        self, store: ChunkStore
-    ) -> None:
+    async def test_semantic_candidates_never_crosses_tenants(self, store: ChunkStore) -> None:
         """Two tenants holding the same content-addressed chunk id, each with
         its own embedding -- the case that catches a key compared on `id`
         alone."""

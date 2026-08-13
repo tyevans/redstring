@@ -208,6 +208,7 @@ from redstring.domain.chunk_ranking import (
     RankedChunk,
     rank_chunks,
 )
+from redstring.domain.chunk_retrieval import SemanticCandidate
 from redstring.domain.consolidation import (
     MergeableFields,
     PropertyResolution,
@@ -282,6 +283,7 @@ from redstring.ports.chunk_store import (
     ChunkStore,
     ChunkWriter,
     LexicalCandidateSource,
+    SemanticCandidateSource,
 )
 from redstring.ports.embedding_provider import EmbeddingProvider
 from redstring.ports.graph_store import (
@@ -411,6 +413,8 @@ __all__ = [
     "Retriever",
     "ScoredCandidate",
     "ScoredEntity",
+    "SemanticCandidate",
+    "SemanticCandidateSource",
     "SimilarityFeatures",
     "SlidingWindowChunker",
     "SourceDocument",

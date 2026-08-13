@@ -413,6 +413,22 @@ PGVECTOR_MARKERS = ("<=>", "::vector", " vector(", "Vector(")
 #: than argued in a comment.
 LEGACY_PGVECTOR: frozenset[str] = frozenset()
 
+#: **Not empty, and not legacy.** `ChunkStore`'s `semantic_candidates`
+#: (`docs/adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md`'s reasoning
+#: applies equally to it) stores its own `embedding vector(n)` column and
+#: computes cosine similarity the same way `VectorStore` does -- `_SCORE` in
+#: `chunks/adapters/postgres.py` is proved textually identical to
+#: `vector/adapters/pgvector.py`'s by
+#: `tests/unit/chunks/test_postgres_schema.py`'s
+#: `test_the_similarity_expression_matches_the_vector_stores`.
+#: This is a second adapter legitimately speaking pgvector, not a caller of
+#: `VectorStore` leaking its backend -- `chunks` and `vector` are siblings in
+#: the layered contract and forbidden from importing each other (see
+#: `pyproject.toml`), so the two adapters duplicate this syntax rather than
+#: sharing it. `PGVECTOR_MARKERS` still fires on anything reaching for
+#: pgvector syntax outside these two named modules.
+OTHER_PGVECTOR_ADAPTERS: frozenset[str] = frozenset({"chunks/adapters/postgres.py"})
+
 SOURCE_ROOT = Path(adapter.__file__).parent.parent.parent
 
 
@@ -427,7 +443,11 @@ class TestPgVectorSyntaxDoesNotLeak:
         found: dict[str, list[str]] = {}
         for path in SOURCE_ROOT.rglob("*.py"):
             relative = path.relative_to(SOURCE_ROOT).as_posix()
-            if relative == "vector/adapters/pgvector.py" or relative in LEGACY_PGVECTOR:
+            if (
+                relative == "vector/adapters/pgvector.py"
+                or relative in LEGACY_PGVECTOR
+                or relative in OTHER_PGVECTOR_ADAPTERS
+            ):
                 continue
             text = path.read_text(encoding="utf-8")
             hits = [marker for marker in PGVECTOR_MARKERS if marker in text]
@@ -452,3 +472,17 @@ class TestPgVectorSyntaxDoesNotLeak:
             assert (SOURCE_ROOT / relative).exists(), (
                 f"{relative} is gone; delete its entry from LEGACY_PGVECTOR"
             )
+
+    def test_the_other_adapters_list_has_no_stale_entries(self):
+        for relative in OTHER_PGVECTOR_ADAPTERS:
+            assert (SOURCE_ROOT / relative).exists(), (
+                f"{relative} is gone; delete its entry from OTHER_PGVECTOR_ADAPTERS"
+            )
+
+    def test_the_other_adapters_list_would_notice_a_leak_too(self):
+        """Guard the guard, for the second exemption as well as the first:
+        each named module must actually contain pgvector syntax, or the
+        entry is hiding nothing and should not exist."""
+        for relative in OTHER_PGVECTOR_ADAPTERS:
+            text = (SOURCE_ROOT / relative).read_text(encoding="utf-8")
+            assert [marker for marker in PGVECTOR_MARKERS if marker in text]
