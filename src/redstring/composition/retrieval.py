@@ -44,16 +44,21 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from redstring.domain.blocking import query_blocking_keys
+from redstring.domain.chunk_ranking import rank_chunks
+from redstring.domain.chunk_retrieval import ChunkRetrievalResult, ScoredChunk
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.fusion import reciprocal_rank_fusion
 from redstring.domain.lexical import lexical_score
 from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
+from redstring.domain.tokenize import tokenize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from redstring.domain.chunk import ChunkId, StoredChunk
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
+    from redstring.ports.chunk_store import ChunkStore
     from redstring.ports.embedding_provider import EmbeddingProvider
     from redstring.ports.graph_store import EntityReader
     from redstring.ports.vector_store import VectorReader
@@ -244,3 +249,137 @@ class Retriever:
             for entity in await self._graph.get_entities(missing, tenant_id):
                 resolved[entity.id] = entity
         return resolved
+
+
+class ChunkRetriever:
+    """Ranked chunk retrieval, fusing a semantic and a lexical channel.
+
+    The chunk-corpus mirror of `Retriever` above: same guard order, same
+    `overfetch` semantics, the same reciprocal-rank fusion over two channels'
+    id lists. It holds `chunks` as `ChunkStore` rather than the narrower
+    intersection of `LexicalCandidateSource` and `SemanticCandidateSource` it
+    actually calls -- Python cannot express a Protocol intersection without
+    inventing a synthetic one, and inventing a port nobody asked for is worse
+    than the honest overstatement in the annotation. Only those two
+    capabilities are used; `ChunkWriter`, `ChunkReader` and `ChunkPurge` are
+    never called.
+
+    Two limits a caller meets as results that look like bugs:
+
+    - **Lexical recall is bounded by the candidate `limit`** passed to
+      `lexical_candidates` (`ports/chunk_store.py`'s truncation contract): a
+      chunk matching one rare, informative term can be cut before one
+      matching two common ones, so a passage that would have ranked first can
+      be absent entirely.
+    - **A corpus with no embeddings answers a semantic query with nothing,
+      and does not raise.** "Unembedded" is a per-row fact on `StoredChunk`,
+      not a property of the corpus as a whole, so there is no honest way to
+      refuse the query -- refusing would mean refusing some rows and not
+      others, mid-answer. A `HYBRID` query over such a corpus still returns
+      its lexical results; only the semantic channel goes silent.
+    """
+
+    def __init__(
+        self,
+        *,
+        embeddings: EmbeddingProvider,
+        chunks: ChunkStore,
+        overfetch: int = 3,
+    ) -> None:
+        """Wire the two collaborators, refusing a mismatched pair.
+
+        See `Retriever.__init__` for why `overfetch` defaults to 3 and why
+        the dimension check happens here, at construction, rather than after
+        the query has been embedded.
+        """
+        if embeddings.dimension != chunks.dimension:
+            raise DimensionMismatchError(expected=chunks.dimension, actual=embeddings.dimension)
+        if overfetch < 1:
+            raise ValueError(f"overfetch must be at least 1, got {overfetch}")
+        self._overfetch = overfetch
+        self._embeddings = embeddings
+        self._chunks = chunks
+
+    async def retrieve_chunks(
+        self,
+        query: str,
+        tenant_id: TenantId,
+        *,
+        k: int = 10,
+        mode: RetrievalMode = RetrievalMode.HYBRID,
+    ) -> ChunkRetrievalResult:
+        """The `k` best matching chunks for `query` in `tenant_id`, best first.
+
+        `k=0` returns nothing; a negative `k` raises `ValueError`. A blank
+        query raises rather than returning everything or nothing, matching
+        `Retriever.retrieve`.
+        """
+        if not query.strip():
+            raise ValueError("query must not be blank")
+        if k < 0:
+            raise ValueError(f"k must not be negative, got {k}")
+        if k == 0:
+            return ChunkRetrievalResult(query=query, matches=[])
+
+        # Each channel is asked for more than `k`; see `overfetch` on
+        # `Retriever.__init__` for why fusion needs the candidates past each
+        # cutoff.
+        per_channel = k * self._overfetch
+
+        semantic_scores: dict[ChunkId, float] = {}
+        semantic_chunks: dict[ChunkId, StoredChunk] = {}
+        if mode in (RetrievalMode.SEMANTIC, RetrievalMode.HYBRID):
+            semantic_scores, semantic_chunks = await self._semantic(query, tenant_id, per_channel)
+
+        lexical_scores: dict[ChunkId, float] = {}
+        lexical_chunks: dict[ChunkId, StoredChunk] = {}
+        if mode in (RetrievalMode.LEXICAL, RetrievalMode.HYBRID):
+            lexical_scores, lexical_chunks = await self._lexical(query, tenant_id, per_channel)
+
+        fused = reciprocal_rank_fusion([list(semantic_scores), list(lexical_scores)])[:k]
+
+        known = {**semantic_chunks, **lexical_chunks}
+        matches = [
+            ScoredChunk(
+                chunk=known[chunk_id],
+                score=score,
+                semantic=semantic_scores.get(chunk_id),
+                lexical=lexical_scores.get(chunk_id),
+            )
+            for chunk_id, score in fused
+            if chunk_id in known
+        ]
+        return ChunkRetrievalResult(query=query, matches=matches)
+
+    async def _semantic(
+        self,
+        query: str,
+        tenant_id: TenantId,
+        k: int,
+    ) -> tuple[dict[ChunkId, float], dict[ChunkId, StoredChunk]]:
+        """Embed the query and search, best first.
+
+        A corpus with no embedded chunks answers with an empty result here,
+        never a raise -- see the class docstring.
+        """
+        [vector] = await self._embeddings.embed([query])
+        matches = await self._chunks.semantic_candidates(vector, tenant_id, k)
+        return (
+            {match.chunk.id: match.score for match in matches},
+            {match.chunk.id: match.chunk for match in matches},
+        )
+
+    async def _lexical(
+        self,
+        query: str,
+        tenant_id: TenantId,
+        k: int,
+    ) -> tuple[dict[ChunkId, float], dict[ChunkId, StoredChunk]]:
+        """Tokenize the query, fetch candidates, and rank them, best first."""
+        terms = tokenize(query)
+        candidates = await self._chunks.lexical_candidates(terms, tenant_id, k)
+        ranked = rank_chunks(terms, candidates, k)
+        return (
+            {result.chunk.id: result.score for result in ranked},
+            {result.chunk.id: result.chunk for result in ranked},
+        )

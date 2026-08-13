@@ -20,7 +20,8 @@ from eventsource.ports.snapshots import SnapshotStore
 from eventsource.ports.store import AggregateStore
 
 import redstring.composition as composition
-from redstring.composition import Retriever, build_graph
+from redstring.chunks.adapters.memory import InMemoryChunkStore
+from redstring.composition import ChunkRetriever, Retriever, build_graph
 from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import DimensionMismatchError
@@ -65,6 +66,7 @@ _COMPOSITION_NAMESPACE: dict[str, object] = {
     "MergeUndone": MergeUndone,
     "DomainSchema": DomainSchema,
     "Chunker": Chunker,
+    "ChunkRetriever": ChunkRetriever,
     "ChunkStore": ChunkStore,
     "EntityReader": EntityReader,
     "GraphStore": GraphStore,
@@ -106,10 +108,15 @@ def _build_graph_mismatch() -> None:
     asyncio.run(_run())
 
 
-#: `ChunkRetriever` (Task 8) belongs here too, once it exists. Leaving its
-#: entry out is deliberate -- `test_the_case_list_covers_every_composition_point`
-#: is what will force it to be added rather than silently omitted.
+def _chunk_retriever_mismatch() -> None:
+    ChunkRetriever(
+        embeddings=FakeEmbeddingProvider(dimension=DIMENSION),
+        chunks=InMemoryChunkStore(dimension=384),
+    )
+
+
 CASES = {
+    "ChunkRetriever": _chunk_retriever_mismatch,
     "Retriever": _retriever_mismatch,
     "build_graph": _build_graph_mismatch,
 }

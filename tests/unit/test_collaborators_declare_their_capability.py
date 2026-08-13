@@ -127,6 +127,15 @@ WHOLE_PORT_IS_HONEST: dict[str, str] = {
         "a candidate for narrowing rather than a settled span; it is tracked "
         "in BACKLOG.md rather than left to be rediscovered here."
     ),
+    "redstring.composition.retrieval:ChunkRetriever": (
+        "Uses exactly two of ChunkStore's five capabilities -- "
+        "LexicalCandidateSource and SemanticCandidateSource -- and no more; "
+        "see the class docstring. Not narrowed because Python cannot express "
+        "a Protocol intersection without inventing a synthetic one, and "
+        "inventing a port nobody asked for is worse than the honest "
+        "overstatement in the annotation. Unlike GraphProjection below, this "
+        "is a limit of the type system rather than a genuine span."
+    ),
     "redstring.projections.graph:GraphProjection": (
         "Genuinely spans GraphStore: upsert_entities and upsert_relationships "
         "from EntityWriter and RelationshipStore, resolve_entity_ids from "

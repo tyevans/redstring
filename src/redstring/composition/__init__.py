@@ -44,11 +44,12 @@ from redstring.composition.build_graph import (
     build_graph,
 )
 from redstring.composition.index_documents import IndexReport, index_documents
-from redstring.composition.retrieval import Retriever
+from redstring.composition.retrieval import ChunkRetriever, Retriever
 
 __all__ = [
     "AUTO",
     "AutoDomain",
+    "ChunkRetriever",
     "ConsolidationReport",
     "Consolidator",
     "GraphBuildReport",
