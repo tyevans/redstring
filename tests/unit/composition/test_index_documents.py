@@ -364,6 +364,26 @@ class _RaisingEmbeddingProvider:
         raise AssertionError("embed() was called without a provider being supplied")
 
 
+class _RecordingEmbeddingProvider:
+    """Delegates to `FakeEmbeddingProvider` and records each call's arguments.
+
+    Records outcome (via the delegate) and call shape (via `self.calls`)
+    separately, so a test can assert on invocation count and batching without
+    losing the deterministic vectors.
+    """
+
+    model = "spy/recording"
+    dimension = 768
+
+    def __init__(self) -> None:
+        self._delegate = FakeEmbeddingProvider(model=self.model, dimension=self.dimension)
+        self.calls: list[list[str]] = []
+
+    async def embed(self, texts):
+        self.calls.append(list(texts))
+        return await self._delegate.embed(texts)
+
+
 class TestEmbedding:
     async def test_without_a_provider_no_chunk_is_embedded_and_no_model_is_called(self) -> None:
         """The docstring's no-per-token-cost promise, kept by the default.
@@ -397,6 +417,66 @@ class TestEmbedding:
         assert len(stored) > 1
         assert all(chunk.embedding is not None for chunk in stored)
         assert all(len(chunk.embedding) == 768 for chunk in stored)
+
+    async def test_chunk_texts_are_embedded_in_one_batched_call_per_document(self) -> None:
+        """The docstring's claim is "one call per document" -- checked by call count.
+
+        `FakeEmbeddingProvider` is deterministic per text, so an
+        implementation calling `embed([text])` once per chunk produces the
+        same *vectors* as one batched call and would pass a test that only
+        inspects the stored embeddings. Nothing short of counting invocations
+        and inspecting each call's argument list can tell the two apart.
+        """
+        corpus = InMemoryChunkStore(dimension=768)
+        spy = _RecordingEmbeddingProvider()
+        three = SourceDocument(id="doc-1", text=numbered("Ada Lovelace wrote note", 12))
+        five = SourceDocument(id="doc-2", text=numbered("Charles Babbage built engine", 30))
+
+        await index_documents(
+            [three, five],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=small_chunker(),
+            embeddings=spy,
+        )
+
+        first = await corpus.get_by_source("doc-1", TENANT_ID)
+        second = await corpus.get_by_source("doc-2", TENANT_ID)
+        assert len(spy.calls) == 2
+        call_sets = [set(call) for call in spy.calls]
+        assert {chunk.text for chunk in first} in call_sets
+        assert {chunk.text for chunk in second} in call_sets
+
+    async def test_each_stored_vector_belongs_to_its_own_chunk(self) -> None:
+        """A swap between chunks must be detectable.
+
+        `long_document()` repeats one sentence, so most of its chunks are
+        byte-identical and a permutation among them is invisible to *any*
+        per-chunk assertion -- the chunks carry no information about their
+        own position. `numbered()` gives each chunk distinct text instead, so
+        each stored vector can be checked against what the provider actually
+        returns for *that* chunk's own text, which is the only way a mismatch
+        between "assigned in order" and "assigned to the right chunk" can
+        show up.
+        """
+        corpus = InMemoryChunkStore(dimension=768)
+        provider = FakeEmbeddingProvider()
+        document = SourceDocument(id="doc-1", text=numbered("Ada Lovelace wrote note", 40))
+
+        await index_documents(
+            [document],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=small_chunker(),
+            embeddings=provider,
+        )
+
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert len(stored) > 1
+        assert len({chunk.text for chunk in stored}) == len(stored)  # mutually distinguishable
+        for chunk in stored:
+            [expected] = await provider.embed([chunk.text])
+            assert chunk.embedding == expected
 
     async def test_the_report_counts_chunks_embedded(self) -> None:
         """A counter is asserted non-zero under the condition it counts.
