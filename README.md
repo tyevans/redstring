@@ -206,10 +206,14 @@ uv sync --all-extras && uv run pre-commit install
 something else entirely (a mutation run reporting "0 survivors out of 426";
 47 phantom mypy errors in untouched files).
 
-Every quality gate — ruff, `mypy --strict`, bandit, the layered import
-contract, and pytest under a coverage ratchet — runs on `git commit`. **There
-is no separate step to run**, and running one by hand duplicates work the hook
-already does.
+Every quality gate — ruff, `mypy --strict`, bandit, and the layered import
+contract — runs on `git commit`. **There is no separate step to run for
+those**, and running one by hand duplicates work the hook already does.
+
+**pytest is not part of the commit gate.** CI's `pytest` job runs the suite
+and enforces the coverage floor in `.coverage-baseline` via
+`--cov-fail-under`; run `uv run pytest` yourself before committing, since
+nothing else will before CI does.
 
 The integration and mutation suites are deliberately outside the gate:
 

@@ -898,8 +898,9 @@ things about the mirror that are easy to get wrong:
   move.** They are organised by backend and by port contract rather than by
   layer, and they are deselected from the default run
   (`addopts = ["-m", "not accuracy and not integration"]`), so a broken import
-  there is invisible to the commit gate. Repoint their imports in this slice
-  and run them explicitly — see `docs/how-to/run-integration-and-mutation-suites.md`.
+  there is invisible to the default suite — CI's `pytest` job and any local
+  `uv run pytest` alike. Repoint their imports in this slice and run them
+  explicitly — see `docs/how-to/run-integration-and-mutation-suites.md`.
 - **A moved test keeps its marker and its name.** Renaming a test in the move
   commit hides it from `git log --follow` exactly as renaming a module does,
   and the coverage ratchet reads the suite as a whole, so a test that
@@ -1032,7 +1033,7 @@ and adding one would be inventing an artifact rather than updating one.
 | Not this | Because |
 |---|---|
 | An mkdocs nav entry | There is no `mkdocs.yml` and no site build. `docs/` is read in the repository. |
-| A `scripts/validate_examples.py` run | `scripts/` holds one file, `coverage_ratchet.py`. The example is validated by `tests/unit/test_end_to_end_example.py`, which *runs* `docs/examples/build_a_graph.py` under the ordinary suite — so it is already covered by the commit gate and needs no separate step. |
+| A `scripts/validate_examples.py` run | `scripts/` holds one file, `coverage_ratchet.py`. The example is validated by `tests/unit/test_end_to_end_example.py`, which *runs* `docs/examples/build_a_graph.py` under the ordinary suite — so it is already covered by the default suite and needs no separate step. |
 | A CHANGELOG `BREAKING:` entry | There is no `CHANGELOG.md`. The retired path is announced by the `ModuleNotFoundError` guard from step 3 and by the commit message, which is the immutable, correctly-scoped place for specifics that decay (`.claude/rules/commits.md`). |
 
 There is also no `docs/adr/index.md` and no `.claude/rules/architecture.md` —
@@ -1157,7 +1158,8 @@ directories: they are organised by backend and by port contract rather than by
 layer, so they stay where they are and only their imports are repointed. Their
 imports *are* covered by check 1 — which matters, because both are deselected
 from the default run (`addopts = ["-m", "not accuracy and not integration"]`),
-so a broken import there is invisible to the commit gate. See
+so a broken import there is invisible to the default suite — CI's `pytest`
+job and any local `uv run pytest` alike. See
 `docs/how-to/run-integration-and-mutation-suites.md`.
 
 Everything else — bare mentions in prose, comments, logger names — prints as a
@@ -1341,8 +1343,8 @@ markers = ["unit", "integration", "accuracy", "slow"]
 ```
 
 `addopts` deselects the `accuracy` and `integration` suites from the default
-run, and therefore from the commit gate — which keeps it infra-free and fast,
-and means **a migration can leave `tests/integration/` and
+run — CI's `pytest` job and any local `uv run pytest` alike — which keeps it
+infra-free and fast, and means **a migration can leave `tests/integration/` and
 `src/redstring/testing/` importing a retired path and see nothing but green.** The
 sweep's import check is what catches that; run the suites explicitly as well
 (a CLI `-m` overrides the config one).
@@ -1353,8 +1355,8 @@ Three smaller traps:
   new `tests/unit/<layer>/` needs no edit here — but the new directory does
   need its `__init__.py` (step 3).
 - **A moved test keeps its marker.** Dropping `@pytest.mark.integration` in a
-  move quietly promotes the test into the commit gate, where it will look for
-  a backend that is not running.
+  move quietly promotes the test into the default suite, where it will look
+  for a backend that is not running.
 - **Do not add a path to `addopts` to skip something a migration broke.** That
   is a deferral, and it belongs in `BACKLOG.md` with the reason, in the same
   commit.
@@ -1372,13 +1374,13 @@ than the configured run. So after editing any of the four spots above, run the
 configured mutation command — rather than a hand-built invocation that names
 the paths you just changed.
 
-## Gates — the gate is `git commit`
+## Gates — the commit gate, and the suite that no longer lives in it
 
-There is no `make check`, no `Makefile`, no `mkdocs build`, and no
-`scripts/validate_examples.py` in this repository. The whole quality gate is
-wired into `pre-commit` and runs on `git commit`, in this order
-(`.pre-commit-config.yaml`, with `fail_fast: true` — the first failing hook
-stops the run, so fix and re-commit rather than reading ahead):
+There is no `make check` and no `Makefile` in this repository. The lint,
+type, security and architecture gate is wired into `pre-commit` and runs on
+`git commit`, in this order (`.pre-commit-config.yaml`, with `fail_fast: true`
+— the first failing hook stops the run, so fix and re-commit rather than
+reading ahead):
 
 | Hook | What it covers during a migration |
 |---|---|
@@ -1387,14 +1389,23 @@ stops the run, so fix and re-commit rather than reading ahead):
 | `mypy` (`pass_filenames: false`, so the configured whole-package `--strict` run) | The move's real type gate. It is not per-file: a moved module is checked together with everything that imports it. |
 | `bandit` (`src/` only) | Unchanged by a move. |
 | `lint-imports` (`files: ^(src/\|pyproject\.toml$)`) | The layer contract. Note the trigger: a commit touching **only tests or docs does not run it**, which is why the move slice and not the docs slice is where placement is proven. |
-| `pytest` + coverage ratchet (`scripts/coverage_ratchet.py`, `files: ^(src/\|tests/\|pyproject\.toml$\|scripts/coverage_ratchet\.py$)`) | The suite, plus the ratchet against `.coverage-baseline`. Coverage may never fall; a rise raises the baseline and stages it automatically. |
 
-**Do not run ruff, mypy, bandit, `lint-imports` or pytest as separate steps
-before committing.** The hook does all of it, and running them by hand
-duplicates the slowest work in the loop. `CLAUDE.md` states this as a project
-rule, and it has a second edge specific to migrations: the hand-built
-invocation is usually a *different* check from the configured one — naming
-files on a mypy command line bypasses `exclude`, and `ruff check --select` is
+**The suite is not a hook any more** (`ec7861f`; see
+`docs/reference/quality-gates.md`). CI's `pytest` job runs it instead, with
+`--cov-fail-under="$(cat .coverage-baseline)"` enforcing the same coverage
+floor the old hook did — but nothing in CI *raises* the baseline, so run
+`uv run python scripts/coverage_ratchet.py` yourself when a migration's test
+moves raise coverage, and stage the new baseline in the same commit
+(`BACKLOG.md` B-RATCHET-1). Run `uv run pytest` before every commit in a
+migration slice; nothing else will catch a broken import before CI does.
+
+**Do not run ruff, mypy, bandit, or `lint-imports` as separate steps before
+committing.** The hook does all of it, and running them by hand duplicates the
+slowest work in the loop. `pytest` is the exception — run it yourself, since
+no hook will. `CLAUDE.md` states this as a project rule, and it has a second
+edge specific to migrations: the hand-built invocation is usually a
+*different* check from the configured one — naming files on a mypy command
+line bypasses `exclude`, and `ruff check --select` is
 still subject to `per-file-ignores`. Write the change, then commit, and let the
 configured gate answer.
 
@@ -1430,9 +1441,10 @@ suites, and mutation runs — is the next section.
 
 ## Gates — what `git commit` does not cover
 
-Three families of checks are deliberately outside the commit gate, and a
-migration is exactly the change that breaks all three without turning the
-commit red. Run them by hand in the move slice; the full invocations,
+Three families of checks are deliberately outside both the commit gate and
+the default suite, and a migration is exactly the change that breaks all
+three without turning a commit — or CI's `pytest` job — red. Run them by hand
+in the move slice; the full invocations,
 environment variables and failure modes are in
 [`docs/how-to/run-integration-and-mutation-suites.md`](../../../docs/how-to/run-integration-and-mutation-suites.md).
 
