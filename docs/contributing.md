@@ -21,19 +21,29 @@ mypy errors in files nobody had touched.
 `dev`, so **re-sync with `--all-extras` after any dependency change**. Never
 edit `pyproject.toml`'s dependency tables by hand.
 
-## Quality gates run on commit
+## Quality gates run on commit — pytest does not
 
-Every check — ruff, `mypy --strict`, bandit, the layered import contract, and
-pytest under a coverage ratchet — is wired into `pre-commit` and runs on
-`git commit`.
+Every check — ruff, `mypy --strict`, bandit, and the layered import contract —
+is wired into `pre-commit` and runs on `git commit`.
 
-**Do not run them yourself first.** It duplicates work the hook already does,
+**Do not run those yourself first.** It duplicates work the hook already does,
 and the hook often fixes the problem in place (re-`git add` and commit again
 when it does). [Quality gates](reference/quality-gates.md) lists what each one
 checks.
 
-Prefer many small commits over one large one. Each commit runs the full gate,
-so small commits keep each run fast and keep the failure surface legible.
+**pytest is the exception.** No hook runs the suite any more — it used to,
+through a `pytest-coverage-ratchet` hook that duplicated CI's `pytest` job on
+every commit, and was removed for exactly that redundancy. CI's `pytest` job
+now carries the coverage floor that hook enforced, via `--cov-fail-under`
+against `.coverage-baseline`. Run `uv run pytest` yourself before committing,
+since nothing else will before CI does — and run
+`uv run python scripts/coverage_ratchet.py` instead when the change might
+raise coverage, so the new baseline lands in the same commit (see
+[Quality gates](reference/quality-gates.md) for why CI cannot do that part).
+
+Prefer many small commits over one large one. Each commit runs the lint, type,
+security and import gate, so small commits keep each run fast and keep the
+failure surface legible.
 
 ## Commit messages
 
@@ -68,12 +78,16 @@ When you fix an entry, delete it in the same commit.
 
 Four trees, and they are not interchangeable:
 
-| Tree | In the commit gate? | Needs |
+| Tree | In the default suite? | Needs |
 |---|---|---|
 | `tests/unit/` | yes | nothing external |
 | `src/redstring/testing/` | **never collected directly** | subclassed by unit and integration modules |
 | `tests/integration/` | no | backends from `docker-compose.test.yml` |
 | `tests/accuracy/` | no | it is empty — see below |
+
+"Default suite" means `uv run pytest` with no marker named — the selection CI
+runs and enforces a coverage floor against, not the commit gate, which no
+longer runs the suite at all.
 
 `src/redstring/testing/` is the one to understand first. It is a *library*, not a
 suite: the contract classes become tests only where an adapter's own module

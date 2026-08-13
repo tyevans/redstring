@@ -303,8 +303,9 @@ concurrently from several starting replicas. Two gates hold that:
 
 - `tests/unit/graph/test_neo4j_adapter_is_wired.py` asserts `IF NOT EXISTS`
   appears in *every* entry of `_SCHEMA` — a statement added without it fails
-  the commit gate rather than the next deployment. That check needs no server,
-  which is the point: the DDL otherwise only runs where Neo4j is reachable.
+  the default suite rather than the next deployment. That check needs no
+  server, which is the point: the DDL otherwise only runs where Neo4j is
+  reachable.
 - `tests/integration/graph/test_neo4j_store.py::TestNeo4jSpecifics::test_ensure_schema_is_idempotent`
   calls it twice against real Neo4j and requires neither call to raise.
 
@@ -801,7 +802,7 @@ Two gates hold the ordering, and they catch different failures:
 
 - `tests/unit/graph/test_neo4j_adapter_is_wired.py::TestSchemaStatementsAreWellFormed::test_every_entity_index_leads_with_the_tenant`
   asserts every `_SCHEMA` statement `FOR (e:Entity)` contains `(e.tenant_id`.
-  It needs no server, so it runs in the commit gate.
+  It needs no server, so it runs in the default suite.
 - `tests/integration/graph/test_neo4j_store.py::TestNeo4jSpecifics::test_ensure_schema_creates_the_lookup_indexes`
   compares each index's `properties` from `SHOW INDEXES` against an **exact
   list**, so order is pinned as well as membership — a key redeclared as

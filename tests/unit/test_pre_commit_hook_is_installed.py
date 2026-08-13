@@ -1,11 +1,14 @@
 """The commit gate only gates if the hook is installed, and nothing checked.
 
-CLAUDE.md's instruction is "do not run ruff, bandit, lint-imports or pytest as
+CLAUDE.md's instruction is "do not run ruff, bandit, or lint-imports as
 separate steps before committing" -- correct, and it rests entirely on
 `.git/hooks/pre-commit` existing. In a clone where `pre-commit install` was
 never run, that instruction becomes "do not run the checks", every `git commit`
 succeeds unconditionally, and the first signal is CI failing on a pushed
-branch.
+branch. pytest is no longer part of what the hook does either way -- see
+`docs/reference/quality-gates.md` -- so an uninstalled hook does not change
+whether the suite runs; it changes whether ruff, mypy, bandit and
+`lint-imports` do.
 
 That is what this module exists for, and it is not hypothetical: eight commits
 landed in one session in a clone with no hook, reported as having passed the
@@ -116,7 +119,7 @@ def test_the_pre_commit_hook_is_installed() -> None:
 
     assert hook.exists(), (
         f"{hook} does not exist, so `git commit` runs no checks at all -- "
-        f"not ruff, not bandit, not lint-imports, not pytest. Every commit "
+        f"not ruff, not mypy, not bandit, not lint-imports. Every commit "
         f"will succeed and CI will be the first thing to disagree. Fix with:\n"
         f"    {INSTALL_COMMAND}"
     )

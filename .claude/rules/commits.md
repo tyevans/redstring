@@ -37,9 +37,11 @@ Apply ruff safe autofixes
 
 ## Scope
 
-Prefer many small commits over one large one. Each `git commit` runs the full
-quality gate (see `CLAUDE.md`), so small commits keep each hook run fast and
-keep the failure surface legible when a gate trips.
+Prefer many small commits over one large one. Each `git commit` runs the lint,
+type, security and architecture gate (see `CLAUDE.md`) — the suite is no
+longer part of it, so run `uv run pytest` yourself before committing — and
+small commits keep each hook run fast and keep the failure surface legible
+when a gate trips.
 
 Deferred work must land in `BACKLOG.md` **in the same commit that passes it
 by** — see `CLAUDE.md`. A commit that defers something and does not touch

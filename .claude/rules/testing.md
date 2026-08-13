@@ -9,11 +9,20 @@ paths:
 How tests are organised, marked, and run in this repo, and which of those
 choices are load-bearing rather than taste.
 
-Four trees, and they are not interchangeable: `tests/unit/` (the commit gate),
-`src/redstring/testing/` (shared port contracts, not itself collected),
-`tests/integration/` (real backends from `docker-compose.test.yml`), and
-`tests/accuracy/` (extraction quality against a live model, plus a scorer and
-corpus that need nothing and run in the commit gate).
+Four trees, and they are not interchangeable: `tests/unit/` (the default
+suite), `src/redstring/testing/` (shared port contracts, not itself
+collected), `tests/integration/` (real backends from
+`docker-compose.test.yml`), and `tests/accuracy/` (extraction quality against
+a live model, plus a scorer and corpus that need nothing and run in the
+default suite).
+
+**"The default suite" is `uv run pytest` with no marker named.** It used to
+run automatically on every commit, through a `pytest-coverage-ratchet`
+pre-commit hook; that hook is gone (`ec7861f`), so the suite now runs in CI's
+`pytest` job — which enforces the same `.coverage-baseline` floor the hook
+did, via `--cov-fail-under` — and whenever you run it yourself. Nothing runs
+it automatically at commit time any more, so run it before committing; see
+`docs/reference/quality-gates.md` and `BACKLOG.md` B-RATCHET-1.
 
 The second frontmatter path is deliberate. `src/redstring/testing/` holds no
 `test_*.py` files, so `tests/**/*.py` matches it only by accident of the glob
@@ -22,8 +31,8 @@ one place a defect propagates to every adapter at once.
 
 Related:
 
-- `docs/reference/quality-gates.md` — what the commit hook runs, and why not
-  to run it yourself.
+- `docs/reference/quality-gates.md` — what the commit hook runs, what CI runs,
+  and why to run the suite yourself before committing now that no hook does.
 - `docs/how-to/run-integration-and-mutation-suites.md` — the deliberate,
   non-default runs.
 - `docs/how-to/implement-a-store-adapter.md` — subclassing a compliance suite
@@ -65,8 +74,10 @@ Mirrors the package layout under `src/redstring/` one directory per package —
 cross-cutting surface gates (`test_composition.py`,
 `test_public_surface_is_self_contained.py`, `test_end_to_end_example.py`)
 sitting at the top level because they are about the package as a whole rather
-than one module of it. This tree is the commit gate: it needs nothing
-external, and it is what the pre-commit hook runs.
+than one module of it. This tree is the default suite: it needs nothing
+external. It no longer runs in the pre-commit hook — see
+`docs/reference/quality-gates.md` — but it is what CI's `pytest` job runs, and
+what you should run yourself before committing.
 
 It is also where each adapter's compliance subclass lives. A contract class in
 `src/redstring/testing/` is inert until a module here subclasses it under a `Test*`
@@ -169,7 +180,7 @@ found. It is three parts, and the split is the reason it exists at all:
 (five hand-graded documents), and `test_extraction_accuracy.py` (marked
 `accuracy`, needs `KG_LLM_BASE_URL`).
 
-**The first two run in the commit gate**, through `tests/unit/accuracy/`, and
+**The first two run in the default suite**, through `tests/unit/accuracy/`, and
 that is what makes any live number believable: an accuracy suite fails silently
 in two directions that both look like results — measuring nothing reports
 F1 = 0.0 and reads as a bad model, comparing the corpus against itself reports
@@ -199,8 +210,8 @@ about a backend at all:
 | `test_wheel_contents.py` | `uv build` → throwaway venv → render all six bundled domains | `uv`, no backend |
 
 Every module carries `pytestmark = pytest.mark.integration`, and `addopts`
-excludes that marker, so none of this runs on commit. Start the backends
-deliberately:
+excludes that marker, so none of this runs in the default suite — CI's
+included. Start the backends deliberately:
 
 ```bash
 docker compose -f docker-compose.test.yml up -d
@@ -280,8 +291,8 @@ Three modules and one data file, split by what each needs:
 
 | Path | Needs | Runs |
 |---|---|---|
-| `scoring.py` | nothing | commit gate, via `tests/unit/accuracy/test_scoring.py` |
-| `corpus.py`, `corpus.yaml` | nothing | commit gate, via `tests/unit/accuracy/test_harness.py` |
+| `scoring.py` | nothing | default suite, via `tests/unit/accuracy/test_scoring.py` |
+| `corpus.py`, `corpus.yaml` | nothing | default suite, via `tests/unit/accuracy/test_harness.py` |
 | `runner.py` | an `LlmProvider` — either one | both |
 | `test_extraction_accuracy.py` | a **live model** | `-m accuracy` only |
 
@@ -503,10 +514,10 @@ real work:
 
 | Marker | Applied to | Status |
 |---|---|---|
-| `integration` | every module under `tests/integration/` | **load-bearing** — it is what keeps real backends out of the commit gate |
+| `integration` | every module under `tests/integration/` | **load-bearing** — it is what keeps real backends out of the default suite |
 | `live` | the three `tests/integration/llm/test_live_*.py` modules, alongside `integration` | **load-bearing** — it is what keeps CI out of a 90-minute wait on an endpoint it will never have |
 | `unit` | seven tests in `tests/unit/test_jellyfish_import.py` | decorative; nothing selects on it |
-| `accuracy` | `tests/accuracy/test_extraction_accuracy.py` | **load-bearing** — keeps a live-model suite out of the commit gate |
+| `accuracy` | `tests/accuracy/test_extraction_accuracy.py` | **load-bearing** — keeps a live-model suite out of the default suite |
 | `slow` | nothing | declared and unused |
 
 The deselection is:
@@ -515,10 +526,10 @@ The deselection is:
 addopts = ["-m", "not accuracy and not integration"]
 ```
 
-So **`integration` is excluded from the default run and therefore from the
-commit gate**, which is what keeps `git commit` infra-free: no Neo4j, no
-pgvector, no live model, no `docker compose up` before you can commit. A CLI
-`-m` overrides this one, which is how the deliberate runs get at it:
+So **`integration` is excluded from the default run**, which is what keeps
+CI's `pytest` job and any local `uv run pytest` infra-free: no Neo4j, no
+pgvector, no live model, no `docker compose up` required. A CLI `-m` overrides
+this one, which is how the deliberate runs get at it:
 
 ```bash
 uv run pytest -m integration
@@ -536,16 +547,16 @@ Three things follow that are easy to get wrong:
 - **The mark is about *cost and prerequisites*, not about touching a
   database.** `test_wheel_contents.py` needs no backend at
   all; it is marked because building a wheel and creating a virtualenv takes
-  seconds rather than milliseconds. If a test would make the commit gate a
+  seconds rather than milliseconds. If a test would make the default suite a
   noticeably worse experience, mark it.
 - **`unit` is not a filter.** Do not add it to new tests expecting it to mean
   anything — the default run is "everything not deselected", so an unmarked
-  test in `tests/unit/` is already in the gate. The seven existing uses are
-  historical.
+  test in `tests/unit/` is already in the default suite. The seven existing
+  uses are historical.
 
 ### `live` separates *unrun* from *unrunnable*
 
-`integration` answers "does this need something the commit gate should not
+`integration` answers "does this need something the default suite should not
 start". `live` answers a narrower question CI has to ask separately: **can this
 environment ever satisfy it?** A GitHub runner starts Neo4j, pgvector and Redis
 from `docker-compose.test.yml` happily, and will never have a model server. So
@@ -614,7 +625,7 @@ the seed.** Shared mutable module state, a fixture that writes to a fixed
 path, and a test that depends on another having run first will all surface
 here — fix the cause.
 
-That rule stands for everything the commit gate runs, and it is the rule
+That rule stands for everything the default suite runs, and it is the rule
 `tests/unit/` is written to. There are exactly **two documented exceptions**,
 and both are properties of a *shared external backend* rather than of a test:
 a real database has one namespace no matter how many workers address it, and
@@ -693,9 +704,9 @@ allows one database. Writing that suite the natural way, against a shared
 
 Three things follow:
 
-- **The commit gate is unaffected.** `addopts` deselects `integration` before
-  xdist ever sees these tests, so nothing here is a reason to drop `-n auto`
-  from the hook or from `tests/unit/`.
+- **The default suite is unaffected.** `addopts` deselects `integration`
+  before xdist ever sees these tests, so nothing here is a reason to drop
+  `-n auto` from CI's `pytest` job or from a local `tests/unit/` run.
 - **This is a direct trap for B10a** — getting the Neo4j adapter into a
   mutation or coverage run. The obvious implementation is `pytest -n auto`
   over both suites, and it will fail 36 times for a reason that reads as
@@ -736,7 +747,7 @@ The mechanism that makes the compliance suites worth having — one function bod
 running against every adapter — is the mechanism that trips it.
 
 Running either suite alone is fine, which is why this is invisible day to day:
-`addopts` deselects `integration`, so the commit gate ever sees only the
+`addopts` deselects `integration`, so the default suite ever sees only the
 in-memory subclass, and an explicit `-m integration` sees only the real one.
 The failure appears the first time someone widens the selection to cover both,
 which is a thing people do on purpose when they want one number out of both.
@@ -928,10 +939,18 @@ For a regression test, prove it red against the pre-fix source with
 
 ## Running
 
-Do **not** run pytest as a separate step before committing — the pre-commit
-hook runs the suite under `pytest-xdist` with the coverage ratchet. Run it
-directly only when iterating on a specific failure, or when you deliberately
-want a suite `addopts` excludes.
+**Do** run pytest yourself before committing — no pre-commit hook runs the
+suite any more (`ec7861f`; see `docs/reference/quality-gates.md`), so nothing
+else will before CI does:
+
+```bash
+uv run pytest
+```
+
+That is the same `addopts`-filtered selection CI's `pytest` job runs, under
+`-n auto` with `--cov-fail-under="$(cat .coverage-baseline)"` there. Run it
+plain locally, or run `uv run python scripts/coverage_ratchet.py` if the
+change might raise coverage — see [Coverage](#coverage) below.
 
 Iterating on one file:
 
@@ -971,19 +990,30 @@ The accuracy suite needs a live model and is selected the same way:
 KG_LLM_BASE_URL=http://host:8080/v1 uv run pytest -m accuracy tests/accuracy/
 ```
 
-Its scorer and corpus need nothing and are already covered by the commit gate
-through `tests/unit/accuracy/` — see `tests/accuracy/` above for why that
-split is what makes a live number believable.
+Its scorer and corpus need nothing and are already covered by the default
+suite through `tests/unit/accuracy/` — see `tests/accuracy/` above for why
+that split is what makes a live number believable.
 
 See `docs/how-to/run-integration-and-mutation-suites.md` for the full runbook,
 including mutation testing, and `docs/reference/quality-gates.md` for what the
-commit hook does on your behalf.
+commit hook does on your behalf and what CI does that it no longer does.
 
 ## Coverage
 
 `scripts/coverage_ratchet.py` compares total coverage against
-`.coverage-baseline`; coverage may never fall. A deliberate drop means
-editing `.coverage-baseline` in the same commit and justifying it in the
-message. Deleting or weakening a test to get past the gate is a deferral —
-it goes in `BACKLOG.md` in that same commit, naming the test and what it was
-protecting.
+`.coverage-baseline`; coverage may never fall. **It is no longer run by a
+hook** — CI enforces the same floor via `--cov-fail-under`, but only the
+script raises the baseline when coverage rises, and it does that by staging
+the new value into the commit that earned it. A CI run has no commit to stage
+into, so if your change added tests that raise coverage, run the script
+yourself so the new baseline lands in the same commit:
+
+```bash
+uv run python scripts/coverage_ratchet.py
+```
+
+A deliberate drop means editing `.coverage-baseline` in the same commit and
+justifying it in the message. Deleting or weakening a test to get past the
+gate is a deferral — it goes in `BACKLOG.md` in that same commit, naming the
+test and what it was protecting. See `BACKLOG.md` B-RATCHET-1 for why a floor
+that never follows the work is worse than it sounds.
