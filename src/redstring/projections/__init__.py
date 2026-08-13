@@ -9,8 +9,11 @@ replay. That claim is only worth as much as the test that proves it, which is
 
 `project`/`replay` and its `ReplayReport`, `ReplayFailure` and
 `ReplayFailedError` were written here because `eventsource-py` had no rebuild
-driver -- `ProjectionCoordinator` polls on a timer for live catch-up, which is
-the other job. They were reported upstream and landed in `eventsource-py`
+driver -- `ProjectionCoordinator` dispatches events a caller already holds, and
+rebuilding a store from a feed is the other job. (It has never polled on a
+timer; upstream checked its full history against that claim in 0.14.0 and
+deleted the interval nothing read.) They were reported upstream and landed in
+`eventsource-py`
 0.12.0 (its ADR 0054), so this package no longer carries a copy:
 
     from eventsource import replay
@@ -22,7 +25,13 @@ The upstream version is a superset, not a transcription. It scopes the read by
 never grew), streams every failure to `on_failure=` whether retained or not,
 names the failing `event_id`, and derives `ReplayReport.failed` from event ids
 rather than positions -- `position` is `Position | None` by contract, so a
-feedless store collapsed a whole failed rebuild into a count of one here.
+feedless store collapsed a whole failed rebuild into a count of one here. Since
+0.14.0 it also reads the feed in `batch_size=` batches (defaulting to
+`REPLAY_BATCH_SIZE`, 1000) and folds each before reading the next, so a rebuild
+holds a batch rather than the whole log: every store adapter materializes its
+result set before yielding an envelope, and this copy asked for all of it in
+one call. `max_events` never bounded that and could not -- it counts envelopes
+already in hand, so it fires after the allocation it would have prevented.
 
 `ReplayFailedError` is an `eventsource` `ProjectionError` rather than a
 `RedstringError`, which is the correct root: a projection failed to process an

@@ -61,6 +61,36 @@ A rebuild over a large log costs the whole log; a catch-up costs the tail. The
 result is identical either way, because both folds are the same upserts and
 idempotent deletes — so the choice is about time, not about correctness.
 
+### `batch_size` bounds the memory, not the work
+
+Time is the cost that scales with the log; memory is not, and that is what
+`batch_size=` settles. `replay` reads the feed in batches of `batch_size`
+events — the default is `REPLAY_BATCH_SIZE`, which is 1000 — and folds each
+batch before reading the next, passing the last position of the batch it just
+applied as the `from_position` of the next read. `from_position` is exclusive
+(see "Rebuilding a subset" below), so batching neither re-delivers an event nor
+skips one: the fold a batched read produces is the fold a single read would
+have produced, event for event and in the same order.
+
+The property this buys is worth stating precisely, because it is easy to
+over-read. **A rebuild holds one batch at a time, not the whole log.** That
+matters here more than anywhere else in this page, since a rebuild is by
+definition the operation that folds every event there is: `GlobalEventFeed`
+adapters materialize their result set before yielding the first envelope, so a
+single unbounded read of a large log is a single large allocation, and the
+process that dies from it dies before the first event is applied. What
+`batch_size` does *not* reduce is total work — the same events are read, the
+same folds run, the same writes land. It is the peak, not the sum.
+
+Raise it when the events are small and the round trip to the store is the
+expensive part, and lower it when the events are large or the process is tight
+on memory. There is no correctness question either way, which is why the
+default is a plain number rather than something to tune before your first
+rebuild.
+
+Note that `batch_size` and `max_events` bound different things and neither
+substitutes for the other — see "Bounding the run with `max_events`" below.
+
 `replay` never consults a checkpoint. It starts wherever `from_position`
 says, which for a rebuild is the default `None`. That is the property that
 makes a rebuild simple — there is no checkpoint to reset first — and it is
@@ -676,6 +706,16 @@ which is what tells a stuck cursor apart from a bound set too low.
 
 `tests/unit/projections/test_replay_equivalence.py::TestTheReplayIsBounded`
 holds both halves — a bound nothing exercises is a bound nobody knows works.
+
+### It bounds the run, not the memory
+
+`max_events` is a guard against a feed that never ends, and it is not a memory
+bound — it counts envelopes `replay` already has in hand, so on an unbatched
+read it would fire only after the allocation it looks like it would have
+prevented. The memory a rebuild holds is bounded by `batch_size` instead
+("`batch_size` bounds the memory, not the work" above). Set `max_events` for
+the stuck cursor and `batch_size` for the large log; they answer different
+questions and a value for one says nothing about the other.
 
 ### The bound is the number of events *allowed*
 
