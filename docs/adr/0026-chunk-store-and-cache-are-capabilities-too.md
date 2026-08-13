@@ -17,6 +17,10 @@ ports](0008-the-two-non-store-ports.md) and [`0023` the chunk
 corpus](0023-the-chunk-corpus.md) in their typing only: no method is added,
 removed or respecified, and every adapter in the tree is untouched.
 
+**Amended by [`0038`](0038-the-chunks-vector-lives-on-the-chunk.md)**: a
+fifth capability, `SemanticCandidateSource`, joins the four `ChunkStore`
+named here. No decision this ADR made is reversed.
+
 ## Context
 
 0016 argued that depending on eighteen methods in order to call three is the

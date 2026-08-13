@@ -3,9 +3,16 @@
 ## Status
 
 Accepted; amended in typing by
-[ADR 0026](0026-chunk-store-and-cache-are-capabilities-too.md), which composes
+[ADR 0026](0026-chunk-store-and-cache-are-capabilities-too.md), which composed
 `ChunkStore` from `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource` and
-`ChunkPurge`. No method here is added, removed or respecified.
+`ChunkPurge`. No method here was added, removed or respecified.
+
+**Amended by [`0038`](0038-the-chunks-vector-lives-on-the-chunk.md)**, in its
+Consequences: the semantic search this ADR deferred is now built, and the
+port docstring that said there was no such method is corrected. `ChunkStore`
+now composes `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource`,
+`ChunkPurge` and `SemanticCandidateSource` — the fifth capability 0026 did not
+have. No decision this ADR made is reversed.
 [`0022` the lexical channel is not BM25](0022-the-lexical-channel-is-not-bm25.md)
 is **amended**: its premise that this library stores no text no longer holds.
 Its *decision* stands unchanged — the lexical channel is still a
