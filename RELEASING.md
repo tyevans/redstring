@@ -80,7 +80,7 @@ to `main`.
 
 ## Cutting a release
 
-### 1. Update the version
+### 1. Update the version, in both places
 
 `pyproject.toml`:
 
@@ -88,6 +88,20 @@ to `main`.
 [project]
 version = "X.Y.Z"
 ```
+
+and `src/redstring/__init__.py`:
+
+```python
+__version__ = "X.Y.Z"
+```
+
+**Both, or the gate stops you** — `tests/unit/test_version_is_declared_once.py`
+fails when they disagree, which is a version being one fact with two
+declaration sites and nothing but that test making the copies agree. This
+step named only `pyproject.toml` through 0.6.0, so the test has caught the
+omission rather than the instructions preventing it; naming both here is the
+cheaper half of the fix. Deriving `__version__` from installed metadata would
+be the other half, and is not done — see `BACKLOG.md`.
 
 ### 2. Update the changelog
 

@@ -2026,6 +2026,38 @@ divergence with different code.
 
 ## 6. Tooling, packaging and hygiene
 
+### B126. The version is one fact with two declaration sites
+
+`pyproject.toml`'s `version` and `src/redstring/__init__.py`'s `__version__`
+(line 293 as of 0.7.0) both declare it, and nothing derives one from the
+other. `tests/unit/test_version_is_declared_once.py::test_the_two_declaration_sites_agree`
+is the only thing keeping them equal — which is `.claude/rules/recurring-defects.md`
+§2 with a test bolted on rather than the second site removed.
+
+**It has already fired in anger.** Cutting 0.7.0 bumped `pyproject.toml`
+alone, because `RELEASING.md` step 1 named only that file, and the commit
+failed the gate. So the test works; the point of this entry is that it is
+catching an omission the design permits rather than one a mistake introduced.
+Note the failure mode had the release *not* been caught: a wheel whose
+metadata says 0.7.0 and whose `redstring.__version__` says 0.6.0, which no
+consumer could reconcile and which cannot be replaced once uploaded, since
+PyPI filenames are not reusable.
+
+**The fix is `importlib.metadata.version("redstring")`**, making the
+distribution metadata the single site and `__version__` a read of it.
+Deliberately not done here, for one reason worth checking before someone
+does it: `__version__` currently resolves in a source checkout with the
+package merely importable, and `importlib.metadata` needs it *installed* —
+which it always is under `uv run`, but the editable-install and wheel paths
+should both be proven before the literal is deleted. `tests/integration/
+test_wheel_contents.py` is where that proof belongs, since a claim about the
+artifact can only be falsified by the artifact (see the `py.typed` incident
+in `recurring-defects.md`).
+
+Half-fixed in the meantime: `RELEASING.md` step 1 now names both files, so
+the instructions no longer walk you into the failure. That is documentation
+holding a fact in agreement, which is the weaker half of the answer.
+
 ### B87. `PostgresChunkStore` tells callers to install `redstring[pgvector]`
 
 `src/redstring/chunks/adapters/postgres.py::connect` re-raises its guarded
