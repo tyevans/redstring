@@ -88,8 +88,13 @@ unparameterised, per ADR 0022.
 **Interfaces:**
 - Consumes: nothing.
 - Produces: `reciprocal_rank_fusion(rankings: Sequence[Sequence[IdT]]) -> list[tuple[IdT, float]]`,
-  where `IdT` is a `TypeVar` bound to `str`. Both `EntityId` and `ChunkId` are
-  `str` newtypes, so the bound holds without changing either.
+  where `IdT` is a `TypeVar` bound to `Hashable`. **`EntityId` is a `NewType`
+  over `UUID`, not over `str`** — an earlier draft of this plan and of the
+  spec said otherwise, and a `str` bound would fail `mypy` at the existing
+  entity call site. Hashability is the constraint the function actually has,
+  since it uses ids as dict keys, and the tie-break is `str(id).lower()`:
+  exactly the existing UUID canonicalisation, and the identity for a
+  hex-digest `ChunkId`.
 
 - [ ] **Step 1: Write the failing tests**
 

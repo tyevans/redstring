@@ -194,8 +194,16 @@ force a third read to display the passage that was just ranked.
 It is typed on `EntityId` today and its tie-break is "canonical lowercase
 `EntityId` string". Chunks need the same function, so it takes a type
 parameter bounded by what it actually requires: a hashable id with a stable
-`str`. The tie-break becomes the id's string, which for a `ChunkId` — a hex
-digest — is already canonical and lowercase.
+`str`. The tie-break becomes `str(id).lower()`, which for a `ChunkId` — a hex
+digest — is already the identity, and for an `EntityId` is exactly the
+canonicalisation the function performs today.
+
+**The bound is `Hashable`, not `str`.** An earlier draft of this section said
+`str`, on the assumption that both id types were `str` newtypes; `EntityId` is
+a `NewType` over `UUID`, so a `str` bound fails at the existing entity call
+site. Hashability is the constraint the function genuinely has — it uses ids
+as dict keys — and stating the real one is what stops a later reader
+tightening it back.
 
 `RRF_K = 60` stays a module constant and stays unparameterised, per ADR 0022.
 
