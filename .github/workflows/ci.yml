@@ -151,11 +151,26 @@ jobs:
       - run: uv sync --all-extras
 
       # `addopts` already deselects `integration` and `accuracy`, so this is
-      # the same selection the commit gate runs.
+      # the whole unit suite.
+      #
+      # **`--cov-fail-under` reads `.coverage-baseline`, and this is the only
+      # place the ratchet now runs.** The suite used to run in `pre-commit`
+      # via `scripts/coverage_ratchet.py`, which both ran it and compared the
+      # total against that file; the hook was removed because the run
+      # duplicated this job on every commit. The comparison did not duplicate
+      # anything, so it moved here rather than going away -- otherwise
+      # deleting a slow hook would have quietly deleted the coverage floor
+      # with it, and a falling number would have looked exactly like a passing
+      # build.
+      #
+      # What did not move: the baseline no longer raises itself. The script
+      # staged a rise into the commit that earned it, and a CI run has no
+      # commit to stage into. See BACKLOG B-RATCHET-1.
       - name: pytest
         run: |
           uv run pytest -n auto --dist worksteal \
-            --cov=src/redstring --cov-report=xml --cov-report=term-missing
+            --cov=src/redstring --cov-report=xml --cov-report=term-missing \
+            --cov-fail-under="$(cat .coverage-baseline)"
 
       - name: Upload coverage report
         if: matrix.python-version == '3.13'
