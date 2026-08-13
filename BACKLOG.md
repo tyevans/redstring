@@ -699,44 +699,17 @@ reports 0 and reads as a bad model; scoring the corpus against itself reports
 This is the same corpus B80 needs to settle `PROPERTY_WEIGHT`. Build it once
 and both close.
 
-### B82. Two composition points refuse a dimension mismatch with different exception types
-
-`Retriever.__init__` (`src/redstring/composition/retrieval.py`) raises
-`DimensionMismatchError` when the embedding provider and the vector store
-disagree on width. `build_graph`'s `_check_embedding_wiring`
-(`src/redstring/composition/build_graph.py`) raises **`ValueError`** for the
-same condition. `DimensionMismatchError` extends `RedstringError`, which
-extends `Exception` — it is **not** a `ValueError` subclass, so neither
-`except` catches the other.
-
-That is recurring-defects §1 at the composition layer: one rule, two
-implementations, no mechanism that fails when they disagree. A caller wiring
-both and writing one `except` around the configuration step catches one and
-crashes on the other.
-
-Deliberately not resolved on the spot, because it is not a free change. The
-two are not quite the same check: `build_graph` takes the provider and store
-as *optional* and its `ValueError` covers a second case — one supplied without
-the other — which `Retriever` cannot have, since all three collaborators are
-required. So "make them agree" is really two decisions: whether the
-half-configured case and the mismatched-dimension case should share a type at
-all, and which type the dimension case gets. Changing `build_graph`'s to
-`DimensionMismatchError` is the better answer on the merits and is a
-**breaking change** for anyone catching `ValueError` today, which is why it
-wants a version bump rather than a quiet edit.
-
-`tests/unit/test_build_graph_embeddings.py` asserts the `ValueError` and would
-need updating with it.
-
-**The divergence has no failing test, which is the part that will bite.**
-Nothing anywhere asserts that the composition points agree, so a third one
-picking a third type would be caught by nobody — the two existing tests each
-assert their own entry point's behaviour, which is §1's silent-divergence
-shape exactly. Closing this properly is therefore not just an edit: it is a
-test asserting that *every* composition point refuses a mismatch with the same
-type, which is currently red and cannot be added until the fix lands. Write
-that test first when picking this up; it is the thing that stops the entry
-being re-opened by a fourth caller in a year.
+**`ChunkRetriever` (ADR 0038) is a third instance of the same unmeasured
+claim.** It fuses a semantic channel over `StoredChunk.embedding` with a BM25
+lexical one, by the identical reciprocal-rank-fusion shape `Retriever` uses
+for entities, and nothing in this repository measures whether that fusion
+beats either chunk channel alone any more than it measures the entity case.
+`tests/unit/composition/test_chunk_retrieval.py` pins the machinery --
+overfetch, tenant isolation, the modes, the component scores -- which is the
+same
+structural coverage this entry already describes as not evidence about
+ranking quality. The graded corpus this entry calls for, once built, should
+be asked both questions rather than only the entity one.
 
 ---
 
@@ -875,6 +848,14 @@ configuration. (3) A partial ANN index per large tenant, which does not scale
 past a few tenants. Whoever takes this on should extend the compliance suite's
 recall tier first: it currently passes trivially because both adapters are
 exact.
+
+**A second instance of the same cost: the chunk store's semantic scan.**
+`ChunkStore.semantic_candidates` (ADR 0038) scans a tenant's chunks exactly,
+for the identical reason -- an ANN index over a multi-tenant table either
+crosses tenant boundaries or is built per tenant, and ADR 0012's argument does
+not depend on which table carries the vector. Nothing here is a new decision;
+it is the same trade, paid twice, and the three ways out above apply to
+`chunks/adapters/postgres.py` unchanged.
 
 ### B50. `dateparser` costs ~250ms on a first call and is on the extraction path
 
@@ -1430,61 +1411,6 @@ Not urgent: `description` is not read by anything that ranks or resolves
 today, so what is lost is text a caller might display. It becomes urgent the
 moment a description reaches an embedding or a lexical channel, because at
 that point the fold is silently choosing what the corpus can be searched by.
-
-### B89. No chunk embeddings and no fused `retrieve_chunks` entry point — B2b
-
-B1 built the corpus (`docs/adr/0023-the-chunk-corpus.md`) and B2a built a real
-term-weighted ranker over it — BM25, scored in the domain, with the tokenizer
-and truncation cost it depends on
-(`docs/adr/0024-bm25-over-the-chunk-corpus.md`). **B2a has landed.** What is
-still missing is chunk embeddings, a `ScoredChunk`, a `retrieve_chunks` entry
-point, and fusion with the RRF that `composition/retrieval.py` already does
-for entities. None of that exists.
-
-What B1 and B2a decided that B2b inherits, and would otherwise have to
-rediscover:
-
-- **Chunk ids are content-addressed over `(source_id, text)`**, so a re-chunk
-  produces *new* ids rather than overwriting. A stored embedding therefore
-  never silently describes text that has changed — which is the property that
-  makes chunk embeddings safe to store at all, and it was chosen for this
-  reason before any embedding existed. Do not "simplify" identity to
-  `(source_id, chunk_index)` on the way in.
-- **`replace_source` is one atomic call.** Document-frequency statistics are
-  computed at query time over rows written by that one call; any statistic
-  B2b caches has the same requirement — invalidated by the call that replaces
-  the source, not by a second one.
-- **BM25 is still not a name for the entity-name lexical channel.** ADR 0022
-  stands even after ADR 0024 made the name honest for the chunk ranker: the
-  entity channel is a field-weighted string similarity, and B2b's semantic
-  channel over chunks is a *third and additional* one, not a replacement for
-  either.
-- **`entity_ids` is on the chunk, not in the graph.** A ranked passage is
-  turned into entities by the caller holding both ports. Putting a chunk
-  reference into the graph gives `mapping.py` a second id scheme.
-- **The dimension check has a precedent and a filed disagreement.** B82 —
-  two composition points refuse a dimension mismatch with different exception
-  types — is a third instance waiting to happen the moment chunk embeddings
-  acquire their own composition point.
-
-`PostgresChunkStore` stores no vector column today, so B2b also has a schema
-migration for a table that is already shipped and already has an integration
-suite pinning its DDL.
-
-**A second migration is already owed, ahead of B2b's vector column.** Every
-statement in `_schema_statements` is `IF NOT EXISTS`, so `ensure_schema` run
-against a `kg_chunks` table created before the chunk-lexical work (56542ba)
-adds `kg_chunks_terms` and leaves the existing `kg_chunks` table alone --
-after which every query naming `_COLUMNS` fails with "column doc_length does
-not exist", because the new `doc_length` column was never added to a table
-`CREATE TABLE IF NOT EXISTS` declines to touch. And even with the column
-added by hand, existing rows have no term rows and `doc_length = 0`, so they
-rank as empty documents until backfilled. Whoever writes B2b's `ALTER TABLE`
-for the vector column should add `doc_length` and a `<table>_terms` backfill
-in the same migration rather than treating this as separate follow-up --
-`kg_chunks` has never appeared in a tagged release, so today this affects
-only a deployment tracking `main`, but that stops being true the moment a
-release ships it.
 
 ### B92. Corpus statistics are recomputed per query, not maintained incrementally
 
@@ -2754,6 +2680,20 @@ contract"). Thorough fix: make it executable, either a compliance case that
 asserts the adapters agree after such a write (would currently fail on
 Postgres) or `chunk_id`-derived validation on `StoredChunk` construction.
 
+**Update:** the cheap half landed — the prose is now on
+`ChunkWriter.upsert_many` in `src/redstring/ports/chunk_store.py`, as part of
+the chunk-semantic-channel work (see
+`docs/adr/0038-the-chunks-vector-lives-on-the-chunk.md`), because the new
+`embedding` column inherits the same assumption `doc_length` and the term
+index already made. The executable half is still open, and closing it needs
+a decision this entry hasn't made: whether the port promises last-write-wins
+on *derived* state (`doc_length`, the term index, and now `embedding`) for a
+same-id-different-text write, or whether that write is simply outside the
+contract and the compliance suite should assert the adapters both leave the
+old derived state in place. Those are different contracts, and picking one is
+what a test would pin — not something to infer from what's convenient to
+implement.
+
 ### B98. `PostgresChunkStore.lexical_candidates` is three unsynchronised reads
 
 It acquires one connection and issues the corpus-statistics query, the
@@ -2862,3 +2802,162 @@ Deferred rather than added speculatively: the brief scoped Task 4 to the
 `resolve` (and to `ConsolidationReport`, if the resolution should be visible
 there too) is its own decision about the composed surface, not a mechanical
 extension of this task.
+
+### B132. `StoredChunk` accepts a zero-norm `embedding` at construction; only the store rejects it
+
+`ChunkStore.upsert_many`/`replace_source` now reject a zero-norm `embedding`
+at the write seam (`src/redstring/chunks/adapters/memory.py`, mirroring
+`InMemoryVectorStore.upsert_many`), and `semantic_candidates` rejects a
+zero-norm query vector -- both per `src/redstring/ports/chunk_store.py` and
+pinned in `src/redstring/testing/chunk_store.py`. But `StoredChunk`
+(`src/redstring/domain/chunk.py`) itself has no such validator, so
+`StoredChunk(embedding=[0.0, 0.0, 0.0, 0.0], ...)` constructs cleanly and the
+zero vector is only ever caught later, at whichever store the chunk is handed
+to -- a caller building one for a test, a queue, or any path that never
+reaches a store sees no error at all. `VectorRecord` has the identical
+question and the same answer (validated only at `VectorStore.upsert`, not at
+construction); this is one open question, not two.
+
+Deferred rather than decided in Task 6: moving the guard onto the domain type
+is a wider change than the store contract this task was scoped to -- it
+would make `StoredChunk`/`VectorRecord` construction itself capable of
+raising over a field whose only present consumer is the store adapters, and
+touches both `domain/chunk.py` and `domain/vector.py` with their own
+compliance-suite implications (a pydantic `field_validator` needs its own
+test, and every existing test constructing a `StoredChunk`/`VectorRecord`
+with a real embedding would need auditing for whether it ever passes a
+plausible-looking zero by accident, e.g. an uninitialised `[0.0] * dimension`
+placeholder). Whether that duplication of the check is worth paying for the
+earlier, cheaper failure is a call for whoever owns `domain/`.
+
+### B133. `backfill_lexical_index` reads the whole table into Python, unscoped and unbatched
+
+`PostgresChunkStore.backfill_lexical_index()`
+(`src/redstring/chunks/adapters/postgres.py`) runs
+`SELECT id, tenant_id, text FROM {table}` with no `WHERE`, no `LIMIT`, and no
+paging, then builds the whole `doc_lengths`/`term_rows` JSON payload in
+memory before sending it back in one statement. It works for the corpus
+sizes the integration suite and any repo-scale deployment exercise today,
+but it does two things a real corpus will not tolerate: it re-touches every
+row in the table on every call, including rows already correct (there is no
+way to backfill only the rows a migration actually left behind, because
+nothing marks which rows predate the term index), and it holds the entire
+table's `text` in Python at once, which is a straightforward OOM on a corpus
+sized in the hundreds of thousands of chunks or more.
+
+Deferred rather than fixed here because scoping it correctly is its own
+design question, not a one-line change: tenant-scoping alone helps only a
+multi-tenant deployment with many small tenants, and batching needs a cursor
+or a keyset-paginated loop plus a decision about whether a batch failure
+partway through leaves some rows backfilled and others not (this method is
+currently one statement, and the whole point of that shape elsewhere in this
+adapter is that a crash mid-write cannot leave the corpus in a state that
+never existed -- a batched backfill gives that property up on purpose and
+should say so explicitly if it does). Whoever picks this up should decide
+batch size, whether it takes an optional `tenant_id` filter, and whether a
+partial run is idempotent to resume (it should be, given `ON CONFLICT DO
+NOTHING` on the term rows and an unconditional `UPDATE` on `doc_length`, but
+that needs a test once batching exists, not an assumption).
+
+### B134. `_SELECT_COLUMNS` builds its `real[]` cast with a substring replace
+
+`_SELECT_COLUMNS = _COLUMNS.replace("embedding", "embedding::real[] AS
+embedding")` in `src/redstring/chunks/adapters/postgres.py` works today
+because `"embedding"` appears exactly once in `_COLUMNS` and nowhere else in
+it. It is not robust to the column list changing: a future column whose name
+*contains* `embedding` as a substring (`embedding_model`, say) would also get
+silently rewritten to `<name>::real[] AS <name>`, which is either a SQL
+error (if the column is not a `vector`) or a quietly wrong cast (if it
+happens to be one). `_COLUMNS` and `_SELECT_COLUMNS` are both plain
+interpolated strings built once at import time, not composed from a list of
+column names each independently markable as "needs a read-side cast", so
+there is no structural way for the current shape to express "only this one
+column, not any column containing this substring".
+
+Not fixed here because no second column needs a read-side cast yet, and the
+correct fix is a shape change -- `_COLUMNS` becoming a sequence of
+`(name, select_expression)` pairs, or similar -- that is worth doing once
+there is a second case to design it against, rather than speculatively.
+Whoever adds the next `vector`-typed or otherwise cast-needing column should
+either make that change or, at minimum, add a test asserting `_COLUMNS` does
+not contain `"embedding"` as a substring of any other column name.
+
+### B135. `test_semantic_candidates_query_applies_min_score_before_limit` only checks presence, not direction
+
+`tests/unit/chunks/test_postgres_schema.py::test_semantic_candidates_query_applies_min_score_before_limit`
+asserts `"$3" in where_clause`, which passes whether the adapter actually
+tests `>= $3`, `<= $3`, or even `$3 IS NOT NULL` with no comparison at all --
+any wiring of the `min_score` parameter into the `WHERE` clause satisfies it,
+including a wrong one. The port's contract (`min_score` is an inclusive
+lower bound: a candidate scoring exactly `min_score` survives) is pinned
+only by the shared integration case,
+`ChunkStoreCompliance.test_semantic_candidates_applies_min_score_before_limit`
+in `src/redstring/testing/chunk_store.py`, which does assert the boundary is
+inclusive against a real Postgres. The unit test's job was meant to be
+catching a regression before the server-requiring suite runs; as written it
+cannot.
+
+Not fixed here because tightening it needs either a stronger string
+assertion (`"score >= $3" in sql`, or similar, which is brittle to
+reformatting the SQL) or executing the statement's `WHERE` clause against a
+small fixture with a fake connection, which is more machinery than this
+adapter's other unit-level SQL-shape tests use. Whoever picks this up should
+decide which tradeoff is worth it before touching the assertion.
+
+### B136. `StoredChunk` now carries a vector on every read, wanted or not
+
+ADR 0038 put `embedding` on `StoredChunk` rather than in a second store, and
+every `ChunkReader` method -- `get`, `get_by_source`, `get_by_entity` -- hands
+the whole row back, vector included, whether the caller asked
+`semantic_candidates` a question or not. A caller reading `get_by_source` over
+a large document to display its text, or to feed the lexical channel alone,
+now pays to carry one `dimension`-length float vector per chunk across the
+port for every chunk it reads, with no way to ask for the row without it.
+
+Not fixed here: a projection that selects columns is a port change --
+`ChunkReader`'s methods would need either a second return shape or a
+column-selection argument, and either is a real widening of the contract, not
+a drive-by fix alongside the capability that created the cost. More to the
+point, nothing has measured the width as a cost. `InMemoryChunkStore` pays
+nothing extra (Python already holds the object); `PostgresChunkStore` pays a
+`real[]` column read on every row, and whether that shows up at any corpus
+size this repository has exercised is unmeasured. Whoever picks this up
+should measure `get_by_source` over a document with hundreds of chunks before
+deciding whether a column-selecting variant is worth the port change.
+
+### B137. `min_score` compares a clamped score in memory, unclamped in Postgres
+
+`InMemoryChunkStore.semantic_candidates` (`chunks/adapters/memory.py:247,253`)
+scores with `cosine_score`, which clamps into `0..1` before the `min_score`
+comparison runs. `PgVectorChunkStore` (`chunks/adapters/postgres.py:698`)
+filters on the raw `_SCORE` expression in SQL and only clamps afterwards, at
+line 670, when building each `SemanticCandidate`.
+
+Not fixed here: the divergence window is one ulp around 0.0 or 1.0 -- exactly
+the accumulated-rounding case `cosine_score`'s own docstring names, where an
+identical pair's raw dot product can land marginally above its squared norm.
+pgvector clamps cosine distance internally (it is computed as `1 - <=>`
+against normalised-length vectors in the query the adapter emits), so the raw
+`_SCORE` a caller could observe diverging from the clamped one is already a
+edge a real deployment is unlikely to produce, and reordering the filter to
+run after clamping would cost an extra pass over every candidate row to save
+a comparison that only ever differs by float epsilon. Worth revisiting if a
+future backend's raw score is not already bounded on the way out.
+
+### B138. `ensure_schema`'s width check reads `atttypmod`, which is `-1` for an unconstrained `vector` column
+
+`chunks/adapters/postgres.py`'s `ensure_schema` inherited its dimension-width
+check verbatim from `PgVectorStore`. Postgres reports `atttypmod` as `-1` for
+a `vector` column declared with no width (`vector` rather than
+`vector(768)`), so a table created that way would raise
+`DimensionMismatchError(expected=-1, ...)` instead of the width mismatch the
+check means to report.
+
+Not fixed here: nothing this repository writes ever creates an unconstrained
+`vector` column -- both adapters always declare a width -- so the path is
+unreachable from any migration or `ensure_schema` call in the tree, and the
+same latent issue already exists in `PgVectorStore`, which this code was
+copied from. Fixing one without the other would be inconsistent; fixing both
+is a small, separate, argued change (special-case `-1` and report it as
+"unconstrained" rather than as a mismatched width) that belongs in its own
+commit rather than riding in on the semantic-channel branch.

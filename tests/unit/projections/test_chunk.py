@@ -95,7 +95,7 @@ async def _stored(store: InMemoryChunkStore, expected_keys) -> dict[tuple[UUID, 
 
 class _Rig:
     def __init__(self) -> None:
-        self.store = InMemoryChunkStore()
+        self.store = InMemoryChunkStore(dimension=4)
         self.dlq = InMemoryDLQRepository()
         self.projection = ChunkProjection(self.store, dlq_repo=self.dlq, retry_policy=NO_RETRIES)
 

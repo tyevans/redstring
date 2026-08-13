@@ -32,6 +32,7 @@ from redstring.ports.chunk_store import (
     ChunkStore,
     ChunkWriter,
     LexicalCandidateSource,
+    SemanticCandidateSource,
 )
 from redstring.projections.chunk import ChunkProjection
 from redstring.testing.lifetime import NoOpLifetime
@@ -91,6 +92,7 @@ class TestTheProjectionNeedsOnlyTheWriter:
         assert not isinstance(store, ChunkStore)
         assert not isinstance(store, ChunkReader)
         assert not isinstance(store, LexicalCandidateSource)
+        assert not isinstance(store, SemanticCandidateSource)
         assert not isinstance(store, ChunkPurge)
 
     async def test_a_write_only_store_folds_a_chunking_event(self) -> None:
@@ -144,12 +146,24 @@ class TestTheProjectionNeedsOnlyTheWriter:
 
 
 class TestTheComposedPortStillBindsEveryCapability:
-    def test_the_real_adapter_satisfies_all_four(self) -> None:
+    def test_the_real_adapter_satisfies_all_five(self) -> None:
         # Guards against the split becoming a fork: a capability the composed
         # port stopped naming would leave this assertion the only thing that
         # noticed.
-        store = InMemoryChunkStore()
+        #
+        # `InMemoryChunkStore` does not implement `SemanticCandidateSource`
+        # yet -- that is a later task -- so this is expected to fail until it
+        # does, on the `SemanticCandidateSource` line and again on the final
+        # `ChunkStore` line. Not weakened to duck the failure; see the ADR
+        # and the commit that added `SemanticCandidateSource` to the port.
+        store = InMemoryChunkStore(dimension=4)
 
-        for capability in (ChunkWriter, ChunkReader, LexicalCandidateSource, ChunkPurge):
+        for capability in (
+            ChunkWriter,
+            ChunkReader,
+            LexicalCandidateSource,
+            SemanticCandidateSource,
+            ChunkPurge,
+        ):
             assert isinstance(store, capability), capability.__name__
         assert isinstance(store, ChunkStore)

@@ -29,7 +29,14 @@ from uuid import uuid4
 import pytest
 
 from redstring.chunks.adapters import postgres as adapter
-from redstring.chunks.adapters.postgres import PostgresChunkStore, deduplicate, encode, encode_terms
+from redstring.chunks.adapters.postgres import (
+    _SCORE,
+    PostgresChunkStore,
+    deduplicate,
+    encode,
+    encode_terms,
+)
+from redstring.chunks.adapters.postgres import encode_vector as chunk_encode_vector
 from redstring.domain.chunk import StoredChunk
 from redstring.ports.chunk_store import ChunkStore
 
@@ -47,8 +54,8 @@ class _ExplodingPool:
         raise AssertionError(f"the adapter reached the database via {name!r} before validating")
 
 
-def _store(*, table: str = "kg_chunks") -> PostgresChunkStore:
-    return PostgresChunkStore(_ExplodingPool(), table=table)  # type: ignore[arg-type]
+def _store(*, table: str = "kg_chunks", dimension: int = 4) -> PostgresChunkStore:
+    return PostgresChunkStore(_ExplodingPool(), table=table, dimension=dimension)  # type: ignore[arg-type]
 
 
 def _chunk(
@@ -59,6 +66,7 @@ def _chunk(
     text: str = "some passage text",
     chunk_index: int = 0,
     entity_ids: list[Any] | None = None,
+    embedding: list[float] | None = None,
 ) -> StoredChunk:
     return StoredChunk(
         id=chunk_id,
@@ -70,6 +78,7 @@ def _chunk(
         end_char=len(text),
         entity_ids=entity_ids or [],
         metadata={},
+        embedding=embedding,
     )
 
 
@@ -101,10 +110,26 @@ class TestConstruction:
             store._insert_sql(),
             store._replace_sql(),
             store._candidates_sql(),
+            store._semantic_candidates_sql(),
+            store._backfill_sql(),
         ]
         for statement in statements:
             assert "kg_chunks_test_gw3" in statement
             assert "kg_chunks " not in statement.replace("kg_chunks_test_gw3", "")
+
+    @pytest.mark.parametrize("dimension", [0, -1])
+    def test_a_non_positive_dimension_is_rejected(self, dimension: int):
+        """Mirrors `InMemoryChunkStore` and `PgVectorStore`: a zero-dimension
+        store accepts only the zero-length vector, which is also a zero
+        vector, so nothing could ever be embedded into it."""
+        with pytest.raises(ValueError, match="dimension"):
+            _store(dimension=dimension)
+
+    def test_dimension_is_exposed_and_reaches_the_column(self):
+        store = _store(dimension=11)
+        assert store.dimension == 11
+        assert "vector(11)" in store._schema_statements()[0]
+        assert "vector(11)" in " ".join(store._schema_statements())
 
 
 class TestGuardsRunBeforeAnyIO:
@@ -128,6 +153,56 @@ class TestGuardsRunBeforeAnyIO:
         foreign = _chunk(source_id="other-doc")
         with pytest.raises(ValueError, match="source_id"):
             await _store().replace_source("doc-1", uuid4(), [foreign])
+
+    async def test_upsert_many_rejects_a_zero_norm_embedding_before_any_io(self):
+        zero = _chunk(embedding=[0.0, 0.0, 0.0, 0.0])
+        with pytest.raises(ValueError, match="zero"):
+            await _store().upsert_many([zero])
+
+    async def test_replace_source_rejects_a_zero_norm_embedding_before_any_io(self):
+        tenant = uuid4()
+        zero = _chunk(tenant_id=tenant, embedding=[0.0, 0.0, 0.0, 0.0])
+        with pytest.raises(ValueError, match="zero"):
+            await _store().replace_source("doc-1", tenant, [zero])
+
+    async def test_upsert_many_rejects_a_stored_embedding_of_the_wrong_width_before_any_io(self):
+        from redstring.domain.exceptions import DimensionMismatchError
+
+        narrow = _chunk(embedding=[1.0, 0.0, 0.0])
+        with pytest.raises(DimensionMismatchError) as raised:
+            await _store(dimension=4).upsert_many([narrow])
+        assert raised.value.expected == 4
+        assert raised.value.actual == 3
+
+    async def test_replace_source_rejects_a_stored_embedding_of_the_wrong_width_before_any_io(
+        self,
+    ):
+        from redstring.domain.exceptions import DimensionMismatchError
+
+        tenant = uuid4()
+        narrow = _chunk(tenant_id=tenant, embedding=[1.0, 0.0, 0.0])
+        with pytest.raises(DimensionMismatchError) as raised:
+            await _store(dimension=4).replace_source("doc-1", tenant, [narrow])
+        assert raised.value.expected == 4
+        assert raised.value.actual == 3
+
+    async def test_semantic_candidates_rejects_a_negative_limit(self):
+        with pytest.raises(ValueError, match="limit"):
+            await _store().semantic_candidates([1.0, 0.0, 0.0, 0.0], uuid4(), -1)
+
+    async def test_semantic_candidates_rejects_a_vector_of_the_wrong_width(self):
+        from redstring.domain.exceptions import DimensionMismatchError
+
+        with pytest.raises(DimensionMismatchError):
+            await _store(dimension=4).semantic_candidates([1.0, 0.0, 0.0], uuid4(), 10)
+
+    async def test_semantic_candidates_rejects_a_zero_norm_query_before_any_io(self):
+        with pytest.raises(ValueError, match="zero"):
+            await _store().semantic_candidates([0.0, 0.0, 0.0, 0.0], uuid4(), 10)
+
+    async def test_semantic_candidates_with_a_zero_limit_never_touches_the_store(self):
+        result = await _store().semantic_candidates([1.0, 0.0, 0.0, 0.0], uuid4(), 0)
+        assert result == []
 
 
 class TestSqlConstruction:
@@ -209,12 +284,97 @@ class TestSqlConstruction:
         sql = _store()._candidates_sql()
         assert "jsonb_object_agg(term, tf)" in sql
 
+    def test_the_schema_alters_an_existing_table_onto_the_current_columns(self):
+        """`CREATE TABLE IF NOT EXISTS` adds nothing to a table that predates a column.
+
+        B89: a `kg_chunks` created before the lexical or semantic work never
+        got `doc_length` or `embedding`, and every query naming `_COLUMNS`
+        fails against it. The ALTERs are the repair, and they ship with the
+        columns that made them necessary.
+        """
+        statements = " ".join(_store()._schema_statements())
+        assert "ADD COLUMN IF NOT EXISTS doc_length" in statements
+        assert "ADD COLUMN IF NOT EXISTS embedding" in statements
+
+    def test_the_similarity_expression_matches_the_vector_stores(self):
+        """One definition of cosine similarity in this library, not two."""
+        from redstring.vector.adapters.pgvector import _SCORE as VECTOR_SCORE
+
+        assert _SCORE == VECTOR_SCORE
+
+    def test_encode_vector_matches_the_vector_stores(self):
+        """`encode_vector`'s own docstring claims this duplicate is proved
+        identical the way `_SCORE` is -- by a test, not by sharing code, since
+        `chunks` and `vector` are forbidden siblings. This is that test: it
+        was missing, so the claim was unenforced rather than false, which is
+        `recurring-defects.md` shape (g) -- a comment asserting an invariant
+        nothing held to it. Compared by body, not by docstring, since the two
+        modules deliberately give the duplicate different surrounding prose.
+        """
+        import ast
+        import inspect
+
+        from redstring.vector.adapters.pgvector import encode_vector as vector_encode_vector
+
+        def body_source(func: object) -> str:
+            tree = ast.parse(inspect.getsource(func))
+            [function_def] = tree.body
+            assert isinstance(function_def, ast.FunctionDef)
+            body = function_def.body
+            # Drop a leading docstring expression statement, which the two
+            # copies are expected to state differently.
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                body = body[1:]
+            return "\n".join(ast.unparse(statement) for statement in body)
+
+        assert body_source(chunk_encode_vector) == body_source(vector_encode_vector)
+
+    def test_embedding_is_a_column_but_not_in_on_conflict(self):
+        """Same reasoning as `doc_length`: written once per content-addressed
+        id and never updated on conflict; see `_ON_CONFLICT`'s docstring."""
+        store = _store()
+        assert "embedding" in store._schema_statements()[0]
+        assert "embedding" in store._insert_sql()
+        assert "embedding" in store._replace_sql()
+
+        on_conflict_start = store._insert_sql().index("ON CONFLICT")
+        assert "embedding" not in store._insert_sql()[on_conflict_start:]
+
+    def test_semantic_candidates_query_limits_before_joining_the_wide_table(self):
+        sql = _store()._semantic_candidates_sql()
+        assert sql.index("LIMIT $4") < sql.index("JOIN")
+
+    def test_semantic_candidates_query_filters_unembedded_chunks(self):
+        sql = _store()._semantic_candidates_sql()
+        assert "embedding IS NOT NULL" in sql
+
+    def test_semantic_candidates_query_applies_min_score_before_limit(self):
+        sql = _store()._semantic_candidates_sql()
+        where_clause = sql[sql.index("WHERE") : sql.index("ORDER BY")]
+        assert "$3" in where_clause
+
+    def test_semantic_candidates_query_orders_by_the_ports_tie_break(self):
+        sql = _store()._semantic_candidates_sql()
+        assert "score DESC, id ASC" in sql
+        assert "score DESC, m.chunk_id ASC" in sql
+
 
 class TestEncoding:
     def test_encode_includes_computed_doc_length(self):
         chunk = _chunk(text="one two three")
         [row] = json.loads(encode([chunk]))
         assert row["doc_length"] == 3
+
+    def test_encode_renders_an_embedding_as_pgvector_text_form(self):
+        chunk = _chunk(embedding=[1.0, -2.5, 0.0, 3.0])
+        [row] = json.loads(encode([chunk]))
+        assert row["embedding"] == "[1.0,-2.5,0.0,3.0]"
+
+    def test_encode_of_an_unembedded_chunk_is_null(self):
+        chunk = _chunk()
+        assert chunk.embedding is None
+        [row] = json.loads(encode([chunk]))
+        assert row["embedding"] is None
 
     def test_encode_terms_produces_one_row_per_distinct_term(self):
         chunk = _chunk(text="alpha alpha beta")
@@ -273,6 +433,7 @@ class TestStructure:
             "get_by_source",
             "replace_source",
             "lexical_candidates",
+            "semantic_candidates",
             "get_by_entity",
             "delete_by_source",
             "delete_by_tenant",
@@ -294,6 +455,7 @@ class TestStructure:
             "get_by_source",
             "replace_source",
             "lexical_candidates",
+            "semantic_candidates",
             "get_by_entity",
             "delete_by_source",
             "delete_by_tenant",

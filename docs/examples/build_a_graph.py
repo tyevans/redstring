@@ -83,7 +83,7 @@ async def main() -> tuple[list[str], list[str], list[str], list[str]]:
     # A second document, kept as passages and never shown to a model. It costs
     # no tokens, and its chunks carry no `entity_ids` -- which means "no
     # entities were extracted from this passage", not "extraction is pending".
-    corpus = InMemoryChunkStore()
+    corpus = InMemoryChunkStore(dimension=embeddings.dimension)
     memo = SourceDocument(id="engine-memo", text="The Analytical Engine was never completed.")
     indexed = await index_documents([memo], store=corpus, tenant_id=tenant_id)
     passages = await corpus.get_by_source(memo.id, tenant_id)

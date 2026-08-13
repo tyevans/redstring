@@ -25,8 +25,24 @@ string**: tokenization decides what a term is, so a string argument would hand
 that decision back to each adapter and let two stores disagree about it before
 any score was computed. See `domain/tokenize.py`.
 
-Semantic search over this corpus -- chunk embeddings, a fused public result
-type -- is still a separate piece of work and still has no method here.
+## There are two candidate channels now, and they score differently
+
+`SemanticCandidateSource` is the second recall channel, alongside
+`LexicalCandidateSource`. Both hand back candidates for a caller to rank; the
+domain still owns fusion (`domain/chunk_ranking.py` for lexical scoring,
+`domain/reciprocal_rank_fusion.py` for combining channels). What differs
+between the two channels is *where the per-channel score is computed*.
+`lexical_candidates` returns raw counts and lets the domain apply BM25,
+because two adapters implementing a ranking formula could diverge silently
+while agreeing on which chunks matched -- exactly the failure `0024` argues
+against. Cosine similarity is not that kind of formula: there is one
+definition, `VectorStore` already relies on the adapter computing it, and
+shipping every candidate's full vector across the port to score it in Python
+would be its own defect. So `SemanticCandidateSource.semantic_candidates`
+returns scored, ordered chunks -- the adapter scores -- and the port pins the
+order instead: score descending, ties by `id` ascending, so two adapters
+computing the same similarities cannot disagree about which chunks survive a
+`limit`.
 
 ## `replace_source` is one operation, not an upsert and a delete
 
@@ -58,6 +74,7 @@ if TYPE_CHECKING:
 
     from redstring.domain.chunk import ChunkId, StoredChunk
     from redstring.domain.chunk_ranking import LexicalCandidates
+    from redstring.domain.chunk_retrieval import SemanticCandidate
     from redstring.domain.ids import EntityId, SourceId, TenantId
 
 
@@ -75,6 +92,33 @@ class ChunkWriter(AsyncClosable, Protocol):
 
         A document's chunking is thousands of rows, so an adapter over a
         database must send this as one statement, not a loop.
+
+        A chunk id is content-addressed over `(source_id, text)`; re-using
+        an id for different text is outside the contract. Both adapters rely
+        on this to skip re-deriving term statistics and, once written, an
+        embedding on conflict -- a write that violates it can leave the two
+        adapters ranking the same id over different text (B97).
+
+        A chunk whose `embedding` has zero norm raises `ValueError`. Cosine
+        is undefined at zero magnitude, so a stored zero vector would force
+        every later `semantic_candidates` call to choose between a silent
+        NaN and a per-row skip that hides a caller's bug -- rejecting it here
+        is the same choice `VectorStore` already made for `upsert`, and this
+        port makes it once rather than inventing a second answer.
+
+        A chunk whose `embedding` is not `None` and whose length is not the
+        store's `dimension` raises `DimensionMismatchError(expected=dimension,
+        actual=len(embedding))` -- the same type `semantic_candidates` already
+        raises for a wrong-width *query* vector, so a caller has one type to
+        catch for one kind of mistake regardless of which side of the port
+        made it. Left unchecked, this is a silent divergence rather than a
+        loud one: nothing here validated width on write before this rule was
+        stated, so one adapter accepted a mis-sized vector and only failed
+        later, from inside `semantic_candidates`, with a bare `ValueError`
+        that named neither the expected nor the actual width, while another
+        adapter rejected the write itself with a driver-specific error. Both
+        are wrong for the same reason `VectorStore.upsert` already rejects a
+        mis-sized vector at write rather than at search.
         """
         ...
 
@@ -96,6 +140,10 @@ class ChunkWriter(AsyncClosable, Protocol):
         raises `ValueError` rather than being written under the argument's
         values, because silently rewriting a chunk's provenance is how one
         document's entity links end up on another's passage.
+
+        `upsert_many`'s zero-norm and dimension rules for `embedding` both
+        apply to every element here too -- this is the same write path, not a
+        second one with its own contract.
 
         An empty `chunks` empties the source. That is legal.
         """
@@ -193,6 +241,58 @@ class LexicalCandidateSource(AsyncClosable, Protocol):
 
 
 @runtime_checkable
+class SemanticCandidateSource(AsyncClosable, Protocol):
+    """Recall by embedding similarity. The adapter scores; the port pins order."""
+
+    @property
+    def dimension(self) -> int:
+        """The width every stored and queried vector must have.
+
+        Declared at construction, not discovered from the first write --
+        see the ADR for why an optional width was rejected.
+        """
+        ...
+
+    async def semantic_candidates(
+        self,
+        vector: Sequence[float],
+        tenant_id: TenantId,
+        limit: int,
+        *,
+        min_score: float | None = None,
+    ) -> list[SemanticCandidate]:
+        """Chunks nearest `vector` by cosine similarity, this tenant's only.
+
+        **The order is total**: score descending, then `id` ascending. Two
+        adapters cutting different chunks from an equal pair is a divergence
+        in results, exactly as `lexical_candidates` states for its own
+        tie-break.
+
+        Chunks with `embedding is None` are **not candidates** -- skipped,
+        not scored zero. A null vector has no similarity to anything, and
+        scoring it zero would let an unembedded passage outrank a genuinely
+        dissimilar one.
+
+        `min_score` filters **before** `limit`, matching `VectorStore.search`.
+
+        `limit = 0` returns nothing; a negative `limit` raises `ValueError`.
+
+        A vector whose width is not `dimension` raises
+        `DimensionMismatchError`.
+
+        A zero-norm query `vector` raises `ValueError`. Cosine is undefined at
+        zero magnitude; the alternatives are a silent NaN or treating it as
+        equidistant from everything, and `VectorStore.search` already rejects
+        it for the query it takes -- this port makes the same choice rather
+        than a second one.
+
+        The returned chunks are the caller's; mutating them cannot change
+        stored state.
+        """
+        ...
+
+
+@runtime_checkable
 class ChunkPurge(AsyncClosable, Protocol):
     """Removing passages wholesale, by source or by tenant."""
 
@@ -213,17 +313,19 @@ class ChunkPurge(AsyncClosable, Protocol):
 
 
 @runtime_checkable
-class ChunkStore(ChunkWriter, ChunkReader, LexicalCandidateSource, ChunkPurge, Protocol):
+class ChunkStore(
+    ChunkWriter, ChunkReader, LexicalCandidateSource, SemanticCandidateSource, ChunkPurge, Protocol
+):
     """Storage for the passages a document was split into.
 
-    The whole port, composed from the four capabilities above. Adapters
+    The whole port, composed from the five capabilities above. Adapters
     implement this and `redstring/testing/chunk_store.py` runs against it.
 
     **Collaborators should not**, and the number here is worse than the one
-    `GraphStore` records about itself. Nine methods; the only first-party
-    consumer is `ChunkProjection`, which calls `replace_source` and nothing
-    else. One of nine. The other eight exist for library users, which is a
-    good reason for the *port* to have them and no reason at all for the
+    `GraphStore` records about itself. Ten methods and a property; the only
+    first-party consumer is `ChunkProjection`, which calls `replace_source`
+    and nothing else. One of ten. The rest exist for library users, which is
+    a good reason for the *port* to have them and no reason at all for the
     projection to depend on them -- so `ChunkProjection` is a
     `StoreProjection[ChunkWriter]`.
 

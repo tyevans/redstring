@@ -452,7 +452,7 @@ class TestTheCorpusIsOptionalAndSeparate:
 
     async def test_build_graph_with_a_chunk_store_populates_it(self) -> None:
         graph = InMemoryGraphStore()
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         report = await build_graph(
             document(),
@@ -475,7 +475,7 @@ class TestTheCorpusIsOptionalAndSeparate:
     async def test_a_multi_chunk_document_stores_every_passage(self) -> None:
         """One passage would satisfy the test above and hide a fold that keeps
         only the last chunk."""
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         long_document = SourceDocument(id="doc-1", text="Ada Lovelace worked. " * 200)
 
         report = await build_graph(
@@ -491,7 +491,7 @@ class TestTheCorpusIsOptionalAndSeparate:
         assert report.chunks_written == len(stored) == report.total_chunks
 
     async def test_the_corpus_is_scoped_to_the_tenant_that_built_it(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         await build_graph(
             document(),

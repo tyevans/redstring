@@ -69,6 +69,7 @@ from eventsource.adapters.memory import InMemoryEventStore
 from eventsource.domain.tenant_context import tenant_scope
 
 from redstring.aggregates.repositories import document_repository
+from redstring.domain.exceptions import DimensionMismatchError
 from redstring.events.streams import document_stream
 from redstring.extraction.chunkers import SlidingWindowChunker
 from redstring.extraction.corpus import chunking_digest, stored_chunks
@@ -83,6 +84,7 @@ if TYPE_CHECKING:
     from redstring.domain.source import SourceDocument
     from redstring.extraction.protocols import Chunker
     from redstring.ports.chunk_store import ChunkStore
+    from redstring.ports.embedding_provider import EmbeddingProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +108,13 @@ class IndexReport:
     #: call.** A document indexed by an earlier call is counted as newly
     #: indexed, because there is no recorded signature to refuse it against.
     documents_skipped: int
+    #: Chunks embedded, across every document. `0` when `embeddings` was not
+    #: supplied -- the default -- and otherwise equal to `chunks_written`,
+    #: because every chunk of a document that was recorded gets a vector.
+    #: Never incremented for a skipped document: `record_chunking` returning
+    #: `None` means nothing was written, and embedding it anyway would be a
+    #: model call bought for nothing.
+    embedded: int
 
 
 async def index_documents(
@@ -115,8 +124,9 @@ async def index_documents(
     tenant_id: TenantId,
     chunker: Chunker | None = None,
     event_store: AggregateStore | None = None,
+    embeddings: EmbeddingProvider | None = None,
 ) -> IndexReport:
-    """Split `documents` into `store`, without asking a model anything.
+    """Split `documents` into `store`, without asking a model anything -- unless asked to.
 
     Args:
         documents: The content. Supplied by the caller -- this library never
@@ -128,6 +138,10 @@ async def index_documents(
         event_store: Where the chunkings are recorded. An `InMemoryEventStore`
             per call when omitted, which suppresses a repeat *within* the call
             and not across calls -- see the module docstring's table.
+        embeddings: When supplied, every chunk of every document actually
+            recorded (not a skipped repeat) is embedded and stored with a
+            vector. Omitted by default, in which case this function makes no
+            model call at all -- see below.
 
     Returns:
         An `IndexReport`.
@@ -138,6 +152,15 @@ async def index_documents(
     whichever subset is worth paying for. The passages written here carry no
     `entity_ids`, which `StoredChunk` documents as "no entities were extracted
     from this passage" and explicitly not as "extraction is pending".
+
+    **That no-model-call promise holds only when `embeddings` is not
+    supplied, which is the default.** Passing a provider embeds every chunk
+    of every document actually written -- one `embed` call per document,
+    batching that document's chunk texts, since the port is order-preserving
+    and a call per chunk would defeat the point of batching. A document whose
+    chunking is a repeat (`record_chunking` returns `None`) is never embedded:
+    nothing was written for it, so a vector would be a model call bought for
+    nothing.
     """
     splitter = chunker if chunker is not None else SlidingWindowChunker()
     repository = document_repository(
@@ -145,9 +168,13 @@ async def index_documents(
     )
     projection = ChunkProjection(store)
 
+    if embeddings is not None and embeddings.dimension != store.dimension:
+        raise DimensionMismatchError(expected=store.dimension, actual=embeddings.dimension)
+
     indexed = 0
     written = 0
     skipped = 0
+    embedded_count = 0
 
     async with tenant_scope(tenant_id):
         for document in documents:
@@ -164,6 +191,11 @@ async def index_documents(
             if event is None:
                 skipped += 1
                 continue
+            if embeddings is not None and event.chunks:
+                vectors = await embeddings.embed([chunk.text for chunk in event.chunks])
+                for chunk, vector in zip(event.chunks, vectors, strict=True):
+                    chunk.embedding = vector
+                embedded_count += len(event.chunks)
             # Saved before the projection runs. The log is the authority: a
             # crash between the two leaves an event that a replay will apply,
             # whereas projecting first and crashing leaves a corpus holding
@@ -173,4 +205,9 @@ async def index_documents(
             indexed += 1
             written += len(event.chunks)
 
-    return IndexReport(documents_indexed=indexed, chunks_written=written, documents_skipped=skipped)
+    return IndexReport(
+        documents_indexed=indexed,
+        chunks_written=written,
+        documents_skipped=skipped,
+        embedded=embedded_count,
+    )

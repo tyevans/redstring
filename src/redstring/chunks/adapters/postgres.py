@@ -44,7 +44,10 @@ from redstring.chunks.provenance import reject_foreign_chunks
 from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk import StoredChunk
 from redstring.domain.chunk_ranking import LexicalCandidate, LexicalCandidates
+from redstring.domain.chunk_retrieval import SemanticCandidate
+from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.tokenize import tokenize
+from redstring.domain.vector import clamp_score, has_zero_norm
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -71,12 +74,17 @@ _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 #: typed differently in the two statements is the silent-divergence shape
 #: inside a single adapter.
 #:
-#: `doc_length` is here and in `_COLUMNS` below, but deliberately **not** in
-#: `_ON_CONFLICT` -- see that constant's docstring.
+#: `doc_length` and `embedding` are here and in `_COLUMNS` below, but
+#: deliberately **not** in `_ON_CONFLICT` -- see that constant's docstring.
+#: `embedding` is typed as the unconstrained `vector` rather than `vector(n)`:
+#: `jsonb_to_recordset`'s `AS` clause names a type for the input function to
+#: parse text into, and the actual column it lands in -- `vector({dimension})`
+#: -- is what enforces the width, exactly as a plain `integer` value narrows
+#: to a `smallint` column without the record shape naming that width either.
 _INCOMING = (
     "t(tenant_id uuid, id text, source_id text, text text, chunk_index integer, "
     "start_char integer, end_char integer, entity_ids uuid[], metadata jsonb, "
-    "doc_length integer)"
+    "doc_length integer, embedding vector)"
 )
 
 #: The record shape the term-index payload unpacks into. A term row has no
@@ -99,12 +107,15 @@ _TERMS_ON_CONFLICT = "ON CONFLICT (tenant_id, chunk_id, term) DO NOTHING"
 #: adapter preserves and the other drops, which is `recurring-defects.md` §1's
 #: third observed shape verbatim.
 #:
-#: `doc_length` is deliberately **absent** from this list, unlike every other
-#: column in `_COLUMNS`. It is not an oversight of that rule: `doc_length` is a
-#: pure function of `text`, which a content-addressed id fixes for good, so
-#: there is no value it could ever need updating to. Including it in the
-#: `SET` list would be a no-op that reads as one more ordinary column and
-#: hides the reasoning; omitting it and saying so here is the honest spelling.
+#: `doc_length` and `embedding` are deliberately **absent** from this list,
+#: unlike every other column in `_COLUMNS`. Neither is an oversight of that
+#: rule: `doc_length` is a pure function of `text`, and `embedding` is written
+#: once and never updated on conflict either -- a content-addressed id fixes
+#: `text` for good, so there is no value either column could ever need
+#: updating to (BACKLOG B97 tracks that this reasoning is not yet enforced by
+#: a guard). Including them in the `SET` list would be a no-op that reads as
+#: one more ordinary column and hides the reasoning; omitting them and saying
+#: so here is the honest spelling.
 _ON_CONFLICT = (
     "ON CONFLICT (tenant_id, id) DO UPDATE SET "
     "source_id = EXCLUDED.source_id, text = EXCLUDED.text, "
@@ -115,24 +126,49 @@ _ON_CONFLICT = (
 
 _COLUMNS = (
     "tenant_id, id, source_id, text, chunk_index, start_char, end_char, "
-    "entity_ids, metadata, doc_length"
+    "entity_ids, metadata, doc_length, embedding"
 )
+
+#: `_COLUMNS` for a `SELECT`, not an `INSERT` -- pgvector's *text* output
+#: rounds to seven significant digits, so reading `embedding` back as text
+#: is lossy even though the stored float4 is exact. Casting to `real[]` hands
+#: asyncpg a binary float4 array it decodes exactly, exactly as
+#: `PgVectorStore.get` does; see that module's docstring for the round-trip
+#: property that found the asymmetry.
+_SELECT_COLUMNS = _COLUMNS.replace("embedding", "embedding::real[] AS embedding")
+
+#: One definition of cosine similarity in this library, not two -- see
+#: `redstring.vector.adapters.pgvector._SCORE`. `chunks` cannot import
+#: `vector` (siblings under the same layer, and `lint-imports` forbids it),
+#: so this is a second declaration proved identical to the first by
+#: `tests/unit/chunks/test_postgres_schema.py`, not a shared import.
+_SCORE = "1 - (embedding <=> $2::vector) / 2"
 
 
 class PostgresChunkStore:
     """A `ChunkStore` backed by Postgres."""
 
-    def __init__(self, pool: asyncpg.Pool[Any], *, table: str = "kg_chunks") -> None:
+    def __init__(
+        self, pool: asyncpg.Pool[Any], *, table: str = "kg_chunks", dimension: int
+    ) -> None:
         """Wrap an existing pool. `close()` will not close it.
 
         Ownership follows who created the pool, as on `PgVectorStore`: a
         caller that injected one keeps the right to close it, and `connect()`
         builds its own and does close it.
+
+        `dimension` is required and keyword-only, matching `InMemoryChunkStore`
+        and `PgVectorStore` -- declared at construction, not discovered from
+        the first write; see the port's `SemanticCandidateSource.dimension`
+        docstring for why an optional width was rejected.
         """
         if not _IDENTIFIER.fullmatch(table):
             raise ValueError(f"table must be a bare lowercase identifier, not {table!r}")
+        if dimension <= 0:
+            raise ValueError(f"dimension must be positive, not {dimension}")
         self._pool = pool
         self._table = table
+        self._dimension = dimension
         self._owns_pool = False
 
     @classmethod
@@ -141,6 +177,7 @@ class PostgresChunkStore:
         dsn: str,
         *,
         table: str = "kg_chunks",
+        dimension: int,
         # Passed straight to `asyncpg.create_pool`, whose own signature is
         # `**kwargs`; narrowing it here would mean restating asyncpg's options
         # and going stale against them.
@@ -156,7 +193,7 @@ class PostgresChunkStore:
             ) from error
 
         pool = await asyncpg.create_pool(dsn, **pool_options)
-        store = cls(pool, table=table)
+        store = cls(pool, table=table, dimension=dimension)
         store._owns_pool = True
         return store
 
@@ -194,15 +231,42 @@ class PostgresChunkStore:
     def table(self) -> str:
         return self._table
 
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
     # ------------------------------------------------------------------
     # Schema
     # ------------------------------------------------------------------
 
     async def ensure_schema(self) -> None:
-        """Create the table and its index. Idempotent."""
+        """Create the extension, table and indexes. Idempotent.
+
+        `CREATE EXTENSION IF NOT EXISTS vector` runs first, as `PgVectorStore`
+        does, because `embedding vector(n)` needs the type to exist before
+        either the `CREATE TABLE` or the repair `ALTER`s below can run.
+
+        Raises `DimensionMismatchError` if `embedding` already exists at a
+        different declared width -- mirroring `PgVectorStore.ensure_schema`
+        exactly, and for the same reason: `ADD COLUMN IF NOT EXISTS embedding
+        vector(n)` is a no-op against a column that already exists, silently,
+        regardless of whether `n` agrees with what is already there. Without
+        this check a table carrying `embedding vector(384)` opened with
+        `dimension=768` would pass `ensure_schema` clean and then fail every
+        write at runtime with an opaque Postgres error, rather than failing
+        once, loudly, at startup.
+        """
         async with self._pool.acquire() as connection:
+            await connection.execute("CREATE EXTENSION IF NOT EXISTS vector")
             for statement in self._schema_statements():
                 await connection.execute(statement)
+            declared = await connection.fetchval(
+                "SELECT atttypmod FROM pg_attribute "
+                "WHERE attrelid = $1::regclass AND attname = 'embedding' AND NOT attisdropped",
+                self._table,
+            )
+        if declared is not None and declared != self._dimension:
+            raise DimensionMismatchError(expected=int(declared), actual=self._dimension)
 
     def _schema_statements(self) -> tuple[str, ...]:
         """The DDL, as data, so a server-free test can read it.
@@ -244,6 +308,24 @@ class PostgresChunkStore:
         forgetting it. `<table>_terms_term_idx` supports
         `lexical_candidates`'s per-term lookups (document frequency and
         candidate matching), both filtered on `(tenant_id, term)`.
+
+        `embedding` is `vector(<dimension>)`, nullable -- `None` is the "not
+        yet embedded" state `semantic_candidates` skips rather than scores.
+        There is deliberately no index on it, matching `PgVectorStore`; see
+        `docs/adr/0012-no-ann-index-in-a-multi-tenant-vector-store.md`.
+
+        **The two `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements are
+        the owed migration (B89).** `CREATE TABLE IF NOT EXISTS` adds nothing
+        to a `kg_chunks` that predates the lexical or semantic work, so a
+        table created before either column existed would otherwise have
+        neither -- and every query naming `_COLUMNS` would fail against it.
+        They run after the `CREATE TABLE`, so a fresh database is created
+        with both columns already present and then no-op altered; only a
+        pre-existing table is actually repaired. See
+        `tests/integration/chunks/test_postgres_store.py::test_ensure_schema_repairs_a_table_created_without_the_new_columns`,
+        the only test that proves an `ALTER` does anything at all -- run only
+        against a table that already has the column, it is a statement never
+        observed to do anything.
         """
         return (
             f"CREATE TABLE IF NOT EXISTS {self._table} ("
@@ -257,8 +339,13 @@ class PostgresChunkStore:
             "  entity_ids  uuid[]  NOT NULL DEFAULT '{}',"
             "  metadata    jsonb   NOT NULL DEFAULT '{}'::jsonb,"
             "  doc_length  integer NOT NULL DEFAULT 0,"
+            f"  embedding   vector({self._dimension}),"
             "  PRIMARY KEY (tenant_id, id)"
             ")",
+            f"ALTER TABLE {self._table} "
+            "ADD COLUMN IF NOT EXISTS doc_length integer NOT NULL DEFAULT 0",
+            f"ALTER TABLE {self._table} "
+            f"ADD COLUMN IF NOT EXISTS embedding vector({self._dimension})",
             f"CREATE INDEX IF NOT EXISTS {self._table}_tenant_source_idx "
             f"ON {self._table} (tenant_id, source_id, chunk_index, id)",
             f"CREATE INDEX IF NOT EXISTS {self._table}_entity_ids_idx "
@@ -280,7 +367,35 @@ class PostgresChunkStore:
     # Writes
     # ------------------------------------------------------------------
 
+    def _reject_wrong_width(self, chunks: Sequence[StoredChunk]) -> None:
+        """A stored `embedding` must have exactly `self._dimension` components.
+
+        Unchecked, Postgres itself rejects a wrong-width `vector(n)` value at
+        the statement (a `DataError` naming neither the store nor which chunk
+        was wrong), while `InMemoryChunkStore` used to accept the write and
+        fail later, from inside `semantic_candidates`, with a bare
+        `ValueError` from `zip(..., strict=True)` -- a silent divergence
+        between the two adapters at the exact write this method's caller is
+        one statement away from executing. Checked here, client-side, both
+        adapters now reject with the same `DimensionMismatchError` at the same
+        point in the call, mirroring `PgVectorStore._check`; see
+        `ports/chunk_store.py`'s `upsert_many` docstring for the port-level
+        rule this enforces.
+        """
+        for chunk in chunks:
+            if chunk.embedding is not None and len(chunk.embedding) != self._dimension:
+                raise DimensionMismatchError(expected=self._dimension, actual=len(chunk.embedding))
+
     async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
+        # Validated against the raw argument, not the deduplicated rows --
+        # matching `PgVectorStore.upsert_many`'s reasoning: collapsing first
+        # would let a rejected record vanish because a later one happened to
+        # replace its key, so the same call would raise here and succeed
+        # in-memory. Width before zero-norm, matching `semantic_candidates`'s
+        # own guard order.
+        self._reject_wrong_width(chunks)
+        reject_zero_norm(chunks)
+
         rows = deduplicate(chunks)
         if not rows:
             return
@@ -322,6 +437,8 @@ class PostgresChunkStore:
         # be a partial one, and the obvious ordering -- delete the orphans,
         # then discover the batch is invalid -- empties the source and raises.
         reject_foreign_chunks(chunks, source_id, tenant_id)
+        self._reject_wrong_width(chunks)
+        reject_zero_norm(chunks)
 
         rows = deduplicate(chunks)
         removed = await self._pool.fetchval(
@@ -384,7 +501,8 @@ class PostgresChunkStore:
 
     async def get(self, chunk_id: ChunkId, tenant_id: TenantId) -> StoredChunk | None:
         row = await self._pool.fetchrow(
-            f"SELECT {_COLUMNS} FROM {self._table} WHERE tenant_id = $1 AND id = $2",  # nosec B608
+            f"SELECT {_SELECT_COLUMNS} FROM {self._table} "  # nosec B608
+            "WHERE tenant_id = $1 AND id = $2",
             tenant_id,
             chunk_id,
         )
@@ -396,7 +514,7 @@ class PostgresChunkStore:
             # with the same four columns, so this is a range scan rather than
             # a sort -- and `chunk_index` being `integer` is what makes the
             # ordering numeric.
-            f"SELECT {_COLUMNS} FROM {self._table} "  # nosec B608
+            f"SELECT {_SELECT_COLUMNS} FROM {self._table} "  # nosec B608
             "WHERE tenant_id = $1 AND source_id = $2 "
             "ORDER BY chunk_index ASC, id ASC",
             tenant_id,
@@ -416,7 +534,7 @@ class PostgresChunkStore:
             # array so this is semantically identical to `$2 = ANY
             # (entity_ids)`; see `tests/integration/chunks/test_postgres_store.py`
             # for the plan assertion naming the index.
-            f"SELECT {_COLUMNS} FROM {self._table} "  # nosec B608
+            f"SELECT {_SELECT_COLUMNS} FROM {self._table} "  # nosec B608
             "WHERE tenant_id = $1 AND entity_ids @> ARRAY[$2::uuid] "
             "ORDER BY source_id ASC, chunk_index ASC, id ASC",
             tenant_id,
@@ -515,10 +633,145 @@ class PostgresChunkStore:
             "     ORDER BY matched_terms DESC, chunk_id ASC"
             "     LIMIT $3"
             ")"
-            f"SELECT c.{_COLUMNS}, m.tfs"
+            f"SELECT c.{_SELECT_COLUMNS}, m.tfs"
             "  FROM matched m"
             f" JOIN {self._table} c ON c.tenant_id = $1 AND c.id = m.chunk_id"
             " ORDER BY m.matched_terms DESC, m.chunk_id ASC"
+        )
+
+    async def semantic_candidates(
+        self,
+        vector: Sequence[float],
+        tenant_id: TenantId,
+        limit: int,
+        *,
+        min_score: float | None = None,
+    ) -> list[SemanticCandidate]:
+        # Same guard order as `InMemoryChunkStore` and `PgVectorStore._check`:
+        # limit before width, width before zero-norm, so a rejected call
+        # never reaches a query and a zero-norm check never runs against a
+        # vector of the wrong shape.
+        if limit < 0:
+            raise ValueError(f"limit must not be negative, got {limit}")
+        if len(vector) != self._dimension:
+            raise DimensionMismatchError(expected=self._dimension, actual=len(vector))
+        if has_zero_norm(vector):
+            raise ValueError("a zero vector has no direction; cosine is undefined for it")
+        if limit == 0:
+            # `LIMIT 0` would answer correctly; not asking is cheaper, and the
+            # port promises `[]` regardless of what the tenant holds -- the
+            # same shape as `PgVectorStore.search`.
+            return []
+
+        rows = await self._pool.fetch(
+            self._semantic_candidates_sql(), tenant_id, encode_vector(vector), min_score, limit
+        )
+        return [
+            SemanticCandidate(chunk=_chunk_from(row), score=clamp_score(float(row["score"])))
+            for row in rows
+        ]
+
+    def _semantic_candidates_sql(self) -> str:
+        """Which chunks are nearest, truncated by `limit`, with their score.
+
+        Follows `_candidates_sql`'s shape: `matched` picks the surviving ids
+        first, ordered by the port's tie-break -- score descending, then `id`
+        ascending -- and `LIMIT`s there, before the join against `<table>`
+        pulls the full row across the wire.
+
+        `embedding IS NOT NULL` excludes unembedded chunks from being
+        candidates at all, rather than scoring them -- the port's stated
+        difference from a missing lexical match. `min_score` is applied in
+        this `WHERE`, before `LIMIT`, matching `VectorStore.search` and the
+        port's own docstring for this method.
+        """
+        # `matched` names its id column `chunk_id`, not `id` -- `_SELECT_COLUMNS`
+        # only qualifies its *first* entry with the `c.` prefix given below
+        # (the same shape `_candidates_sql` relies on for `tfs`), so an `id`
+        # column on both sides of the join would resolve ambiguously rather
+        # than raising at statement build time.
+        return (
+            "WITH matched AS ("  # nosec B608
+            f"    SELECT id AS chunk_id, {_SCORE} AS score"
+            f"    FROM {self._table}"
+            "     WHERE tenant_id = $1 AND embedding IS NOT NULL"
+            f"       AND ($3::float8 IS NULL OR {_SCORE} >= $3)"
+            "     ORDER BY score DESC, id ASC"
+            "     LIMIT $4"
+            ")"
+            f"SELECT c.{_SELECT_COLUMNS}, m.score"
+            "  FROM matched m"
+            f" JOIN {self._table} c ON c.tenant_id = $1 AND c.id = m.chunk_id"
+            " ORDER BY m.score DESC, m.chunk_id ASC"
+        )
+
+    async def backfill_lexical_index(self) -> int:
+        """Recompute `doc_length` and the term rows from stored `text`. Idempotent.
+
+        B89's other half: a row written before the term index existed has
+        `doc_length = 0` and no `<table>_terms` rows, so it ranks as an empty
+        document -- present, but never a candidate for any term it actually
+        contains. Both are recomputed with `domain.tokenize`, the same
+        function the write path uses, which is what makes a backfilled row
+        identical to a freshly-written one rather than a second, divergent
+        notion of "the terms of this chunk".
+
+        One read followed by one write statement for the whole table, not a
+        loop -- the same reasoning `_insert_sql` states for a document's
+        chunking. Returns the number of chunk rows touched; term rows are
+        additional and not counted, since a re-run touches every chunk row
+        again (a genuine `UPDATE`, even when the value does not change) while
+        writing no new term rows at all (`ON CONFLICT DO NOTHING`).
+        """
+        rows = await self._pool.fetch(f"SELECT id, tenant_id, text FROM {self._table}")  # nosec B608
+        if not rows:
+            return 0
+
+        doc_lengths = json.dumps(
+            [
+                {
+                    "tenant_id": str(row["tenant_id"]),
+                    "id": row["id"],
+                    "doc_length": len(tokenize(row["text"])),
+                }
+                for row in rows
+            ]
+        )
+        term_rows = json.dumps(
+            [
+                {"tenant_id": str(row["tenant_id"]), "chunk_id": row["id"], "term": term, "tf": tf}
+                for row in rows
+                for term, tf in Counter(tokenize(row["text"])).items()
+            ]
+        )
+        touched = await self._pool.fetchval(self._backfill_sql(), doc_lengths, term_rows)
+        return int(touched)
+
+    def _backfill_sql(self) -> str:
+        """One statement: repair `doc_length`, then the term rows it implies.
+
+        `updated` and `terms_written` are unreferenced by the final `SELECT`
+        and still run -- Postgres executes every data-modifying CTE, the same
+        property `_insert_sql` and `_replace_sql` rely on for their own
+        unreferenced CTEs. The count comes from `updated` rather than
+        asyncpg's status string, matching every other counted write here.
+        """
+        return (
+            "WITH incoming AS ("  # nosec B608
+            "    SELECT * FROM jsonb_to_recordset($1::jsonb) "
+            "    AS t(tenant_id uuid, id text, doc_length integer)"
+            "), updated AS ("
+            f"    UPDATE {self._table} c SET doc_length = incoming.doc_length"
+            "     FROM incoming"
+            "     WHERE c.tenant_id = incoming.tenant_id AND c.id = incoming.id"
+            "    RETURNING 1"
+            "), terms_written AS ("
+            f"    INSERT INTO {self._table}_terms (tenant_id, chunk_id, term, tf)"
+            f"    SELECT tenant_id, chunk_id, term, tf FROM jsonb_to_recordset($2::jsonb) "
+            f"    AS {_TERMS_INCOMING}"
+            f"    {_TERMS_ON_CONFLICT}"
+            "    RETURNING 1"
+            ") SELECT (SELECT count(*) FROM updated)"
         )
 
     # ------------------------------------------------------------------
@@ -553,6 +806,21 @@ class PostgresChunkStore:
 # ----------------------------------------------------------------------
 
 
+def reject_zero_norm(chunks: Sequence[StoredChunk]) -> None:
+    """Cosine is undefined at zero magnitude.
+
+    A stored zero vector would force every later `semantic_candidates` call
+    to choose between a silent NaN and a per-row skip that hides a caller's
+    bug, so it is rejected here instead -- the same choice
+    `InMemoryChunkStore._reject_zero_norm` and `PgVectorStore._check` already
+    make for their own ports. Chunks with no embedding at all are unaffected;
+    only a *stored* zero vector is a problem.
+    """
+    for chunk in chunks:
+        if chunk.embedding is not None and has_zero_norm(chunk.embedding):
+            raise ValueError(f"chunk {chunk.id!r} has a zero vector; cosine is undefined for it")
+
+
 def deduplicate(chunks: Sequence[StoredChunk]) -> list[StoredChunk]:
     """Collapse repeated `(tenant_id, id)` keys, keeping the last.
 
@@ -581,6 +849,10 @@ def encode(chunks: Sequence[StoredChunk]) -> str:
     is `len(tokenize(chunk.text))`, and computing that any other way risks
     the in-memory adapter and this one disagreeing about what a token is --
     exactly the divergence `domain/tokenize.py` exists to prevent.
+
+    `embedding` travels as pgvector's text input form -- see `encode_vector`
+    below -- or `None`, which `jsonb_to_recordset` casts straight to a `NULL`
+    `vector` column.
     """
     return json.dumps(
         [
@@ -595,10 +867,26 @@ def encode(chunks: Sequence[StoredChunk]) -> str:
                 "entity_ids": [str(entity_id) for entity_id in chunk.entity_ids],
                 "metadata": chunk.metadata,
                 "doc_length": len(tokenize(chunk.text)),
+                "embedding": None if chunk.embedding is None else encode_vector(chunk.embedding),
             }
             for chunk in chunks
         ]
     )
+
+
+def encode_vector(vector: Sequence[float]) -> str:
+    """Render a vector as pgvector's text input form, `[1,2,3]`.
+
+    A duplicate of `redstring.vector.adapters.pgvector.encode_vector`, not an
+    import of it: `chunks` and `vector` are siblings in the layered contract
+    in `pyproject.toml` and forbidden from importing each other, so the two
+    copies are proved identical the way `_SCORE` is -- by a test, in
+    `tests/unit/chunks/test_postgres_schema.py` -- rather than by sharing code.
+    See that function's docstring for why this is text rather than
+    `pgvector.asyncpg.register_vector`, and why there is deliberately no
+    matching `decode_vector`.
+    """
+    return "[" + ",".join(repr(float(value)) for value in vector) + "]"
 
 
 def encode_terms(chunks: Sequence[StoredChunk]) -> str:
@@ -646,4 +934,9 @@ def _chunk_from(row: Any) -> StoredChunk:  # noqa: ANN401 - asyncpg.Record, unty
         # registered codec, and registering one on a pool this store may not
         # own would change behaviour for every other user of that pool.
         metadata=json.loads(row["metadata"]),
+        # `_SELECT_COLUMNS` casts this to `real[]` in every query that reaches
+        # here, so this is a binary float4 array asyncpg decodes exactly --
+        # never pgvector's lossy seven-significant-digit text output. `None`
+        # for an unembedded chunk.
+        embedding=None if row["embedding"] is None else list(row["embedding"]),
     )

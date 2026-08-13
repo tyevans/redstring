@@ -21,6 +21,7 @@ from redstring import FakeLlmProvider, InMemoryGraphStore, SourceDocument, build
 from redstring.chunks.adapters.memory import InMemoryChunkStore  # exported in Task 10
 from redstring.composition import IndexReport, index_documents
 from redstring.extraction.chunkers import SlidingWindowChunker
+from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
 
 TENANT_ID = uuid4()
 
@@ -50,7 +51,7 @@ def small_chunker() -> SlidingWindowChunker:
 
 class TestThereIsNoModel:
     async def test_indexing_a_document_stores_its_passages_without_an_llm(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         report = await index_documents([document()], store=corpus, tenant_id=TENANT_ID)
 
@@ -69,7 +70,7 @@ class TestThereIsNoModel:
         assert not {p for p in parameters if "provider" in p.lower() or "llm" in p.lower()}
 
     async def test_indexed_chunks_carry_no_entity_ids(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         await index_documents(
             [long_document()], store=corpus, tenant_id=TENANT_ID, chunker=small_chunker()
@@ -95,7 +96,7 @@ class TestRepeats:
         signatures between them; without one the refusal has no state to live
         in, which the test below pins rather than leaving to the docstring.
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         log = InMemoryEventStore()
 
         first = await index_documents(
@@ -121,7 +122,7 @@ class TestRepeats:
         `documents_indexed` cannot be read as "work that needed doing". A
         docstring saying so is not a test; this is.
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         first = await index_documents([long_document()], store=corpus, tenant_id=TENANT_ID)
         second = await index_documents([long_document()], store=corpus, tenant_id=TENANT_ID)
@@ -133,7 +134,7 @@ class TestRepeats:
         assert len(await corpus.get_by_source("doc-1", TENANT_ID)) == first.chunks_written
 
     async def test_a_document_listed_twice_in_one_call_is_indexed_once(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         report = await index_documents(
             [long_document(), long_document()], store=corpus, tenant_id=TENANT_ID
@@ -143,7 +144,7 @@ class TestRepeats:
         assert report.documents_skipped == 1
 
     async def test_re_indexing_with_different_settings_replaces_the_passages(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         log = InMemoryEventStore()
 
         whole = await index_documents(
@@ -170,7 +171,7 @@ class TestRepeats:
 
     async def test_a_second_document_is_not_a_repeat_of_the_first(self) -> None:
         """Guards the tests above: idempotence is per document, not per call."""
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         log = InMemoryEventStore()
 
         report = await index_documents(
@@ -198,7 +199,7 @@ class TestTheTwoOrderings:
     """
 
     async def test_extracting_after_indexing_preserves_the_entity_links(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         graph = InMemoryGraphStore()
         log = InMemoryEventStore()
 
@@ -227,7 +228,7 @@ class TestTheTwoOrderings:
         Without this, "the signatures differ" would be satisfied by a
         signature that differs from everything, including itself.
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         log = InMemoryEventStore()
         provider = FakeLlmProvider(by_substring={}, default=ADA)
 
@@ -263,7 +264,7 @@ class TestTheTwoOrderings:
         text is still there is what distinguishes "the links were dropped"
         from "the corpus was emptied".
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         graph = InMemoryGraphStore()
         log = InMemoryEventStore()
 
@@ -296,7 +297,7 @@ class TestTheReport:
         The two numbers must differ, or a report wiring both fields to one
         count passes. The chunker is sized so each document really does split.
         """
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         # Every sentence distinct. Repeated text collapses under content
         # addressing, so `"...". * 24` yields no more *rows* than `* 12` and
         # the two lengths come out equal -- which is the assertion below
@@ -317,7 +318,7 @@ class TestTheReport:
 
     async def test_documents_skipped_is_zero_when_nothing_was_a_repeat(self) -> None:
         """The sibling counters must not all move together."""
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         report = await index_documents(
             [long_document()], store=corpus, tenant_id=TENANT_ID, chunker=small_chunker()
@@ -328,12 +329,18 @@ class TestTheReport:
         assert report.documents_skipped == 0
 
     async def test_an_empty_corpus_is_reported_as_zero_of_everything(self) -> None:
-        report = await index_documents([], store=InMemoryChunkStore(), tenant_id=TENANT_ID)
+        report = await index_documents(
+            [], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID
+        )
 
-        assert report == IndexReport(documents_indexed=0, chunks_written=0, documents_skipped=0)
+        assert report == IndexReport(
+            documents_indexed=0, chunks_written=0, documents_skipped=0, embedded=0
+        )
 
     async def test_the_report_cannot_be_edited_after_the_fact(self) -> None:
-        report = await index_documents([], store=InMemoryChunkStore(), tenant_id=TENANT_ID)
+        report = await index_documents(
+            [], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID
+        )
 
         try:
             report.documents_indexed = 99  # type: ignore[misc]
@@ -342,9 +349,187 @@ class TestTheReport:
         raise AssertionError("IndexReport is not frozen")
 
 
+class _RaisingEmbeddingProvider:
+    """A spy that fails the test the moment `embed` is called.
+
+    Not `FakeEmbeddingProvider(fail_on=...)` -- that only fails for inputs
+    matching a substring, which proves the happy path returns zero without
+    proving no *call* was made at all. This one has no path that succeeds.
+    """
+
+    model = "spy/must-not-be-called"
+    dimension = 768
+
+    async def embed(self, texts):
+        raise AssertionError("embed() was called without a provider being supplied")
+
+
+class _RecordingEmbeddingProvider:
+    """Delegates to `FakeEmbeddingProvider` and records each call's arguments.
+
+    Records outcome (via the delegate) and call shape (via `self.calls`)
+    separately, so a test can assert on invocation count and batching without
+    losing the deterministic vectors.
+    """
+
+    model = "spy/recording"
+    dimension = 768
+
+    def __init__(self) -> None:
+        self._delegate = FakeEmbeddingProvider(model=self.model, dimension=self.dimension)
+        self.calls: list[list[str]] = []
+
+    async def embed(self, texts):
+        self.calls.append(list(texts))
+        return await self._delegate.embed(texts)
+
+
+class TestEmbedding:
+    async def test_without_a_provider_no_chunk_is_embedded_and_no_model_is_called(self) -> None:
+        """The docstring's no-per-token-cost promise, kept by the default.
+
+        Asserting zero embeddings in the happy path is not proof nothing was
+        called -- a provider that is never *reached* looks identical to one
+        that embeds everything as empty. The spy raises the moment `embed` is
+        invoked, so this fails loudly if a future change starts calling it
+        unconditionally.
+        """
+        corpus = InMemoryChunkStore(dimension=4)
+
+        report = await index_documents([long_document()], store=corpus, tenant_id=TENANT_ID)
+
+        assert report.embedded == 0
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert all(chunk.embedding is None for chunk in stored)
+
+    async def test_with_a_provider_every_chunk_carries_its_vector(self) -> None:
+        corpus = InMemoryChunkStore(dimension=768)
+
+        await index_documents(
+            [long_document()],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=small_chunker(),
+            embeddings=FakeEmbeddingProvider(),
+        )
+
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert len(stored) > 1
+        assert all(chunk.embedding is not None for chunk in stored)
+        assert all(len(chunk.embedding) == 768 for chunk in stored)
+
+    async def test_chunk_texts_are_embedded_in_one_batched_call_per_document(self) -> None:
+        """The docstring's claim is "one call per document" -- checked by call count.
+
+        `FakeEmbeddingProvider` is deterministic per text, so an
+        implementation calling `embed([text])` once per chunk produces the
+        same *vectors* as one batched call and would pass a test that only
+        inspects the stored embeddings. Nothing short of counting invocations
+        and inspecting each call's argument list can tell the two apart.
+        """
+        corpus = InMemoryChunkStore(dimension=768)
+        spy = _RecordingEmbeddingProvider()
+        three = SourceDocument(id="doc-1", text=numbered("Ada Lovelace wrote note", 12))
+        five = SourceDocument(id="doc-2", text=numbered("Charles Babbage built engine", 30))
+
+        await index_documents(
+            [three, five],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=small_chunker(),
+            embeddings=spy,
+        )
+
+        first = await corpus.get_by_source("doc-1", TENANT_ID)
+        second = await corpus.get_by_source("doc-2", TENANT_ID)
+        assert len(spy.calls) == 2
+        call_sets = [set(call) for call in spy.calls]
+        assert {chunk.text for chunk in first} in call_sets
+        assert {chunk.text for chunk in second} in call_sets
+
+    async def test_each_stored_vector_belongs_to_its_own_chunk(self) -> None:
+        """A swap between chunks must be detectable.
+
+        `long_document()` repeats one sentence, so most of its chunks are
+        byte-identical and a permutation among them is invisible to *any*
+        per-chunk assertion -- the chunks carry no information about their
+        own position. `numbered()` gives each chunk distinct text instead, so
+        each stored vector can be checked against what the provider actually
+        returns for *that* chunk's own text, which is the only way a mismatch
+        between "assigned in order" and "assigned to the right chunk" can
+        show up.
+        """
+        corpus = InMemoryChunkStore(dimension=768)
+        provider = FakeEmbeddingProvider()
+        document = SourceDocument(id="doc-1", text=numbered("Ada Lovelace wrote note", 40))
+
+        await index_documents(
+            [document],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=small_chunker(),
+            embeddings=provider,
+        )
+
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert len(stored) > 1
+        assert len({chunk.text for chunk in stored}) == len(stored)  # mutually distinguishable
+        for chunk in stored:
+            [expected] = await provider.embed([chunk.text])
+            assert chunk.embedding == expected
+
+    async def test_the_report_counts_chunks_embedded(self) -> None:
+        """A counter is asserted non-zero under the condition it counts.
+
+        `recurring-defects.md` §3: four counters summed to the same number
+        cannot tell you which line was wired to which field. `embedded` is
+        asserted equal to `chunks_written` -- the invariant this module's
+        docstring claims -- and, because that equality alone would not rule
+        out `embedded` being wired to the same expression as `documents_indexed`,
+        also asserted to differ from it: a document that splits into more than
+        one chunk makes the two genuinely different numbers.
+        """
+        corpus = InMemoryChunkStore(dimension=768)
+
+        report = await index_documents(
+            [long_document()],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=small_chunker(),
+            embeddings=FakeEmbeddingProvider(),
+        )
+
+        assert report.embedded > 0
+        assert report.embedded == report.chunks_written
+        assert report.embedded != report.documents_indexed
+
+    async def test_a_skipped_repeat_is_never_embedded(self) -> None:
+        """Confirms the cost-avoidance claim directly, not just via the count."""
+        corpus = InMemoryChunkStore(dimension=768)
+        log = InMemoryEventStore()
+
+        await index_documents(
+            [long_document()],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            event_store=log,
+            embeddings=FakeEmbeddingProvider(),
+        )
+        second = await index_documents(
+            [long_document()],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            event_store=log,
+            embeddings=_RaisingEmbeddingProvider(),
+        )
+
+        assert second.documents_skipped == 1
+        assert second.embedded == 0
+
+
 class TestTenants:
     async def test_the_corpus_is_scoped_to_the_tenant_that_indexed_it(self) -> None:
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
 
         await index_documents([document()], store=corpus, tenant_id=TENANT_ID)
 
@@ -354,7 +539,7 @@ class TestTenants:
         """The chunk id is the same for both -- it is the digest of the source
         and the text, and neither carries the tenant. Only the store's
         `(tenant_id, id)` key keeps them apart."""
-        corpus = InMemoryChunkStore()
+        corpus = InMemoryChunkStore(dimension=4)
         other = uuid4()
 
         await index_documents([document()], store=corpus, tenant_id=TENANT_ID)

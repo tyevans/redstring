@@ -21,7 +21,10 @@ from typing import TYPE_CHECKING, Self
 from redstring.chunks.provenance import reject_foreign_chunks
 from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk_ranking import LexicalCandidate, LexicalCandidates
+from redstring.domain.chunk_retrieval import SemanticCandidate
+from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.tokenize import tokenize
+from redstring.domain.vector import cosine_score, has_zero_norm
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -34,10 +37,25 @@ if TYPE_CHECKING:
 class InMemoryChunkStore:
     """A `ChunkStore` backed by plain dictionaries."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, dimension: int) -> None:
+        if dimension <= 0:
+            raise ValueError(f"dimension must be positive, not {dimension}")
+        self._dimension = dimension
         self._chunks: dict[TenantId, dict[ChunkId, StoredChunk]] = {}
 
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
     async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
+        # Every element is validated before any is written, so a rejected
+        # batch leaves no trace -- the same shape `InMemoryVectorStore.upsert_many`
+        # uses for its own `_check`. Width before zero-norm, matching
+        # `semantic_candidates`'s own guard order: a wrong-width vector makes
+        # the zero-norm question meaningless before it is asked.
+        self._reject_wrong_width(chunks)
+        self._reject_zero_norm(chunks)
+
         for chunk in chunks:
             tenant = self._chunks.setdefault(chunk.tenant_id, {})
             # The key is the *pair*: `chunk.tenant_id` selects the mapping and
@@ -45,6 +63,38 @@ class InMemoryChunkStore:
             # content-addressed id are two rows. Content addressing makes that
             # collision ordinary rather than astronomically unlikely.
             tenant[chunk.id] = chunk.model_copy(deep=True)
+
+    def _reject_wrong_width(self, chunks: Sequence[StoredChunk]) -> None:
+        """A stored `embedding` must have exactly `self._dimension` components.
+
+        Unchecked, a wrong-width vector writes cleanly here and only fails
+        later, from inside `semantic_candidates`, with a bare `ValueError`
+        from `zip(..., strict=True)` that names neither the expected nor the
+        actual width -- see `ports/chunk_store.py`'s `upsert_many` docstring
+        for why this is a write-time contract now rather than a query-time
+        surprise. `DimensionMismatchError` is the same type
+        `semantic_candidates` already raises for a wrong-width query vector.
+        """
+        for chunk in chunks:
+            if chunk.embedding is not None and len(chunk.embedding) != self._dimension:
+                raise DimensionMismatchError(expected=self._dimension, actual=len(chunk.embedding))
+
+    @staticmethod
+    def _reject_zero_norm(chunks: Sequence[StoredChunk]) -> None:
+        """Cosine is undefined at zero magnitude.
+
+        A stored zero vector would force every later `semantic_candidates`
+        call to choose between a silent NaN and a per-row skip that hides a
+        caller's bug, so it is rejected here instead -- the same choice
+        `InMemoryVectorStore.upsert_many` already makes for `VectorStore`.
+        Chunks with no embedding at all are unaffected; only a *stored* zero
+        vector is a problem.
+        """
+        for chunk in chunks:
+            if chunk.embedding is not None and has_zero_norm(chunk.embedding):
+                raise ValueError(
+                    f"chunk {chunk.id!r} has a zero vector; cosine is undefined for it"
+                )
 
     async def get(self, chunk_id: ChunkId, tenant_id: TenantId) -> StoredChunk | None:
         chunk = self._chunks.get(tenant_id, {}).get(chunk_id)
@@ -68,6 +118,12 @@ class InMemoryChunkStore:
         chunks: Sequence[StoredChunk],
     ) -> int:
         reject_foreign_chunks(chunks, source_id, tenant_id)
+        # Same write-time guards as `upsert_many`, checked before the orphan
+        # delete below -- otherwise a rejected element would still have
+        # emptied the old chunking first, and `replace_source` is one
+        # operation, not a delete-then-maybe-write.
+        self._reject_wrong_width(chunks)
+        self._reject_zero_norm(chunks)
 
         keep = {chunk.id for chunk in chunks}
         tenant = self._chunks.setdefault(tenant_id, {})
@@ -164,6 +220,44 @@ class InMemoryChunkStore:
             for chunk, length, matched_terms in matches[:limit]
         ]
         return LexicalCandidates(stats=stats, candidates=candidates)
+
+    async def semantic_candidates(
+        self,
+        vector: Sequence[float],
+        tenant_id: TenantId,
+        limit: int,
+        *,
+        min_score: float | None = None,
+    ) -> list[SemanticCandidate]:
+        # All three guards run before anything touches `self._chunks`,
+        # matching `lexical_candidates` and `InMemoryVectorStore._check` --
+        # dimension has to be checked before zero-norm, since the latter is
+        # only meaningful once the width is known to be right.
+        if limit < 0:
+            raise ValueError(f"limit must not be negative, got {limit}")
+        if len(vector) != self._dimension:
+            raise DimensionMismatchError(expected=self._dimension, actual=len(vector))
+        if has_zero_norm(vector):
+            raise ValueError("a zero vector has no direction; cosine is undefined for it")
+
+        # Chunks with `embedding is None` are not candidates -- skipped
+        # rather than scored zero, per the port's contract.
+        scored = [
+            SemanticCandidate(
+                chunk=chunk.model_copy(deep=True), score=cosine_score(vector, chunk.embedding)
+            )
+            for chunk in self._chunks.get(tenant_id, {}).values()
+            if chunk.embedding is not None
+        ]
+
+        if min_score is not None:
+            scored = [candidate for candidate in scored if candidate.score >= min_score]
+
+        # Total order: score descending, then id ascending -- without the
+        # tie-break two adapters would cut different chunks from an equally
+        # scoring pair.
+        scored.sort(key=lambda candidate: (-candidate.score, candidate.chunk.id))
+        return scored[:limit]
 
     async def delete_by_source(self, source_id: SourceId, tenant_id: TenantId) -> int:
         tenant = self._chunks.get(tenant_id, {})

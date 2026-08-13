@@ -43,6 +43,8 @@ import pytest
 
 from redstring.chunks.adapters.postgres import PostgresChunkStore
 from redstring.domain.chunk import chunk_id
+from redstring.domain.exceptions import DimensionMismatchError
+from redstring.domain.tokenize import tokenize
 from redstring.testing.chunk_store import ChunkStoreCompliance
 
 if TYPE_CHECKING:
@@ -109,7 +111,9 @@ async def pool() -> AsyncIterator[asyncpg.Pool[Any]]:
             f"`docker compose -f docker-compose.test.yml up -d postgres`."
         )
     if not _schema_ready:
-        await PostgresChunkStore(connected, table=TABLE).ensure_schema()
+        await PostgresChunkStore(
+            connected, table=TABLE, dimension=ChunkStoreCompliance.DIMENSION
+        ).ensure_schema()
         _schema_ready = True
     try:
         yield connected
@@ -229,7 +233,7 @@ class TestPostgresChunkStore(ChunkStoreCompliance):
 
     async def new_store(self) -> ChunkStore:
         await _truncate(self._shared_pool)
-        return PostgresChunkStore(self._shared_pool, table=TABLE)
+        return PostgresChunkStore(self._shared_pool, table=TABLE, dimension=self.DIMENSION)
 
     async def dispose(self, store: ChunkStore) -> None:
         assert isinstance(store, PostgresChunkStore)
@@ -242,7 +246,7 @@ class TestPostgresChunkStoreSpecifics:
     @pytest.fixture
     async def store(self, pool: asyncpg.Pool[Any]) -> AsyncIterator[PostgresChunkStore]:
         await _truncate(pool)
-        built = PostgresChunkStore(pool, table=TABLE)
+        built = PostgresChunkStore(pool, table=TABLE, dimension=ChunkStoreCompliance.DIMENSION)
         try:
             yield built
         finally:
@@ -255,6 +259,35 @@ class TestPostgresChunkStoreSpecifics:
     async def test_ensure_schema_is_idempotent(self, store: PostgresChunkStore) -> None:
         await store.ensure_schema()
         await store.ensure_schema()
+
+    async def test_ensure_schema_rejects_a_declared_width_disagreement(
+        self, pool: asyncpg.Pool[Any]
+    ) -> None:
+        """A table already carrying `embedding vector(n)` at a different `n`
+        must fail loudly at `ensure_schema`, not silently at the first write.
+
+        `ADD COLUMN IF NOT EXISTS embedding vector(n)` is a no-op against a
+        column that already exists, regardless of whether the declared `n`
+        agrees with what is already there -- so without this check, a table
+        built at one width and opened at another would pass `ensure_schema`
+        clean and then fail every write at runtime with an opaque Postgres
+        error. Mirrors `PgVectorStore`'s own version of this test.
+        """
+        table = f"{TABLE}_width_mismatch"
+        await pool.execute(f"DROP TABLE IF EXISTS {table}_terms CASCADE")
+        await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+
+        narrow = PostgresChunkStore(pool, table=table, dimension=4)
+        await narrow.ensure_schema()
+
+        wide = PostgresChunkStore(pool, table=table, dimension=8)
+        with pytest.raises(DimensionMismatchError) as raised:
+            await wide.ensure_schema()
+        assert raised.value.expected == 4
+        assert raised.value.actual == 8
+
+        await pool.execute(f"DROP TABLE {table}_terms CASCADE")
+        await pool.execute(f"DROP TABLE {table} CASCADE")
 
     async def test_ensure_schema_creates_the_table_from_nothing(
         self, pool: asyncpg.Pool[Any]
@@ -269,14 +302,19 @@ class TestPostgresChunkStoreSpecifics:
         """
         table = f"{TABLE}_fresh"
         terms_table = f"{table}_terms"
-        # CASCADE: a leftover `_fresh_terms` table from an earlier aborted run
-        # holds a foreign key onto `_fresh`, and a plain DROP raises
-        # DependentObjectsStillExistError instead of clearing the way.
+        # `DROP TABLE {table} CASCADE` only drops *constraints* that depend on
+        # `table` -- `terms_table`'s foreign key onto it -- not `terms_table`
+        # itself, which is a separate table Postgres does not consider owned
+        # by `table`. A leftover `_fresh_terms` from an earlier aborted run
+        # therefore survives a plain `DROP TABLE {table} CASCADE` and fails
+        # the assertion below; both tables are dropped explicitly so this
+        # test is idempotent regardless of how a previous run ended.
+        await pool.execute(f"DROP TABLE IF EXISTS {terms_table} CASCADE")
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
         assert not await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", table)
         assert not await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", terms_table)
 
-        fresh = PostgresChunkStore(pool, table=table)
+        fresh = PostgresChunkStore(pool, table=table, dimension=ChunkStoreCompliance.DIMENSION)
         await fresh.ensure_schema()
 
         assert await pool.fetchval("SELECT to_regclass($1) IS NOT NULL", table)
@@ -319,6 +357,130 @@ class TestPostgresChunkStoreSpecifics:
             f"table. Drop it: DROP TABLE {TABLE}_terms;"
         )
 
+        await pool.execute(f"DROP TABLE {terms_table} CASCADE")
+        await pool.execute(f"DROP TABLE {table} CASCADE")
+
+    async def test_ensure_schema_repairs_a_table_created_without_the_new_columns(
+        self, pool: asyncpg.Pool[Any]
+    ) -> None:
+        """The ALTER is proved against a table that actually lacks the columns.
+
+        `ADD COLUMN IF NOT EXISTS` run only against a table that already has
+        the column is a statement never observed to do anything -- this is
+        the test that observes it. It builds the pre-migration table by hand
+        (the pre-`doc_length`, pre-`embedding` column set B89 describes),
+        runs `ensure_schema`, and asserts the columns arrive and a query
+        naming `_COLUMNS` then succeeds.
+        """
+        table = f"{TABLE}_premigration"
+        # `IF EXISTS ... CASCADE` on the *table* only drops its own
+        # constraints, not a sibling `_terms` table that references it -- see
+        # `test_ensure_schema_creates_the_table_from_nothing`'s docstring for
+        # the same trap. Both are dropped explicitly so an aborted previous
+        # run cannot leave a stale `_terms` table behind for the next one.
+        await pool.execute(f"DROP TABLE IF EXISTS {table}_terms CASCADE")
+        await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+        # The schema this adapter had before the lexical or semantic work --
+        # no `doc_length`, no `embedding`, no `_terms` table at all.
+        await pool.execute(
+            f"CREATE TABLE {table} ("
+            "  tenant_id   uuid    NOT NULL,"
+            "  id          text    NOT NULL,"
+            "  source_id   text    NOT NULL,"
+            "  text        text    NOT NULL,"
+            "  chunk_index integer NOT NULL,"
+            "  start_char  integer NOT NULL,"
+            "  end_char    integer NOT NULL,"
+            "  entity_ids  uuid[]  NOT NULL DEFAULT '{}',"
+            "  metadata    jsonb   NOT NULL DEFAULT '{}'::jsonb,"
+            "  PRIMARY KEY (tenant_id, id)"
+            ")"
+        )
+        tenant = uuid4()
+        await pool.execute(
+            f"INSERT INTO {table} "
+            "(tenant_id, id, source_id, text, chunk_index, start_char, end_char) "
+            "VALUES ($1, 'pre-1', 'doc-1', 'a passage written before the migration', 0, 0, 39)",
+            tenant,
+        )
+        columns_before = {name for name, _, _ in await _columns(pool, table)}
+        assert "doc_length" not in columns_before
+        assert "embedding" not in columns_before
+
+        store = PostgresChunkStore(pool, table=table, dimension=ChunkStoreCompliance.DIMENSION)
+        await store.ensure_schema()
+
+        columns_after = {name for name, _, _ in await _columns(pool, table)}
+        assert "doc_length" in columns_after
+        assert "embedding" in columns_after
+        # A query naming `_COLUMNS` -- every read the adapter issues -- now
+        # succeeds against the repaired table, rather than raising
+        # `UndefinedColumnError`.
+        found = await store.get("pre-1", tenant)
+        assert found is not None
+        assert found.embedding is None
+        # `doc_length` is not a `StoredChunk` field -- it is postgres-only
+        # storage the adapter reads back for `lexical_candidates` -- so it is
+        # checked with a direct query, matching the `ADD COLUMN ... DEFAULT 0`
+        # the ALTER declares.
+        assert await pool.fetchval(f"SELECT doc_length FROM {table} WHERE id = 'pre-1'") == 0
+
+        await pool.execute(f"DROP TABLE {table}_terms CASCADE")
+        await pool.execute(f"DROP TABLE {table} CASCADE")
+
+    async def test_backfill_lexical_index_makes_a_pre_migration_row_rankable(
+        self, pool: asyncpg.Pool[Any]
+    ) -> None:
+        """A backfill asserted only by its return count is a counter, not a repair.
+
+        A row written directly, bypassing `upsert_many`, has `doc_length = 0`
+        and no term-index rows -- the state a pre-migration row would be left
+        in by `ensure_schema` alone. `lexical_candidates` must rank it as
+        having **no** matches, since nothing in `<table>_terms` mentions it,
+        even though its text plainly contains the term. `backfill_lexical_index`
+        is what makes it findable, and this asserts the ranking is wrong
+        before and right after -- not merely that some rows were touched.
+        """
+        table = f"{TABLE}_backfill"
+        await pool.execute(f"DROP TABLE IF EXISTS {table}_terms CASCADE")
+        await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+        store = PostgresChunkStore(pool, table=table, dimension=ChunkStoreCompliance.DIMENSION)
+        await store.ensure_schema()
+
+        tenant = uuid4()
+        chunk = ChunkStoreCompliance._chunk(tenant, "doc-1", "alpha appears in this passage")
+        await pool.execute(
+            f"INSERT INTO {table} "
+            "(tenant_id, id, source_id, text, chunk_index, start_char, end_char) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            tenant,
+            chunk.id,
+            str(chunk.source_id),
+            chunk.text,
+            chunk.chunk_index,
+            chunk.start_char,
+            chunk.end_char,
+        )
+
+        before = await store.lexical_candidates(["alpha"], tenant, 10)
+        assert before.candidates == []
+        assert before.stats.doc_frequencies["alpha"] == 0
+
+        touched = await store.backfill_lexical_index()
+        assert touched == 1
+
+        after = await store.lexical_candidates(["alpha"], tenant, 10)
+        assert [candidate.chunk.id for candidate in after.candidates] == [chunk.id]
+        assert after.stats.doc_frequencies["alpha"] == 1
+        assert after.candidates[0].doc_length == len(tokenize(chunk.text))
+
+        # Idempotent: running it again touches the same row and changes nothing.
+        touched_again = await store.backfill_lexical_index()
+        assert touched_again == 1
+        again = await store.lexical_candidates(["alpha"], tenant, 10)
+        assert [candidate.chunk.id for candidate in again.candidates] == [chunk.id]
+
+        await pool.execute(f"DROP TABLE {table}_terms CASCADE")
         await pool.execute(f"DROP TABLE {table} CASCADE")
 
     async def test_chunk_index_is_an_integer_column(
@@ -435,7 +597,11 @@ class TestPostgresChunkStoreSpecifics:
             await connection.execute(f"TRUNCATE {TABLE} CASCADE")
             await connection.execute("SET enable_seqscan = off")
             recording = _RecordingPool(connection)
-            store = PostgresChunkStore(cast("asyncpg.Pool[Any]", recording), table=TABLE)
+            store = PostgresChunkStore(
+                cast("asyncpg.Pool[Any]", recording),
+                table=TABLE,
+                dimension=ChunkStoreCompliance.DIMENSION,
+            )
 
             tenant = uuid4()
             target_entity = uuid4()
@@ -511,7 +677,11 @@ class TestPostgresChunkStoreSpecifics:
             await connection.execute(f"TRUNCATE {TABLE} CASCADE")
             await connection.execute("SET enable_indexscan = off")
             await connection.execute("SET enable_bitmapscan = off")
-            store = PostgresChunkStore(cast("asyncpg.Pool[Any]", connection), table=TABLE)
+            store = PostgresChunkStore(
+                cast("asyncpg.Pool[Any]", connection),
+                table=TABLE,
+                dimension=ChunkStoreCompliance.DIMENSION,
+            )
 
             tenant = uuid4()
             low_tie = ChunkStoreCompliance._chunk(tenant, "doc-1", "passage gamma", chunk_index=3)
@@ -580,7 +750,9 @@ class TestPostgresChunkStoreSpecifics:
             await connection.execute("SET enable_sort = off")
             await connection.execute(f"TRUNCATE {TABLE} CASCADE")
             store = PostgresChunkStore(
-                cast("asyncpg.Pool[Any]", _OneConnectionPool(connection)), table=TABLE
+                cast("asyncpg.Pool[Any]", _OneConnectionPool(connection)),
+                table=TABLE,
+                dimension=ChunkStoreCompliance.DIMENSION,
             )
 
             tenant = uuid4()
@@ -755,7 +927,7 @@ class TestPostgresChunkStoreSpecifics:
         interpolation safe.
         """
         with pytest.raises(ValueError, match="bare lowercase identifier"):
-            PostgresChunkStore(pool, table=table)
+            PostgresChunkStore(pool, table=table, dimension=ChunkStoreCompliance.DIMENSION)
 
     async def test_close_does_not_close_a_pool_it_does_not_own(
         self, store: PostgresChunkStore, pool: asyncpg.Pool[Any]
@@ -771,7 +943,9 @@ class TestPostgresChunkStoreSpecifics:
         Postgres is absent. A skip guard is only honest if every test in the
         module is behind it.
         """
-        owned = await PostgresChunkStore.connect(DSN, table=TABLE)
+        owned = await PostgresChunkStore.connect(
+            DSN, table=TABLE, dimension=ChunkStoreCompliance.DIMENSION
+        )
         await owned.ensure_schema()
         assert await owned.get(chunk_id("doc-1", "never stored"), uuid4()) is None
         await owned.close()

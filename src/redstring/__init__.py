@@ -52,6 +52,12 @@ could not be caught without a dotted import.
   `RetrievalResult` and `ScoredEntity` are what comes back. Note the
   scale: `ScoredEntity.score` is a fused *rank* score, ordinal and
   unbounded, and is not on `VectorMatch`'s 0..1.
+  `ChunkRetriever` is the same shape over the chunk corpus instead of the
+  entity graph: it fuses `ChunkStore`'s semantic and lexical channels behind
+  one `retrieve_chunks`, sharing `RetrievalMode` with `Retriever` and
+  returning `ChunkRetrievalResult`/`ScoredChunk` rather than
+  `RetrievalResult`/`ScoredEntity`. `SemanticCandidate` is what
+  `ChunkStore.semantic_candidates` hands back before fusion.
 - **What you put in.** `SourceDocument`.
 - **What comes out.** `Entity` (whose `provenance` is a `Provenance`:
   where the claim came from, when, how and how sure),
@@ -71,11 +77,16 @@ could not be caught without a dotted import.
   exported too**: `GraphStore` from `EntityReader`, `EntityWriter`,
   `AliasStore`, `RelationshipStore` and `TenantPurge`; `VectorStore` from
   `VectorWriter`, `VectorReader` and `VectorPurge`; `ChunkStore` from
-  `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource` and `ChunkPurge`;
-  `Cache` from `KeyValueCache` and `HitWindow`. Implement the composed port;
-  *depend* on the narrowest capability you actually call. The split is what
-  lets `ChunkProjection` need one method rather than nine, and what lets a
-  caller supply BM25 recall from an index that is not a chunk store at all.
+  `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource`,
+  `SemanticCandidateSource` and `ChunkPurge`; `Cache` from `KeyValueCache`
+  and `HitWindow`. Implement the composed port; *depend* on the narrowest
+  capability you actually call. The split is what lets `ChunkProjection`
+  need one method rather than ten, and what lets a caller supply BM25 recall
+  from an index that is not a chunk store at all, or a semantic recall
+  channel from one holding no lexical index. `SemanticCandidateSource`
+  declares its own `dimension`, the same shape `VectorStore` uses, so a
+  mismatched embedding provider is refused at construction rather than on
+  the first query.
 
   Every capability protocol also inherits `AsyncClosable` (ADR 0028), which
   is exported for the same reason the capabilities are: `async with store`
@@ -184,6 +195,7 @@ from redstring.chunks.adapters.memory import InMemoryChunkStore
 from redstring.composition import (
     AUTO,
     AutoDomain,
+    ChunkRetriever,
     ConsolidationReport,
     Consolidator,
     GraphBuildReport,
@@ -207,6 +219,11 @@ from redstring.domain.chunk_ranking import (
     LexicalCandidates,
     RankedChunk,
     rank_chunks,
+)
+from redstring.domain.chunk_retrieval import (
+    ChunkRetrievalResult,
+    ScoredChunk,
+    SemanticCandidate,
 )
 from redstring.domain.consolidation import (
     MergeableFields,
@@ -282,6 +299,7 @@ from redstring.ports.chunk_store import (
     ChunkStore,
     ChunkWriter,
     LexicalCandidateSource,
+    SemanticCandidateSource,
 )
 from redstring.ports.embedding_provider import EmbeddingProvider
 from redstring.ports.graph_store import (
@@ -329,6 +347,8 @@ __all__ = [
     "ChunkProjection",
     "ChunkPurge",
     "ChunkReader",
+    "ChunkRetrievalResult",
+    "ChunkRetriever",
     "ChunkSizeError",
     "ChunkStore",
     "ChunkWriter",
@@ -410,7 +430,10 @@ __all__ = [
     "RetrievalResult",
     "Retriever",
     "ScoredCandidate",
+    "ScoredChunk",
     "ScoredEntity",
+    "SemanticCandidate",
+    "SemanticCandidateSource",
     "SimilarityFeatures",
     "SlidingWindowChunker",
     "SourceDocument",

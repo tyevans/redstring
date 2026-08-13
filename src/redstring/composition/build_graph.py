@@ -72,7 +72,7 @@ from redstring.aggregates.repositories import document_repository
 from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.consolidation.service import ConsolidationService
-from redstring.domain.exceptions import EmbeddingProviderError
+from redstring.domain.exceptions import DimensionMismatchError, EmbeddingProviderError
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import document_stream
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
@@ -459,7 +459,15 @@ def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorSto
     `VectorStore` does raise `DimensionMismatchError` per write -- that check
     stays and is the backstop -- but it fires once per vector at the end of a
     pipeline rather than once at the seam, which is where the configuration
-    mistake actually is.
+    mistake actually is. This raises the same `DimensionMismatchError`,
+    because it is the same condition `Retriever.__init__` refuses; the two
+    entry points diverged on exception type until B82 closed. Two models'
+    vectors are not comparable even at equal dimension, so point this run at
+    a store built for this model rather than widening either.
+
+    The half-configured case below stays a `ValueError`: arity and
+    disagreement are different mistakes, and there is no `DimensionMismatchError`
+    to have when one collaborator is entirely absent.
 
     The comparison is `!=` and not `is not`. CLAUDE.md records that exact
     defect: CPython caches small integers, so an identity check passes at a
@@ -477,13 +485,7 @@ def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorSto
         )
 
     if provider is not None and store is not None and provider.dimension != store.dimension:
-        raise ValueError(
-            f"embedding_provider {provider.model!r} produces "
-            f"{provider.dimension}-dimensional vectors but the vector store "
-            f"holds {store.dimension}. Two models' vectors are not comparable "
-            f"even at equal dimension, so point this run at a store built for "
-            f"this model rather than widening either."
-        )
+        raise DimensionMismatchError(expected=store.dimension, actual=provider.dimension)
 
 
 async def _embed_entities(
