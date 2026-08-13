@@ -1872,15 +1872,20 @@ extraction can reach only the port, `consolidation` and `temporal` beside it
 so neither can reach `mapping.py` — which is currently readable only by
 someone who thinks to open a config file.
 
-### B28. `DEEP_MERGE` is still deferred, and nothing calls the rest
+### B28. `DEEP_MERGE`
 
-**Shrunk, not closed.** `PREFER_MERGED` and `MOST_RECENTLY_OBSERVED` (which
-this entry called `LATEST`) are implemented — see
+**Shrunk further.** `PREFER_MERGED` and `MOST_RECENTLY_OBSERVED` (which this
+entry called `LATEST`) are implemented — see
 [ADR 0035](docs/adr/0035-provenance-is-a-value-object.md). The reason they
 could not be implemented before was never the missing timestamp this entry
 named: `resolve` took bare *values*, so any strategy needing more than the
 value was unanswerable by construction. It now takes `PropertyClaim`s, each
 carrying the `Provenance` of the entity that made it.
+
+All four implemented strategies, including these two, are now reached through
+`consolidation/planning.py`'s `plan_properties`, called from
+`ConsolidationService.merge` — see
+[ADR 0036](docs/adr/0036-a-merge-resolves-the-canonical-entitys-fields.md).
 
 **`DEEP_MERGE` remains deferred for its original reason, which none of that
 touches.** Nested-dict semantics for `properties` and `external_ids` are easy
@@ -1890,45 +1895,6 @@ because the pre-merge shape is not derivable from the result. It raises
 `PREFER_CANONICAL`, which would write the canonical value while the caller
 believed it asked for something else. Implement when a caller needs it, with an
 undo path in hand — not before.
-
-### B127. `resolve` and `claims_for` are implemented and unreached
-
-**No production code calls either.** `consolidation/service.py` merges edges
-and never touches properties: the canonical entity keeps its own and the
-absorbed entities' are discarded (`domain/preference.py`). So four merge
-strategies, a total order, and a claim constructor are fully typed, fully
-tested, exported to nobody, and reached by nothing outside `tests/`.
-
-This is `.claude/rules/recurring-defects.md` §3 — and specifically its local
-instance (i), where a projection, an event and an aggregate command sat with no
-caller for six slices because everything existed except the call. **It is held
-open deliberately and with its eyes open**, which is the only difference: the
-work is recorded here rather than discovered by someone asking what in the tree
-reaches it. Do not read the tests as evidence of a shipped feature; the
-question a new component has to answer is not "is it covered" but "what calls
-it".
-
-Wiring it up is a larger change than `resolve` was, and the three parts are why
-it was not taken:
-
-- **A merged-properties payload on `EntitiesMerged`.** The event currently
-  records which entities merged, not what the merge decided about their
-  values. A projection that recomputed the resolution from the entities would
-  be deriving a decision on the read side, which is what
-  [ADR 0004](docs/adr/0004-consolidation-emits-events.md) exists to prevent.
-- **A projection that applies it.** Upserting the canonical entity with the
-  resolved properties, in the same fold that redirects the edges.
-- **An undo that restores the pre-merge values.** `MergeUndone` already
-  carries its restoration ([ADR 0001](docs/adr/0001-event-log-schema-and-granularity.md)
-  Decision 6), and this is the same obligation for properties: the absorbed
-  entities' original values have to be in the log, because a resolved value
-  does not contain them. `UNION` is the case that makes this obvious — you
-  cannot tell from `[a, b]` who said what.
-
-Choosing a strategy is also unaddressed: the enum is per property and nothing
-maps a property name to one. A default plus caller overrides is the likely
-shape, and it is a public-surface decision, so the strategy names get exported
-at that point rather than now.
 
 ### B128. `Relationship` has no `Provenance`, and should not share `Entity`'s
 

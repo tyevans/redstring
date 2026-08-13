@@ -151,6 +151,13 @@ upstream version does that this one did not.
   for the blocking, or a human review queue for the model, no longer means
   subclassing a class whose constructor demands collaborators you do not
   have. `CandidateFinder` and `Adjudicator` remain the defaults.
+
+  A merge also decides the canonical entity's own `description`,
+  `external_ids` and `properties` now, under a `PropertyMergePolicy`
+  (`PropertyMergeStrategy`) keyed by dotted path -- `MergeableFields` and
+  `PropertyResolution` are the before/after pair `EntitiesMerged` carries so
+  the projection applies the decision rather than recomputing it, exactly as
+  it already does for `redirections` (ADR 0036).
 - **No scraping, no HTML preprocessing.** A caller supplies a
   `SourceDocument`. Fetching content is a different job with different
   failure modes, and it was removed rather than left unfinished (slice 1).
