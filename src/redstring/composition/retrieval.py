@@ -1,10 +1,13 @@
-"""Turning a query string into ranked entities, over three collaborators.
+"""Turning a query string into ranked entities or ranked chunks.
 
 This is a composition and nothing else: every decision it makes is delegated
-to a pure function in `domain/`. It lives on the top layer because it holds an
-embedding provider, a vector store and a graph store at once, and `vector` and
-`graph` are siblings that may not import each other while neither may import
-`llm` -- so no lower layer can hold all three.
+to a pure function in `domain/`. `Retriever` lives on the top layer because it
+holds an embedding provider, a vector store and a graph store at once, and
+`vector` and `graph` are siblings that may not import each other while
+neither may import `llm` -- so no lower layer can hold all three.
+`ChunkRetriever`, below, holds an embedding provider and a chunk store --
+`llm` and `chunks` are likewise forbidden from importing each other, so no
+sibling can hold both.
 
 It holds the *narrowest* form of each: `VectorReader` and `EntityReader`, not
 the composed ports. Retrieval reads, and nothing else -- two methods of seven

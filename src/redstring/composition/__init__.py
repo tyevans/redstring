@@ -1,14 +1,18 @@
 """The top layer: modules holding collaborators no lower layer may hold together.
 
 `pyproject.toml` states that a module wanting in here has to say what it
-composes. There are two:
+composes. There are three:
 
 - `build_graph` composes `LlmProvider` + `GraphStore` (+ optionally
   `EmbeddingProvider` + `VectorStore`). `extraction` may not import
   `projections`, so nothing below can hold both halves.
-- `retrieval` composes `EmbeddingProvider` + `VectorStore` + `GraphStore`.
+- `retrieval` composes `EmbeddingProvider` + `VectorStore` + `GraphStore` in
+  `Retriever`, and `EmbeddingProvider` + `ChunkStore` in `ChunkRetriever`.
   `vector` and `graph` are siblings that may not import each other and
-  neither may import `llm`, so no sibling can hold all three.
+  neither may import `llm`, so no sibling can hold `Retriever`'s three.
+  `ChunkRetriever` joins a second forbidden pair in the same module: `llm`
+  and `chunks` are likewise siblings forbidden from importing each other, so
+  no sibling can hold both of its two.
 - `index_documents` composes `Chunker` + `ChunkStore` -- the same
   `extraction` + `projections` pair `build_graph` names, so it is admitted by
   the argument already recorded rather than by a new one.
