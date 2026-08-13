@@ -10,12 +10,14 @@ from uuid import UUID, uuid4
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
 from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, TenantId
 from redstring.domain.merge_strategy import (
     IMPLEMENTED,
     PropertyClaim,
+    PropertyMergePolicy,
     PropertyMergeStrategy,
     _order_key,
     claims_for,
@@ -54,19 +56,19 @@ def claim(
     )
 
 
-def entity_with(*, properties: dict[str, Any], at: datetime) -> Entity:
+def entity_with(*, at: datetime, **overrides: Any) -> Entity:
     return Entity(
         id=EntityId(uuid4()),
         tenant_id=TenantId(uuid4()),
         name="Ada",
         normalized_name="ada",
         entity_type="person",
-        properties=properties,
         provenance=Provenance(
             observed_at=at,
             extraction_method=ExtractionMethod.PATTERN,
             confidence=0.5,
         ),
+        **overrides,
     )
 
 
@@ -317,15 +319,15 @@ class TestClaimsFor:
         """
         silent = entity_with(properties={}, at=LATE)
         speaking = entity_with(properties={"role": "engineer"}, at=EARLY)
-        claims = claims_for("role", silent, [speaking])
+        claims = claims_for("properties.role", silent, [speaking])
         assert [c.value for c in claims] == ["engineer"]
 
     def test_it_keeps_an_explicit_none_which_is_not_silence(self) -> None:
         speaking = entity_with(properties={"role": None}, at=LATE)
-        assert len(claims_for("role", speaking, [])) == 1
+        assert len(claims_for("properties.role", speaking, [])) == 1
 
     def test_it_returns_nothing_when_nobody_claims_the_property(self) -> None:
-        assert claims_for("absent", entity_with(properties={}, at=LATE), []) == []
+        assert claims_for("properties.absent", entity_with(properties={}, at=LATE), []) == []
 
     def test_it_puts_the_canonical_claim_first_and_keeps_the_listed_order(self) -> None:
         """`resolve` reads position: `claims[0]` is canonical for
@@ -335,7 +337,7 @@ class TestClaimsFor:
         canonical = entity_with(properties={"role": "canonical"}, at=EARLY)
         first = entity_with(properties={"role": "first"}, at=LATE)
         second = entity_with(properties={"role": "second"}, at=LATE)
-        claims = claims_for("role", canonical, [first, second])
+        claims = claims_for("properties.role", canonical, [first, second])
         assert [c.value for c in claims] == ["canonical", "first", "second"]
 
     def test_each_claim_carries_its_own_entity_s_provenance_and_id(self) -> None:
@@ -345,6 +347,165 @@ class TestClaimsFor:
         """
         canonical = entity_with(properties={"role": "canonical"}, at=EARLY)
         absorbed = entity_with(properties={"role": "absorbed"}, at=LATE)
-        claims = claims_for("role", canonical, [absorbed])
+        claims = claims_for("properties.role", canonical, [absorbed])
         assert [c.origin for c in claims] == [canonical.id, absorbed.id]
         assert [c.provenance.observed_at for c in claims] == [EARLY, LATE]
+
+
+class TestPolicyLookup:
+    """`strategy_for` resolves exact path, then field default, then default."""
+
+    def test_an_exact_path_wins_over_its_fields_default(self):
+        policy = PropertyMergePolicy(
+            default=PropertyMergeStrategy.PREFER_CANONICAL,
+            overrides={
+                "properties": PropertyMergeStrategy.PREFER_MERGED,
+                "properties.role": PropertyMergeStrategy.UNION,
+            },
+        )
+        assert policy.strategy_for("properties.role") is PropertyMergeStrategy.UNION
+
+    def test_a_fields_default_covers_a_key_with_no_entry(self):
+        policy = PropertyMergePolicy(
+            default=PropertyMergeStrategy.PREFER_CANONICAL,
+            overrides={"properties": PropertyMergeStrategy.PREFER_MERGED},
+        )
+        assert policy.strategy_for("properties.role") is PropertyMergeStrategy.PREFER_MERGED
+
+    def test_the_policy_default_covers_a_field_with_no_entry(self):
+        policy = PropertyMergePolicy(default=PropertyMergeStrategy.MOST_RECENTLY_OBSERVED)
+        assert policy.strategy_for("external_ids.wikidata") is (
+            PropertyMergeStrategy.MOST_RECENTLY_OBSERVED
+        )
+
+    def test_all_three_tiers_are_consulted_for_one_field(self):
+        """The three tiers must be distinguishable at once.
+
+        Asserting them in separate tests leaves an implementation that
+        consults only two of them passing every one: each test names a policy
+        where the tier below happens to give the same answer. Three distinct
+        strategies over three paths of the same field is the input where a
+        dropped tier changes an answer.
+        """
+        policy = PropertyMergePolicy(
+            default=PropertyMergeStrategy.PREFER_CANONICAL,
+            overrides={
+                "properties": PropertyMergeStrategy.PREFER_MERGED,
+                "properties.role": PropertyMergeStrategy.UNION,
+            },
+        )
+        assert policy.strategy_for("properties.role") is PropertyMergeStrategy.UNION
+        assert policy.strategy_for("properties.era") is PropertyMergeStrategy.PREFER_MERGED
+        assert policy.strategy_for("description") is PropertyMergeStrategy.PREFER_CANONICAL
+
+    def test_the_default_policy_prefers_the_canonical_entity(self):
+        assert PropertyMergePolicy().strategy_for("properties.role") is (
+            PropertyMergeStrategy.PREFER_CANONICAL
+        )
+
+
+class TestPolicyRefusals:
+    def test_an_override_naming_no_real_field_is_refused(self):
+        """A typo would otherwise be silently inert -- every merge applies the
+        default and nothing says the entry did nothing."""
+        with pytest.raises(ValidationError, match="properities"):
+            PropertyMergePolicy(overrides={"properities.role": PropertyMergeStrategy.UNION})
+
+    def test_a_bare_unknown_field_is_refused_too(self):
+        with pytest.raises(ValidationError, match="name"):
+            PropertyMergePolicy(overrides={"name": PropertyMergeStrategy.PREFER_MERGED})
+
+    def test_union_is_refused_on_external_ids(self):
+        """`external_ids` is `dict[str, str]`; UNION returns a list, so the
+        upsert would raise inside a fold with the event already in the log."""
+        with pytest.raises(ValidationError, match="UNION"):
+            PropertyMergePolicy(overrides={"external_ids": PropertyMergeStrategy.UNION})
+
+    def test_union_is_refused_on_an_external_ids_key(self):
+        with pytest.raises(ValidationError, match="UNION"):
+            PropertyMergePolicy(overrides={"external_ids.wikidata": PropertyMergeStrategy.UNION})
+
+    def test_union_is_refused_on_description(self):
+        with pytest.raises(ValidationError, match="UNION"):
+            PropertyMergePolicy(overrides={"description": PropertyMergeStrategy.UNION})
+
+    def test_union_is_refused_as_the_policy_default(self):
+        """A UNION default would reach `description` and `external_ids`, which
+        is the case the per-path refusals exist to prevent."""
+        with pytest.raises(ValidationError, match="UNION"):
+            PropertyMergePolicy(default=PropertyMergeStrategy.UNION)
+
+    def test_union_is_allowed_on_properties_and_its_keys(self):
+        """The permitting case, so the refusals above are not passing because
+        the validator rejects everything."""
+        policy = PropertyMergePolicy(
+            overrides={
+                "properties": PropertyMergeStrategy.UNION,
+                "properties.aka": PropertyMergeStrategy.UNION,
+            }
+        )
+        assert policy.strategy_for("properties.aka") is PropertyMergeStrategy.UNION
+
+    def test_the_policy_is_frozen(self):
+        policy = PropertyMergePolicy()
+        with pytest.raises(ValidationError):
+            policy.default = PropertyMergeStrategy.UNION
+
+
+class TestClaimsForPaths:
+    def test_a_description_claim_is_read_from_the_field(self):
+        canonical = entity_with(description="the first analyst", at=EARLY)
+        absorbed = entity_with(description="a mathematician", at=LATE)
+
+        claims = claims_for("description", canonical, [absorbed])
+
+        assert [c.value for c in claims] == ["the first analyst", "a mathematician"]
+
+    def test_a_none_description_is_silence_and_is_skipped(self):
+        """The asymmetry with `properties`, where an explicit `None` is a claim.
+
+        `description` has no present/absent distinction -- `None` *is* the
+        absence -- so an entity with no description must not outvote one with a
+        description merely by being newer.
+        """
+        canonical = entity_with(description="the first analyst", at=EARLY)
+        silent = entity_with(description=None, at=LATE)
+
+        claims = claims_for("description", canonical, [silent])
+
+        assert [c.value for c in claims] == ["the first analyst"]
+
+    def test_an_explicit_none_property_is_still_a_claim(self):
+        """The other half of the asymmetry, asserted beside it so neither can
+        be changed without the other failing."""
+        canonical = entity_with(properties={"role": None}, at=EARLY)
+
+        claims = claims_for("properties.role", canonical, [])
+
+        assert [c.value for c in claims] == [None]
+
+    def test_an_external_id_claim_is_read_from_external_ids(self):
+        canonical = entity_with(external_ids={"wikidata": "Q7259"}, at=EARLY)
+        absorbed = entity_with(external_ids={"orcid": "0000-1"}, at=LATE)
+
+        assert [c.value for c in claims_for("external_ids.wikidata", canonical, [absorbed])] == [
+            "Q7259"
+        ]
+        assert [c.value for c in claims_for("external_ids.orcid", canonical, [absorbed])] == [
+            "0000-1"
+        ]
+
+    def test_a_path_naming_no_real_field_is_refused(self):
+        with pytest.raises(ValueError, match="name"):
+            claims_for("name", entity_with(at=EARLY), [])
+
+    def test_a_key_under_description_is_refused(self):
+        """`description` is a scalar; `description.x` names nothing."""
+        with pytest.raises(ValueError, match="description"):
+            claims_for("description.x", entity_with(at=EARLY), [])
+
+    def test_a_bare_dict_field_is_refused_as_a_claim_path(self):
+        """`properties` is a policy key, not a claim target. Resolving the whole
+        dict as one value is not what any strategy means."""
+        with pytest.raises(ValueError, match="properties"):
+            claims_for("properties", entity_with(properties={"role": "x"}, at=EARLY), [])
