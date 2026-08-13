@@ -1,8 +1,9 @@
 """The only seam into `build_graph` before the progress port exists.
 
 `LlmProvider` is a single-method protocol, so wrapping it is how the harness
-learns anything about a run in progress. That buys a call count and a
-per-phase split of model time; it does **not** buy time-to-first-entity,
+learns anything about a run in progress. That buys a call count and the
+model time spent under whichever phase label is current; it does **not** buy
+a genuine per-phase *split*, and it does **not** buy time-to-first-entity,
 because a returned completion is not a mapped entity and the wrapper cannot
 see the merge. That field stays `None` until deliverable B rather than being
 estimated here -- an estimate recorded in the field B will fill makes B's
@@ -39,19 +40,20 @@ class TimingProvider:
         self._clock = clock
         self._elapsed: defaultdict[str, float] = defaultdict(float)
         self.calls = 0
-        #: Which phase the caller believes is running. The runner sets it;
-        #: nothing in the library knows about it.
+        #: Which phase model time accumulates under -- a key for
+        #: `elapsed_in`, nothing more. Nothing outside this class ever sets
+        #: it to anything but its default: consolidation happens *inside*
+        #: `build_graph`, and per ADR 0015 `build_graph` makes no adjudicator
+        #: calls at all, so there is no call in the runner during which
+        #: setting `phase = "consolidate"` would attribute anything real.
+        #: That is why `RunMetrics.consolidate_s` is `None` rather than a
+        #: number this attribute could ever produce.
         self.phase = "extract"
 
     @property
     def model(self) -> str:
         """The wrapped provider's model, so provenance is unaffected."""
         return self._inner.model
-
-    @property
-    def elapsed_s(self) -> float:
-        """Total time inside model calls, across every phase."""
-        return sum(self._elapsed.values())
 
     def elapsed_in(self, phase: str) -> float:
         """Time inside model calls made while `phase` was set."""

@@ -26,6 +26,7 @@ models:
   extraction: muse-glimmer-30b
   embedding: nomic-embed-text
   embedding_dimensions: 768
+  max_tokens: 16384
 corpus:
   graded: true
   long: [hp1]

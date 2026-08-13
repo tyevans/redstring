@@ -68,6 +68,16 @@ async def run_point(
             default_chunk_size=point.chunk_size,
             default_overlap=min(200, point.chunk_size // 2),
         ),
+        # A chunk that raises must not discard every measurement already
+        # paid for on a live GPU. `RunMetrics.failed_chunks` below only
+        # means anything with this set -- at the default of False the first
+        # EmptyCompletionError or transport blip would abort the whole
+        # point before it could be recorded. `allow_partial` has to travel
+        # with it: without it, `record()` itself refuses a document with
+        # any failed chunk (`PartialExtractionError`), so a single skipped
+        # chunk would still abort the point one call later.
+        skip_failed_chunks=True,
+        allow_partial=True,
     )
     wall_clock = clock() - started
 
@@ -81,7 +91,13 @@ async def run_point(
         event_gaps_s=(),
         model_calls=timed.calls,
         extract_s=timed.elapsed_in("extract"),
-        consolidate_s=timed.elapsed_in("consolidate"),
+        # `None`, not 0.0: consolidation happens inside `build_graph` (ADR
+        # 0015) and makes no adjudicator calls the runner can see, so there
+        # is nothing outside the library that could set a phase for it.
+        # Reporting 0.0 here would read as "consolidation used no model
+        # time" rather than as "not measured" -- the same reasoning
+        # `time_to_first_entity_s` above is given.
+        consolidate_s=None,
         chunks=report.total_chunks,
         entities=report.entities,
         relationships=report.relationships,

@@ -71,7 +71,13 @@ class RunMetrics:
     event_gaps_s: tuple[float, ...]
     model_calls: int
     extract_s: float
-    consolidate_s: float
+    #: `None` when consolidation's model time cannot be attributed -- see
+    #: `bench/runner.py`. Consolidation happens inside `build_graph` (ADR
+    #: 0015) and the runner has no seam to set a phase for it, so this is
+    #: never anything but `None` today; the field stays typed to admit a
+    #: real value once one can be measured, without a shape change to the
+    #: results file.
+    consolidate_s: float | None
     chunks: int
     entities: int
     relationships: int

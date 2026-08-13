@@ -8,11 +8,20 @@ models:
   # nomic-embed-text. Checked in preflight, because a different embedding
   # model behind the same id is a silent dimension change.
   embedding_dimensions: 768
+  # The library default (8192) is too small for the graded corpus against a
+  # reasoning model -- see tests/accuracy/test_extraction_accuracy.py, whose
+  # MAX_TOKENS comment documents the same 16384 used here.
+  max_tokens: 16384
 
 corpus:
   # The five hand-graded documents in tests/accuracy/corpus.yaml. This is the
   # only accuracy number the harness produces; the long documents below are
   # ungraded and score stability, which is a different claim.
+  #
+  # A boolean, not a selector: bool("all") is also True, so a config that
+  # wrote `graded: all` would silently mean the same thing this does. There
+  # is no partial-grading mode -- either the whole five-document corpus runs
+  # or none of it does.
   graded: true
   long: [harry-potter-1]
 

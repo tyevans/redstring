@@ -38,6 +38,15 @@ class BenchConfig:
     extraction_model: str
     embedding_model: str
     embedding_dimensions: int
+    #: `LangChainLlmProvider`'s `max_tokens`, applied to every provider the
+    #: harness builds. `tests/accuracy/test_extraction_accuracy.py` documents
+    #: that the library default (`DEFAULT_MAX_TOKENS`, 8192) is too small for
+    #: the graded corpus against a reasoning model -- it spends most of a
+    #: short answer on chain of thought before `content` starts, surfacing as
+    #: `EmptyCompletionError(finish_reason='length')`. That suite defaults to
+    #: 16384; this is the same knob, in the file every other one lives in
+    #: rather than hard-coded where a caller would not think to look.
+    max_tokens: int
     graded: bool
     long_documents: tuple[str, ...]
     chunk_sizes: tuple[int, ...]
@@ -103,14 +112,25 @@ def load_config(path: Path) -> BenchConfig:
             f"policy.repeats is {repeats}; a sweep of zero runs measures nothing"
         )
 
+    long_documents = tuple(str(d) for d in _require(raw, "corpus", "long"))
+    if not long_documents:
+        raise BenchConfigError("corpus.long is empty; a sweep over no documents measures nothing")
+
+    chunk_sizes = tuple(int(c) for c in _require(raw, "sweep", "chunk_size"))
+    if not chunk_sizes:
+        raise BenchConfigError(
+            "sweep.chunk_size is empty; a sweep over no chunk sizes measures nothing"
+        )
+
     return BenchConfig(
         endpoint=str(_require(raw, "endpoint")),
         extraction_model=str(_require(raw, "models", "extraction")),
         embedding_model=str(_require(raw, "models", "embedding")),
         embedding_dimensions=int(_require(raw, "models", "embedding_dimensions")),
+        max_tokens=int(_require(raw, "models", "max_tokens")),
         graded=bool(_require(raw, "corpus", "graded")),
-        long_documents=tuple(str(d) for d in _require(raw, "corpus", "long")),
-        chunk_sizes=tuple(int(c) for c in _require(raw, "sweep", "chunk_size")),
+        long_documents=long_documents,
+        chunk_sizes=chunk_sizes,
         concurrencies=tuple(int(c) for c in concurrencies),
         repeats=repeats,
         stop_climbing_concurrency=bool(_require(raw, "policy", "stop_climbing_concurrency")),

@@ -28,7 +28,27 @@ if TYPE_CHECKING:
     from tests.accuracy.runner import CorpusResult
 
     from bench.config import BenchConfig, SweepPoint
+    from bench.corpus import BenchDocument
     from bench.metrics import RunMetrics
+
+
+def _provenance_json(documents: Sequence[BenchDocument]) -> dict[str, dict[str, str]]:
+    """Source, retrieval date and licence for every long document benchmarked.
+
+    `BenchDocument` carries this and nothing wrote it down before -- the
+    text is loaded, timed, and the provenance that made committing it a
+    decision (see `bench/corpus.py`) was dropped on the floor. A results
+    file that carries "enough to be re-read in a year" ought to say what was
+    licensed to be benchmarked, not just what it measured.
+    """
+    return {
+        document.id: {
+            "source": document.source,
+            "retrieved": document.retrieved,
+            "licence": document.licence,
+        }
+        for document in documents
+    }
 
 
 def _run_json(run: RunMetrics) -> dict[str, Any]:
@@ -99,6 +119,8 @@ def build_report(
     library_version: str,
     git_sha: str,
     timed_out: Sequence[SweepPoint] = (),
+    failed: Sequence[tuple[SweepPoint, str]] = (),
+    documents: Sequence[BenchDocument] = (),
 ) -> dict[str, Any]:
     """Assemble one invocation's results.
 
@@ -111,6 +133,15 @@ def build_report(
     read as an older file format rather than as "nothing timed out". A point
     that timed out contributes no `RunMetrics` and so does not appear in
     `runs`; the reader has to check both to know what happened to a point.
+
+    `failed` is the same idea for a point that raised for a reason other than
+    a timeout -- an `EmptyCompletionError`, a transport blip anywhere
+    `skip_failed_chunks` could not absorb it. Each entry carries the reason
+    `str(exception)` gave, because "why" is the whole point of recording it
+    separately from a timeout.
+
+    `documents` supplies the provenance of every long document actually
+    benchmarked; see `_provenance_json`.
     """
     return {
         "started_at": started_at,
@@ -121,6 +152,8 @@ def build_report(
         "stability": _stability_json(runs),
         "accuracy": _accuracy_json(accuracy) if accuracy is not None else None,
         "timed_out": [asdict(point) for point in timed_out],
+        "failed": [{"point": asdict(point), "reason": reason} for point, reason in failed],
+        "corpus_provenance": _provenance_json(documents),
     }
 
 
