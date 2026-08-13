@@ -1384,6 +1384,47 @@ something.
 through `run_point`'s chunker construction in place of the formula — no
 different in shape from any other knob already in the file.
 
+### B-BENCH-6. `build_graph`'s `AUTO`-domain classifier call is outside the shared `CallLimiter` entirely
+
+`build_graph` calls `await _resolve_prompt(domain, document, provider)` before
+`limiter = CallLimiter(concurrency)` is constructed. `_resolve_prompt` only
+calls `ContentClassifier(provider).classify(document.text)` on the
+`domain=AUTO` path — `domain=None` and an explicit domain both return without
+touching the provider. So the classification call is not merely unwrapped by
+the limiter that goes on to bound extraction, gleaning and embedding; the
+limiter object does not exist yet when it runs.
+
+**Why this is benign today rather than urgent.** It is one call, it is not
+itself concurrent, and nothing else this function does is in flight at that
+moment — extraction has not started, so there is no batch of K calls for a
+K+1th classifier call to overshoot. This cannot produce the "K becomes K+2"
+kind of overshoot Task 4 closed for gleaning and embedding, because nothing
+else is running alongside it within one `build_graph` call.
+
+**When it stops being benign.** A caller running several
+`build_graph(..., domain=AUTO)` calls concurrently — a plausible shape for a
+batch indexer processing many documents at once — gets one unbounded
+classification call per document in flight, bounded by nothing in this
+library. `concurrency` governs each call's own extraction/gleaning/embedding
+ceiling, not how many `build_graph` calls a caller runs at once, so this is a
+real gap for that caller and not merely a theoretical one.
+
+**The honest scope note.** `build_graph`'s docstring describes `concurrency`
+as governing "how many calls against `provider` may be in flight at once,
+across extraction, gleaning and embedding alike." That sentence is not quite
+true on the `AUTO` path — it omits the classification call. Two ways to make
+it true, named rather than picked, because this is a deferral and not a fix:
+either widen the ceiling to cover the classifier call too, or narrow the
+docstring to say what it excludes and why.
+
+**What closing it takes, if the first option is chosen.** Move
+`limiter = CallLimiter(concurrency)` above `resolved =
+await _resolve_prompt(...)` and pass the limiter into `_resolve_prompt`, which
+wraps its own `ContentClassifier(...).classify(...)` call in `async with
+limiter:` on the `AUTO` branch only. A few lines, and it changes no behaviour
+at `concurrency=1`, since a limiter of one still admits the classifier call
+immediately when nothing else holds it.
+
 ---
 
 ## 5. Capabilities deliberately not built, with the route back
