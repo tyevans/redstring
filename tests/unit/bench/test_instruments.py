@@ -98,6 +98,36 @@ async def test_calls_are_attributed_to_the_phase_that_was_running() -> None:
     assert provider.elapsed_in("embed") == 0.0
 
 
+async def test_a_call_is_attributed_to_the_phase_it_started_in() -> None:
+    """The phase is captured before the await, not read after it.
+
+    A wrapper reading `self.phase` in its `finally` block passes every test
+    where the caller sets the phase once and leaves it alone -- which is every
+    other test in this file. Here the provider changes the phase mid-call, so
+    the two implementations disagree: capture-first attributes the 2.0s to
+    `extract`, read-after attributes it to `consolidate`.
+    """
+
+    class PhaseFlippingProvider:
+        @property
+        def model(self) -> str:
+            return "flipping"
+
+        async def extract(self, text: str, schema: Any, *, system_prompt: str | None = None) -> Any:
+            clock.now += 2.0
+            provider.phase = "consolidate"
+            return schema()
+
+    clock = FakeClock()
+    provider = TimingProvider(PhaseFlippingProvider(), clock=clock)
+    provider.phase = "extract"
+
+    await provider.extract("a", Answer)
+
+    assert provider.elapsed_in("extract") == 2.0
+    assert provider.elapsed_in("consolidate") == 0.0
+
+
 async def test_a_failing_call_is_still_counted_and_still_timed() -> None:
     """A run that fails halfway must not report that the model was idle.
 
