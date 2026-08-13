@@ -1221,28 +1221,42 @@ class ChunkStoreCompliance:
         """`min_score` genuinely shrinks the candidate set below `limit`.
 
         A `limit` larger than the number of chunks clearing `min_score`
-        catches a store that never applies the filter at all -- it would
-        return every chunk up to `limit` rather than only the ones
-        qualifying on score, which is the same shape as
-        `VectorStoreCompliance.test_min_score_drops_results_below_it`.
+        catches a store that never applies the filter at all -- but with
+        `limit=10` over a 3-chunk corpus, filter-then-limit and
+        limit-then-filter are identical functions: nothing distinguishes an
+        adapter that orders and truncates to `limit` *before* filtering from
+        one that filters first.
+
+        Five chunks are inserted in an order (rank 1..5) that disagrees with
+        their score order: chunk 1 and chunk 5 clear `min_score`, chunks 2-4
+        do not, and chunks 2-4 are inserted *between* them. `limit=2` promises
+        the two qualifying chunks regardless of where they sit in storage or
+        insertion order. An adapter that takes the first two rows in
+        insertion order and filters afterwards returns only chunk 1 -- one
+        result instead of two.
         """
         tenant = TenantId(uuid4())
         query = [1.0, 0.0, 0.0, 0.0]
-        identical = self._chunk(tenant, "doc-1", "identical", embedding=[1.0, 0.0, 0.0, 0.0])
-        orthogonal = self._chunk(
-            tenant, "doc-1", "orthogonal", chunk_index=1, embedding=[0.0, 1.0, 0.0, 0.0]
-        )
-        opposite = self._chunk(
-            tenant, "doc-1", "opposite", chunk_index=2, embedding=[-1.0, 0.0, 0.0, 0.0]
-        )
-        await store.upsert_many([identical, orthogonal, opposite])
+        rank1_embedding = [1.0, 0.0, 0.0, 0.0]
+        rank2_embedding = [0.0, 1.0, 0.0, 0.0]
+        rank3_embedding = [-1.0, 0.0, 0.0, 0.0]
+        rank4_embedding = [0.0, -1.0, 0.0, 0.0]
+        rank5_embedding = [4.0, 1.0, 0.0, 0.0]
+        rank1 = self._chunk(tenant, "doc-1", "rank one", embedding=rank1_embedding)
+        rank2 = self._chunk(tenant, "doc-1", "rank two", chunk_index=1, embedding=rank2_embedding)
+        rank3 = self._chunk(tenant, "doc-1", "rank three", chunk_index=2, embedding=rank3_embedding)
+        rank4 = self._chunk(tenant, "doc-1", "rank four", chunk_index=3, embedding=rank4_embedding)
+        rank5 = self._chunk(tenant, "doc-1", "rank five", chunk_index=4, embedding=rank5_embedding)
+        for embedding in (rank2_embedding, rank3_embedding, rank4_embedding):
+            assert cosine_score(query, embedding) < 0.9
+        assert cosine_score(query, rank1_embedding) >= 0.9
+        assert cosine_score(query, rank5_embedding) >= 0.9
+        await store.upsert_many([rank1, rank2, rank3, rank4, rank5])
 
-        result = await store.semantic_candidates(query, tenant, 10, min_score=0.5)
+        result = await store.semantic_candidates(query, tenant, 2, min_score=0.9)
 
-        assert {candidate.chunk.id for candidate in result} == {identical.id, orthogonal.id}
-        # Inclusive at the boundary: orthogonal scores exactly 0.5.
-        result_strict = await store.semantic_candidates(query, tenant, 10, min_score=0.75)
-        assert [candidate.chunk.id for candidate in result_strict] == [identical.id]
+        assert {candidate.chunk.id for candidate in result} == {rank1.id, rank5.id}
+        assert len(result) == 2
 
     async def test_semantic_candidates_with_a_zero_limit_returns_nothing(
         self, store: ChunkStore
