@@ -365,6 +365,14 @@ class ConsolidationService:
         compensates -- the round-trip test asserts exactly that -- and an undo
         that preserved intervening edits would reproduce something else. Said
         out loud because it is a real choice that looks like an oversight.
+
+        The same is true of the canonical entity's fields. `GraphProjection`
+        restores `resolution.before` unconditionally over whatever
+        `description`, `external_ids` and `properties` the canonical entity
+        holds at undo time -- so a `DocumentExtracted` that changed one of
+        those fields between the merge and the undo is silently reverted
+        along with the merge, for the identical reason relationships are:
+        undo reproduces the pre-merge state, not the latest one.
         """
         async with tenant_scope(tenant_id):
             log = await self._log.load_or_create(

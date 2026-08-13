@@ -226,10 +226,12 @@ already round-trip through both `GraphStore` implementations.
 
 ### 8. Public surface
 
-`ConsolidationService.__init__` will mention `PropertyMergePolicy`, and the
-signature gate walks the MRO, so the policy enters `__all__` and pulls
-`PropertyMergeStrategy` with it. `EntitiesMerged` and `MergeUndone` are
-already exported, so `PropertyResolution` and `MergeableFields` follow.
+`ConsolidationService` is not exported. `Consolidator.__init__` (the
+composed entry point, `composition/build_graph.py`) is what mentions
+`PropertyMergePolicy` in its signature, and the signature gate walks the MRO,
+so the policy enters `__all__` and pulls `PropertyMergeStrategy` with it.
+`EntitiesMerged` and `MergeUndone` are already exported, so
+`PropertyResolution` and `MergeableFields` follow.
 
 B127 predicted this ("the strategy names get exported at that point rather
 than now"). ADR 0006 is exercised, not amended.

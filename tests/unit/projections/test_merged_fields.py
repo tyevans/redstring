@@ -24,6 +24,7 @@ from redstring.domain.entity import Entity
 from redstring.domain.exceptions import MissingEntityError
 from redstring.domain.ids import EntityId, TenantId
 from redstring.domain.provenance import ExtractionMethod, Provenance
+from redstring.domain.temporal import DatePrecision, TemporalExtent
 from redstring.events.merge import EntitiesMerged
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.projections import GraphProjection
@@ -110,10 +111,17 @@ class TestApplyingAFieldDecision:
 
     async def test_it_changes_nothing_else_about_the_entity(self) -> None:
         """The upsert must be a copy with three fields replaced, not a rebuilt
-        entity. `name` and `provenance` surviving is what says so."""
+        entity. `name`, `provenance` and `temporal` surviving is what says so
+        -- `_apply_fields`'s docstring names all three as fields the
+        resolution says nothing about."""
         rig = Rig()
         tenant_id = TenantId(uuid4())
-        canonical = _entity(tenant_id, name="Ada Lovelace", properties={"role": "analyst"})
+        canonical = _entity(
+            tenant_id,
+            name="Ada Lovelace",
+            properties={"role": "analyst"},
+            temporal=TemporalExtent(start_date=OBSERVED, precision=DatePrecision.DAY),
+        )
         absorbed = _entity(tenant_id, name="A. Lovelace")
         await rig.store.upsert_entities([canonical, absorbed])
 
@@ -134,6 +142,7 @@ class TestApplyingAFieldDecision:
         assert stored is not None
         assert stored.name == canonical.name
         assert stored.provenance == canonical.provenance
+        assert stored.temporal == canonical.temporal
 
     async def test_a_merge_that_decided_nothing_leaves_the_entity_alone(self) -> None:
         rig = Rig()

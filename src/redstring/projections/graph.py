@@ -212,6 +212,16 @@ class GraphProjection(StoreProjection[GraphStore]):
         Idempotent by construction. `fields` is a literal snapshot rather than
         a recomputation, so applying it twice -- or replaying the whole log --
         produces the identical row.
+
+        Called from undo as well as from merge, and on undo `fields` is the
+        pre-merge `resolution.before` -- applied unconditionally over
+        whatever the entity holds *now*. If a `DocumentExtracted` changed
+        `description`, `external_ids` or `properties` between the merge and
+        the undo, that change is silently overwritten along with the merge.
+        This is the same choice `ConsolidationService.undo`'s docstring
+        already states for `restored_relationships`: undo reproduces the
+        pre-merge state, not the latest one, and that is the intended
+        reading rather than an oversight.
         """
         entity = await self._store.get_entity(entity_id, tenant_id)
         if entity is None:

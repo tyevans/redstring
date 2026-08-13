@@ -31,7 +31,10 @@ anything touching the absorbed rows.
 [`0006` the public surface is gated](0006-the-public-surface-is-gated.md)
 **stands, and is exercised**: `PropertyMergePolicy`, `PropertyMergeStrategy`,
 `MergeableFields` and `PropertyResolution` enter `__all__` because
-`ConsolidationService`'s and `EntitiesMerged`'s signatures now mention them.
+`Consolidator.__init__`'s `merge_policy=` parameter and `EntitiesMerged`'s
+signatures now mention them. `ConsolidationService` itself is not exported —
+`Consolidator`, in `composition/build_graph.py`, is what the signature gate
+actually sees.
 
 ## Context
 
@@ -122,9 +125,23 @@ to be rediscovered from the two call sites.
 
 ## Consequences
 
-**`EntitiesMerged` goes to `event_version = 2`.** `resolution` is optional on
-the type for replay compatibility with events already in a caller's log, but
-every merge from this decision forward writes one.
+**`EntitiesMerged` goes to `event_version = 2`; `MergeUndone` stays at
+`event_version = 1`.** `resolution` is optional on the type for replay
+compatibility with events already in a caller's log, but every merge from
+this decision forward writes one. Both events gained an optional field that
+does not invalidate a pre-existing payload, so either could defensibly have
+been bumped or left alone. The rule this branch follows: **bump when the new
+field is the primary subject of the change** — a merge's resolution is the
+decision this ADR adds, so `EntitiesMerged`'s version number should say a
+reader inspecting the log can now expect it — **and leave the version alone
+when the field is a derived consequence of an already-versioned sibling** —
+`MergeUndone`'s `restored_fields` only exists because `EntitiesMerged` can now
+carry a `resolution` to restore, so its presence is implied by reading the
+merge it undoes rather than by `MergeUndone`'s own shape changing in a way a
+version number needs to advertise. This is a judgment call about which event
+a schema change is "about", not a mechanical rule; the next asymmetric field
+addition should make the same call explicitly rather than copying whichever
+of the two it read first.
 
 **BACKLOG B127 is closed.** `resolve` and `claims_for` now have a production
 caller: `ConsolidationService.merge` reads the group's entities, calls
