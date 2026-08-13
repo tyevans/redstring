@@ -12,7 +12,18 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-12
+
+Nothing on the public surface moved: no name was added, removed or renamed,
+and no exported signature changed. The bump is minor rather than a patch
+because the supported `eventsource-py` range moved to `>=0.14.0,<0.15`, and
+narrowing a dependency is breaking for a consumer even when the API is not.
+If you pin `eventsource-py` yourself, 0.13.x and this release cannot be
+installed together — that is the one thing to check on upgrade, and it is the
+same reason the 0.12.0 and 0.13.0 floor moves went out as minors.
+
+Everything else here is documentation, including one correction that was
+wrong before this release rather than because of it.
 
 ### Changed
 
@@ -663,7 +674,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/tyevans/redstring/releases/tag/v0.7.0
 [0.6.0]: https://github.com/tyevans/redstring/releases/tag/v0.6.0
 [0.5.0]: https://github.com/tyevans/redstring/releases/tag/v0.5.0
 [0.4.0]: https://github.com/tyevans/redstring/releases/tag/v0.4.0

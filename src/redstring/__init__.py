@@ -290,7 +290,7 @@ from redstring.temporal.inference import InferredRelation, infer_relations
 from redstring.temporal.query import CursorStalledError, TemporalQuery
 from redstring.vector.adapters.memory import InMemoryVectorStore
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "AUTO",
