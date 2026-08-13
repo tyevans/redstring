@@ -142,7 +142,7 @@ def preference(entity: Entity) -> tuple[float, bool, int, bool, str, str, str, i
     `properties` and the loser's are discarded. `domain/merge_strategy.py` can
     now answer the question -- `resolve` takes claims and four strategies
     resolve -- but nothing calls it, so this line describes what consolidation
-    does today. That is BACKLOG B125, and `DEEP_MERGE` is BACKLOG B28.
+    does today. That is BACKLOG B127, and `DEEP_MERGE` is BACKLOG B28.
 
     Shared with `redstring.extraction.merging`, which folds across chunks
     using this same order. Two definitions would be two tie-breaks, and
