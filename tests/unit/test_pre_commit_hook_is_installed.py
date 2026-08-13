@@ -59,22 +59,48 @@ INSTALL_COMMAND = "uv sync --all-extras && uv run pre-commit install"
 
 
 def _git_dir() -> Path | None:
-    """The repository's `.git`, or `None` when this is not a working clone.
+    """The directory whose `hooks/` git actually runs, or `None` outside a clone.
 
     A worktree's `.git` is a *file* pointing at the real directory, and this
-    project uses worktrees for mutation runs (`scripts/mutation.py`), so the
-    file case is reachable rather than theoretical.
+    project uses worktrees both for mutation runs (`scripts/mutation.py`) and
+    for feature branches, so the file case is reachable rather than
+    theoretical.
+
+    **Following that pointer is not enough, and stopping there is a bug this
+    module shipped with.** It lands on `.git/worktrees/<name>`, which holds
+    that worktree's HEAD and index and *no* `hooks/` directory -- git runs
+    hooks from the common directory, shared by every worktree. So the naive
+    resolution reported "no hook installed" in precisely the workspace the
+    project's own workflow tells you to create, where the hook was installed
+    and working. A false alarm on a real gate is not harmless: the cure a
+    reader reaches for is to stop believing the gate.
+
+    `commondir` is how the worktree names its shared directory, so its presence
+    is both the signal that this *is* a worktree gitdir and the answer to where
+    the hooks are.
     """
     candidate = REPO_ROOT / ".git"
-    if candidate.is_dir():
-        return candidate
-    if candidate.is_file():
-        pointer = candidate.read_text().strip()
-        if pointer.startswith("gitdir:"):
-            resolved = Path(pointer.removeprefix("gitdir:").strip())
-            target = resolved if resolved.is_absolute() else REPO_ROOT / resolved
-            return target if target.is_dir() else None
-    return None
+    resolved = candidate if candidate.is_dir() else _pointer_target(candidate)
+    if resolved is None:
+        return None
+    common = resolved / "commondir"
+    if not common.is_file():
+        return resolved
+    shared = Path(common.read_text().strip())
+    target = shared if shared.is_absolute() else resolved / shared
+    return target.resolve() if target.is_dir() else None
+
+
+def _pointer_target(dot_git: Path) -> Path | None:
+    """The directory a worktree's `.git` file points at, if it points anywhere."""
+    if not dot_git.is_file():
+        return None
+    pointer = dot_git.read_text().strip()
+    if not pointer.startswith("gitdir:"):
+        return None
+    named = Path(pointer.removeprefix("gitdir:").strip())
+    target = named if named.is_absolute() else REPO_ROOT / named
+    return target if target.is_dir() else None
 
 
 @pytest.mark.skipif(
