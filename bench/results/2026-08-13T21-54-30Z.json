@@ -1,0 +1,334 @@
+{
+  "started_at": "2026-08-13T21-54-30Z",
+  "library_version": "0.7.0",
+  "git_sha": "e2f84f8",
+  "config": {
+    "endpoint": "http://192.168.1.14:8080/v1/",
+    "models": {
+      "extraction": "muse-glimmer-30b",
+      "embedding": "nomic-embed-text",
+      "embedding_dimensions": 768,
+      "max_tokens": 16384
+    },
+    "corpus": {
+      "graded": true,
+      "long": [
+        "harry-potter-1"
+      ]
+    },
+    "sweep": {
+      "chunk_size": [
+        3000,
+        8000,
+        12000
+      ],
+      "concurrency": [
+        1
+      ]
+    },
+    "policy": {
+      "repeats": 3,
+      "stop_climbing_concurrency": true,
+      "per_document_timeout_s": 1800
+    }
+  },
+  "runs": [
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 3000,
+        "concurrency": 1,
+        "repeat": 0
+      },
+      "wall_clock_s": 328.46154782699887,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 14,
+      "extract_s": 328.4151414979715,
+      "consolidate_s": null,
+      "chunks": 14,
+      "entities": 210,
+      "relationships": 278,
+      "failed_chunks": 0,
+      "unresolved_relationships": 1
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 3000,
+        "concurrency": 1,
+        "repeat": 1
+      },
+      "wall_clock_s": 350.02554602600867,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 14,
+      "extract_s": 349.9963432390359,
+      "consolidate_s": null,
+      "chunks": 14,
+      "entities": 195,
+      "relationships": 264,
+      "failed_chunks": 0,
+      "unresolved_relationships": 2
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 3000,
+        "concurrency": 1,
+        "repeat": 2
+      },
+      "wall_clock_s": 332.670284131018,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 14,
+      "extract_s": 332.6419603500399,
+      "consolidate_s": null,
+      "chunks": 14,
+      "entities": 223,
+      "relationships": 286,
+      "failed_chunks": 0,
+      "unresolved_relationships": 10
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 8000,
+        "concurrency": 1,
+        "repeat": 0
+      },
+      "wall_clock_s": 177.46754573198268,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 6,
+      "extract_s": 177.45068617607467,
+      "consolidate_s": null,
+      "chunks": 6,
+      "entities": 173,
+      "relationships": 173,
+      "failed_chunks": 0,
+      "unresolved_relationships": 5
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 8000,
+        "concurrency": 1,
+        "repeat": 1
+      },
+      "wall_clock_s": 181.8101828409708,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 6,
+      "extract_s": 181.7940680689062,
+      "consolidate_s": null,
+      "chunks": 6,
+      "entities": 167,
+      "relationships": 172,
+      "failed_chunks": 0,
+      "unresolved_relationships": 7
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 8000,
+        "concurrency": 1,
+        "repeat": 2
+      },
+      "wall_clock_s": 171.84020053897984,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 6,
+      "extract_s": 171.8244227450341,
+      "consolidate_s": null,
+      "chunks": 6,
+      "entities": 151,
+      "relationships": 164,
+      "failed_chunks": 0,
+      "unresolved_relationships": 11
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 12000,
+        "concurrency": 1,
+        "repeat": 0
+      },
+      "wall_clock_s": 153.44501329696504,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 4,
+      "extract_s": 153.4319399119122,
+      "consolidate_s": null,
+      "chunks": 4,
+      "entities": 158,
+      "relationships": 129,
+      "failed_chunks": 0,
+      "unresolved_relationships": 20
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 12000,
+        "concurrency": 1,
+        "repeat": 1
+      },
+      "wall_clock_s": 139.45346514700213,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 4,
+      "extract_s": 139.4404295660206,
+      "consolidate_s": null,
+      "chunks": 4,
+      "entities": 152,
+      "relationships": 125,
+      "failed_chunks": 0,
+      "unresolved_relationships": 1
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 12000,
+        "concurrency": 1,
+        "repeat": 2
+      },
+      "wall_clock_s": 177.47045494499616,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 4,
+      "extract_s": 177.45487279002555,
+      "consolidate_s": null,
+      "chunks": 4,
+      "entities": 188,
+      "relationships": 168,
+      "failed_chunks": 0,
+      "unresolved_relationships": 8
+    }
+  ],
+  "stability": [
+    {
+      "document_id": "harry-potter-1",
+      "chunk_size": 3000,
+      "concurrency": 1,
+      "jaccard": 0.6666666666666666,
+      "always": 166,
+      "sometimes": 83,
+      "runs": 3
+    },
+    {
+      "document_id": "harry-potter-1",
+      "chunk_size": 8000,
+      "concurrency": 1,
+      "jaccard": 0.7679558011049724,
+      "always": 139,
+      "sometimes": 42,
+      "runs": 3
+    },
+    {
+      "document_id": "harry-potter-1",
+      "chunk_size": 12000,
+      "concurrency": 1,
+      "jaccard": 0.6009389671361502,
+      "always": 128,
+      "sometimes": 85,
+      "runs": 3
+    }
+  ],
+  "accuracy": {
+    "entities": {
+      "true_positives": 12,
+      "false_positives": 5,
+      "false_negatives": 0
+    },
+    "relationships": {
+      "true_positives": 6,
+      "false_positives": 7,
+      "false_negatives": 0
+    },
+    "documents": [
+      {
+        "document_id": "newsroom-quote",
+        "entities": {
+          "true_positives": 3,
+          "false_positives": 3,
+          "false_negatives": 0
+        },
+        "relationships": {
+          "true_positives": 2,
+          "false_positives": 5,
+          "false_negatives": 0
+        }
+      },
+      {
+        "document_id": "newsroom-event",
+        "entities": {
+          "true_positives": 3,
+          "false_positives": 2,
+          "false_negatives": 0
+        },
+        "relationships": {
+          "true_positives": 1,
+          "false_positives": 1,
+          "false_negatives": 0
+        }
+      },
+      {
+        "document_id": "docs-function",
+        "entities": {
+          "true_positives": 3,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "relationships": {
+          "true_positives": 2,
+          "false_positives": 0,
+          "false_negatives": 0
+        }
+      },
+      {
+        "document_id": "docs-class",
+        "entities": {
+          "true_positives": 3,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "relationships": {
+          "true_positives": 1,
+          "false_positives": 1,
+          "false_negatives": 0
+        }
+      },
+      {
+        "document_id": "empty-negative",
+        "entities": {
+          "true_positives": 0,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "relationships": {
+          "true_positives": 0,
+          "false_positives": 0,
+          "false_negatives": 0
+        }
+      }
+    ]
+  },
+  "timed_out": [],
+  "failed": [],
+  "corpus_provenance": {
+    "harry-potter-1": {
+      "source": "https://en.wikipedia.org/wiki/Harry_Potter_and_the_Philosopher%27s_Stone",
+      "retrieved": "2026-08-13",
+      "licence": "CC BY-SA 4.0"
+    }
+  }
+}
