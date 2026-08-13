@@ -26,6 +26,16 @@ class TestMemoryChunkStore(ChunkStoreCompliance):
 
 
 @pytest.mark.unit
+async def test_dimension_must_be_positive() -> None:
+    """Mirrors `tests/unit/vector/test_memory_store.py`'s case of the same
+    name: a zero-dimension store accepts only the zero-length vector, which
+    is also a zero vector, so nothing could ever be written to it."""
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="dimension"):
+            InMemoryChunkStore(dimension=bad)
+
+
+@pytest.mark.unit
 async def test_a_fresh_store_holds_nothing() -> None:
     store = InMemoryChunkStore(dimension=4)
     assert await store.get_by_source("doc-1", uuid4()) == []

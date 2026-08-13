@@ -2841,3 +2841,30 @@ Deferred rather than added speculatively: the brief scoped Task 4 to the
 `resolve` (and to `ConsolidationReport`, if the resolution should be visible
 there too) is its own decision about the composed surface, not a mechanical
 extension of this task.
+
+### B132. `StoredChunk` accepts a zero-norm `embedding` at construction; only the store rejects it
+
+`ChunkStore.upsert_many`/`replace_source` now reject a zero-norm `embedding`
+at the write seam (`src/redstring/chunks/adapters/memory.py`, mirroring
+`InMemoryVectorStore.upsert_many`), and `semantic_candidates` rejects a
+zero-norm query vector -- both per `src/redstring/ports/chunk_store.py` and
+pinned in `src/redstring/testing/chunk_store.py`. But `StoredChunk`
+(`src/redstring/domain/chunk.py`) itself has no such validator, so
+`StoredChunk(embedding=[0.0, 0.0, 0.0, 0.0], ...)` constructs cleanly and the
+zero vector is only ever caught later, at whichever store the chunk is handed
+to -- a caller building one for a test, a queue, or any path that never
+reaches a store sees no error at all. `VectorRecord` has the identical
+question and the same answer (validated only at `VectorStore.upsert`, not at
+construction); this is one open question, not two.
+
+Deferred rather than decided in Task 6: moving the guard onto the domain type
+is a wider change than the store contract this task was scoped to -- it
+would make `StoredChunk`/`VectorRecord` construction itself capable of
+raising over a field whose only present consumer is the store adapters, and
+touches both `domain/chunk.py` and `domain/vector.py` with their own
+compliance-suite implications (a pydantic `field_validator` needs its own
+test, and every existing test constructing a `StoredChunk`/`VectorRecord`
+with a real embedding would need auditing for whether it ever passes a
+plausible-looking zero by accident, e.g. an uninitialised `[0.0] * dimension`
+placeholder). Whether that duplication of the check is worth paying for the
+earlier, cheaper failure is a call for whoever owns `domain/`.

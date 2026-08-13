@@ -98,6 +98,13 @@ class ChunkWriter(AsyncClosable, Protocol):
         on this to skip re-deriving term statistics and, once written, an
         embedding on conflict -- a write that violates it can leave the two
         adapters ranking the same id over different text (B97).
+
+        A chunk whose `embedding` has zero norm raises `ValueError`. Cosine
+        is undefined at zero magnitude, so a stored zero vector would force
+        every later `semantic_candidates` call to choose between a silent
+        NaN and a per-row skip that hides a caller's bug -- rejecting it here
+        is the same choice `VectorStore` already made for `upsert`, and this
+        port makes it once rather than inventing a second answer.
         """
         ...
 
@@ -254,6 +261,12 @@ class SemanticCandidateSource(AsyncClosable, Protocol):
 
         A vector whose width is not `dimension` raises
         `DimensionMismatchError`.
+
+        A zero-norm query `vector` raises `ValueError`. Cosine is undefined at
+        zero magnitude; the alternatives are a silent NaN or treating it as
+        equidistant from everything, and `VectorStore.search` already rejects
+        it for the query it takes -- this port makes the same choice rather
+        than a second one.
 
         The returned chunks are the caller's; mutating them cannot change
         stored state.

@@ -24,7 +24,7 @@ from redstring.domain.chunk_ranking import LexicalCandidate, LexicalCandidates
 from redstring.domain.chunk_retrieval import SemanticCandidate
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.tokenize import tokenize
-from redstring.domain.vector import cosine_score
+from redstring.domain.vector import cosine_score, has_zero_norm
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -48,6 +48,11 @@ class InMemoryChunkStore:
         return self._dimension
 
     async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
+        # Every element is validated before any is written, so a rejected
+        # batch leaves no trace -- the same shape `InMemoryVectorStore.upsert_many`
+        # uses for its own `_check`.
+        self._reject_zero_norm(chunks)
+
         for chunk in chunks:
             tenant = self._chunks.setdefault(chunk.tenant_id, {})
             # The key is the *pair*: `chunk.tenant_id` selects the mapping and
@@ -55,6 +60,23 @@ class InMemoryChunkStore:
             # content-addressed id are two rows. Content addressing makes that
             # collision ordinary rather than astronomically unlikely.
             tenant[chunk.id] = chunk.model_copy(deep=True)
+
+    @staticmethod
+    def _reject_zero_norm(chunks: Sequence[StoredChunk]) -> None:
+        """Cosine is undefined at zero magnitude.
+
+        A stored zero vector would force every later `semantic_candidates`
+        call to choose between a silent NaN and a per-row skip that hides a
+        caller's bug, so it is rejected here instead -- the same choice
+        `InMemoryVectorStore.upsert_many` already makes for `VectorStore`.
+        Chunks with no embedding at all are unaffected; only a *stored* zero
+        vector is a problem.
+        """
+        for chunk in chunks:
+            if chunk.embedding is not None and has_zero_norm(chunk.embedding):
+                raise ValueError(
+                    f"chunk {chunk.id!r} has a zero vector; cosine is undefined for it"
+                )
 
     async def get(self, chunk_id: ChunkId, tenant_id: TenantId) -> StoredChunk | None:
         chunk = self._chunks.get(tenant_id, {}).get(chunk_id)
@@ -78,6 +100,11 @@ class InMemoryChunkStore:
         chunks: Sequence[StoredChunk],
     ) -> int:
         reject_foreign_chunks(chunks, source_id, tenant_id)
+        # Same write-time guard as `upsert_many`, checked before the orphan
+        # delete below -- otherwise a rejected zero-norm element would still
+        # have emptied the old chunking first, and `replace_source` is one
+        # operation, not a delete-then-maybe-write.
+        self._reject_zero_norm(chunks)
 
         keep = {chunk.id for chunk in chunks}
         tenant = self._chunks.setdefault(tenant_id, {})
@@ -183,17 +210,23 @@ class InMemoryChunkStore:
         *,
         min_score: float | None = None,
     ) -> list[SemanticCandidate]:
-        # Both guards run before anything touches `self._chunks`, matching
-        # `lexical_candidates` and `InMemoryVectorStore._check`.
+        # All three guards run before anything touches `self._chunks`,
+        # matching `lexical_candidates` and `InMemoryVectorStore._check` --
+        # dimension has to be checked before zero-norm, since the latter is
+        # only meaningful once the width is known to be right.
         if limit < 0:
             raise ValueError(f"limit must not be negative, got {limit}")
         if len(vector) != self._dimension:
             raise DimensionMismatchError(expected=self._dimension, actual=len(vector))
+        if has_zero_norm(vector):
+            raise ValueError("a zero vector has no direction; cosine is undefined for it")
 
         # Chunks with `embedding is None` are not candidates -- skipped
         # rather than scored zero, per the port's contract.
         scored = [
-            SemanticCandidate(chunk=chunk.model_copy(deep=True), score=cosine_score(vector, chunk.embedding))
+            SemanticCandidate(
+                chunk=chunk.model_copy(deep=True), score=cosine_score(vector, chunk.embedding)
+            )
             for chunk in self._chunks.get(tenant_id, {}).values()
             if chunk.embedding is not None
         ]

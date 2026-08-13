@@ -252,6 +252,29 @@ class ChunkStoreCompliance:
         assert found.metadata == {"n": 2}
         assert len(await store.get_by_source(SourceId("doc-1"), tenant)) == 1
 
+    async def test_upsert_many_rejects_a_zero_norm_embedding(self, store: ChunkStore) -> None:
+        """Cosine is undefined at zero magnitude; the port rejects the write
+        rather than let `semantic_candidates` discover it later as a NaN or a
+        crash, matching `InMemoryVectorStore.upsert`.
+
+        The zero vector is second, after a well-formed chunk, so an adapter
+        validating only the first element fails here -- the same shape as
+        the provenance-rejection tests for `replace_source`.
+        """
+        tenant = TenantId(uuid4())
+        fine = self._chunk(tenant, "doc-1", "has a real vector", embedding=[1.0, 0.0, 0.0, 0.0])
+        zero = self._chunk(
+            tenant, "doc-1", "zero norm", chunk_index=1, embedding=[0.0, 0.0, 0.0, 0.0]
+        )
+
+        with pytest.raises(ValueError, match="zero"):
+            await store.upsert_many([fine, zero])
+
+        # Rejected before anything was written: the whole batch, not just the
+        # offending element.
+        assert await store.get(fine.id, tenant) is None
+        assert await store.get(zero.id, tenant) is None
+
     # ------------------------------------------------------------------
     # The composite key
     # ------------------------------------------------------------------
@@ -554,6 +577,25 @@ class ChunkStoreCompliance:
         with pytest.raises(ValueError, match="doc-1"):
             await store.replace_source(SourceId("doc-1"), tenant, [stray])
 
+        assert await store.get(held.id, tenant) == held
+
+    async def test_replace_source_rejects_a_zero_norm_embedding(
+        self, store: ChunkStore
+    ) -> None:
+        """The same write-time guard `upsert_many` states applies to
+        `replace_source`'s elements too -- it is the same write path."""
+        tenant = TenantId(uuid4())
+        held = self._chunk(tenant, "doc-1", "held", chunk_index=0, embedding=[1.0, 0.0, 0.0, 0.0])
+        await store.upsert_many([held])
+        zero = self._chunk(
+            tenant, "doc-1", "zero norm", chunk_index=1, embedding=[0.0, 0.0, 0.0, 0.0]
+        )
+
+        with pytest.raises(ValueError, match="zero"):
+            await store.replace_source(SourceId("doc-1"), tenant, [zero])
+
+        # Rejected: the old chunking is untouched, exactly as a provenance
+        # rejection leaves it.
         assert await store.get(held.id, tenant) == held
 
     # ------------------------------------------------------------------
@@ -1185,6 +1227,19 @@ class ChunkStoreCompliance:
 
         assert raised.value.expected == self.DIMENSION
         assert raised.value.actual == len(narrow)
+
+    async def test_semantic_candidates_rejects_a_zero_norm_query(
+        self, store: ChunkStore
+    ) -> None:
+        """Cosine is undefined at zero magnitude; `VectorStore.search` already
+        rejects a zero-norm query and this port makes the same choice, per
+        the module docstring."""
+        tenant = TenantId(uuid4())
+        chunk = self._chunk(tenant, "doc-1", "has a vector", embedding=[1.0, 0.0, 0.0, 0.0])
+        await store.upsert_many([chunk])
+
+        with pytest.raises(ValueError, match="zero"):
+            await store.semantic_candidates([0.0, 0.0, 0.0, 0.0], tenant, 10)
 
     async def test_semantic_candidates_returns_copies(self, store: ChunkStore) -> None:
         """A shallow copy shares the `embedding` list with stored state and
