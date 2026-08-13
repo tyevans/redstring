@@ -72,11 +72,28 @@ Every quality check is wired into `pre-commit` and runs automatically on
 - `ruff check --fix` and `ruff format`
 - `bandit` (security, `src/` only)
 - `lint-imports` (layered architecture contract)
-- `pytest` under `pytest-xdist` with the coverage ratchet
 
-**Do not run ruff, bandit, lint-imports, or pytest as separate steps before
-committing.** It duplicates work the hook already does and burns time. Write the
-change, then commit; the hook reports what is wrong and often fixes it in place
+**The test suite is not in that list, and that is recent.** `pytest` under
+`pytest-xdist` with the coverage ratchet used to run on every commit touching
+`src/` or `tests/`, and it duplicated CI's `pytest` job exactly — `addopts`
+deselects `integration` and `accuracy`, so the two invocations selected the
+same tests — while costing minutes on every commit of a many-small-commits
+workflow.
+
+So **run the tests yourself, as you work**: the file you are changing, not the
+whole suite. `uv run pytest tests/unit/<path>/test_<thing>.py -v -p no:randomly`
+is the loop. Nothing will run them for you before the commit lands, and the
+first thing that disagrees is CI, on a branch you have already pushed.
+
+The coverage floor moved rather than disappeared: CI's `pytest` job passes
+`--cov-fail-under="$(cat .coverage-baseline)"`. The baseline no longer *raises*
+itself, because the script staged the new value into the commit that earned it
+and a CI run has no commit to stage into — see BACKLOG B-RATCHET-1, which is
+open for that reason.
+
+**Do not run ruff, bandit, or lint-imports as separate steps before
+committing.** Those still duplicate work the hook does. Write the change, then
+commit; the hook reports what is wrong and often fixes it in place
 (re-`git add` and commit again when it does).
 
 **That instruction is only safe because the hook is installed, and in a fresh

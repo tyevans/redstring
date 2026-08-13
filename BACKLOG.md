@@ -1978,6 +1978,45 @@ divergence with different code.
 
 ## 6. Tooling, packaging and hygiene
 
+### B-RATCHET-1. The coverage baseline no longer raises itself
+
+The `pytest-coverage-ratchet` pre-commit hook was removed: it ran the whole
+unit suite on every commit touching `src/` or `tests/`, which duplicated CI's
+`pytest` job exactly — `addopts` already deselects `integration` and
+`accuracy`, so both selected the same tests — and cost minutes per commit in a
+workflow built on many small commits.
+
+**The floor moved; the ratchet did not.** CI's `pytest` job now passes
+`--cov-fail-under="$(cat .coverage-baseline)"`, so coverage still cannot fall.
+What was lost is the *rise*: `scripts/coverage_ratchet.py::write_baseline`
+wrote the new high-water mark and `git add`ed it, so a commit that earned more
+coverage carried the new baseline with it. A CI run has no commit to stage
+into, so the baseline now sits at whatever it last held (96.22 at the time of
+writing) until someone edits it.
+
+Why that is worse than it sounds, and worth fixing rather than accepting: a
+ratchet that only ever holds is a floor, and the value of the original was
+that the floor *followed* the work. Coverage can now drift upward for months
+and a later regression back to 96.22 passes silently — the exact class of
+"passing check you have never seen fail" that CLAUDE.md warns about, since the
+gate keeps reporting green while measuring a bar nobody has moved.
+
+Routes back, cheapest first:
+
+- A CI step on `main` only that runs the script and opens a PR (or pushes a
+  commit) when the baseline rises. Costs a bot commit per improvement.
+- Keep the script as an on-demand command (`uv run python
+  scripts/coverage_ratchet.py`) and name it in the definition of done for work
+  that adds tests, so raising it is a human step someone is told to take. Free,
+  and relies on a rule rather than a mechanism — which this project has
+  repeatedly found is indistinguishable from nothing.
+- Compute the floor as "last release's coverage" rather than a checked-in
+  number, removing the second declaration site entirely.
+
+Note also that `scripts/coverage_ratchet.py` is now referenced by no hook. It
+still works and is still the only implementation of the comparison; it is not
+dead code, but nothing runs it automatically any more.
+
 ### B126. The version is one fact with two declaration sites
 
 `pyproject.toml`'s `version` and `src/redstring/__init__.py`'s `__version__`
