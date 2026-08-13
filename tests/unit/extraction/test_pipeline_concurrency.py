@@ -17,6 +17,7 @@ import pytest
 
 from redstring.domain.source import SourceDocument
 from redstring.extraction.chunkers import SlidingWindowChunker
+from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.pipeline import ExtractionPipeline
 
 if TYPE_CHECKING:
@@ -103,12 +104,20 @@ async def test_concurrency_one_makes_the_same_calls_in_the_same_order() -> None:
 
 
 async def test_no_more_than_k_calls_are_ever_in_flight() -> None:
-    """The ceiling the operator actually sets."""
+    """The ceiling the operator actually sets.
+
+    Four chunks at concurrency=2, not three chunks at concurrency=3: with
+    `chunks <= concurrency` every chunk fits in one batch, so `peak <=
+    concurrency` holds for *any* implementation -- including one that ignores
+    `concurrency` entirely and gathers the whole document at once. Chunks
+    strictly greater than concurrency is what makes an unbounded gather
+    visibly exceed the ceiling this test is meant to catch.
+    """
     provider = RecordingProvider(delay=0.01)
 
-    await _run(provider, concurrency=3)
+    await _run(provider, concurrency=2, chunks=4)
 
-    assert provider.peak <= 3
+    assert provider.peak <= 2
 
 
 async def test_a_wavefront_actually_overlaps() -> None:
@@ -119,6 +128,60 @@ async def test_a_wavefront_actually_overlaps() -> None:
     await _run(provider, concurrency=3)
 
     assert provider.peak > 1
+
+
+class _OrderSensitiveProvider:
+    """Delay depends on the chunk's text, not on its position in the batch.
+
+    Every other provider in this module uses a uniform delay, so calls always
+    *complete* in argument order and cannot separate chunk-index fold order
+    from completion order -- `asyncio.gather` returns in argument order
+    regardless of which call actually finished first. This one lets a later
+    chunk finish before an earlier one within the same batch.
+    """
+
+    def __init__(self, delays: dict[str, float]) -> None:
+        self.prompts: list[str | None] = []
+        self._delays = delays
+
+    @property
+    def model(self) -> str:
+        return "order-sensitive-model"
+
+    async def extract(self, text, schema, *, system_prompt=None):
+        self.prompts.append(system_prompt)
+        for needle, delay in self._delays.items():
+            if needle in text:
+                await asyncio.sleep(delay)
+                break
+        return _answer_for(text, schema)
+
+
+async def test_carryover_folds_in_chunk_order_not_completion_order() -> None:
+    """The subtlest requirement in the batching design, pinned directly.
+
+    Chunk 0 (Ada) is slower than chunk 1 (Charles), so within the first batch
+    Charles's call *completes* first even though Ada is earlier in the
+    document. `Carryover.remember` must still be called in chunk order --
+    `redstring.extraction.carryover.Carryover` keeps insertion order, oldest
+    first -- so the next batch's prompt must name Ada before Charles.
+
+    This is not implied by the existing prompt-equality tests: folding on
+    completion instead of chunk order, or folding inside the first
+    classification pass, or iterating with `asyncio.as_completed` instead of
+    `gather`, all produce a *self-consistent* pair of equal prompts within
+    each batch -- they only disagree with the correct implementation about
+    which name comes *first*, which is exactly what this test reads.
+    """
+    provider = _OrderSensitiveProvider({"Ada": 0.03, "Charles": 0.0})
+
+    await _run(provider, concurrency=2, chunks=4)
+
+    batch_two_prompt = provider.prompts[2]
+    assert batch_two_prompt is not None
+    ada_position = batch_two_prompt.index("Ada Lovelace")
+    charles_position = batch_two_prompt.index("Charles Babbage")
+    assert ada_position < charles_position
 
 
 async def test_a_chunk_sees_what_earlier_batches_found_and_not_its_own_batch() -> None:
@@ -145,15 +208,48 @@ async def test_a_concurrency_below_one_is_refused(bad: int) -> None:
         ExtractionPipeline(RecordingProvider(), concurrency=bad)
 
 
+class _CountingLimiter(CallLimiter):
+    """A `CallLimiter` that also counts how many calls actually passed
+    through it -- used to prove *which* calls a limiter gated, independent of
+    timing."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(limit)
+        self.enters = 0
+
+    async def __aenter__(self) -> None:
+        self.enters += 1
+        await super().__aenter__()
+
+
 async def test_gleaning_calls_are_inside_the_ceiling_too() -> None:
-    """K=2 with one gleaning pass is four calls per batch, not two.
+    """Gleaning goes through the same limiter as extraction, not around it.
 
-    Without a shared limiter the batch bounds only the first call of each
-    chunk, so this is the case that separates "bounded batches" from "bounded
-    in flight".
+    A peak-based assertion cannot catch this: `_batches` already sizes every
+    batch at `concurrency`, and each chunk's extraction and gleaning calls run
+    *sequentially* within that chunk's own task, so no implementation --
+    limiter or no limiter -- can ever have more than `concurrency` calls in
+    flight at once here. Verified directly: stripping the limiter out of both
+    `_extract_one` and `_glean` and rerunning `peak <= K` at concurrency 2 and
+    3, chunk counts 3 and 4, and gleanings=1 still held (`peak == concurrency`
+    every time) -- the batch structure alone already enforces it, so that
+    assertion is vacuous for this specific regression.
+
+    What actually distinguishes "gleaning bypasses the limiter" is a *count*:
+    with `gleanings=1` and every chunk finding something, each of the four
+    chunks makes exactly two calls (one extraction, one gleaning), so a
+    limiter used by every call sees `4 * 2 == 8` entries. Skip wrapping the
+    gleaning call and the count drops to 4, deterministically -- no timing
+    involved.
     """
-    provider = RecordingProvider(delay=0.01)
+    provider = RecordingProvider()
+    limiter = _CountingLimiter(2)
+    pipeline = ExtractionPipeline(
+        provider, chunker=_CHUNKER, concurrency=2, gleanings=1, limiter=limiter
+    )
 
-    await _run(provider, concurrency=2, chunks=4, gleanings=1)
+    await pipeline.extract(
+        SourceDocument(id="doc-1", text="\n\n".join(_PARAGRAPHS)), uuid4(), observed_at=OBSERVED
+    )
 
-    assert provider.peak <= 2
+    assert limiter.enters == len(_PARAGRAPHS) * 2
