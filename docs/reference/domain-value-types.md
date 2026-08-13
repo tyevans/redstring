@@ -110,7 +110,7 @@ SourceId = NewType("SourceId", str)
 | `EntityId` | `uuid.UUID` | `Entity.id`, `Relationship.source_entity_id` / `target_entity_id`, `Alias.canonical_entity_id` / `alias_entity_id`, `VectorRecord.entity_id`, `VectorMatch.entity_id` |
 | `RelationshipId` | `uuid.UUID` | `Relationship.id` |
 | `TenantId` | `uuid.UUID` | `Entity.tenant_id`, `Relationship.tenant_id`, `Alias.tenant_id`, `VectorRecord.tenant_id` |
-| `SourceId` | `str` | `SourceDocument.id`, `Entity.source_id` (optional), `Relationship.source_id` (optional) |
+| `SourceId` | `str` | `SourceDocument.id`, `Entity.provenance.source_id` (optional), `Relationship.source_id` (optional) |
 
 There is no `AliasId`: `Alias.id` is annotated as a bare `uuid.UUID`.
 
@@ -253,7 +253,7 @@ silently through every subsequent arithmetic operation and compares `False`
 against every threshold, so a single one entering a scoring loop makes that
 pair permanently unmergeable with no error anywhere.
 
-`Entity.confidence` and `Relationship.confidence` have no default. A
+`Entity.provenance.confidence` and `Relationship.confidence` have no default. A
 confidence of `1.0` is something a caller asserts, not something the type
 assumes on their behalf, so every `Entity` and `Relationship` in existence
 carries a number somebody chose. The `SimilarityFeatures` fields default to
@@ -329,7 +329,7 @@ because they look like they should be:
   docstring argues the point: the projection that writes aliases folds
   `EntitiesMerged`, which carries ids and no names, so a required field would
   have forced a fabricated one.
-- `Entity.description`, `Entity.source_text`, `SourceDocument.uri`,
+- `Entity.description`, `Entity.provenance.source_text`, `SourceDocument.uri`,
   `SourceDocument.title` and `Alias.merge_reason` are all optional and
   unchecked.
 
@@ -392,15 +392,47 @@ Two fields are deliberately absent, and their absence is asserted by tests:
 | `entity_type` | `str` | none — required |
 | `original_entity_type` | `str \| None` | `None` |
 | `description` | `str \| None` | `None` |
-| `source_id` | `SourceId \| None` | `None` |
-| `source_text` | `str \| None` | `None` |
 | `external_ids` | `dict[str, str]` | `{}` |
 | `properties` | `dict[str, Any]` | `{}` |
-| `extraction_method` | `ExtractionMethod` | none — required |
-| `model` | `str \| None` | `None` |
-| `confidence` | `float` | none — required |
+| `provenance` | `Provenance` | none — required |
 | `temporal` | `TemporalExtent \| None` | `None` |
 | `blocking_keys` | `frozenset[str] \| None` | `None` |
+
+`source_id`, `source_text`, `extraction_method`, `model` and `confidence` are
+no longer fields of `Entity`. They are fields of `Provenance`, reached as
+`entity.provenance.confidence` and so on; there is no forwarding property, so
+the old spelling raises `AttributeError` rather than quietly working.
+
+### `Provenance`
+
+`Entity` describes a thing in the world; `Provenance` describes the *claiming*
+of it — who said it, when, how, from where, and how sure. The split is what
+lets a merge ask which of two competing values was observed most recently
+without asking an `Entity` a question about itself.
+
+| Field | Type | Default |
+|---|---|---|
+| `observed_at` | `datetime` | none — required, and timezone-aware |
+| `extraction_method` | `ExtractionMethod` | none — required |
+| `confidence` | `float` | none — required |
+| `source_id` | `SourceId \| None` | `None` |
+| `source_text` | `str \| None` | `None` |
+| `model` | `str \| None` | `None` |
+
+- **`observed_at` is *record* time, and `TemporalExtent` is *world* time.**
+  When this library was told, versus when the fact held. A document published
+  in 1923 and extracted today has both, and nothing infers one from the other.
+- **It is required, and that is the point.** An optional one would make a
+  most-recently-observed merge work for some callers and refuse for others,
+  with no way to tell which until it ran.
+- **No clock reads it below `composition`.** `map_extraction` and
+  `ExtractionPipeline.extract` take it as a required keyword argument, so
+  re-extracting one document produces identical entities however much later it
+  runs. `build_graph` is the only place in the library that reads a clock, and
+  it takes an `observed_at` that overrides it.
+- **`Relationship` deliberately does not have one.** It carries `confidence`
+  and `source_id` but no `extraction_method` and no `model`, so sharing this
+  type would mean three fields that are always absent.
 
 Notes on the ones whose type does not tell the whole story:
 
@@ -461,7 +493,7 @@ passing `Entity` validation and reaching the log unattributed.
 **The members name how the entity was derived, never which vendor answered.**
 There is no `OPENAI` or `ANTHROPIC` member and there will not be one: vendor
 identity is adapter detail and belongs in
-[`Entity.model`](#fields-and-defaults), which is versioned and survives model
+[`Entity.provenance.model`](#fields-and-defaults), which is versioned and survives model
 upgrades. These values become persisted event payloads (see
 [Events](events.md)), so a vendor name here would outlive that vendor's
 presence in the codebase, and every historical row would still carry it. Two
@@ -472,32 +504,41 @@ branches from `llm/rate_limiter.py` and `llm/circuit_breaker.py`.
 
 The values are the string form, not the member name: `"schema_org"` and
 `"open_graph"` are lowercase with an underscore. That spelling is the
-persisted one. `graph/adapters/neo4j.py` writes `entity.extraction_method.value`
+persisted one. `graph/adapters/neo4j.py` writes
+`entity.provenance.extraction_method.value`
 to the node and rebuilds it with `ExtractionMethod(node["extraction_method"])`,
 so renaming a *value* would orphan every entity already stored, while renaming
 a *member* would not. Round-tripping an `Entity` through `model_dump()` and
 `model_validate()` goes through the same values.
 
-There is no `UNKNOWN` member and no default: `Entity.extraction_method` is
+There is no `UNKNOWN` member and no default: `Entity.provenance.extraction_method` is
 required, so every entity in existence states how it was derived. Absence of
 provenance is expressed on `model` (which is `None` when no model ran *or*
 when the extractor did not record one), never on the method.
 
 ### Validation: non-blank name, confidence range, model only for LLM and HYBRID
 
-`Entity` declares exactly three validators. Each raises a plain `ValueError`,
+The three rules below are declared on **two** models now. `Entity` keeps the
+`name` rule; the `confidence` and `model` rules moved to `Provenance` with the
+fields they constrain, and `Provenance` adds a fourth of its own —
+`observed_at` must be timezone-aware, refused at construction because a naive
+and an aware datetime raise `TypeError` only when compared, several layers
+from anything that could say which entity was at fault.
+
+Each raises a plain `ValueError`,
 which pydantic surfaces as a `ValidationError` at construction — per the
 convention in
 [Scope and how to read this page](#scope-and-how-to-read-this-page). Nothing
 here is re-checked on assignment: the model is not frozen and
-`validate_assignment` is not set, so `entity.confidence = 5.0` after
+`validate_assignment` is not set, so `provenance.confidence = 5.0` after
 construction succeeds.
 
-| Validator | Kind | Message |
-|---|---|---|
-| `_require_non_blank_name` | `field_validator("name")` | `"name must not be blank"` |
-| `_require_confidence_in_range` | `field_validator("confidence")` | `"confidence must be between 0.0 and 1.0"` |
-| `_reject_model_without_a_model_call` | `model_validator(mode="after")` | `"model must be None for extraction_method '<method>', which invokes no model"` |
+| Model | Validator | Kind | Message |
+|---|---|---|---|
+| `Entity` | `_require_non_blank_name` | `field_validator("name")` | `"name must not be blank"` |
+| `Provenance` | `_require_confidence_in_range` | `field_validator("confidence")` | `"confidence must be between 0.0 and 1.0"` |
+| `Provenance` | `_require_timezone` | `field_validator("observed_at")` | `"observed_at must be timezone-aware"` |
+| `Provenance` | `_reject_model_without_a_model_call` | `model_validator(mode="after")` | `"model must be None for extraction_method '<method>', which invokes no model"` |
 
 **1. `name` must not be blank.** The check is `if not value.strip()`, so
 `""`, `"   "`, `"\n"` and any other whitespace-only string are rejected. It
@@ -522,14 +563,15 @@ mutant widening the bound to `<= 2.0` survived the property test on its own.
 
 **3. `model` must be `None` unless `extraction_method` is `LLM` or `HYBRID`.**
 The permitted pair is a module-level `frozenset`,
-`_MODEL_BEARING_METHODS = {ExtractionMethod.LLM, ExtractionMethod.HYBRID}`,
+`MODEL_BEARING_METHODS = {ExtractionMethod.LLM, ExtractionMethod.HYBRID}` in
+`domain/provenance.py`,
 and the validator fires when `model is not None` and the method is outside it.
 The message names the offending method by its *value*, so passing a `model`
 with `PATTERN` reads
 `model must be None for extraction_method 'pattern', which invokes no model`.
 The reason is definitional: `model` records which model ran, so a method that
 runs none cannot carry one — see
-[`Entity.model`](#fields-and-defaults) for the naming convention that field
+[`Entity.provenance.model`](#fields-and-defaults) for the naming convention that field
 expects.
 
 `HYBRID` is on the permissive side because a hybrid extraction is
@@ -544,8 +586,8 @@ with `extraction_method=LLM` and `model=None` validates. The domain has no
 way to distinguish "no model ran" from "the extractor did not record one", and
 declines to guess.
 
-`extraction/mapping.py` is stricter, and deliberately keeps its own copy of
-the same set (`_MODEL_BEARING`). `map_extraction` raises `ValueError` in
+`extraction/mapping.py` is stricter, and binds the *same* set under a local
+name (`_MODEL_BEARING = MODEL_BEARING_METHODS`) rather than restating it. `map_extraction` raises `ValueError` in
 *both* directions — a model-bearing method with `model=None` as well as a
 model string on a method that invokes none — because an entity built there is
 headed for a durable event log, and an unattributed row cannot be repaired
@@ -693,7 +735,7 @@ Notes on the ones whose type does not tell the whole story:
   constructed without it do not share a dict. Its values are `Any` and
   unvalidated here; a store that persists them imposes its own constraints.
 - **`confidence` is required and bounded `0.0..1.0` inclusive**, by the same
-  validator and the same message as `Entity.confidence` — see
+  validator and the same message as `Entity.provenance.confidence` — see
   [Confidence and score fields](#confidence-and-score-fields-are-bounded-0010-inclusive).
 
 Four fields `Entity` has are absent, and each absence is a decision rather
@@ -836,7 +878,7 @@ succeeds and produces a self-loop the type would have refused.
 
 **1. `confidence` must lie on `0.0..1.0` inclusive.** The check is
 `if not 0.0 <= value <= 1.0` — the same spelling and the same message as
-`Entity.confidence`, in a separate copy on this type rather than in a shared
+`Entity.provenance.confidence`, in a separate copy on this type rather than in a shared
 base. Both endpoints are legal; `NaN` is rejected because the comparison chain
 evaluates `False`. The field is required, so every `Relationship` carries a
 number somebody chose. See
@@ -1214,7 +1256,7 @@ before comparing extents:
 These are **not ordered and not a confidence scale**, and nothing in the
 package treats them as one. `BEFORE` and `AFTER` are directional claims about
 a boundary rather than degrees of doubt, so any code sorting or thresholding
-this enum has mistaken it for `Entity.confidence`, which is the bounded float
+this enum has mistaken it for `Entity.provenance.confidence`, which is the bounded float
 that does mean that (see
 [Confidence and score fields](#confidence-and-score-fields-are-bounded-0010-inclusive)).
 
@@ -1673,10 +1715,10 @@ not the same function.
 
 ## Merge strategies
 
-`merge_strategy.py`: one enum and one function. Merging "Ada Lovelace" into
-"Augusta Ada King" leaves one entity and several candidate values for every
-property; `resolve` is that choice, made **per property**, so a caller can
-keep the canonical description while unioning the external ids.
+`merge_strategy.py`: one enum, one value object and three functions. Merging
+"Ada Lovelace" into "Augusta Ada King" leaves one entity and several candidate
+values for every property; `resolve` is that choice, made **per property**, so
+a caller can keep the canonical description while unioning the external ids.
 
 ### `PropertyMergeStrategy` members, and which resolve
 
@@ -1684,35 +1726,74 @@ keep the canonical description while unioning the external ids.
 |---|---|
 | `PREFER_CANONICAL` | implemented; the default |
 | `UNION` | implemented |
-| `PREFER_MERGED` | raises `NotImplementedError` |
-| `LATEST` | raises `NotImplementedError` |
+| `PREFER_MERGED` | implemented |
+| `MOST_RECENTLY_OBSERVED` | implemented |
 | `DEEP_MERGE` | raises `NotImplementedError` |
 
-`IMPLEMENTED` is the frozenset of the first two, so a caller can ask before
+`IMPLEMENTED` is the frozenset of the first four, so a caller can ask before
 committing to a strategy.
 
-**The three unimplemented ones raise, and do not fall back to the default.**
-That is the point rather than an omission: a silent fallback writes the
-canonical value while the caller believes it asked for a deep merge, which
-corrupts data while looking like it worked and leaves nothing in the result to
-show it happened.
+**`DEEP_MERGE` raises, and does not fall back to the default.** That is the
+point rather than an omission: a silent fallback writes the canonical value
+while the caller believes it asked for a deep merge, which corrupts data while
+looking like it worked and leaves nothing in the result to show it happened. It
+stays deferred on its own merits — the pre-merge shape is not recoverable from
+a deep merge's result, so a wrong one is hard to undo.
 
-`LATEST` is not merely unimplemented, it is **unanswerable** with the data
-that exists. Timestamps are per entity, not per property, so "the most
-recently updated value" has nothing behind it — and implementing it against
-the entity timestamp would answer a different question in a way no caller
-could detect.
+`UNION` is structural rather than a preference. Merging *inherently* produces
+alias sets — the whole point is that several names denote one thing — so a
+strategy that accumulates instead of picking is not optional equipment.
 
-`UNION` is structural rather than a preference, which is why it is one of the
-two that exist. Merging *inherently* produces alias sets — the whole point is
-that several names denote one thing — so a strategy that accumulates instead
-of picking is not optional equipment.
+**`MOST_RECENTLY_OBSERVED` was called `LATEST` and raised**, on the argument
+that timestamps were per entity rather than per property. That argument was
+wrong twice: there were no per-entity timestamps either, and per-property ones
+were never the obstacle. The obstacle was `resolve`'s signature, which took
+bare values and so dropped everything a strategy might need beyond the value
+itself. Taking claims fixed it, and `PREFER_MERGED` came along for free — it
+was never hard, only ill-defined about *which* absorbed entity when there are
+several.
 
-### `resolve(strategy, *, canonical, others)`
+The rename narrows a promise rather than tidying a name. Nothing here tracks
+a property's edit history, so "latest" would have invited a caller to assume a
+modification time the library does not have. What it can answer is which of the
+entities asserting this property was *observed* most recently.
 
-`canonical` is the surviving entity's value and **may be `None`, which is a
-value rather than an absence** — `PREFER_CANONICAL` keeps it. `others` are the
-absorbed entities' values, in the order the merge listed those entities.
+### `PropertyClaim` and `claims_for`
+
+A `PropertyClaim` is one entity's value for one property, with the observation
+behind it: `value`, `provenance` (a `Provenance`) and `origin` (the asserting
+`EntityId`).
+
+`claims_for(property_name, canonical, others)` builds them, canonical first.
+An entity whose `properties` lack the key is **skipped**, not given a `None`
+claim: silence is not an assertion, and treating it as one would let an entity
+with no opinion outvote one with an opinion under `MOST_RECENTLY_OBSERVED`
+merely by being newer. An explicit `None` *is* a claim and is kept. It returns
+`[]` when nobody claims the property, which the caller distinguishes from
+"everybody claimed `None`".
+
+### `resolve(strategy, claims)`
+
+`claims` is non-empty — `resolve` raises `ValueError` on an empty sequence
+rather than inventing an answer — and `claims[0]` is the canonical entity's,
+the rest the absorbed entities' in the order the merge listed them. Positional
+rather than a `canonical=`/`others=` pair because every strategy but
+`PREFER_CANONICAL` treats them as one ordered sequence. A claim's value **may
+be `None`, which is a value rather than an absence** — `PREFER_CANONICAL`
+keeps it.
+
+`PREFER_MERGED` returns `claims[1].value`, or `claims[0].value` when nothing
+was absorbed.
+
+`MOST_RECENTLY_OBSERVED` returns the value of the claim greatest under
+`(observed_at, confidence, str(origin))`. Recency is the strategy's content;
+confidence breaks the tie between two observations sharing an instant exactly,
+which happens whenever a batch is extracted together; and `str(origin)` carries
+no meaning at all, existing solely so no two distinct claims compare equal. The
+moment two do, the winner is whichever the caller happened to list first, in a
+durable replayable log — see
+[`0010` one total order for preference](../adr/0010-one-total-order-for-preference.md).
+Totality is asserted as a property test rather than argued in a comment.
 
 `UNION` returns a **list**, canonical first, in first-seen order, flattening
 one level. Three properties of that, each load-bearing:

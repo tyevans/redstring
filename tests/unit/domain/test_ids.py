@@ -18,8 +18,13 @@ which is a gate rather than a test in this file.
 """
 
 import uuid
+from datetime import UTC, datetime
 
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 16, 11, 7, tzinfo=UTC)
 
 ALL_IDS = (EntityId, RelationshipId, TenantId, SourceId)
 
@@ -68,7 +73,8 @@ def test_an_unwrapped_value_is_accepted_by_a_domain_model():
     passing `uuid4()` where an `EntityId` is annotated keeps working; only a
     type checker is newly opinionated about it.
     """
-    from redstring.domain.entity import Entity, ExtractionMethod
+    from redstring.domain.entity import Entity
+    from redstring.domain.provenance import ExtractionMethod, Provenance
 
     entity = Entity(
         id=uuid.uuid4(),
@@ -76,7 +82,10 @@ def test_an_unwrapped_value_is_accepted_by_a_domain_model():
         name="Ada",
         normalized_name="ada",
         entity_type="person",
-        extraction_method=ExtractionMethod.LLM,
-        confidence=0.9,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.LLM,
+            confidence=0.9,
+        ),
     )
     assert isinstance(entity.id, uuid.UUID)

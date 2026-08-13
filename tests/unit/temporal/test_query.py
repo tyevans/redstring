@@ -7,11 +7,16 @@ from uuid import uuid4
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.interval import Bounds, TemporalRelation
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.temporal.query import CursorStalledError, TemporalQuery
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 18, 11, 7, tzinfo=UTC)
 
 pytestmark = pytest.mark.asyncio
 
@@ -40,10 +45,13 @@ def entity(
         name=name,
         normalized_name=name.lower(),
         entity_type=entity_type,
-        source_id="doc-1",
         temporal=extent,
-        extraction_method=ExtractionMethod.PATTERN,
-        confidence=0.9,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=0.9,
+            source_id="doc-1",
+        ),
     )
 
 

@@ -20,6 +20,7 @@ the adapter honour them are two claims and each can fail without the other.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -29,11 +30,16 @@ from eventsource.ports.positions import ExpectedVersion
 
 from redstring.aggregates.consolidation_log import ConsolidationLog
 from redstring.aggregates.document import Document
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.events import DocumentExtracted
 from redstring.events.streams import consolidation_stream, document_stream
 
 from .conftest import fresh_rig
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 10, 11, 7, tzinfo=UTC)
 
 if TYPE_CHECKING:
     from eventsource.adapters.memory import InMemoryEventStore
@@ -64,14 +70,17 @@ def _entity(tenant_id, source_id, name):
         name=name,
         normalized_name=name.lower(),
         entity_type="thing",
-        source_id=source_id,
-        extraction_method=ExtractionMethod.PATTERN,
-        confidence=0.5,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=0.5,
+            source_id=source_id,
+        ),
     )
 
 
 async def _append(event_store, entity):
-    stream = document_stream(tenant_id=entity.tenant_id, source_id=entity.source_id)
+    stream = document_stream(tenant_id=entity.tenant_id, source_id=entity.provenance.source_id)
     async with tenant_scope(entity.tenant_id):
         await event_store.append(
             stream,
@@ -79,7 +88,7 @@ async def _append(event_store, entity):
                 DocumentExtracted(
                     aggregate_id=stream.aggregate_id,
                     tenant_id=entity.tenant_id,
-                    source_id=entity.source_id,
+                    source_id=entity.provenance.source_id,
                     model_version="ollama/qwen3.6-27b",
                     entities=[entity],
                     relationships=[],

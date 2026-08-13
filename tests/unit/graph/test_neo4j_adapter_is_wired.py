@@ -48,8 +48,9 @@ from uuid import UUID, uuid4
 import pytest
 
 from redstring.domain.alias import Alias
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import MissingEntityError
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.graph.adapters import neo4j as adapter
 from redstring.ports.graph_store import GraphStore
@@ -622,8 +623,15 @@ def _entity(**overrides: object) -> Entity:
         "name": "Ada Lovelace",
         "normalized_name": "ada lovelace",
         "entity_type": "person",
-        "extraction_method": ExtractionMethod.MANUAL,
-        "confidence": 1.0,
+        # Offset-bearing, non-midnight and non-whole-minute on purpose: the
+        # row encoder writes `observed_at` as ISO text precisely because the
+        # driver's `DateTime` round-trip is lossy for offsets, and a midnight
+        # UTC value would agree with the lossy encoding too.
+        "provenance": Provenance(
+            observed_at=datetime(2026, 3, 1, 14, 45, 30, tzinfo=timezone(timedelta(hours=-5))),
+            extraction_method=ExtractionMethod.MANUAL,
+            confidence=1.0,
+        ),
     }
     fields.update(overrides)
     return Entity(**fields)  # type: ignore[arg-type]

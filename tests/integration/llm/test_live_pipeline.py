@@ -14,12 +14,13 @@ Skipped unless a probe gets a real non-empty completion; see
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 
 from redstring.aggregates.document import Document
-from redstring.domain.entity import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.source import SourceDocument
 from redstring.events import DocumentExtracted
 from redstring.events.streams import document_stream
@@ -29,6 +30,10 @@ from redstring.llm.adapters.langchain import LangChainLlmProvider
 from tests.integration.llm.test_live_endpoint import BASE_URL, MODEL, serving
 
 pytestmark = [pytest.mark.integration, pytest.mark.live]
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 18, 11, 7, tzinfo=UTC)
 
 PASSAGE = (
     "Ada Lovelace was an English mathematician. She worked with Charles "
@@ -63,7 +68,9 @@ async def test_a_real_passage_yields_the_people_it_names(pipeline, tenant_id):
     changes between versions. That she is in the output at all is the claim
     the pipeline makes.
     """
-    result = await pipeline.extract(SourceDocument(id="ada", text=PASSAGE), tenant_id)
+    result = await pipeline.extract(
+        SourceDocument(id="ada", text=PASSAGE), tenant_id, observed_at=OBSERVED
+    )
 
     found = {e.normalized_name for e in result.entities}
     assert "ada lovelace" in found
@@ -71,13 +78,15 @@ async def test_a_real_passage_yields_the_people_it_names(pipeline, tenant_id):
 
 
 async def test_the_entities_are_domain_objects_with_real_provenance(pipeline, tenant_id):
-    result = await pipeline.extract(SourceDocument(id="ada", text=PASSAGE), tenant_id)
+    result = await pipeline.extract(
+        SourceDocument(id="ada", text=PASSAGE), tenant_id, observed_at=OBSERVED
+    )
 
     for extracted in result.entities:
         assert extracted.tenant_id == tenant_id
-        assert extracted.source_id == "ada"
-        assert extracted.extraction_method is ExtractionMethod.LLM
-        assert extracted.model == f"openai-compatible/{MODEL}"
+        assert extracted.provenance.source_id == "ada"
+        assert extracted.provenance.extraction_method is ExtractionMethod.LLM
+        assert extracted.provenance.model == f"openai-compatible/{MODEL}"
 
 
 async def test_a_real_model_produces_edges_whose_endpoints_actually_resolve(pipeline, tenant_id):
@@ -90,7 +99,9 @@ async def test_a_real_model_produces_edges_whose_endpoints_actually_resolve(pipe
     of disconnected nodes -- which no unit test can detect, because the fake
     answers with whatever the test wrote.
     """
-    result = await pipeline.extract(SourceDocument(id="ada", text=PASSAGE), tenant_id)
+    result = await pipeline.extract(
+        SourceDocument(id="ada", text=PASSAGE), tenant_id, observed_at=OBSERVED
+    )
     present = {e.id for e in result.entities}
 
     assert result.relationships, (
@@ -119,7 +130,9 @@ async def test_a_chunked_document_merges_back_into_one_set_of_entities(live, ten
     # the assertion below would hold trivially.
     assert chunker.chunk(PASSAGE).total_chunks > 1
 
-    result = await pipeline.extract(SourceDocument(id="ada", text=PASSAGE), tenant_id)
+    result = await pipeline.extract(
+        SourceDocument(id="ada", text=PASSAGE), tenant_id, observed_at=OBSERVED
+    )
 
     ids = [e.id for e in result.entities]
     assert len(ids) == len(set(ids))
@@ -134,7 +147,9 @@ async def test_recording_produces_one_event_the_domain_accepts(pipeline, tenant_
     """
     aggregate = Document(document_stream(tenant_id=tenant_id, source_id="ada").aggregate_id)
 
-    event = await pipeline.record(aggregate, SourceDocument(id="ada", text=PASSAGE), tenant_id)
+    event = await pipeline.record(
+        aggregate, SourceDocument(id="ada", text=PASSAGE), tenant_id, observed_at=OBSERVED
+    )
 
     assert isinstance(event, DocumentExtracted)
     assert event.model_version == f"openai-compatible/{MODEL}"

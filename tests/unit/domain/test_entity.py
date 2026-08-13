@@ -1,15 +1,24 @@
-"""Tests for redstring.domain.entity."""
+"""Tests for redstring.domain.entity.
+
+The rules about `confidence`, `model` and `extraction_method` are no longer
+asserted here: those fields moved to `Provenance`, and their tests moved with
+them to `test_provenance.py` rather than being restated against a nested
+attribute. What stays is what `Entity` itself still decides.
+"""
 
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from hypothesis import example, given
-from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.temporal import TemporalExtent
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 12, 11, 7, tzinfo=UTC)
 
 
 def _entity(**overrides):
@@ -19,8 +28,11 @@ def _entity(**overrides):
         "name": "Ada Lovelace",
         "normalized_name": "ada lovelace",
         "entity_type": "person",
-        "extraction_method": ExtractionMethod.LLM,
-        "confidence": 0.9,
+        "provenance": Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.LLM,
+            confidence=0.9,
+        ),
     }
     fields.update(overrides)
     return Entity(**fields)
@@ -47,44 +59,44 @@ def test_extraction_method_names_no_vendors():
     }
 
 
-def test_model_defaults_to_none():
-    assert _entity().model is None
-
-
-def test_model_carries_llm_provenance():
-    assert _entity(model="qwen3.6-27b-mtp").model == "qwen3.6-27b-mtp"
-
-
 @pytest.mark.parametrize(
-    "method",
-    [ExtractionMethod.LLM, ExtractionMethod.HYBRID],
+    "field",
+    ["source_id", "source_text", "extraction_method", "model", "confidence"],
 )
-def test_model_is_allowed_for_methods_that_may_invoke_a_model(method):
-    assert _entity(extraction_method=method, model="qwen3.6-27b-mtp").model is not None
+def test_the_five_provenance_fields_are_gone_from_entity(field):
+    """A clean break, asserted rather than assumed.
+
+    Without this, a forwarding property added later for one caller's
+    convenience would restore `entity.confidence` as a second way to reach
+    one value -- and every test in the tree would keep passing while the two
+    ways silently became a place for them to disagree.
+    """
+    assert field not in Entity.model_fields
+    assert not hasattr(_entity(), field)
 
 
-@pytest.mark.parametrize(
-    "method",
-    [
-        ExtractionMethod.PATTERN,
-        ExtractionMethod.SCHEMA_ORG,
-        ExtractionMethod.OPEN_GRAPH,
-        ExtractionMethod.MANUAL,
-    ],
-)
-def test_model_is_rejected_for_methods_that_cannot_invoke_one(method):
-    with pytest.raises(ValidationError, match="model"):
-        _entity(extraction_method=method, model="qwen3.6-27b-mtp")
+def test_an_entity_reaches_its_provenance_through_one_attribute():
+    entity = _entity()
+    assert entity.provenance.extraction_method is ExtractionMethod.LLM
+    assert entity.provenance.confidence == 0.9
+    assert entity.provenance.observed_at == OBSERVED
 
 
-@pytest.mark.parametrize("method", list(ExtractionMethod))
-def test_model_may_always_be_omitted(method):
-    """An LLM extraction that did not record its model is still valid."""
-    assert _entity(extraction_method=method).model is None
+def test_provenance_is_required():
+    """Not defaulted. An `Entity` with no record of where it came from is the
+    state `Provenance` exists to make unrepresentable."""
+    with pytest.raises(ValidationError):
+        Entity(
+            id=uuid4(),
+            tenant_id=uuid4(),
+            name="Ada Lovelace",
+            normalized_name="ada lovelace",
+            entity_type="person",
+        )
 
 
 def test_model_field_documents_the_naming_convention():
-    description = Entity.model_fields["model"].description
+    description = Provenance.model_fields["model"].description
     assert description is not None
     assert "provider" in description.lower()
 
@@ -107,8 +119,8 @@ def test_minimal_entity_construction():
     assert entity.temporal is None
     assert entity.original_entity_type is None
     assert entity.description is None
-    assert entity.source_id is None
-    assert entity.source_text is None
+    assert entity.provenance.source_id is None
+    assert entity.provenance.source_text is None
 
 
 def test_entity_type_survives_as_free_string():
@@ -151,39 +163,23 @@ def test_no_synced_at_field():
     assert "synced_at" not in Entity.model_fields
 
 
-@given(st.floats(min_value=0.0, max_value=1.0, allow_nan=False))
-def test_confidence_in_range_accepted(confidence):
-    entity = _entity(confidence=confidence)
-    assert entity.confidence == confidence
-
-
-#: Values just outside the bound, pinned rather than left to the sampler.
-#:
-#: `st.floats().filter(...)` reaches the far extremes readily and the
-#: immediate neighbourhood of 1.0 rarely, so a mutant widening the bound to
-#: `<= 2.0` survived the property test entirely. A property test is a sampler,
-#: not a proof about a value.
-JUST_OUTSIDE_CONFIDENCE = [-1e-9, 1.0 + 1e-9, 1.5, 2.0]
-
-
-@given(st.floats(allow_nan=False, allow_infinity=False).filter(lambda f: f < 0.0 or f > 1.0))
-@example(confidence=-1e-9)
-@example(confidence=1.0 + 1e-9)
-@example(confidence=1.5)
-@example(confidence=2.0)
-def test_confidence_out_of_range_rejected(confidence):
-    with pytest.raises(ValidationError):
-        _entity(confidence=confidence)
-
-
 def test_round_trip_through_model_dump():
     entity = _entity(
         description="A mathematician",
-        source_id="doc-1",
-        source_text="Ada Lovelace was...",
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.LLM,
+            confidence=0.9,
+            source_id="doc-1",
+            source_text="Ada Lovelace was...",
+        ),
         external_ids={"wikidata": "Q7259"},
         properties={"born": 1815},
         temporal=TemporalExtent(start_date=datetime(1815, 12, 10, tzinfo=UTC)),
     )
     reconstructed = Entity.model_validate(entity.model_dump())
     assert reconstructed == entity
+    # Asserted separately: `==` on the whole model would also pass if
+    # `provenance` came back as a dict on both sides.
+    assert isinstance(reconstructed.provenance, Provenance)
+    assert reconstructed.provenance.observed_at == OBSERVED

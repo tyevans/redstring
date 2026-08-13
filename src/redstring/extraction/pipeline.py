@@ -117,6 +117,8 @@ from redstring.extraction.merging import merge_extractions
 from redstring.extraction.schema import Extraction
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from redstring.aggregates.document import Document
     from redstring.domain.chunk import StoredChunk
     from redstring.domain.entity import Entity
@@ -296,7 +298,9 @@ class ExtractionPipeline:
         """What this pipeline tells the model. Readable so a caller can log it."""
         return self._system_prompt
 
-    async def extract(self, document: SourceDocument, tenant_id: TenantId) -> PipelineResult:
+    async def extract(
+        self, document: SourceDocument, tenant_id: TenantId, *, observed_at: datetime
+    ) -> PipelineResult:
         """Extract `document` without recording anything.
 
         `document.published_at` becomes the reference date every relative
@@ -311,6 +315,12 @@ class ExtractionPipeline:
             document: The content. `SourceDocument` already refuses blank
                 text, so there is no empty-document case to handle here.
             tenant_id: Applied to every entity and relationship produced.
+            observed_at: When this library was told, stamped onto every
+                entity's `Provenance`. One instant for the whole document,
+                captured by the caller -- one per chunk would make two
+                entities from one document differ for no reason a reader could
+                act on, and a clock here would break the same determinism
+                `document.published_at` is read from the caller to preserve.
 
         Returns:
             A `PipelineResult`. Entities are deduplicated across chunks;
@@ -360,6 +370,7 @@ class ExtractionPipeline:
                 source_id=document.id,
                 model=self._provider.model,
                 reference_date=document.published_at,
+                observed_at=observed_at,
             )
             parts.append(mapped)
             # Here and not after the fold: `merge_extractions` deduplicates
@@ -441,6 +452,7 @@ class ExtractionPipeline:
         tenant_id: TenantId,
         *,
         allow_partial: bool = False,
+        observed_at: datetime | None = None,
         result: PipelineResult | None = None,
     ) -> DocumentExtracted | None:
         """Extract `document` and record the run on `aggregate`.
@@ -453,6 +465,15 @@ class ExtractionPipeline:
             document: The content.
             tenant_id: The tenant the run belongs to.
             allow_partial: Record even though chunks failed. See below.
+            observed_at: The observation instant, when this method has to run
+                the extraction itself. Required in that case and ignored
+                otherwise -- a supplied `result` already carries the instant
+                its own caller chose, and taking a second one here would be
+                two declaration sites for one fact. `None` with no `result` is
+                refused rather than defaulted to a clock: this layer is below
+                `composition`, and defaulting is how the determinism
+                `observed_at` exists to provide would leak away one caller at
+                a time.
             result: An extraction of this document already in hand. Supplied
                 by a caller that needed the `PipelineResult`'s counters as
                 well as the event -- `redstring.composition.build_graph` is
@@ -485,9 +506,17 @@ class ExtractionPipeline:
             PartialExtractionError: Chunks failed and `allow_partial` is
                 False. Nothing is recorded -- the aggregate is untouched, so
                 the refusal cannot itself cause the damage it prevents.
+            ValueError: Neither `result` nor `observed_at` was given, so there
+                is an extraction to run and no instant to stamp it with.
         """
         if result is None:
-            result = await self.extract(document, tenant_id)
+            if observed_at is None:
+                raise ValueError(
+                    "record() must be given either a `result` or an `observed_at`: "
+                    "extracting here needs an observation instant, and this layer "
+                    "reads no clock"
+                )
+            result = await self.extract(document, tenant_id, observed_at=observed_at)
         if result.failed_chunks and not allow_partial:
             raise PartialExtractionError(
                 source_id=document.id,

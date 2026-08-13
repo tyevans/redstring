@@ -18,7 +18,7 @@ class Relationship(BaseModel):
     source_entity_id: EntityId
     target_entity_id: EntityId
     relationship_type: str
-    #: Which document stated this edge, matching `Entity.source_id`.
+    #: Which document stated this edge, matching `Entity.provenance.source_id`.
     #:
     #: Optional for the reason `Entity`'s is: this reaches the event log, and
     #: an event written before the field existed replays without it. `None`

@@ -1,15 +1,21 @@
 """The `Document` aggregate: extraction is idempotent per model version."""
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 
 from redstring.aggregates.document import Document
 from redstring.domain.chunk import StoredChunk, chunk_id
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.vector import VectorRecord
 from redstring.events import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.streams import document_stream
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 17, 11, 7, tzinfo=UTC)
 
 SOURCE_ID = "doc-1"
 MODEL = "ollama/qwen3.6-27b"
@@ -33,9 +39,12 @@ def _entity(tenant_id, name="Ada Lovelace"):
         name=name,
         normalized_name=name.lower(),
         entity_type="person",
-        source_id=SOURCE_ID,
-        extraction_method=ExtractionMethod.PATTERN,
-        confidence=0.9,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=0.9,
+            source_id=SOURCE_ID,
+        ),
     )
 
 

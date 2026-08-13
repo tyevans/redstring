@@ -279,7 +279,7 @@ test that asserts the *wrong value*. Its more common sibling is a test that
 asserts a right value under an input that cannot tell the right
 implementation from a wrong one — same outcome, no observably bad assertion,
 and it survives review because it reads correctly. That catalogue is not
-repeated here: **CLAUDE.md carries the eighteen-row table of failure shapes**
+repeated here: **CLAUDE.md carries the table of failure shapes**
 this project has actually hit (interned string literals hiding `is` for `==`,
 a chain graph hiding first-found for shortest-path, ids from `uuid4()` hiding
 a composite key compared on one component, an expectation written in terms of

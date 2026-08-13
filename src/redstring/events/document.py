@@ -103,7 +103,12 @@ def _reject_foreign_tenants(
 class DocumentExtracted(TenantDomainEvent):
     """Everything one extraction run found in one document."""
 
-    event_version: int = 1
+    #: 2 since `Entity`'s five provenance fields moved onto a nested
+    #: `Provenance` and gained a required `observed_at`, so no payload written
+    #: against the v1 shape validates. See
+    #: `docs/adr/0035-provenance-is-a-value-object.md`; the expected value is
+    #: pinned in `tests/unit/events/test_schema.py`.
+    event_version: int = 2
     aggregate_type: str = DOCUMENT_CATEGORY
 
     source_id: SourceId
@@ -115,7 +120,11 @@ class DocumentExtracted(TenantDomainEvent):
     def _payloads_belong_to_this_document_and_tenant(self) -> DocumentExtracted:
         _reject_foreign_tenants(self, self.entities, "entities")
         _reject_foreign_tenants(self, self.relationships, "relationships")
-        strays = {e.source_id for e in self.entities if e.source_id != self.source_id}
+        strays = {
+            e.provenance.source_id
+            for e in self.entities
+            if e.provenance.source_id != self.source_id
+        }
         if strays:
             raise ValueError(
                 f"entities must be attributed to the document they were extracted "

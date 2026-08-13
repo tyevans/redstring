@@ -34,12 +34,26 @@ So the eight values below are **this extractor's vocabulary** -- what
 Schema.org's type hierarchy collapses to here -- and not the library's. They
 are pinned as literals in `tests/unit/extraction/test_schema_org.py`, which
 is now the only record of what the enum's members were.
+
+## The dicts returned here are not `Entity`, and never were
+
+Both extractors return plain dicts whose flat `method` / `confidence` /
+`source_text` keys read like the fields `Entity` carried before they moved
+onto `domain.provenance.Provenance`. They are **not** those fields renamed,
+and the keys were left flat deliberately rather than restructured to match:
+`type` is not `entity_type`, `external_ids` is not an `Entity` field at all,
+and nothing here supplies the `source_id`, `tenant_id` or the now-required
+`observed_at` an `Entity` needs. Nothing in the tree maps one of these onto an
+`Entity` -- the only consumers are this module's own tests -- so restructuring
+them would be inventing a correspondence that does not exist and would make
+the next reader look for the mapping code. Whoever writes that mapping builds
+a `Provenance` at that point, the way `extraction/mapping.py` does.
 """
 
 import logging
 from typing import Any
 
-from redstring.domain.entity import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod
 
 logger = logging.getLogger(__name__)
 

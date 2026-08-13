@@ -23,6 +23,7 @@ by delegating to one.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -39,6 +40,10 @@ from redstring.extraction.domains import get_domain_schema
 from redstring.llm.adapters.fake import FakeLlmProvider
 
 TENANT_ID = uuid4()
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 16, 11, 7, tzinfo=UTC)
 
 
 class RecordingProvider:
@@ -101,7 +106,9 @@ class TestTheDomainPromptReachesTheModel:
             provider, system_prompt=domain_system_prompt("literature_fiction")
         )
 
-        await pipeline.extract(SourceDocument(id="doc-1", text="Hamlet met Ophelia."), TENANT_ID)
+        await pipeline.extract(
+            SourceDocument(id="doc-1", text="Hamlet met Ophelia."), TENANT_ID, observed_at=OBSERVED
+        )
 
         assert provider.system_prompts, "the pipeline made no model call at all"
         assert set(provider.system_prompts) == {domain_system_prompt("literature_fiction")}
@@ -110,7 +117,9 @@ class TestTheDomainPromptReachesTheModel:
         provider = RecordingProvider()
         pipeline = ExtractionPipeline(provider)
 
-        await pipeline.extract(SourceDocument(id="doc-1", text="Hamlet met Ophelia."), TENANT_ID)
+        await pipeline.extract(
+            SourceDocument(id="doc-1", text="Hamlet met Ophelia."), TENANT_ID, observed_at=OBSERVED
+        )
 
         assert set(provider.system_prompts) == {DEFAULT_SYSTEM_PROMPT}
 

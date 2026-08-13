@@ -9,6 +9,7 @@ every validation-only test would still pass.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -25,6 +26,10 @@ from redstring.extraction.mapping import map_extraction
 from redstring.extraction.schema import Extraction
 
 TENANT = UUID("11111111-1111-1111-1111-111111111111")
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 8, 11, 7, tzinfo=UTC)
 
 NEWS = "news_journalism"
 
@@ -163,7 +168,12 @@ class TestItStaysReadableDownstream:
         )
 
         mapped = map_extraction(
-            answer, tenant_id=TENANT, source_id="doc-1", model="fake/v1", reference_date=None
+            answer,
+            tenant_id=TENANT,
+            source_id="doc-1",
+            model="fake/v1",
+            reference_date=None,
+            observed_at=OBSERVED,
         )
 
         assert sorted(e.name for e in mapped.entities) == ["Maria Chen", "Northwind Energy"]

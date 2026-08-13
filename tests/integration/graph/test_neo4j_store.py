@@ -41,10 +41,11 @@ from uuid import uuid4
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import MissingEntityError
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.graph.adapters.neo4j import Neo4jGraphStore
-from redstring.testing.graph_store import GraphStoreCompliance
+from redstring.testing.graph_store import EXAMPLE_OBSERVED_AT, GraphStoreCompliance
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -387,7 +388,7 @@ class TestNeo4jSpecifics:
         found = await store.get_entity(entity.id, tenant)
         assert found is not None
         assert found.description == ""
-        assert found.source_text == ""
+        assert found.provenance.source_text == ""
 
     # ------------------------------------------------------------------
     # Round-trip cost
@@ -591,14 +592,27 @@ def _counting(store: Neo4jGraphStore, monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 def _entity(*, tenant: Any, **overrides: Any) -> Entity:
+    """`source_text` and the rest of the moved five are routed into
+    `Provenance`, so a caller here can keep naming a flat field."""
+    provenance: dict[str, Any] = {
+        "observed_at": EXAMPLE_OBSERVED_AT,
+        "extraction_method": ExtractionMethod.MANUAL,
+        "confidence": 1.0,
+    }
+    provenance.update(
+        {
+            key: overrides.pop(key)
+            for key in list(overrides)
+            if key in {"source_id", "source_text", "model", "extraction_method", "confidence"}
+        }
+    )
     fields: dict[str, Any] = {
         "id": uuid4(),
         "tenant_id": tenant,
         "name": "Ada Lovelace",
         "normalized_name": "ada lovelace",
         "entity_type": "person",
-        "extraction_method": ExtractionMethod.MANUAL,
-        "confidence": 1.0,
+        "provenance": Provenance(**provenance),
     }
     fields.update(overrides)
     return Entity(**fields)

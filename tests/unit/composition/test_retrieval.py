@@ -7,6 +7,7 @@ a router keyed on a deleted model with a fully green suite.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -19,14 +20,19 @@ from redstring.domain.blocking import (
     query_blocking_keys,
     soundex_key_for_name,
 )
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.fusion import reciprocal_rank_fusion
 from redstring.domain.normalization import normalize_name
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.retrieval import RetrievalMode
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
 from redstring.vector.adapters.memory import InMemoryVectorStore
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 9, 11, 7, tzinfo=UTC)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -63,8 +69,11 @@ def _entity(
         normalized_name=normalize_name(name),
         entity_type=entity_type,
         properties=properties or {},
-        extraction_method=ExtractionMethod.MANUAL,
-        confidence=1.0,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.MANUAL,
+            confidence=1.0,
+        ),
     )
     keys = blocking_keys if blocking_keys is not None else blocking_keys_for(entity)
     return entity.model_copy(update={"blocking_keys": keys})

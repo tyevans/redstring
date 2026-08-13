@@ -803,7 +803,7 @@ def test_confidence_out_of_range_rejected(confidence): ...
 
 Those four came from a real survivor: `st.floats().filter(...)` reaches the far
 extremes readily and the immediate neighbourhood of `1.0` rarely, so a mutant
-widening `Entity.confidence`'s bound to `<= 2.0` survived the property
+widening `Provenance.confidence`'s bound to `<= 2.0` survived the property
 entirely. The strategy *can* draw the killing value; on the runs that mattered
 it did not.
 
@@ -909,7 +909,7 @@ specifically, and both are invisible in review:
 
 - **A builder that passes every field never executes the type's defaults.**
   `entity()` above fills `id`, `tenant_id`, `source_id`, `name`,
-  `normalized_name`, `entity_type`, `extraction_method` and `confidence`, so
+  `normalized_name`, `entity_type` and a fully-populated `provenance`, so
   no test going through it can observe a wrong default on `Entity` — while the
   type's own signature openly invites direct construction. Construct the type
   directly in at least one test per public type.

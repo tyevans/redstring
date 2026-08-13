@@ -152,7 +152,7 @@ signatures match — a wrapper with the wrong `extract` signature passes
 rather than relying on the runtime check.
 
 **Delegate `model`; never answer with your own name.** `model` is provenance,
-not configuration: its value is copied onto `Entity.model` and lands in a
+not configuration: its value is copied onto `Entity.provenance.model` and lands in a
 durable event log, where "re-extract everything the old model touched" has to
 stay answerable. A wrapper that returns `"hardened"` — or a fixed string it
 was constructed with — writes a model identity into that log that no model

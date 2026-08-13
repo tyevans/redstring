@@ -24,17 +24,23 @@ Two shapes CLAUDE.md warns about are avoided deliberately:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.extraction.schema_org import (
     SCHEMA_TYPE_MAP,
     _map_og_type,
     extract_entities_from_open_graph,
     extract_entities_from_schema_org,
 )
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 7, 11, 7, tzinfo=UTC)
 
 #: What the deleted `EntityType` enum's members were, as strings. Pinned here
 #: because nothing else records them once `models/` is gone.
@@ -85,8 +91,11 @@ class TestEntityTypeIsAStringAndNotAnEnum:
             name=entity["name"],
             normalized_name="ada",
             entity_type=entity["type"],
-            extraction_method=entity["method"],
-            confidence=entity["confidence"],
+            provenance=Provenance(
+                observed_at=OBSERVED,
+                extraction_method=entity["method"],
+                confidence=entity["confidence"],
+            ),
         )
         assert constructed.entity_type == "person"
 

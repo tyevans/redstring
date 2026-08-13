@@ -138,7 +138,7 @@ class TestTheDetectorItself:
         anything else, so no caller can route a NUL through it -- and listing
         it in the validator would be noise that implies the opposite.
         """
-        from redstring.domain.entity import ExtractionMethod
+        from redstring.domain.provenance import ExtractionMethod
 
         assert issubclass(ExtractionMethod, str)
         assert not _can_hold_text(ExtractionMethod)

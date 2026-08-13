@@ -24,6 +24,7 @@ third event writes `e0->e2` and the merge stands.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -36,11 +37,16 @@ from redstring.aggregates.repositories import (
     document_repository,
 )
 from redstring.domain.consolidation import RelationshipRedirection
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.events.streams import consolidation_stream, document_stream
 
 from .conftest import fresh_rig
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 8, 11, 7, tzinfo=UTC)
 
 SOURCE_ID = "doc-1"
 FIRST_MODEL = "ollama/qwen3.6-27b"
@@ -59,9 +65,12 @@ def _entity(tenant_id, entity_id, name):
         name=name,
         normalized_name=name.lower(),
         entity_type="person",
-        source_id=SOURCE_ID,
-        extraction_method=ExtractionMethod.PATTERN,
-        confidence=0.9,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=0.9,
+            source_id=SOURCE_ID,
+        ),
     )
 
 

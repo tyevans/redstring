@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -64,9 +64,10 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from redstring.domain.alias import Alias
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import MissingEntityError
 from redstring.domain.ids import EntityId, RelationshipId, TenantId
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.ports.graph_store import GraphStore
@@ -98,6 +99,19 @@ compliance_settings = settings(
     max_examples=DEFAULT_MAX_EXAMPLES,
     suppress_health_check=[HealthCheck.too_slow],
 )
+
+
+#: The `observed_at` every example-based entity carries.
+#:
+#: Deliberately awkward, and every part of it is load-bearing. It is **not
+#: midnight**, **not UTC**, and **not whole-minute**: a value that is any of
+#: those round-trips unchanged through an implementation that truncates to a
+#: date, normalises the offset away, or stores seconds only. The offset is the
+#: sharp one -- Neo4j's driver returns a `neo4j.time.DateTime` whose conversion
+#: back is lossy for offsets Python spells differently, which is why the
+#: adapter stores ISO text and why a UTC fixture here would have agreed with
+#: the lossy implementation.
+EXAMPLE_OBSERVED_AT = datetime(2026, 3, 1, 14, 45, 30, tzinfo=timezone(timedelta(hours=-5)))
 
 
 def _mutate(entity: Entity) -> None:
@@ -220,6 +234,29 @@ class GraphStoreCompliance:
 
         assert stored is not None
         assert stored.temporal is None
+
+    async def test_an_entitys_observed_at_survives_a_round_trip(self, store: GraphStore) -> None:
+        """Neo4j stores this as ISO text on purpose -- the driver's
+        `neo4j.time.DateTime` round-trip is lossy for offsets, which
+        `_alias_row` already documents for `merged_at`. A midnight UTC value
+        would round-trip through every wrong implementation too.
+
+        So the assertions are on the parts a truncating or normalising
+        implementation would lose, not on the instant: `==` alone is satisfied
+        by an adapter that converts `14:45:30-05:00` to `19:45:30+00:00`,
+        because those *are* the same moment. `utcoffset` is what tells them
+        apart.
+        """
+        tenant = TenantId(uuid4())
+        entity = _example_entity(tenant=tenant)
+
+        await store.upsert_entity(entity)
+        stored = await store.get_entity(entity.id, tenant)
+
+        assert stored is not None
+        assert stored.provenance.observed_at == EXAMPLE_OBSERVED_AT
+        assert stored.provenance.observed_at.utcoffset() == timedelta(hours=-5)
+        assert stored.provenance.observed_at.second == 30
 
     # ------------------------------------------------------------------
     # Property 2 -- idempotency
@@ -1714,8 +1751,11 @@ def _example_entity(*, tenant: TenantId, **overrides: Any) -> Entity:  # noqa: A
         "name": "Ada Lovelace",
         "normalized_name": "ada lovelace",
         "entity_type": "person",
-        "extraction_method": ExtractionMethod.MANUAL,
-        "confidence": 1.0,
+        "provenance": Provenance(
+            observed_at=EXAMPLE_OBSERVED_AT,
+            extraction_method=ExtractionMethod.MANUAL,
+            confidence=1.0,
+        ),
     }
     fields.update(overrides)
     return Entity(**fields)

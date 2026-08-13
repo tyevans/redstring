@@ -17,10 +17,10 @@ from typing import Any
 from hypothesis import assume
 from hypothesis import strategies as st
 
-from redstring.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
+from redstring.domain.provenance import MODEL_BEARING_METHODS, ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 
@@ -52,7 +52,7 @@ names = text(min_size=1, max_size=40).filter(lambda s: bool(s.strip()))
 entity_types = st.sampled_from(["person", "organization", "place", "concept", "plot_point"])
 relationship_types = st.sampled_from(["knows", "works_at", "located_in", "mentions", "part_of"])
 blocking_key_values = text(min_size=1, max_size=12)
-# Provider-qualified and versioned, per the convention on `Entity.model`.
+# Provider-qualified and versioned, per the convention on `Provenance.model`.
 model_names = st.sampled_from(
     [
         "ollama/qwen3.6-27b-mtp",
@@ -77,6 +77,15 @@ property_dicts = st.dictionaries(
     max_size=4,
 )
 
+# Two things this strategy deliberately cannot see, now that `observed_at` is a
+# *compared* value rather than one that is only round-tripped: every draw is
+# UTC, so an adapter that normalises an offset away passes every property here,
+# and microsecond resolution over 400 years means two draws effectively never
+# coincide, so no property exercises a tie. Both gaps are covered by explicit
+# examples instead of by widening this -- `EXAMPLE_OBSERVED_AT` in
+# `src/redstring/testing/graph_store.py` carries a -05:00 offset for the first,
+# and the small `sampled_from` sets in `tests/unit/domain/test_merge_strategy.py`
+# force simultaneous claims for the second.
 aware_datetimes = st.datetimes(
     # Naive bounds because `st.datetimes` requires them naive when no
     # `timezones=` is given; every drawn value is made aware by the `.map`
@@ -123,16 +132,25 @@ def entities(
         entity_type=draw(entity_types),
         original_entity_type=draw(st.none() | names),
         description=draw(st.none() | text(max_size=40)),
-        source_id=draw(st.none() | text(min_size=1, max_size=12).map(SourceId)),
-        source_text=draw(st.none() | text(max_size=40)),
         external_ids=draw(st.dictionaries(text(max_size=6), text(max_size=12), max_size=3)),
         properties=draw(property_dicts),
-        extraction_method=method,
-        # `Entity` rejects `model` for methods that invoke none; the strategy
-        # mirrors the validator rather than restating it, so widening the rule
-        # in one place cannot silently stop being generated in the other.
-        model=draw(st.none() | model_names) if method in MODEL_BEARING_METHODS else None,
-        confidence=draw(confidences),
+        provenance=Provenance(
+            # **Drawn, not fixed.** A generator handing every entity the same
+            # instant makes every `observed_at` comparison a tie, and the
+            # compliance suites would then pass against an adapter that
+            # dropped the field entirely -- the round trip would compare equal
+            # because there is only one value in play.
+            observed_at=draw(aware_datetimes),
+            extraction_method=method,
+            confidence=draw(confidences),
+            source_id=draw(st.none() | text(min_size=1, max_size=12).map(SourceId)),
+            source_text=draw(st.none() | text(max_size=40)),
+            # `Provenance` rejects `model` for methods that invoke none; the
+            # strategy mirrors the validator rather than restating it, so
+            # widening the rule in one place cannot silently stop being
+            # generated in the other.
+            model=draw(st.none() | model_names) if method in MODEL_BEARING_METHODS else None,
+        ),
         temporal=draw(st.none() | temporal_extents()),
         blocking_keys=draw(st.none() | st.frozensets(blocking_key_values, max_size=4)),
     )

@@ -120,7 +120,8 @@ async def _merge_blind_to_a_later_edge(rig, tenant_id):
     # seen. After the merge these two are the same edge.
     unseen = edge(tenant_id, source=absorbed.id, target=outsider.id, kind="worked_on")
     in_doc_2 = [
-        e.model_copy(update={"source_id": "doc-2"}) for e in (canonical, absorbed, outsider)
+        e.model_copy(update={"provenance": e.provenance.model_copy(update={"source_id": "doc-2"})})
+        for e in (canonical, absorbed, outsider)
     ]
     await rig.extract("doc-2", in_doc_2, [unseen], "m1")
 

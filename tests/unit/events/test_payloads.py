@@ -5,6 +5,7 @@ it writes each payload under the payload's own `tenant_id`, so a foreign
 tenant in a payload is a silent cross-tenant write rather than a failure.
 """
 
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -12,7 +13,8 @@ from pydantic import ValidationError
 
 from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.consolidation import RelationshipRedirection
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.vector import VectorRecord
 from redstring.events import (
@@ -42,16 +44,31 @@ TENANT_IDS = ["sorts-below", "sorts-above"]
 OTHER_SOURCES = ["doc-0", "doc-2"]
 
 
-def _entity(tenant_id, **overrides):
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 17, 11, 7, tzinfo=UTC)
+
+
+def _entity(tenant_id, *, source_id=SOURCE_ID, **overrides):
+    """`source_id` is a named parameter rather than an `overrides` key.
+
+    It moved to `Provenance`, and several tests here pass a *foreign* one to
+    prove `DocumentExtracted` rejects it -- so the builder has to route it
+    into the nested model rather than let it land on `Entity`, where it would
+    now be an unknown field.
+    """
     fields = {
         "id": uuid4(),
         "tenant_id": tenant_id,
         "name": "Ada Lovelace",
         "normalized_name": "ada lovelace",
         "entity_type": "person",
-        "source_id": SOURCE_ID,
-        "extraction_method": ExtractionMethod.PATTERN,
-        "confidence": 0.9,
+        "provenance": Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=0.9,
+            source_id=source_id,
+        ),
     }
     fields.update(overrides)
     return Entity(**fields)
@@ -173,7 +190,7 @@ class TestDocumentExtracted:
         """
         tenant_id = uuid4()
         event = _extracted(tenant_id, entities=[_entity(tenant_id)])
-        assert event.entities[0].source_id == event.source_id
+        assert event.entities[0].provenance.source_id == event.source_id
 
 
 class TestDocumentChunked:

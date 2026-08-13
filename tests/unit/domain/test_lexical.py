@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.lexical import PROPERTY_WEIGHT, lexical_score
 from redstring.domain.normalization import normalize_name
+from redstring.domain.provenance import ExtractionMethod, Provenance
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 14, 11, 7, tzinfo=UTC)
 
 
 def _entity(
@@ -24,8 +30,11 @@ def _entity(
         normalized_name=normalized_name if normalized_name is not None else normalize_name(name),
         entity_type="person",
         properties=properties or {},
-        extraction_method=ExtractionMethod.MANUAL,
-        confidence=1.0,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.MANUAL,
+            confidence=1.0,
+        ),
     )
 
 

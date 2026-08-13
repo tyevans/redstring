@@ -17,10 +17,44 @@ from eventsource.domain.event_registry import default_registry, get_event_class
 from redstring.events import KG_EVENT_TYPES
 from redstring.events.streams import CONSOLIDATION_CATEGORY, DOCUMENT_CATEGORY
 
+#: The schema version of every event, by wire name, written out by hand.
+#:
+#: A version is a wire fact -- it is what tells an upcaster which shape a
+#: stored payload has -- so it is pinned the way
+#: `tests/unit/test_enum_values_are_a_wire_format.py` pins the other wire
+#: facts: typed out, never derived. An expectation written as
+#: `{t.__name__: t.model_fields["event_version"].default for t in ...}` is true
+#: for every possible number including the wrong one, which is CLAUDE.md's row
+#: about an expectation stated in terms of the thing under test.
+#:
+#: This replaced a blanket `default == 1`, which stopped being sayable when
+#: `DocumentExtracted` went to 2 (see
+#: `docs/adr/0035-provenance-is-a-value-object.md` and 0001's Consequences).
+#: The half of that
+#: assertion worth keeping -- an event must not merely *inherit* its version --
+#: is the `__annotations__` check below, and it is what the blanket number was
+#: never doing.
+EXPECTED_EVENT_VERSIONS: dict[str, int] = {
+    "DocumentChunked": 1,
+    "DocumentExtracted": 2,
+    "EntitiesEmbedded": 1,
+    "EntitiesMerged": 1,
+    "MergeUndone": 1,
+}
+
 
 def test_the_schema_is_not_empty():
     """A registry-driven suite over an empty registry passes vacuously."""
     assert len(KG_EVENT_TYPES) >= 4
+
+
+def test_every_event_has_a_pinned_expected_version():
+    """The table is a hand-kept list, so it needs the usual staleness guard.
+
+    An entry for an event that no longer exists, or an event with no entry,
+    both make the parametrised check below quietly stop describing the schema.
+    """
+    assert EXPECTED_EVENT_VERSIONS.keys() == {t.__name__ for t in KG_EVENT_TYPES}
 
 
 @pytest.mark.parametrize("event_type", KG_EVENT_TYPES, ids=lambda t: t.__name__)
@@ -35,7 +69,20 @@ def test_every_event_declares_its_schema_version_explicitly(event_type):
     assert "event_version" in event_type.__annotations__, (
         f"{event_type.__name__} inherits event_version instead of declaring it"
     )
-    assert event_type.model_fields["event_version"].default == 1
+
+
+@pytest.mark.parametrize("event_type", KG_EVENT_TYPES, ids=lambda t: t.__name__)
+def test_every_event_is_at_the_version_written_down_for_it(event_type):
+    """A version bump is a migration, and must be a visible edit to a table.
+
+    The `__annotations__` check says somebody wrote *a* number; this says which
+    one, so a payload shape changing without the version moving -- or the
+    version moving without anyone deciding to -- fails here.
+    """
+    assert (
+        event_type.model_fields["event_version"].default
+        == EXPECTED_EVENT_VERSIONS[event_type.__name__]
+    )
 
 
 @pytest.mark.parametrize("event_type", KG_EVENT_TYPES, ids=lambda t: t.__name__)

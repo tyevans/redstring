@@ -15,6 +15,7 @@ the edges as they are *now*, after earlier merges moved them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
 from eventsource.domain.tenant_context import tenant_scope
@@ -26,13 +27,18 @@ from redstring.aggregates.repositories import (
 )
 from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.consolidation import RelationshipRedirection
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import ConsolidationInvariantError
+from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import consolidation_stream, document_stream
 
 from .conftest import DIMENSION, SOURCE_IDS
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 6, 11, 7, tzinfo=UTC)
 
 MODEL = "ollama/qwen3.6-27b"
 EMBEDDING_MODEL = "ollama/nomic-embed-text"
@@ -200,9 +206,12 @@ def _entity(tenant_id, tenant: int, document: int, index: int) -> Entity:
         name=name,
         normalized_name=name,
         entity_type="thing",
-        source_id=f"doc-{document}",
-        extraction_method=ExtractionMethod.PATTERN,
-        confidence=0.5,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=0.5,
+            source_id=f"doc-{document}",
+        ),
     )
 
 

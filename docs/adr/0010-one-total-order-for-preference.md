@@ -516,10 +516,27 @@ share. Any fifth caller should do the same.
 **Property-level merging is a separate mechanism, deliberately.** The order
 picks a whole object: the winner keeps its own `properties` and the loser's are
 discarded. Reconciling values across the objects a *merge* combines is
-`domain/merge_strategy.py`, which implements `PREFER_CANONICAL` and `UNION` and
-raises on the other three rather than falling back (BACKLOG B28). Extraction
-has no equivalent, and giving it one would be a new decision, not an extension
-of this one.
+`domain/merge_strategy.py`, which raises rather than falling back on anything
+it cannot answer (BACKLOG B28). Extraction has no equivalent, and giving it one
+would be a new decision, not an extension of this one.
+
+**The claim order composes with this one rather than competing with it** — see
+[`0035` provenance is a value object](0035-provenance-is-a-value-object.md).
+`merge_strategy` now ranks a single property's *claims* on a tuple of its own,
+appending the origin id for totality exactly as `duplicate_preference` appends
+`str(id)` above. That is the composition rule of the previous paragraph applied
+to a narrower subject, not a second answer to this ADR's question: the fields
+it ranks on belong to the observation and the fields ranked here belong to the
+entity, and neither order can be expressed in the other's terms. **A future
+edit that makes one call the other is the defect this ADR exists to prevent,
+arriving from the side.**
+
+The fields this order reads have moved without changing: `confidence`,
+`source_id`, `extraction_method` and `model` are reached through
+`entity.provenance` rather than off `Entity` directly, so the tuples quoted in
+the Decision above are spelled differently in the source and rank identically.
+There is no forwarding property, deliberately — a second way to spell the same
+read is a second declaration site.
 
 The value types the order compares are described in
 [Domain value types](../reference/domain-value-types.md); what a resolved

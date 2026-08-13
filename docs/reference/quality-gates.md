@@ -1031,7 +1031,7 @@ warn_untyped_fields = true
 
 **`init_typed`** is the load-bearing one. It synthesises each model's
 `__init__` from its field types, so a constructor *call* is checked against
-them. Without it `Entity(confidence="high")` type-checks clean and fails only
+them. Without it `Provenance(confidence="high")` type-checks clean and fails only
 at runtime — which defeats the point of typing a domain model whose whole job
 is enforcing invariants. `init_forbid_extra` rejects a keyword no field
 declares (a typo'd field name is otherwise silently dropped);

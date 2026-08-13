@@ -18,6 +18,7 @@ So each test below reads the *store* after the call, not the returned event.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -28,22 +29,30 @@ from redstring import (
     Entity,
     ExtractionMethod,
     InMemoryGraphStore,
+    Provenance,
     Relationship,
     UnknownMergeError,
 )
 from redstring.domain.blocking import blocking_keys_for
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 5, 11, 7, tzinfo=UTC)
 
 
 def entity(tenant_id, name, *, entity_id=None):
     built = Entity(
         id=entity_id or uuid4(),
         tenant_id=tenant_id,
-        source_id="doc-1",
         name=name,
         normalized_name=name.lower(),
         entity_type="person",
-        extraction_method=ExtractionMethod.MANUAL,
-        confidence=1.0,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.MANUAL,
+            confidence=1.0,
+            source_id="doc-1",
+        ),
     )
     return built.model_copy(update={"blocking_keys": blocking_keys_for(built)})
 

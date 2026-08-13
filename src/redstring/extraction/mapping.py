@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from uuid import NAMESPACE_URL, uuid5
 
 from redstring.domain.blocking import blocking_keys_for
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, RelationshipId
 from redstring.domain.json_safety import has_unstorable_text
 from redstring.domain.normalization import normalize_name
@@ -57,6 +57,7 @@ from redstring.domain.normalization import normalize_name
 # every test already name it here, and because the alternative -- two
 # definitions -- is what `domain/preference.py` exists to prevent.
 from redstring.domain.preference import preference, relationship_preference
+from redstring.domain.provenance import MODEL_BEARING_METHODS, ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import TemporalExtent
 from redstring.domain.temporal_parsing import AmbiguousReferenceDateError, parse_temporal
@@ -72,10 +73,12 @@ if TYPE_CHECKING:
 #: every relationship ever written.
 _RELATIONSHIP_NAMESPACE = uuid5(NAMESPACE_URL, "urn:redstring:relationship")
 
-#: The methods that may carry `Entity.model`. Mirrors `Entity`'s own rule so
-#: that a missing provenance string is caught here, where the fix is obvious,
-#: rather than passing `Entity` validation and reaching the log unattributed.
-_MODEL_BEARING = frozenset({ExtractionMethod.LLM, ExtractionMethod.HYBRID})
+#: The methods that may carry `Provenance.model`. Imported rather than
+#: restated: this module checks the rule *early*, so that a missing provenance
+#: string is caught here where the fix is obvious rather than reaching the log
+#: unattributed -- but checking it early against a second copy of the
+#: membership set is how the two quietly stop agreeing.
+_MODEL_BEARING = MODEL_BEARING_METHODS
 
 
 class MappedExtraction(NamedTuple):
@@ -147,6 +150,7 @@ def map_extraction(
     source_id: SourceId,
     model: str | None,
     reference_date: datetime | None,
+    observed_at: datetime,
     method: ExtractionMethod = ExtractionMethod.LLM,
 ) -> MappedExtraction:
     """Map one model answer onto domain types.
@@ -168,6 +172,17 @@ def map_extraction(
             means "this document is undated", and expressions that need a
             vantage point are then dropped and counted rather than resolved
             against today.
+        observed_at: When this library was told -- *record* time, stamped onto
+            every entity's `Provenance`. Distinct from `reference_date`, which
+            is *world* time: a document published in 1923 and extracted today
+            has both, and neither is inferred from the other. Required and
+            read from the caller for the same reason `reference_date` is, and
+            the reason is sharper here: a clock in this module would make a
+            re-extraction of one document stamp its entities differently on
+            every run, so the same input would stop producing the same
+            `DocumentExtracted`. One instant for the whole document, not one
+            per chunk -- two entities from one document differing by
+            milliseconds is a difference no reader could act on.
         method: How these were derived. Defaults to `LLM` because that is what
             this module exists for; `PATTERN` and the rest are for callers
             mapping non-model extractions through the same code.
@@ -202,6 +217,7 @@ def map_extraction(
             model=model,
             method=method,
             reference_date=reference_date,
+            observed_at=observed_at,
         )
         undatable += was_undatable
         if built is None:
@@ -232,6 +248,7 @@ def _build_entity(
     model: str | None,
     method: ExtractionMethod,
     reference_date: datetime | None,
+    observed_at: datetime,
 ) -> tuple[Entity | None, bool]:
     """One `ExtractedEntity` as an `Entity`, or None if the domain refuses it.
 
@@ -270,11 +287,14 @@ def _build_entity(
         normalized_name=normalize_name(candidate.name),
         entity_type=candidate.entity_type,
         description=candidate.description,
-        source_id=source_id,
         properties=dict(candidate.properties),
-        extraction_method=method,
-        model=model,
-        confidence=candidate.confidence,
+        provenance=Provenance(
+            observed_at=observed_at,
+            extraction_method=method,
+            confidence=candidate.confidence,
+            source_id=source_id,
+            model=model,
+        ),
         temporal=temporal,
     )
     # Blocking keys are computed **here**, at extraction time, and stored on

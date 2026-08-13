@@ -13,11 +13,12 @@ than arithmetic.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 
-from redstring import Entity, ExtractionMethod, Relationship
+from redstring import Entity, ExtractionMethod, Provenance, Relationship
 from tests.accuracy.scoring import (
     ExpectedEntity,
     ExpectedRelationship,
@@ -27,6 +28,10 @@ from tests.accuracy.scoring import (
 )
 
 TENANT = uuid4()
+
+#: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
+#: varies per run makes any comparison on `observed_at` non-deterministic.
+OBSERVED = datetime(2026, 2, 11, 11, 7, tzinfo=UTC)
 
 
 def entity(name: str, entity_type: str = "person") -> Entity:
@@ -46,9 +51,12 @@ def entity(name: str, entity_type: str = "person") -> Entity:
         name=name,
         normalized_name=name.strip().lower(),
         entity_type=entity_type,
-        source_id="corpus",
-        extraction_method=ExtractionMethod.LLM,
-        confidence=1.0,
+        provenance=Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.LLM,
+            confidence=1.0,
+            source_id="corpus",
+        ),
     )
 
 
