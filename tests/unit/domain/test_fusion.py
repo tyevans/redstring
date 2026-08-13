@@ -118,6 +118,18 @@ def test_ties_break_on_the_id_ascending() -> None:
     assert [chunk_id for chunk_id, _ in fused] == ["aaa", "zzz"]
 
 
+def test_ties_break_on_the_lowercased_id_not_the_raw_ascii_order() -> None:
+    """Excludes a tie-break that dropped `.lower()`.
+
+    Uppercase letters sort before lowercase in ASCII, so raw and lowercased
+    order genuinely disagree here: raw order puts "Zebra" before "apple",
+    lowercased order puts "apple" before "zebra". Without `.lower()` in the
+    tie-break, this would return ["Zebra", "apple"].
+    """
+    fused = reciprocal_rank_fusion([["Zebra", "apple"], ["apple", "Zebra"]])
+    assert [chunk_id for chunk_id, _ in fused] == ["apple", "Zebra"]
+
+
 def test_a_chunk_outside_k_in_both_channels_can_beat_a_first_place() -> None:
     """The property `overfetch` exists for, stated as an example.
 
