@@ -29,7 +29,8 @@ from eventsource.ports.positions import ExpectedVersion
 
 from redstring.aggregates.consolidation_log import ConsolidationLog
 from redstring.aggregates.document import Document
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod
 from redstring.events import DocumentExtracted
 from redstring.events.streams import consolidation_stream, document_stream
 

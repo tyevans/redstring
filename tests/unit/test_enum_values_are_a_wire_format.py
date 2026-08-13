@@ -36,9 +36,9 @@ import pytest
 import redstring
 from redstring.consolidation.policy import MergeDecision
 from redstring.domain.blocking import BlockingKeyStrategy
-from redstring.domain.entity import ExtractionMethod
 from redstring.domain.interval import TemporalRelation
 from redstring.domain.merge_strategy import PropertyMergeStrategy
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.retrieval import RetrievalMode
 from redstring.domain.temporal import DatePrecision, UncertaintyMarker
 from redstring.llm.circuit_breaker import CircuitState

@@ -19,10 +19,11 @@ from redstring.domain.blocking import (
     query_blocking_keys,
     soundex_key_for_name,
 )
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.fusion import reciprocal_rank_fusion
 from redstring.domain.normalization import normalize_name
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.retrieval import RetrievalMode
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider

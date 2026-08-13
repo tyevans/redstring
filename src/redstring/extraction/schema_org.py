@@ -39,7 +39,7 @@ is now the only record of what the enum's members were.
 import logging
 from typing import Any
 
-from redstring.domain.entity import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod
 
 logger = logging.getLogger(__name__)
 

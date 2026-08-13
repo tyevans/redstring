@@ -7,7 +7,8 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
 
 

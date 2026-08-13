@@ -200,7 +200,7 @@ from redstring.domain.chunk_ranking import (
     rank_chunks,
 )
 from redstring.domain.consolidation import RelationshipRedirection
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import (
     AliasCycleError,
     ConsolidationInvariantError,
@@ -220,6 +220,7 @@ from redstring.domain.exceptions import (
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.interval import Bounds, TemporalRelation
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
 from redstring.domain.similarity import FeatureWeights, SimilarityFeatures

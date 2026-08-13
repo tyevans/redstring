@@ -12,8 +12,9 @@ from uuid import uuid4
 import pytest
 
 from redstring.domain.alias import Alias
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import AliasCycleError
+from redstring.domain.provenance import ExtractionMethod
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.ports.graph_store import GraphStore
 from redstring.testing.graph_store import GraphStoreCompliance

@@ -19,7 +19,7 @@ from uuid import uuid4
 import pytest
 
 from redstring.aggregates.document import Document
-from redstring.domain.entity import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.source import SourceDocument
 from redstring.events import DocumentExtracted
 from redstring.events.streams import document_stream

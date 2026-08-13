@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.relationship import Relationship
 
 

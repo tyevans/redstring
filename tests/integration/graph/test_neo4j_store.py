@@ -41,8 +41,9 @@ from uuid import uuid4
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import MissingEntityError
+from redstring.domain.provenance import ExtractionMethod
 from redstring.graph.adapters.neo4j import Neo4jGraphStore
 from redstring.testing.graph_store import GraphStoreCompliance
 

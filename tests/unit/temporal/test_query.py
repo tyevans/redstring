@@ -7,8 +7,9 @@ from uuid import uuid4
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.interval import Bounds, TemporalRelation
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.temporal.query import CursorStalledError, TemporalQuery

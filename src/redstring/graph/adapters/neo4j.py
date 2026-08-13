@@ -46,9 +46,10 @@ from uuid import UUID
 from neo4j import AsyncGraphDatabase
 
 from redstring.domain.alias import Alias
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import AliasCycleError, MissingEntityError
 from redstring.domain.ids import EntityId, RelationshipId, TenantId
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import TemporalExtent
 

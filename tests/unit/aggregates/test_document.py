@@ -6,7 +6,8 @@ import pytest
 
 from redstring.aggregates.document import Document
 from redstring.domain.chunk import StoredChunk, chunk_id
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.vector import VectorRecord
 from redstring.events import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.streams import document_stream

@@ -21,7 +21,8 @@ from redstring.domain.blocking import (
     soundex_key,
     soundex_key_for_name,
 )
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod
 
 
 def _entity(name: str, entity_type: str = "person") -> Entity:

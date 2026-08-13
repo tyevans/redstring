@@ -68,7 +68,8 @@ def test_an_unwrapped_value_is_accepted_by_a_domain_model():
     passing `uuid4()` where an `EntityId` is annotated keeps working; only a
     type checker is newly opinionated about it.
     """
-    from redstring.domain.entity import Entity, ExtractionMethod
+    from redstring.domain.entity import Entity
+    from redstring.domain.provenance import ExtractionMethod
 
     entity = Entity(
         id=uuid.uuid4(),

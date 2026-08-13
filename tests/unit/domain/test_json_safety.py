@@ -13,8 +13,9 @@ from uuid import uuid4
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.json_safety import reject_unstorable_text
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.relationship import Relationship
 
 #: Every nesting a free-form value can take. A NUL three levels down breaks a

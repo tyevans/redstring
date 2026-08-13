@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-from redstring.domain.entity import ExtractionMethod
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.temporal import DatePrecision, UncertaintyMarker
 from redstring.extraction.mapping import map_extraction
 from redstring.extraction.merging import merge_extractions

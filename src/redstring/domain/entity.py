@@ -2,35 +2,14 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.json_safety import Passthrough, reject_unstorable_text
+from redstring.domain.provenance import MODEL_BEARING_METHODS, ExtractionMethod
 from redstring.domain.temporal import TemporalExtent
-
-
-class ExtractionMethod(StrEnum):
-    """How the entity was derived — not which vendor answered.
-
-    Vendor identity is adapter detail and belongs in `Entity.model`, which
-    survives model upgrades and makes "re-extract everything the old model
-    touched" a query. These values become persisted event payloads, so a
-    vendor name here would outlive that vendor's presence in the codebase.
-    """
-
-    LLM = "llm"
-    PATTERN = "pattern"
-    SCHEMA_ORG = "schema_org"
-    OPEN_GRAPH = "open_graph"
-    HYBRID = "hybrid"
-    MANUAL = "manual"
-
-
-#: The methods that can have invoked a model, and so may carry `Entity.model`.
-_MODEL_BEARING_METHODS = frozenset({ExtractionMethod.LLM, ExtractionMethod.HYBRID})
 
 
 class Entity(BaseModel):
@@ -125,7 +104,7 @@ class Entity(BaseModel):
         knowing which model contributed matters. The rule constrains only the
         methods that cannot involve one at all.
         """
-        if self.model is not None and self.extraction_method not in _MODEL_BEARING_METHODS:
+        if self.model is not None and self.extraction_method not in MODEL_BEARING_METHODS:
             raise ValueError(
                 f"model must be None for extraction_method "
                 f"{self.extraction_method.value!r}, which invokes no model"

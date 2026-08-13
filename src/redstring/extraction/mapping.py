@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from uuid import NAMESPACE_URL, uuid5
 
 from redstring.domain.blocking import blocking_keys_for
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, RelationshipId
 from redstring.domain.json_safety import has_unstorable_text
 from redstring.domain.normalization import normalize_name
@@ -57,6 +57,7 @@ from redstring.domain.normalization import normalize_name
 # every test already name it here, and because the alternative -- two
 # definitions -- is what `domain/preference.py` exists to prevent.
 from redstring.domain.preference import preference, relationship_preference
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import TemporalExtent
 from redstring.domain.temporal_parsing import AmbiguousReferenceDateError, parse_temporal

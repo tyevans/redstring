@@ -9,8 +9,9 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.interval import Bounds, TemporalRelation, relate_bounds
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.temporal.inference import (
     _CANONICAL,

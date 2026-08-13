@@ -8,7 +8,8 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.temporal import TemporalExtent
 
 

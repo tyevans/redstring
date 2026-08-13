@@ -24,7 +24,8 @@ from eventsource.domain.tenant_context import tenant_scope
 from eventsource.ports.positions import ExpectedVersion
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.events import DocumentExtracted
 from redstring.events.streams import document_stream

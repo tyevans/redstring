@@ -17,10 +17,10 @@ from typing import Any
 from hypothesis import assume
 from hypothesis import strategies as st
 
-from redstring.domain.entity import _MODEL_BEARING_METHODS as MODEL_BEARING_METHODS
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
+from redstring.domain.provenance import MODEL_BEARING_METHODS, ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 

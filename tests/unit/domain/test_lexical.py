@@ -7,9 +7,10 @@ from uuid import uuid4
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.lexical import PROPERTY_WEIGHT, lexical_score
 from redstring.domain.normalization import normalize_name
+from redstring.domain.provenance import ExtractionMethod
 
 
 def _entity(

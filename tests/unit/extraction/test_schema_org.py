@@ -28,7 +28,8 @@ from uuid import UUID
 
 import pytest
 
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
+from redstring.domain.provenance import ExtractionMethod
 from redstring.extraction.schema_org import (
     SCHEMA_TYPE_MAP,
     _map_og_type,

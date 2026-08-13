@@ -26,8 +26,9 @@ from redstring.aggregates.repositories import (
 )
 from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.consolidation import RelationshipRedirection
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import ConsolidationInvariantError
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import consolidation_stream, document_stream

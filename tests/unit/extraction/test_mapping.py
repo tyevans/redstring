@@ -17,8 +17,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from redstring.domain.blocking import blocking_keys_for
-from redstring.domain.entity import ExtractionMethod
 from redstring.domain.normalization import normalize_name
+from redstring.domain.provenance import ExtractionMethod
 from redstring.extraction.mapping import MappedExtraction, entity_id_for, map_extraction
 from redstring.extraction.schema import (
     DEFAULT_CONFIDENCE,

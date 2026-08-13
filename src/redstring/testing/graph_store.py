@@ -64,9 +64,10 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from redstring.domain.alias import Alias
-from redstring.domain.entity import Entity, ExtractionMethod
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import MissingEntityError
 from redstring.domain.ids import EntityId, RelationshipId, TenantId
+from redstring.domain.provenance import ExtractionMethod
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.ports.graph_store import GraphStore
