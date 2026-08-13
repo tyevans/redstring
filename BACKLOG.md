@@ -699,6 +699,18 @@ reports 0 and reads as a bad model; scoring the corpus against itself reports
 This is the same corpus B80 needs to settle `PROPERTY_WEIGHT`. Build it once
 and both close.
 
+**`ChunkRetriever` (ADR 0038) is a third instance of the same unmeasured
+claim.** It fuses a semantic channel over `StoredChunk.embedding` with a BM25
+lexical one, by the identical reciprocal-rank-fusion shape `Retriever` uses
+for entities, and nothing in this repository measures whether that fusion
+beats either chunk channel alone any more than it measures the entity case.
+`tests/unit/composition/test_chunk_retrieval.py` pins the machinery --
+overfetch, tenant isolation, the modes, the component scores -- which is the
+same
+structural coverage this entry already describes as not evidence about
+ranking quality. The graded corpus this entry calls for, once built, should
+be asked both questions rather than only the entity one.
+
 ---
 
 ## 3. Performance and scale
@@ -836,6 +848,14 @@ configuration. (3) A partial ANN index per large tenant, which does not scale
 past a few tenants. Whoever takes this on should extend the compliance suite's
 recall tier first: it currently passes trivially because both adapters are
 exact.
+
+**A second instance of the same cost: the chunk store's semantic scan.**
+`ChunkStore.semantic_candidates` (ADR 0038) scans a tenant's chunks exactly,
+for the identical reason -- an ANN index over a multi-tenant table either
+crosses tenant boundaries or is built per tenant, and ADR 0012's argument does
+not depend on which table carries the vector. Nothing here is a new decision;
+it is the same trade, paid twice, and the three ways out above apply to
+`chunks/adapters/postgres.py` unchanged.
 
 ### B50. `dateparser` costs ~250ms on a first call and is on the extraction path
 
@@ -1391,62 +1411,6 @@ Not urgent: `description` is not read by anything that ranks or resolves
 today, so what is lost is text a caller might display. It becomes urgent the
 moment a description reaches an embedding or a lexical channel, because at
 that point the fold is silently choosing what the corpus can be searched by.
-
-### B89. No fused `retrieve_chunks` entry point — B2b
-
-B1 built the corpus (`docs/adr/0023-the-chunk-corpus.md`) and B2a built a real
-term-weighted ranker over it — BM25, scored in the domain, with the tokenizer
-and truncation cost it depends on
-(`docs/adr/0024-bm25-over-the-chunk-corpus.md`). **B2a has landed.** The
-chunk-semantic-channel work (`docs/adr/XXXX-the-chunks-vector-lives-on-the-chunk.md`)
-landed chunk embeddings themselves: `StoredChunk.embedding`, the
-`SemanticCandidateSource` capability on `ChunkStore`, both adapters
-implementing it, and the owed `doc_length`/`embedding` schema migration on
-`PostgresChunkStore` (see the closed migration note below). **Still missing:
-a `ScoredChunk`, a `retrieve_chunks` entry point, and fusion with the RRF
-that `composition/retrieval.py` already does for entities.** None of that
-exists yet.
-
-What B1 and B2a decided that B2b inherits, and would otherwise have to
-rediscover:
-
-- **Chunk ids are content-addressed over `(source_id, text)`**, so a re-chunk
-  produces *new* ids rather than overwriting. A stored embedding therefore
-  never silently describes text that has changed — which is the property that
-  makes chunk embeddings safe to store at all, and it was chosen for this
-  reason before any embedding existed. Do not "simplify" identity to
-  `(source_id, chunk_index)` on the way in.
-- **`replace_source` is one atomic call.** Document-frequency statistics are
-  computed at query time over rows written by that one call; any statistic
-  B2b caches has the same requirement — invalidated by the call that replaces
-  the source, not by a second one.
-- **BM25 is still not a name for the entity-name lexical channel.** ADR 0022
-  stands even after ADR 0024 made the name honest for the chunk ranker: the
-  entity channel is a field-weighted string similarity, and B2b's semantic
-  channel over chunks is a *third and additional* one, not a replacement for
-  either.
-- **`entity_ids` is on the chunk, not in the graph.** A ranked passage is
-  turned into entities by the caller holding both ports. Putting a chunk
-  reference into the graph gives `mapping.py` a second id scheme.
-- **The dimension check has a precedent.** B82 (closed) made every
-  composition point taking an `EmbeddingProvider` refuse a mismatch with
-  `DimensionMismatchError`, and its gate,
-  `tests/unit/composition/test_dimension_mismatch_is_one_type.py`, derives
-  the entry-point list by introspection — so a chunk-embedding composition
-  point is covered by construction once it is added to
-  `redstring.composition`'s public surface, and only needs a `CASES` entry
-  naming its own callable.
-
-**The owed migration has landed.** `PostgresChunkStore._schema_statements`
-now carries `ALTER TABLE ... ADD COLUMN IF NOT EXISTS doc_length` and the
-matching `embedding` column, both proved against a table built by hand with
-neither column
-(`tests/integration/chunks/test_postgres_store.py::test_ensure_schema_repairs_a_table_created_without_the_new_columns`).
-`backfill_lexical_index()` repairs a pre-migration row's `doc_length` and
-term index from stored `text`, proved by ranking the same row wrong before
-and right after
-(`test_backfill_lexical_index_makes_a_pre_migration_row_rankable`). Both
-close what this entry used to call "a second migration already owed".
 
 ### B92. Corpus statistics are recomputed per query, not maintained incrementally
 
@@ -2719,7 +2683,7 @@ Postgres) or `chunk_id`-derived validation on `StoredChunk` construction.
 **Update:** the cheap half landed — the prose is now on
 `ChunkWriter.upsert_many` in `src/redstring/ports/chunk_store.py`, as part of
 the chunk-semantic-channel work (see
-`docs/adr/XXXX-the-chunks-vector-lives-on-the-chunk.md`), because the new
+`docs/adr/0038-the-chunks-vector-lives-on-the-chunk.md`), because the new
 `embedding` column inherits the same assumption `doc_length` and the term
 index already made. The executable half is still open, and closing it needs
 a decision this entry hasn't made: whether the port promises last-write-wins
@@ -2939,3 +2903,24 @@ reformatting the SQL) or executing the statement's `WHERE` clause against a
 small fixture with a fake connection, which is more machinery than this
 adapter's other unit-level SQL-shape tests use. Whoever picks this up should
 decide which tradeoff is worth it before touching the assertion.
+
+### B136. `StoredChunk` now carries a vector on every read, wanted or not
+
+ADR 0038 put `embedding` on `StoredChunk` rather than in a second store, and
+every `ChunkReader` method -- `get`, `get_by_source`, `get_by_entity` -- hands
+the whole row back, vector included, whether the caller asked
+`semantic_candidates` a question or not. A caller reading `get_by_source` over
+a large document to display its text, or to feed the lexical channel alone,
+now pays to carry one `dimension`-length float vector per chunk across the
+port for every chunk it reads, with no way to ask for the row without it.
+
+Not fixed here: a projection that selects columns is a port change --
+`ChunkReader`'s methods would need either a second return shape or a
+column-selection argument, and either is a real widening of the contract, not
+a drive-by fix alongside the capability that created the cost. More to the
+point, nothing has measured the width as a cost. `InMemoryChunkStore` pays
+nothing extra (Python already holds the object); `PostgresChunkStore` pays a
+`real[]` column read on every row, and whether that shows up at any corpus
+size this repository has exercised is unmeasured. Whoever picks this up
+should measure `get_by_source` over a document with hundreds of chunks before
+deciding whether a column-selecting variant is worth the port change.

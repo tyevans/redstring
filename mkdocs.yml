@@ -115,6 +115,7 @@ nav:
           - Harden model calls: how-to/harden-model-calls.md
       - Search and read:
           - Retrieve entities: how-to/retrieve-entities.md
+          - Retrieve chunks: how-to/retrieve-chunks.md
           - Rank passages: how-to/rank-passages.md
       - Keep the graph honest:
           - Consolidate duplicate entities: how-to/consolidate-duplicate-entities.md
@@ -173,4 +174,7 @@ nav:
       - "0033 · The compliance suites ship": adr/0033-the-compliance-suites-ship.md
       - "0034 · Neighbours are compared by name": adr/0034-neighbours-are-compared-by-name.md
       - "0035 · Provenance is a value object": adr/0035-provenance-is-a-value-object.md
+      - "0036 · A merge resolves the canonical entity's fields": adr/0036-a-merge-resolves-the-canonical-entitys-fields.md
+      - "0037 · One exception type for a dimension mismatch": adr/0037-one-exception-for-a-dimension-mismatch.md
+      - "0038 · The chunk's vector lives on the chunk": adr/0038-the-chunks-vector-lives-on-the-chunk.md
   - Contributing: contributing.md

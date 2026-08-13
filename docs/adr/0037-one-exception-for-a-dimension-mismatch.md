@@ -1,4 +1,4 @@
-# ADR XXXX: One exception type for a dimension mismatch
+# ADR 0037: One exception type for a dimension mismatch
 
 ## Status
 

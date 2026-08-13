@@ -1,9 +1,8 @@
-# ADR XXXX: The chunk's vector lives on the chunk
+# ADR 0038: The chunk's vector lives on the chunk
 
 ## Status
 
-Accepted; provisional number, renumbered at merge per
-`.claude/rules/recurring-defects.md` §6.
+Accepted.
 
 Amends [`0023` the chunk corpus](0023-the-chunk-corpus.md) in its
 Consequences: the semantic search it deferred is now built, and the port
