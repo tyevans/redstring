@@ -504,7 +504,8 @@ branches from `llm/rate_limiter.py` and `llm/circuit_breaker.py`.
 
 The values are the string form, not the member name: `"schema_org"` and
 `"open_graph"` are lowercase with an underscore. That spelling is the
-persisted one. `graph/adapters/neo4j.py` writes `entity.extraction_method.value`
+persisted one. `graph/adapters/neo4j.py` writes
+`entity.provenance.extraction_method.value`
 to the node and rebuilds it with `ExtractionMethod(node["extraction_method"])`,
 so renaming a *value* would orphan every entity already stored, while renaming
 a *member* would not. Round-tripping an `Entity` through `model_dump()` and

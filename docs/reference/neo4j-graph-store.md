@@ -980,11 +980,12 @@ tested in the **default gate** rather than only where a server is reachable
 | `normalized_name` | native string | queried by `find_entities(name=...)`, indexed |
 | `entity_type` | native string | queried by `find_entities(entity_type=...)`, indexed |
 | `blocking_keys` | native list of strings, **sorted**; `None` stays null | homogeneous, so it is storable; sorted for a stable stored form |
-| `extraction_method` | its `.value` string | an enum has no native representation |
+| `Provenance.extraction_method` | its `.value` string, flat on the node | an enum has no native representation |
 | `relationship_type` | native string | filtered by `get_relationships_for` and `neighbors` |
 | every id (`id`, `tenant_id`, `source_entity_id`, …) | canonical UUID string | Neo4j has no UUID type, and the string is what indexes and orders |
 | `Alias.merged_at` | ISO text, **not** a native `DateTime` | see below |
-| `confidence`, `name`, `description`, `source_id`, `source_text`, `model` | native | already primitives |
+| `name`, `description`, and `Provenance`'s `confidence`, `source_id`, `source_text`, `model` | native, flat on the node | already primitives |
+| `Provenance.observed_at` | ISO text, **not** a native `DateTime` | same reason as `Alias.merged_at` — see below |
 
 #### Why the JSON fields are not indexed
 

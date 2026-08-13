@@ -207,7 +207,7 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape nineteen times,
+  testing the difference.** This project has hit the same shape twenty times,
   and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
@@ -231,8 +231,9 @@ reading the code:
   | only the **19th** century, whose base 1800 shares no set bit with 1, 33, 34, 66, 67 or 100 | `+` written as `\|` or `^` — the same number at that base, and eleven mutants unkillable until a case used the 20th |
   | a *month range* whose endpoints differ | `end < start` widened to `<=` — "1900-1900" becomes unparseable and every other range still works |
   | a *year range* whose endpoints differ, in a case that declines for a **different** clause of the same `or` | `end.year <= start.year` written as `is` — "2023-2023" renders as a range the parser then refuses to read back |
+  | tie-break claims whose `origin` is a fresh `uuid4()` | *any* ordering of the components above it — with the intended component deleted, the winner is whichever random id sorted higher, so a deliberate break passes about half its runs |
 
-  **The first and last rows are the same row, two years and two modules
+  **The interned-string and coinciding-year-range rows are the same row, two years and two modules
   apart**, which is why "bounds that never coincide" is worth reading as a
   standing habit rather than one file's bug. The second instance was found by
   mutation in `render_temporal` while the first was still the headline example
@@ -276,7 +277,7 @@ reading the code:
   lesson generalises past bits: **when a test's example is the one the domain
   makes obvious, ask what that example is quietly making true.**
 
-  **Five of the nineteen rows are identity-vs-equality**, and they are the
+  **Five of the twenty rows are identity-vs-equality**, and they are the
   ones to expect rather than to be surprised by. Three fired because the test
   value sat inside a CPython cache — interned strings, cached small ints, and
   `len()` on a short collection returning that same cached int. Test numeric
@@ -318,13 +319,28 @@ reading the code:
   stateful setup path must start from genuinely nothing, or the setup is
   unverified no matter how many tests depend on it.
 
-  The last two rows are one shape, and it is the shape that keeps recurring:
+  The fully-equal-duplicates and grouped-after-dedup rows are one shape, and
+  it is the shape that keeps recurring:
   **the input was built by the same function the assertion was about.**
   Deduplicating input built by the deduplicator leaves nothing to deduplicate;
   a tie-break fed objects that are equal in every field cannot be observed at
   all. Both fired in slice 6 *inside tests written specifically to catch
   tie-break defects*, and one of them — a hypothesis property — read as a
   strong test right up until someone tried to break it.
+
+  **The tie-break-origin row is the `uuid4` rows' third appearance, and it is
+  the one that fires while you are *checking* your work.** The confidence
+  component of a merge order was deleted on purpose, to watch the suite go red
+  — and it stayed green, because the helper built each claim with
+  `origin=EntityId(uuid4())` and the order's last component is the origin. With
+  the intended component gone the winner was decided by which random id sorted
+  higher: a coin flip, passing about half the time. The two earlier `uuid4`
+  rows are about a *composite key* compared on one component; this is the same
+  cause in a *tie-break*, where the stakes are different — a deliberate break
+  that passes does not merely fail to catch a defect, it certifies a test as
+  strong. **Pin the ids so that the component under test is the only thing that
+  can produce the asserted answer**, and read a deliberate break that passes as
+  a finding about the fixture rather than about the code.
 
   So: **before trusting a property, break the implementation on purpose and
   watch it fail.** A property that stays green under a deliberate defect is

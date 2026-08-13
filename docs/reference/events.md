@@ -1619,21 +1619,29 @@ against them without reaching into a dotted path.
 ### `Entity`
 
 The largest payload. Required: `id`, `tenant_id`, `name`, `normalized_name`,
-`entity_type`, `extraction_method`, `confidence`. Optional, with defaults:
-`original_entity_type`, `description`, `source_id`, `source_text`,
-`external_ids`, `properties`, `model`, `temporal`, `blocking_keys`.
+`entity_type`, `provenance`. Optional, with defaults:
+`original_entity_type`, `description`, `external_ids`, `properties`,
+`temporal`, `blocking_keys`.
+
+`provenance` is a nested `Provenance`, and it is where `extraction_method`,
+`confidence`, `source_id`, `source_text` and `model` live — five fields that
+describe the *observation* rather than the thing observed, plus a required
+timezone-aware `observed_at` that has no counterpart on the old shape. See
+[ADR 0035](../adr/0035-provenance-is-a-value-object.md). **No payload written
+against the flat shape validates**, which was affordable only because nothing
+had persisted a log.
 
 Three of its rules bear on reading the log:
 
-- **`source_id` is `SourceId | None` on the type and effectively required
-  inside `DocumentExtracted`** — that event's validator rejects any entity
+- **`provenance.source_id` is `SourceId | None` on the type and effectively
+  required inside `DocumentExtracted`** — that event's validator rejects any entity
   whose `source_id` differs from the event's, and `None` differs.
-- **`extraction_method` is an `ExtractionMethod` str-enum**, serialised as its
+- **`provenance.extraction_method` is an `ExtractionMethod` str-enum**, serialised as its
   value (`"llm"`, `"pattern"`, `"schema_org"`, `"open_graph"`, `"hybrid"`,
   `"manual"`). It deliberately names *how* the entity was derived and never
   which vendor answered — vendor identity goes in `model`, because these
   values outlive the vendor.
-- **`model` may only be set for `LLM` and `HYBRID`**; any other method with a
+- **`provenance.model` may only be set for `LLM` and `HYBRID`**; any other method with a
   `model` raises. The convention for the value is provider-qualified and
   versioned, the same convention `DocumentExtracted.model_version` follows.
 
