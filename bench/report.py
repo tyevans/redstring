@@ -70,6 +70,7 @@ def _run_json(run: RunMetrics) -> dict[str, Any]:
         "relationships": run.relationships,
         "failed_chunks": run.failed_chunks,
         "unresolved_relationships": run.unresolved_relationships,
+        "variant_pairs": run.variant_pairs,
     }
 
 

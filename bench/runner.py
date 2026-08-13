@@ -21,6 +21,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from bench.drift import variant_pairs
 from bench.instruments import TimingProvider
 from bench.metrics import RunMetrics
 from redstring import InMemoryGraphStore, SourceDocument, build_graph
@@ -104,4 +105,5 @@ async def run_point(
         failed_chunks=report.failed_chunks,
         unresolved_relationships=report.unresolved_relationships,
         entity_names=names,
+        variant_pairs=variant_pairs(names),
     )

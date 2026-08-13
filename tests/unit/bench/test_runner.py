@@ -241,3 +241,34 @@ async def test_a_concurrency_above_one_is_refused_here_too() -> None:
         await run_point(
             point(concurrency=4), DOCUMENT, provider=SteadyProvider(clock, takes=0.0), clock=clock
         )
+
+
+class DriftingProvider(SteadyProvider):
+    """Names one entity two ways, the way a chunk boundary does."""
+
+    async def extract(self, text: str, schema: Any, *, system_prompt: str | None = None) -> Any:
+        self.prompts.append(system_prompt)
+        self._clock.now += self._takes
+        return schema.model_validate(
+            {
+                "entities": [
+                    {"name": "Ada Lovelace", "entity_type": "person"},
+                    {"name": "Lovelace", "entity_type": "person"},
+                ],
+                "relationships": [],
+            }
+        )
+
+
+async def test_the_run_reports_the_drift_pairs_its_entities_contain() -> None:
+    """A counter with no test asserting it non-zero is the shape
+    `recurring-defects.md` §3 is about -- and this one is wired through three
+    modules, so a zero would look like "no drift" rather than "not measured".
+    """
+    clock = FakeClock()
+
+    result = await run_point(
+        point(), DOCUMENT, provider=DriftingProvider(clock, takes=0.0), clock=clock
+    )
+
+    assert result.variant_pairs >= 1

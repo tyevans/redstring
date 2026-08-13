@@ -1291,39 +1291,40 @@ allowed to and this one is not is the actual asymmetry to resolve.
 Related: CLAUDE.md's standing rule that a test hanging is worse than a test
 failing, because in CI it reads as infrastructure and gets retried.
 
-### B-BENCH-3. Entity count cannot detect naming drift, and drift is what concurrency risks
+### B-BENCH-4. The drift metric is a floor, and its blind spots are the interesting half
 
-The benchmark reports `entities` and `relationships` per run, and neither can
-carry a quality comparison. Measured: the entity-name sets of a 3,000-character
-run and a 12,000-character run over one document share a jaccard of **0.587**,
-while two repeats of the *same* configuration share **0.601–0.667**. Changing
-the parameter perturbs the output no more than re-running it does, so a
-difference under roughly 20% is unreadable.
+`bench/drift.py` counts pairs where one name's tokens are a strict subset of
+the other's — `dudley` inside `dudley dursley`. That catches the drift shape a
+chunk boundary produces most often, and it is stable enough across
+configurations to be worth reading (62 against 59 where entity count moved no
+more than noise).
 
-**This is a blocker for judging bounded concurrency (deliverable C), not a
-nice-to-have.** C's stated risk is naming drift at chunk boundaries — a chunk
-that says "Lovelace" where an earlier one said "Ada Lovelace" manufactures a
-second entity, because `extraction.mapping.entity_id_for` derives identity from
-the name. If a wavefront at K=4 causes drift, entity count will move by less
-than the noise floor and the harness will report nothing.
+**It cannot see the cases where neither name contains the other**, and those
+are not exotic:
 
-The probe that established this also found the metric that would work.
-Counting **within-run variant pairs** — two names in one run where one's tokens
-are a strict subset of the other's, the `dudley` / `dudley dursley` shape — gave
-62 at chunk size 3,000 and 59 at 12,000. That stability across a parameter that
-moves everything else is what makes it a candidate: it measures the specific
-defect rather than the whole output, so carryover degrading under concurrency
-should move it sharply while leaving entity count inside the noise.
+- `mum` / `mom` — one referent, two spellings, no shared token. British and
+  American editions of this corpus differ exactly here, and the document under
+  test names both.
+- `dahl` / `roald dahl` is caught, but `r. dahl` / `roald dahl` is not, because
+  `r.` and `roald` are different tokens.
+- Abbreviations and initialisms: `alarte ascendare` / `a. ascendare`,
+  `american library association` / `ala`.
+- Transposition: `dursley, dudley` / `dudley dursley` — same tokens, neither a
+  strict subset, so the pair is invisible even though the names are equal as
+  sets. This one is a genuine gap in the heuristic rather than a hard problem:
+  equal token sets with different orderings should count.
 
-To close: add a `variant_pairs` count to `RunMetrics` and the results JSON,
-with a test that it rises when carryover is disabled (`carryover_entities=0`
-is the natural deliberate break — it should manufacture drift on purpose and
-the metric must see it). Do that **before** C's numbers are read, or C will be
-evaluated by a metric already known to be blind to its risk.
+So a **rise** in this number is evidence of drift, and a **flat** number is not
+evidence of its absence. Anything reported from it says "at least".
 
-The token-subset heuristic is crude and will miss `mum`/`mom` or `dahl`/`roald
-dahl` where one is not a subset of the other; it is a floor on drift, not a
-count of it. Say so wherever it is reported.
+Routes forward, cheapest first: count equal-token-set pairs too (fixes
+transposition, a few lines); add edit distance over the whole name with a
+threshold, which catches `mum`/`mom` and costs a tuning parameter nobody has
+calibrated; or embed the names and cluster them, which is the only approach
+that catches synonyms and which requires the embedding provider the harness
+already configures. The third is the one to do if drift ever becomes the
+number a decision rests on — until then, the floor is honest as long as every
+report says it is one.
 
 ### B-BENCH-2. No test proves `run_point` builds a fresh store per call
 
@@ -1358,7 +1359,7 @@ so the honest choice is between adding it now for the sake of this one test,
 or accepting the gap deliberately until a caller actually needs to control
 tenancy or storage across runs.
 
-### B-BENCH-3. `bench/runner.py`'s `default_overlap` is a benchmark parameter not in `config.yaml`
+### B-BENCH-5. `bench/runner.py`'s `default_overlap` is a benchmark parameter not in `config.yaml`
 
 `run_point` builds its chunker with
 `default_overlap=min(200, point.chunk_size // 2)` — a formula, not a value
