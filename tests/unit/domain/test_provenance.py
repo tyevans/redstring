@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from redstring.domain.provenance import ExtractionMethod, Provenance
@@ -35,7 +37,25 @@ def test_a_naive_observed_at_is_refused() -> None:
         )
 
 
-@pytest.mark.parametrize("confidence", [-0.1, 1.1])
+#: Values just outside the bound, pinned rather than left to the sampler.
+#:
+#: These four moved here with the field, from `test_entity.py`. They are not
+#: decoration: `st.floats().filter(...)` reaches the far extremes readily and
+#: the immediate neighbourhood of `1.0` rarely, so a mutant widening the bound
+#: to `<= 2.0` survived the property test entirely. `.claude/rules/testing.md`
+#: cites that survivor by name.
+#:
+#: `1.0 + 1e-9` is the one that earns its place. A coarse pair like
+#: `[-0.1, 1.1]` kills a grossly widened bound and lets `<= 1.05` through --
+#: which is the mutation an off-by-a-little edit actually produces.
+JUST_OUTSIDE_CONFIDENCE = [-1e-9, 1.0 + 1e-9, 1.5, 2.0]
+
+
+@given(st.floats(allow_nan=False, allow_infinity=False).filter(lambda f: f < 0.0 or f > 1.0))
+@example(confidence=-1e-9)
+@example(confidence=1.0 + 1e-9)
+@example(confidence=1.5)
+@example(confidence=2.0)
 def test_confidence_outside_the_unit_interval_is_refused(confidence: float) -> None:
     with pytest.raises(ValidationError, match="confidence"):
         Provenance(
@@ -43,6 +63,21 @@ def test_confidence_outside_the_unit_interval_is_refused(confidence: float) -> N
             extraction_method=ExtractionMethod.PATTERN,
             confidence=confidence,
         )
+
+
+@given(st.floats(min_value=0.0, max_value=1.0, allow_nan=False))
+def test_confidence_inside_the_unit_interval_is_accepted(confidence: float) -> None:
+    """The other half. Without it, a validator rejecting *everything* passes
+    the test above and nothing else here would notice -- the bounds test uses
+    two values, and two values are not a range."""
+    assert (
+        Provenance(
+            observed_at=OBSERVED,
+            extraction_method=ExtractionMethod.PATTERN,
+            confidence=confidence,
+        ).confidence
+        == confidence
+    )
 
 
 @pytest.mark.parametrize("confidence", [0.0, 1.0])

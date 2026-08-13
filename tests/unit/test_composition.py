@@ -12,6 +12,7 @@ port-compliance suite runs against.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -75,6 +76,74 @@ class CountingProvider:
 
 def document(text: str = "Ada Lovelace worked with Charles Babbage.") -> SourceDocument:
     return SourceDocument(id="doc-1", text=text)
+
+
+class TestWhereTheObservationInstantComesFrom:
+    """`composition` is the only layer permitted to read a clock, and
+    `build_graph` is the only place in it that does. Both halves of that are
+    asserted here, because each is invisible to the other:
+    `observed_at or datetime.now(UTC)` collapsed to *always* the clock passes
+    the second test, and collapsed to *always* the parameter passes the first.
+    """
+
+    async def test_a_supplied_instant_reaches_every_stored_entity(self) -> None:
+        """The whole point of the parameter: a caller taking determinism back
+        from the clock. The value is well outside any plausible clock reading,
+        so it cannot be confused with one."""
+        observed = datetime(2011, 5, 6, 1, 2, tzinfo=UTC)
+        store = InMemoryGraphStore()
+
+        await build_graph(
+            document(),
+            provider=CountingProvider(),
+            store=store,
+            tenant_id=TENANT_ID,
+            observed_at=observed,
+        )
+
+        stored = await store.find_entities(TENANT_ID)
+        assert stored, "nothing was written, so the assertion below cannot fail"
+        assert {e.provenance.observed_at for e in stored} == {observed}
+
+    async def test_omitting_it_reads_the_clock(self) -> None:
+        """Bracketed by two real readings rather than compared to one.
+
+        Asserting merely that *something* was stamped would pass against a
+        hard-coded constant, and asserting equality with a clock read here
+        would be flaky. The interval is what distinguishes them.
+        """
+        before = datetime.now(UTC)
+        store = InMemoryGraphStore()
+
+        await build_graph(document(), provider=CountingProvider(), store=store, tenant_id=TENANT_ID)
+
+        after = datetime.now(UTC)
+        stored = await store.find_entities(TENANT_ID)
+        assert stored, "nothing was written, so the assertion below cannot fail"
+        for entity in stored:
+            assert before <= entity.provenance.observed_at <= after
+
+    async def test_two_runs_given_one_instant_agree_where_two_clock_reads_would_not(
+        self,
+    ) -> None:
+        """The determinism the parameter buys, stated as the difference
+        between passing one and not. Two default runs stamp different instants;
+        two runs given the same instant stamp the same one."""
+        observed = datetime(2011, 5, 6, 1, 2, tzinfo=UTC)
+
+        pinned = []
+        for _ in range(2):
+            store = InMemoryGraphStore()
+            await build_graph(
+                document(),
+                provider=CountingProvider(),
+                store=store,
+                tenant_id=TENANT_ID,
+                observed_at=observed,
+            )
+            pinned.append({e.provenance.observed_at for e in await store.find_entities(TENANT_ID)})
+
+        assert pinned[0] == pinned[1] == {observed}
 
 
 class TestTheModelIsAskedOnce:

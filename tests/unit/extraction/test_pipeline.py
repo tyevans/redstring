@@ -410,6 +410,60 @@ class TestPromptIsExtractionsBusiness:
 ONE_ENTITY = {"entities": [{"name": "Ada", "entity_type": "P"}]}
 
 
+class TestRecordGetsItsInstantFromExactlyOnePlace:
+    """`record` has two ways to be given an observation instant, so the
+    precedence between them is pinned rather than only documented -- defect
+    shape §2, which asks for a test that sets both to *conflicting* values.
+    """
+
+    async def test_neither_a_result_nor_an_observed_at_is_refused(self, aggregate, tenant_id):
+        """`record` extracts when given no `result`, and extracting needs an
+        instant. This layer is below `composition` and reads no clock, so the
+        only honest answer is to refuse -- defaulting here is how the
+        determinism `observed_at` exists to provide leaks away one caller at a
+        time.
+        """
+        pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={"Ada": ONE_ENTITY}))
+
+        with pytest.raises(ValueError, match="observation instant"):
+            await pipeline.record(aggregate, document("Ada."), tenant_id)
+
+    async def test_a_supplied_result_wins_over_a_conflicting_observed_at(
+        self, aggregate, tenant_id
+    ):
+        """The two instants are made to disagree, which is the whole point.
+
+        Passing `observed_at=B` alongside a `result` stamped `A` must record
+        `A`: the result already carries the instant its own caller chose, and
+        honouring `B` would mean the recorded entities disagree with the
+        `PipelineResult` the caller is holding. With both set to the same
+        value -- the natural way to write this test -- an implementation that
+        silently re-extracted with `B` would pass.
+        """
+        other_instant = datetime(2011, 5, 6, 1, 2, tzinfo=UTC)
+        assert other_instant != OBSERVED, "the two instants must differ or this proves nothing"
+
+        pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={"Ada": ONE_ENTITY}))
+        result = await pipeline.extract(document("Ada."), tenant_id, observed_at=OBSERVED)
+
+        event = await pipeline.record(
+            aggregate, document("Ada."), tenant_id, observed_at=other_instant, result=result
+        )
+
+        assert event is not None
+        assert {e.provenance.observed_at for e in event.entities} == {OBSERVED}
+
+    async def test_an_observed_at_is_used_when_there_is_no_result(self, aggregate, tenant_id):
+        """The other side of the precedence. Without this, `record` could
+        ignore `observed_at` entirely and the test above would still pass."""
+        pipeline = ExtractionPipeline(FakeLlmProvider(by_substring={"Ada": ONE_ENTITY}))
+
+        event = await pipeline.record(aggregate, document("Ada."), tenant_id, observed_at=OBSERVED)
+
+        assert event is not None
+        assert {e.provenance.observed_at for e in event.entities} == {OBSERVED}
+
+
 class TestRecordRefusesAResultFromAnotherDocument:
     """The one misuse `result=` admits is already refused, one layer down.
 
