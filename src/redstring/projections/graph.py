@@ -10,10 +10,14 @@
   `RelationshipRedirection`: upsert `after` over the id it shares with
   `before`, or delete the edge when the merge dropped it. The absorbed
   entities stay in the store, because `GraphStore` deliberately has no
-  `delete_entity` and an entity merged away survives as an alias.
+  `delete_entity` and an entity merged away survives as an alias. If the merge
+  also decided a `resolution`, its `after` is written onto the canonical
+  entity's `description`, `external_ids` and `properties`.
 - `MergeUndone` -- remove those aliases, then upsert every restored
   relationship. That both moves a redirected edge back and recreates a dropped
-  one, because the restoration carries whole `Relationship`s.
+  one, because the restoration carries whole `Relationship`s. If the merge it
+  reverses carried a `resolution`, `restored_fields` puts the canonical
+  entity's three mergeable fields back to their pre-merge values.
 
 ## Why the extraction fold resolves, and what it fixes (B34)
 
@@ -89,6 +93,7 @@ from uuid import NAMESPACE_OID, uuid5
 from eventsource.application.projections import StoreProjection, handles
 
 from redstring.domain.alias import Alias
+from redstring.domain.exceptions import MissingEntityError
 from redstring.domain.ids import TenantId
 from redstring.events.document import DocumentExtracted
 from redstring.events.merge import EntitiesMerged, MergeUndone
@@ -97,6 +102,7 @@ from redstring.ports.graph_store import GraphStore
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from redstring.domain.consolidation import MergeableFields
     from redstring.domain.ids import EntityId
     from redstring.domain.relationship import Relationship
 
@@ -191,6 +197,30 @@ class GraphProjection(StoreProjection[GraphStore]):
             else:
                 await self._store.upsert_relationship(redirection.after)
 
+        if event.resolution is not None:
+            await self._apply_fields(event.resolution.entity_id, tenant_id, event.resolution.after)
+
+    async def _apply_fields(
+        self, entity_id: EntityId, tenant_id: TenantId, fields: MergeableFields
+    ) -> None:
+        """Replace the canonical entity's three mergeable fields.
+
+        A copy with three fields replaced rather than a rebuilt entity: the
+        resolution says nothing about `name`, `provenance` or `temporal`, and
+        an upsert that dropped them would be deciding questions nobody asked.
+
+        Idempotent by construction. `fields` is a literal snapshot rather than
+        a recomputation, so applying it twice -- or replaying the whole log --
+        produces the identical row.
+        """
+        entity = await self._store.get_entity(entity_id, tenant_id)
+        if entity is None:
+            # A poison event, routed to the DLQ. A merge whose canonical
+            # entity has no row means the log and the graph disagree; skipping
+            # would drop the decision with nothing to notice.
+            raise MissingEntityError(entity_id=entity_id, tenant_id=tenant_id)
+        await self._store.upsert_entity(entity.model_copy(update=fields.model_dump()))
+
     @handles(MergeUndone)
     async def _apply_undo(self, _context: object, event: MergeUndone) -> None:
         # The order of these two steps does **not** matter, and that is worth
@@ -208,6 +238,11 @@ class GraphProjection(StoreProjection[GraphStore]):
         for entity_id in event.unmerged_entity_ids:
             await self._store.remove_alias(entity_id, TenantId(event.tenant_id))
         await self._store.upsert_relationships(event.restored_relationships)
+
+        if event.restored_fields is not None:
+            await self._apply_fields(
+                event.canonical_entity_id, TenantId(event.tenant_id), event.restored_fields
+            )
 
     async def _truncate_read_models(self) -> None:
         """Not supported, deliberately. Wipe per tenant instead.
