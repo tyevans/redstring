@@ -30,6 +30,28 @@ policy:
   per_document_timeout_s: 1800
 """
 
+# Carries an unknown top-level key and an unknown key nested inside a section
+# the loader does read from, to prove both survive into the report verbatim.
+CONFIG_WITH_UNKNOWN_KEYS = """
+endpoint: http://192.168.1.14:8080/v1/
+notes: run by hand after the GPU firmware update
+models:
+  extraction: muse-glimmer-30b
+  embedding: nomic-embed-text
+  embedding_dimensions: 768
+  driver: cuda
+corpus:
+  graded: true
+  long: [hp1]
+sweep:
+  chunk_size: [3000]
+  concurrency: [1]
+policy:
+  repeats: 2
+  stop_climbing_concurrency: true
+  per_document_timeout_s: 1800
+"""
+
 
 def config(tmp_path: Path):
     path = tmp_path / "config.yaml"
@@ -37,9 +59,9 @@ def config(tmp_path: Path):
     return load_config(path)
 
 
-def run(repeat: int, *, names: tuple[str, ...], wall: float) -> RunMetrics:
+def run(repeat: int, *, names: tuple[str, ...], wall: float, chunk_size: int = 3000) -> RunMetrics:
     return RunMetrics(
-        point=SweepPoint(document_id="hp1", chunk_size=3000, concurrency=1, repeat=repeat),
+        point=SweepPoint(document_id="hp1", chunk_size=chunk_size, concurrency=1, repeat=repeat),
         wall_clock_s=wall,
         time_to_first_entity_s=None,
         event_gaps_s=(1.0, 1.0, 7.0),
@@ -59,6 +81,18 @@ def two_runs() -> list[RunMetrics]:
     return [
         run(0, names=("ada lovelace", "charles babbage"), wall=30.0),
         run(1, names=("ada lovelace",), wall=32.0),
+    ]
+
+
+def runs_across_two_chunk_sizes() -> list[RunMetrics]:
+    """Two configurations whose repeats disagree *differently*: 3000 chars
+    splits (jaccard 0.5), 12000 chars agrees completely (jaccard 1.0). A
+    grouping that folds the sweep together cannot reproduce both numbers."""
+    return [
+        run(0, names=("ada lovelace", "charles babbage"), wall=30.0, chunk_size=3000),
+        run(1, names=("ada lovelace",), wall=32.0, chunk_size=3000),
+        run(0, names=("ada lovelace", "charles babbage"), wall=55.0, chunk_size=12000),
+        run(1, names=("ada lovelace", "charles babbage"), wall=57.0, chunk_size=12000),
     ]
 
 
@@ -108,10 +142,43 @@ def test_the_gap_summary_is_written_alongside_the_raw_gaps(tmp_path: Path) -> No
 
 
 def test_stability_is_computed_per_configuration_not_across_the_whole_sweep(tmp_path: Path) -> None:
-    """Repeats of one configuration are comparable; a 3000-char run and an
-    8000-char run disagreeing is a finding, not instability."""
+    """Repeats of one configuration are comparable; a 3000-char run and a
+    12000-char run disagreeing is a finding, not instability.
+
+    Under a wrong implementation that folds the whole sweep into one group,
+    there is a single group rather than two, so this fails loudly rather than
+    merely landing on the wrong number."""
     report = build_report(
         config(tmp_path),
+        runs_across_two_chunk_sizes(),
+        accuracy=None,
+        started_at="t",
+        library_version="v",
+        git_sha="s",
+    )
+
+    groups = {group["chunk_size"]: group for group in report["stability"]}
+    assert len(report["stability"]) == 2
+    assert groups[3000]["document_id"] == "hp1"
+    assert groups[3000]["jaccard"] == 0.5
+    assert groups[3000]["sometimes"] == 1
+    assert groups[12000]["document_id"] == "hp1"
+    assert groups[12000]["jaccard"] == 1.0
+    assert groups[12000]["sometimes"] == 0
+
+
+def test_unknown_config_keys_survive_into_the_report(tmp_path: Path) -> None:
+    """The whole reason the raw parsed document is embedded rather than
+    reconstructed from `BenchConfig`'s typed fields is that a results file
+    must record what was asked, including keys this version of the loader
+    knows nothing about. A top-level key and a key nested inside a section the
+    loader does read from must both come through unchanged."""
+    path = tmp_path / "config.yaml"
+    path.write_text(CONFIG_WITH_UNKNOWN_KEYS)
+    loaded = load_config(path)
+
+    report = build_report(
+        loaded,
         two_runs(),
         accuracy=None,
         started_at="t",
@@ -119,11 +186,8 @@ def test_stability_is_computed_per_configuration_not_across_the_whole_sweep(tmp_
         git_sha="s",
     )
 
-    (group,) = report["stability"]
-    assert group["chunk_size"] == 3000
-    assert group["document_id"] == "hp1"
-    assert group["jaccard"] == 0.5
-    assert group["sometimes"] == 1
+    assert report["config"]["notes"] == "run by hand after the GPU firmware update"
+    assert report["config"]["models"]["driver"] == "cuda"
 
 
 def test_stability_and_accuracy_are_separate_keys(tmp_path: Path) -> None:
