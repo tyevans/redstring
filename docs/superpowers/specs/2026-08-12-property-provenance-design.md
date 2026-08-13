@@ -229,6 +229,25 @@ rather than closes.
 Stated plainly because the alternative is a reader concluding the feature
 shipped.
 
+## Against the existing ADRs
+
+Per `.claude/rules/definition-of-done.md`, each related ADR is named with a
+verdict rather than left to inference.
+
+| ADR | Verdict |
+|---|---|
+| [`0001` event log schema and granularity](../../adr/0001-event-log-schema-and-granularity.md) | **Amended.** `DocumentExtracted`'s payload shape changes and the event goes to `event_version = 2`. 0001's decision — one event per document, at that granularity, owned by that aggregate — is untouched; what changes is the shape of the `Entity` inside it. Its Consequences gain the version bump and the clean break. |
+| [`0006` the public surface is gated](../../adr/0006-the-public-surface-is-gated.md) | **Stands, and is exercised.** `Provenance` enters `__all__` only because `Entity`'s signature now mentions it — the closure rule working as 0006 describes. `PropertyMergeStrategy` and friends stay unexported. |
+| [`0010` one total order for preference](../../adr/0010-one-total-order-for-preference.md) | **Stands, extended by composition.** `preference` keeps its definition and reads the same values through `entity.provenance`. The claim order is a *new, narrower* order over a different thing (one property's claim, not a whole entity), composed the way `duplicate_preference` composes — meaningful components, id appended. It is not a second definition of 0010's order and must not become one. |
+| [`0002` two store ports](../../adr/0002-two-store-ports.md) | **Stands.** No port method changes. Both adapters' row shapes change because `Entity`'s fields moved; the contract over them does not. |
+| [`0004` consolidation emits events](../../adr/0004-consolidation-emits-events.md) | **Stands, untouched.** This work deliberately does not wire property merging into the merge path, so nothing about what consolidation emits changes. |
+| [`0005` temporal inference on read](../../adr/0005-temporal-inference-on-read.md) | **Stands.** Worth stating because `observed_at` is a new time field and 0005 is about time: they are different clocks. `TemporalExtent` is when a fact held; `observed_at` is when the library was told. Nothing infers one from the other. |
+
+A **new ADR** records the decision itself — that provenance is a value object,
+and that a strategy is named for the question it can answer. Drafted
+provisionally as `0035-provenance-is-a-value-object.md`; the number is
+re-checked against `main` at merge per `recurring-defects.md` §6.
+
 ## Testing
 
 Beyond the ordinary behavioural tests, four things this project's own history
