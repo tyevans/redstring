@@ -1291,6 +1291,40 @@ allowed to and this one is not is the actual asymmetry to resolve.
 Related: CLAUDE.md's standing rule that a test hanging is worse than a test
 failing, because in CI it reads as infrastructure and gets retried.
 
+### B-BENCH-3. Entity count cannot detect naming drift, and drift is what concurrency risks
+
+The benchmark reports `entities` and `relationships` per run, and neither can
+carry a quality comparison. Measured: the entity-name sets of a 3,000-character
+run and a 12,000-character run over one document share a jaccard of **0.587**,
+while two repeats of the *same* configuration share **0.601–0.667**. Changing
+the parameter perturbs the output no more than re-running it does, so a
+difference under roughly 20% is unreadable.
+
+**This is a blocker for judging bounded concurrency (deliverable C), not a
+nice-to-have.** C's stated risk is naming drift at chunk boundaries — a chunk
+that says "Lovelace" where an earlier one said "Ada Lovelace" manufactures a
+second entity, because `extraction.mapping.entity_id_for` derives identity from
+the name. If a wavefront at K=4 causes drift, entity count will move by less
+than the noise floor and the harness will report nothing.
+
+The probe that established this also found the metric that would work.
+Counting **within-run variant pairs** — two names in one run where one's tokens
+are a strict subset of the other's, the `dudley` / `dudley dursley` shape — gave
+62 at chunk size 3,000 and 59 at 12,000. That stability across a parameter that
+moves everything else is what makes it a candidate: it measures the specific
+defect rather than the whole output, so carryover degrading under concurrency
+should move it sharply while leaving entity count inside the noise.
+
+To close: add a `variant_pairs` count to `RunMetrics` and the results JSON,
+with a test that it rises when carryover is disabled (`carryover_entities=0`
+is the natural deliberate break — it should manufacture drift on purpose and
+the metric must see it). Do that **before** C's numbers are read, or C will be
+evaluated by a metric already known to be blind to its risk.
+
+The token-subset heuristic is crude and will miss `mum`/`mom` or `dahl`/`roald
+dahl` where one is not a subset of the other; it is a floor on drift, not a
+count of it. Say so wherever it is reported.
+
 ### B-BENCH-2. No test proves `run_point` builds a fresh store per call
 
 `bench/runner.py::run_point` constructs a fresh `InMemoryGraphStore()` and a
