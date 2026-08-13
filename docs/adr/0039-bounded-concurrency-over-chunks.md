@@ -113,6 +113,14 @@ caller who knows their endpoint's real capacity can set `concurrency` to
 share it correctly across concurrent callers of the library, rather than
 each caller needing to reason about every other caller's batch size.
 
+**`CallLimiter` widens the public surface by one name**, per ADR 0006's gate:
+`ExtractionPipeline.__init__` takes `limiter: CallLimiter | None`, so the type
+had to be exported or the signature would reference something a caller cannot
+construct. Exporting it is also the thing that makes the previous paragraph
+possible for a caller to act on directly — sharing one ceiling across several
+`build_graph` calls against one backend needs the type in hand, not only the
+parameter name.
+
 ## What this does not do
 
 No per-chunk progress reporting — the pipeline still returns from one

@@ -276,6 +276,7 @@ from redstring.extraction.domains.models import (
 )
 from redstring.extraction.domains.registry import list_available_domains
 from redstring.extraction.errors import ChunkerError, ChunkingError, ChunkSizeError
+from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.pipeline import (
     DEFAULT_SYSTEM_PROMPT,
     ExtractionPipeline,
@@ -340,6 +341,7 @@ __all__ = [
     "BoundaryPreferenceChunker",
     "Bounds",
     "Cache",
+    "CallLimiter",
     "CandidateFinder",
     "CandidateSource",
     "Chunk",
