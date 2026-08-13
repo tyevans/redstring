@@ -119,9 +119,17 @@ async def test_a_smaller_chunk_size_produces_more_chunks_and_more_calls() -> Non
     assert small.model_calls > large.model_calls
 
 
-async def test_wall_clock_is_the_whole_call_not_the_model_time() -> None:
-    """Three chunks at 2.0s each is 6.0s of model time; the run also spends
-    time chunking and merging, which the wall clock must include."""
+async def test_wall_clock_brackets_every_model_call() -> None:
+    """The wall clock starts before the first model call and stops after the
+    last, so it never reports less than the model time it contains.
+
+    The fake clock advances only inside provider calls, so wall clock and
+    total model time come out equal here by construction -- this cannot show
+    that chunking or merging time is included, since nothing in this harness
+    makes that cost simulated time. What it does catch is a timer started
+    after the first call or stopped before the last, either of which would
+    make wall clock read less than the model time it is supposed to contain.
+    """
     clock = FakeClock()
     provider = SteadyProvider(clock, takes=2.0)
 
@@ -157,11 +165,16 @@ async def test_the_entities_come_back_normalised_and_sorted_for_comparison() -> 
     assert result.entities == len(result.entity_names)
 
 
-async def test_each_run_starts_from_an_empty_store() -> None:
-    """Two runs of the same document must not accumulate.
+async def test_two_runs_of_one_document_report_the_same_counts() -> None:
+    """Two runs of one document agree, so nothing accumulates between them.
 
-    A shared store makes the second repeat report double the entities and
-    perfect stability, which is exactly backwards.
+    This does **not** prove the store is fresh per run, and the distinction
+    matters because the name it used to have said it did. `run_point` mints a
+    new tenant for every call and `InMemoryGraphStore` is tenant-scoped, so a
+    store hoisted to module level and shared across calls would land in
+    disjoint partitions and pass this exactly as written. Proving freshness
+    needs two runs under one tenant id, which `run_point` has no parameter
+    for. See BACKLOG B-BENCH-2.
     """
     clock = FakeClock()
 
