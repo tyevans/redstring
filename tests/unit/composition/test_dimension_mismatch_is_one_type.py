@@ -21,7 +21,7 @@ from eventsource.ports.store import AggregateStore
 
 import redstring.composition as composition
 from redstring.chunks.adapters.memory import InMemoryChunkStore
-from redstring.composition import ChunkRetriever, Retriever, build_graph
+from redstring.composition import ChunkRetriever, Retriever, build_graph, index_documents
 from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import DimensionMismatchError
@@ -115,10 +115,25 @@ def _chunk_retriever_mismatch() -> None:
     )
 
 
+def _index_documents_mismatch() -> None:
+    async def _run() -> None:
+        await index_documents(
+            [SourceDocument(id=f"doc-{uuid4()}", text="Ada Lovelace was a mathematician.")],
+            store=InMemoryChunkStore(dimension=384),
+            tenant_id=TENANT_ID,
+            embeddings=FakeEmbeddingProvider(dimension=DIMENSION),
+        )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
 CASES = {
     "ChunkRetriever": _chunk_retriever_mismatch,
     "Retriever": _retriever_mismatch,
     "build_graph": _build_graph_mismatch,
+    "index_documents": _index_documents_mismatch,
 }
 
 

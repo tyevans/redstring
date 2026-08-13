@@ -21,6 +21,7 @@ from redstring import FakeLlmProvider, InMemoryGraphStore, SourceDocument, build
 from redstring.chunks.adapters.memory import InMemoryChunkStore  # exported in Task 10
 from redstring.composition import IndexReport, index_documents
 from redstring.extraction.chunkers import SlidingWindowChunker
+from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
 
 TENANT_ID = uuid4()
 
@@ -332,7 +333,9 @@ class TestTheReport:
             [], store=InMemoryChunkStore(dimension=4), tenant_id=TENANT_ID
         )
 
-        assert report == IndexReport(documents_indexed=0, chunks_written=0, documents_skipped=0)
+        assert report == IndexReport(
+            documents_indexed=0, chunks_written=0, documents_skipped=0, embedded=0
+        )
 
     async def test_the_report_cannot_be_edited_after_the_fact(self) -> None:
         report = await index_documents(
@@ -344,6 +347,104 @@ class TestTheReport:
         except AttributeError:
             return
         raise AssertionError("IndexReport is not frozen")
+
+
+class _RaisingEmbeddingProvider:
+    """A spy that fails the test the moment `embed` is called.
+
+    Not `FakeEmbeddingProvider(fail_on=...)` -- that only fails for inputs
+    matching a substring, which proves the happy path returns zero without
+    proving no *call* was made at all. This one has no path that succeeds.
+    """
+
+    model = "spy/must-not-be-called"
+    dimension = 768
+
+    async def embed(self, texts):
+        raise AssertionError("embed() was called without a provider being supplied")
+
+
+class TestEmbedding:
+    async def test_without_a_provider_no_chunk_is_embedded_and_no_model_is_called(self) -> None:
+        """The docstring's no-per-token-cost promise, kept by the default.
+
+        Asserting zero embeddings in the happy path is not proof nothing was
+        called -- a provider that is never *reached* looks identical to one
+        that embeds everything as empty. The spy raises the moment `embed` is
+        invoked, so this fails loudly if a future change starts calling it
+        unconditionally.
+        """
+        corpus = InMemoryChunkStore(dimension=4)
+
+        report = await index_documents([long_document()], store=corpus, tenant_id=TENANT_ID)
+
+        assert report.embedded == 0
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert all(chunk.embedding is None for chunk in stored)
+
+    async def test_with_a_provider_every_chunk_carries_its_vector(self) -> None:
+        corpus = InMemoryChunkStore(dimension=768)
+
+        await index_documents(
+            [long_document()],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=small_chunker(),
+            embeddings=FakeEmbeddingProvider(),
+        )
+
+        stored = await corpus.get_by_source("doc-1", TENANT_ID)
+        assert len(stored) > 1
+        assert all(chunk.embedding is not None for chunk in stored)
+        assert all(len(chunk.embedding) == 768 for chunk in stored)
+
+    async def test_the_report_counts_chunks_embedded(self) -> None:
+        """A counter is asserted non-zero under the condition it counts.
+
+        `recurring-defects.md` §3: four counters summed to the same number
+        cannot tell you which line was wired to which field. `embedded` is
+        asserted equal to `chunks_written` -- the invariant this module's
+        docstring claims -- and, because that equality alone would not rule
+        out `embedded` being wired to the same expression as `documents_indexed`,
+        also asserted to differ from it: a document that splits into more than
+        one chunk makes the two genuinely different numbers.
+        """
+        corpus = InMemoryChunkStore(dimension=768)
+
+        report = await index_documents(
+            [long_document()],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=small_chunker(),
+            embeddings=FakeEmbeddingProvider(),
+        )
+
+        assert report.embedded > 0
+        assert report.embedded == report.chunks_written
+        assert report.embedded != report.documents_indexed
+
+    async def test_a_skipped_repeat_is_never_embedded(self) -> None:
+        """Confirms the cost-avoidance claim directly, not just via the count."""
+        corpus = InMemoryChunkStore(dimension=768)
+        log = InMemoryEventStore()
+
+        await index_documents(
+            [long_document()],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            event_store=log,
+            embeddings=FakeEmbeddingProvider(),
+        )
+        second = await index_documents(
+            [long_document()],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            event_store=log,
+            embeddings=_RaisingEmbeddingProvider(),
+        )
+
+        assert second.documents_skipped == 1
+        assert second.embedded == 0
 
 
 class TestTenants:
