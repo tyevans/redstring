@@ -5,6 +5,13 @@ That is worth recording once and not worth twenty more minutes, so the sweep
 skips the remaining higher values -- for that document at that chunk size, and
 nowhere else. The curve is per configuration: a backend that queues at K=4
 with 12000-character chunks may not at 3000.
+
+The comparison is deliberately the **two highest completed concurrencies**,
+not a search for any earlier reversal in the climb. A recovered climb (K=2 at
+100s, K=4 at 140s, K=8 at 90s) keeps climbing under this rule: only the last
+step is read as a verdict on the next one, because a queueing state that
+clears is exactly as real a result as one that does not, and only the most
+recent comparable pair says anything about what K=8 would face.
 """
 
 from __future__ import annotations

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from tests.accuracy.runner import CorpusResult
 
-    from bench.config import BenchConfig
+    from bench.config import BenchConfig, SweepPoint
     from bench.metrics import RunMetrics
 
 
@@ -98,12 +98,19 @@ def build_report(
     started_at: str,
     library_version: str,
     git_sha: str,
+    timed_out: Sequence[SweepPoint] = (),
 ) -> dict[str, Any]:
     """Assemble one invocation's results.
 
     `accuracy` is `None` when the graded corpus did not run, and is written as
     a null rather than omitted -- an absent key reads as an older file format,
     a null reads as a decision.
+
+    `timed_out` is every point the sweep gave up on, always present as a list
+    -- empty when nothing timed out, for the same reason: an absent key would
+    read as an older file format rather than as "nothing timed out". A point
+    that timed out contributes no `RunMetrics` and so does not appear in
+    `runs`; the reader has to check both to know what happened to a point.
     """
     return {
         "started_at": started_at,
@@ -113,6 +120,7 @@ def build_report(
         "runs": [_run_json(run) for run in runs],
         "stability": _stability_json(runs),
         "accuracy": _accuracy_json(accuracy) if accuracy is not None else None,
+        "timed_out": [asdict(point) for point in timed_out],
     }
 
 

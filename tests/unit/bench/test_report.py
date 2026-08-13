@@ -206,6 +206,41 @@ def test_stability_and_accuracy_are_separate_keys(tmp_path: Path) -> None:
     assert "stability" in report
 
 
+def test_a_timed_out_point_appears_under_its_own_key(tmp_path: Path) -> None:
+    """A timed-out point contributes no `RunMetrics`, so `runs` alone cannot
+    show it happened -- it has to be recorded separately."""
+    point = SweepPoint(document_id="hp1", chunk_size=12000, concurrency=1, repeat=1)
+
+    report = build_report(
+        config(tmp_path),
+        two_runs(),
+        accuracy=None,
+        started_at="t",
+        library_version="v",
+        git_sha="s",
+        timed_out=[point],
+    )
+
+    assert report["timed_out"] == [
+        {"document_id": "hp1", "chunk_size": 12000, "concurrency": 1, "repeat": 1}
+    ]
+
+
+def test_timed_out_is_present_and_empty_when_nothing_timed_out(tmp_path: Path) -> None:
+    """An absent key would read as an older file format; an empty list reads
+    as the decision it is -- nothing timed out."""
+    report = build_report(
+        config(tmp_path),
+        two_runs(),
+        accuracy=None,
+        started_at="t",
+        library_version="v",
+        git_sha="s",
+    )
+
+    assert report["timed_out"] == []
+
+
 def test_the_file_is_json_named_for_when_the_run_started(tmp_path: Path) -> None:
     report = build_report(
         config(tmp_path),

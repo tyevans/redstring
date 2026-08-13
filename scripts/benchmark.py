@@ -42,6 +42,7 @@ from redstring.llm.adapters.langchain_embedding import LangChainEmbeddingProvide
 if TYPE_CHECKING:
     from tests.accuracy.runner import CorpusResult
 
+    from bench.config import SweepPoint
     from bench.metrics import RunMetrics
     from redstring import LlmProvider
 
@@ -121,25 +122,46 @@ def make_probes(
     )
 
 
-async def run_sweep(config: BenchConfig, provider: LlmProvider) -> list[RunMetrics]:
-    """Run every point of the sweep, skipping a climb once it has reversed."""
+async def run_sweep(
+    config: BenchConfig, provider: LlmProvider
+) -> tuple[list[RunMetrics], list[SweepPoint]]:
+    """Run every point of the sweep, skipping a climb once it has reversed.
+
+    A point that exceeds `policy.per_document_timeout_s` is recorded and
+    skipped rather than allowed to propagate: a single long document must not
+    discard every run that already completed, since those cost live GPU time
+    and the operator would otherwise get nothing for twenty minutes of good
+    measurements. A document that runs long at 12000 characters may complete
+    fine at 3000, and that contrast is itself a result worth having.
+
+    Returns the completed runs and the points that timed out, in that order.
+    """
     runs: list[RunMetrics] = []
+    timed_out: list[SweepPoint] = []
     documents = {doc_id: load_document(doc_id) for doc_id in config.long_documents}
     for point in config.sweep():
         if config.stop_climbing_concurrency and should_stop_climbing(runs, point):
             print(f"skipping {point}: a lower concurrency was already faster")
             continue
         print(f"running {point} ...", flush=True)
-        result = await asyncio.wait_for(
-            run_point(point, documents[point.document_id], provider=provider),
-            timeout=config.per_document_timeout_s,
-        )
+        try:
+            result = await asyncio.wait_for(
+                run_point(point, documents[point.document_id], provider=provider),
+                timeout=config.per_document_timeout_s,
+            )
+        except TimeoutError:
+            print(
+                f"  timed out after {config.per_document_timeout_s}s; "
+                f"skipping {point}, keeping runs already measured"
+            )
+            timed_out.append(point)
+            continue
         print(
             f"  {result.wall_clock_s:.1f}s  {result.chunks} chunks  "
             f"{result.entities} entities  {result.model_calls} calls"
         )
         runs.append(result)
-    return runs
+    return runs, timed_out
 
 
 async def run_accuracy(provider: LlmProvider) -> CorpusResult:
@@ -151,6 +173,25 @@ async def run_accuracy(provider: LlmProvider) -> CorpusResult:
 
 
 def main() -> int:
+    """Run the benchmark end to end.
+
+    Exit codes name what went wrong, so a caller does not have to parse
+    stderr to tell one refusal from another:
+
+    - `0` -- ran to completion, nothing timed out.
+    - `1` -- `PreflightError`: the endpoint cannot produce a measurement worth
+      recording (bad model listing, empty completion, wrong embedding width,
+      or a warm-up that extracted nothing).
+    - `2` -- `BenchConfigError`: the config file is missing a required key or
+      would produce a run that measures nothing.
+    - `3` -- at least one sweep point timed out. A report is still written
+      for the points that completed, but the caller must not treat this run
+      as clean -- see `run_sweep`'s docstring.
+    - `4` -- `BenchCorpusError`: a configured document is absent, blank, or
+      missing the provenance metadata beside it. Distinct from `2` because a
+      missing corpus file is a different problem from malformed YAML, and a
+      caller scripting around this needs to tell them apart.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=ROOT / "bench" / "config.yaml")
     parser.add_argument("--results", type=Path, default=ROOT / "bench" / "results")
@@ -185,18 +226,15 @@ def main() -> int:
 
     started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     try:
-        runs = asyncio.run(run_sweep(config, provider))
+        runs, timed_out = asyncio.run(run_sweep(config, provider))
     except BenchCorpusError as error:
         print(f"corpus: {error}", file=sys.stderr)
-        return 2
-    except TimeoutError:
-        print(
-            f"a run exceeded policy.per_document_timeout_s "
-            f"({config.per_document_timeout_s}s); no results written",
-            file=sys.stderr,
-        )
-        return 1
+        return 4
 
+    # `--no-accuracy` is an escape hatch for a step `corpus.graded` already
+    # gates: neither flag can force accuracy *on* by itself, so there is no
+    # precedence question between them, only two independent ways to turn it
+    # off.
     accuracy = (
         None if args.no_accuracy or not config.graded else asyncio.run(run_accuracy(provider))
     )
@@ -209,11 +247,18 @@ def main() -> int:
             started_at=started_at,
             library_version=__version__,
             git_sha=git_sha(),
+            timed_out=timed_out,
         ),
         directory=args.results,
         started_at=started_at,
     )
     print(f"\nwrote {path}")
+    if timed_out:
+        print(
+            f"{len(timed_out)} point(s) timed out; report is partial -- see 'timed_out' in {path}",
+            file=sys.stderr,
+        )
+        return 3
     return 0
 
 
