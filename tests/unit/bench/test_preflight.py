@@ -112,3 +112,24 @@ def test_a_probe_that_raises_becomes_a_refusal_naming_the_endpoint(config, healt
 
     with pytest.raises(PreflightError, match=re.escape("192.168.1.14")):
         preflight(config, replace(healthy, list_models=boom))
+
+
+def test_a_probe_raising_preflight_error_is_not_wrapped_again(config, healthy: Probes) -> None:
+    """A probe may refuse on its own terms, and that refusal reaches the caller
+    intact.
+
+    `_attempt` re-raises `PreflightError` before catching `Exception`. Swap
+    those two clauses and every other test in this file still passes -- the
+    only probe failure they exercise is an `OSError`, which is wrapped
+    identically either way. What breaks is this: the operator reads
+    `... failed against http://...: PreflightError('...')` instead of the
+    message the probe wrote.
+    """
+
+    def refuses() -> list[str]:
+        raise PreflightError("the model listing came back empty")
+
+    with pytest.raises(PreflightError) as caught:
+        preflight(config, replace(healthy, list_models=refuses))
+
+    assert str(caught.value) == "the model listing came back empty"
