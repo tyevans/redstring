@@ -16,7 +16,7 @@ None` unaskable.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from redstring.domain.chunk import StoredChunk
 
@@ -25,8 +25,10 @@ class SemanticCandidate(BaseModel):
     """One chunk the semantic channel ranked, with its similarity score."""
 
     chunk: StoredChunk
-    #: `VectorMatch` scale (cosine mapped onto 0..1).
-    score: float
+    #: `VectorMatch` scale (cosine mapped onto 0..1), bounded for the same
+    #: reason `VectorMatch.score` is: an inverted-sense adapter is a
+    #: `ValidationError` at the boundary rather than plausible nonsense.
+    score: float = Field(ge=0.0, le=1.0)
 
 
 class ScoredChunk(BaseModel):
@@ -38,8 +40,12 @@ class ScoredChunk(BaseModel):
     score: float
     #: `VectorMatch` scale (cosine mapped onto 0..1), or `None` if the
     #: semantic channel did not rank this chunk. See the module docstring.
-    semantic: float | None = None
+    semantic: float | None = Field(default=None, ge=0.0, le=1.0)
     #: Lexical channel's own scale, or `None` if it did not rank this chunk.
+    #: Deliberately unbounded, unlike its sibling above and unlike
+    #: `ScoredEntity.lexical`: `ScoredEntity.lexical` is Jaro-Winkler on
+    #: 0..1, but this channel is BM25, which has no upper bound. Do not
+    #: "fix" this asymmetry by adding a bound here.
     lexical: float | None = None
 
 

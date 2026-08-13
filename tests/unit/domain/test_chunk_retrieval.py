@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+from pydantic import ValidationError
+
 from redstring.domain.chunk import StoredChunk
 from redstring.domain.chunk_retrieval import (
     ChunkRetrievalResult,
@@ -53,3 +56,24 @@ def test_a_result_keeps_the_query_it_answered() -> None:
     result = ChunkRetrievalResult(query="ada lovelace", matches=[])
     assert result.query == "ada lovelace"
     assert result.matches == []
+
+
+def test_a_semantic_candidate_score_is_bounded_like_vector_match() -> None:
+    """An inverted-sense adapter is a `ValidationError` at the boundary."""
+    with pytest.raises(ValidationError):
+        SemanticCandidate(chunk=_chunk(), score=1.5)
+    with pytest.raises(ValidationError):
+        SemanticCandidate(chunk=_chunk(), score=-0.1)
+
+
+def test_a_scored_chunks_semantic_component_is_bounded() -> None:
+    with pytest.raises(ValidationError):
+        ScoredChunk(chunk=_chunk(), score=0.5, semantic=1.5)
+    with pytest.raises(ValidationError):
+        ScoredChunk(chunk=_chunk(), score=0.5, semantic=-0.1)
+
+
+def test_a_scored_chunks_lexical_component_is_deliberately_unbounded() -> None:
+    """BM25 has no upper bound, unlike `ScoredEntity.lexical`'s Jaro-Winkler."""
+    scored = ScoredChunk(chunk=_chunk(), score=0.5, lexical=12.75)
+    assert scored.lexical == 12.75
