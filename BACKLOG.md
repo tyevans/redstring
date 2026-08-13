@@ -3033,3 +3033,34 @@ copied from. Fixing one without the other would be inconsistent; fixing both
 is a small, separate, argued change (special-case `-1` and report it as
 "unconstrained" rather than as a mismatched width) that belongs in its own
 commit rather than riding in on the semantic-channel branch.
+
+### B-BENCH-1. The long benchmark documents are ungraded, so nothing scored against them is accuracy
+
+`bench/corpus/*.txt` produce timings and a stability score (`bench/stability.py`),
+never an accuracy score. Stability is Jaccard agreement between repeats, and
+both sides of that comparison come from the code under test: a pipeline that
+deterministically drops half of every document scores 1.0. It detects variance
+— which is the live risk in deliverable C, where concurrency may cause naming
+drift at chunk boundaries — and nothing else.
+
+Deferred rather than skipped, and what was learned deciding it:
+
+- Hand-grading a 100k-character document is hours of work, and CLAUDE.md's
+  grading convention makes a *partial* grading actively misleading: "omission
+  is a claim", so every ungraded entity the model correctly finds is scored as
+  a false positive. A half-graded long document reports a precision failure
+  belonging to the grader.
+- The grading convention that makes the short corpus trustworthy — grade what
+  the text states, not what is true — is hardest exactly where a model knows
+  the subject. A Harry Potter article is the worst case: an extractor that
+  supplies Hermione's house from its own training rather than from the text
+  is wrong, and a grader who knows the books will not notice.
+
+Options, cheapest first: grade a *bounded excerpt* (the first 5k characters)
+and score only entities whose mentions fall inside it; or grade a long
+document in an unfamiliar domain where the grader has no prior knowledge to
+leak. Neither is free, and both are better than the third option of quietly
+renaming stability to accuracy.
+
+Until then: `bench/report.py` writes `stability` and `accuracy` as separate
+keys, and `accuracy` is `null` whenever the graded corpus did not run.
