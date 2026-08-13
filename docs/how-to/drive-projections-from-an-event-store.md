@@ -207,9 +207,10 @@ the log is durable: an in-memory DLQ over a Postgres log means the poison
 events are gone at the next restart and the log still says they were never
 applied.
 
-**A retry policy, if the default is not what you want.** `RetryPolicy` is
-`eventsource`'s and is passed keyword-only as `retry_policy=`. Leaving it
-`None` is a decision, not an omission — see step 3.
+**A retry policy, if the default is not what you want.** `ProjectionRetryPolicy`
+is `eventsource`'s and is passed as `retry_policy=`. Leaving it `None` is a
+decision, not an omission — see step 3, which also covers the near-miss import
+that will otherwise cost you an afternoon.
 
 ### What you import, and from where
 
@@ -249,7 +250,7 @@ appends to the stream it already has.
 
 The foreign types are `eventsource`'s and stay under their own names —
 `GlobalEventFeed`, `EventSubscriber` and `Position` in `replay`'s signature,
-`ProjectionCheckpoints`, `DLQRepository` and `RetryPolicy` in the projections'
+`ProjectionCheckpoints`, `DLQRepository` and `ProjectionRetryPolicy` in the projections'
 constructors (where they arrive as `ProjectionOptions`, eventsource's
 `TypedDict` naming that option set once). The next section says where each one lives. Re-exporting another
 package's ports under our names would be worse than depending on them openly,
@@ -412,31 +413,39 @@ about your adapter choice, not a guarantee from the type.
 ### Two more foreign types, on the projection constructors
 
 `ProjectionCheckpoints` (`eventsource.ports.checkpoints`), `DLQRepository`
-(`eventsource.ports.dlq`) and `RetryPolicy`
-(`eventsource.application.projections.retry`) appear in `StoreProjection`'s
-signature, which both of our projections inherit unchanged:
+(`eventsource.ports.dlq`) and `ProjectionRetryPolicy`
+(`eventsource.application.projections.retry`) reach you through
+`StoreProjection`'s constructor, which both of our projections inherit
+unchanged. The store is the only positional parameter; everything else is a
+keyword option:
 
 ```python
-def __init__(
-    self,
-    store: TStore,
-    checkpoint_repo: ProjectionCheckpoints | None = None,
-    dlq_repo: DLQRepository | None = None,
-    enable_tracing: bool = False,
-    *,
-    retry_policy: RetryPolicy | None = None,
-    tracer: Tracer | None = None,
-    tenant_filter: TenantFilter = None,
-) -> None: ...
+def __init__(self, store: TStore, **options: Unpack[ProjectionOptions]) -> None: ...
 ```
 
-That constructor is spelled out in full rather than forwarded through
-`**kwargs` on purpose: a subclass that quietly narrows its parent's
-constructor is a real hazard, and `eventsource` widened its own projection
-constructors once for exactly that reason. The practical consequence for you
-is that `retry_policy`, `tenant_filter` and the tracing switches are reachable
-and typed from our classes — you do not have to reach past them to configure
-the base. Step 3 covers what to pass.
+The option names are not `**kwargs` in the untyped sense — they are the keys of
+`ProjectionOptions`, a `total=False` `TypedDict` in
+`eventsource.application.projections.store`, and that is the one place to read
+them:
+
+```python
+class ProjectionOptions(TypedDict, total=False):
+    checkpoint_repo: ProjectionCheckpoints | None
+    dlq_repo: DLQRepository | None
+    enable_tracing: bool
+    retry_policy: ProjectionRetryPolicy | None
+    tracer: Tracer | None
+    tenant_filter: TenantFilter
+```
+
+Naming the set once, rather than restating it on every subclass, is what stops
+a subclass quietly narrowing its parent's constructor — the hazard `eventsource`
+widened its own projection constructors for in the first place. The practical
+consequence for you is unchanged: `retry_policy`, `tenant_filter` and the
+tracing switches are reachable and typed through our classes, and `Unpack`
+means a type checker still rejects a misspelled option rather than swallowing
+it. You do not have to reach past `GraphProjection` or `VectorProjection` to
+configure the base. Step 3 covers what to pass.
 
 ### Why these keep their own names
 
@@ -934,6 +943,22 @@ constructed with no config is **not** the same policy. It is
 `max_retries=3, initial_delay=2.0, jitter=0.0`. If you want the base class's
 behaviour explicitly, write the `RetryConfig` out.
 
+And note the worse trap one import line above it: **`from eventsource import
+RetryPolicy` still works, and it is not the type this parameter wants.** The
+protocol `retry_policy=` is typed against is `ProjectionRetryPolicy`, in
+`eventsource.application.projections.retry`. The top-level `RetryPolicy`
+resolves somewhere else entirely — `eventsource.adapters._bus.retry` — where it
+is an unrelated dataclass describing backoff for the *event bus*. It is
+structurally incompatible: it does not answer `get_backoff` or `should_retry`,
+so the projection loop fails on the first failing event rather than at
+construction, which is the worst place to find out. `eventsource`'s own ADR 0062
+records this as the reason the projections protocol was renamed, and the
+rename does not close the hole, because the top-level export is still there to
+be followed. Import the protocol and every concrete policy —
+`ExponentialBackoffRetryPolicy`, `NoRetryPolicy`, `FilteredRetryPolicy`,
+`DEFAULT_RETRY_POLICY` — from `eventsource.application.projections.retry`, and
+treat a bare `from eventsource import ...` of anything retry-shaped as a bug.
+
 Ask what a retry could fix. The failures the two folds produce are
 deterministic functions of the event and the store — a missing endpoint is
 still missing two seconds later, and a 768-vector does not become a
@@ -1177,9 +1202,18 @@ did not land; only `dlq.get_failed_events()` tells you what.
   nothing else. The projections' checkpoints are written as a side effect of
   delivery and are never read back by this function.
 - **It does not follow the feed.** When `read_all` is exhausted, `replay`
-  returns. Live catch-up on a timer is `eventsource`'s
-  `ProjectionCoordinator`, a different component for a different job — this is
-  a foreground operation someone is waiting on.
+  returns. This is a foreground operation someone is waiting on, not a
+  subscription. Following a live feed is a different job, and it belongs to
+  `eventsource.application.subscriptions` — *not* to `ProjectionCoordinator`,
+  which polls nothing and owns no timer or background task. That class is a
+  dispatch coordinator over a registry (`dispatch_events`, `rebuild_all`,
+  `rebuild_projection`, `catchup`, `health_check`), driven by a caller that
+  already has the events in hand; `eventsource` 0.14.0 deleted the batch-size
+  and poll-interval settings that made it look otherwise, and states that the
+  polling behaviour they implied was never true of any released version. If you
+  want catch-up on a timer here, the loop is yours to write —
+  [Resuming](#resuming-from_position-is-exclusive-and-none-means-rebuild-from-the-beginning)
+  shows it, cursor and all.
 
 ## Reading the `ReplayReport`: `applied`, `failed`, `failures`, `last_position`
 

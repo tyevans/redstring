@@ -12,6 +12,45 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [Unreleased]
+
+### Changed
+
+- **`eventsource-py` is now `>=0.14.0,<0.15`.** Floor and cap move together,
+  as they have since 0.13.0 — one supported version rather than a range.
+
+  0.14.0 carries many breaking changes and almost none of them touch this
+  library: subscriptions, the broker buses, read models, migration
+  configuration and `ProjectionCoordinator`'s removed knobs are all surface
+  redstring does not use. Exactly one reaches this package, and it reached
+  the documentation rather than the code — the projections retry Protocol in
+  `eventsource.application.projections.retry` is now `ProjectionRetryPolicy`
+  rather than `RetryPolicy`, with no shim. Nothing under `src/` imports it,
+  so no exported signature or behaviour changes; the how-to that named it in
+  a signature does.
+
+  Worth knowing if you write your own retry policy: `from eventsource import
+  RetryPolicy` still resolves after the rename, but to an unrelated
+  bus-backoff dataclass that a projection cannot use. Import the projections
+  one by its new name from its own module rather than reaching for the
+  top-level export.
+
+### Fixed
+
+- **The documented claim that `ProjectionCoordinator` polls is retracted.** It
+  described behaviour the class does not have. No code in this library
+  depended on the description being true, so the correction is to the prose
+  only — but a reader designing around a polling loop was designing around
+  something that never ran.
+- **`replay(batch_size=...)` is documented, and with it the allocation it
+  bounds.** The parameter is new in `eventsource-py` 0.14.0, which is also
+  where `replay` stopped reading an entire feed into memory in one call — every
+  store adapter materialises its whole result set before yielding an envelope,
+  so a rebuild over a large log allocated the log. `max_events` never bounded
+  that and could not: it counts envelopes already in hand, so it fires after
+  the allocation it would have prevented. The pages describing a rebuild now
+  say which knob bounds memory and which bounds the run.
+
 ## [0.6.0] - 2026-08-11
 
 One new exported exception and two behaviour changes, neither of which

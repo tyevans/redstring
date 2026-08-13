@@ -43,7 +43,7 @@ rather than measured.
 `GraphProjection` and `VectorProjection` became the second instance when
 `StoreProjection` went upstream in `eventsource-py` 0.12.0. Their constructor
 is now `StoreProjection.__init__(store, **options: Unpack[ProjectionOptions])`,
-which lives in eventsource, so `RetryPolicy`, `Tracer`, `TenantFilter`,
+which lives in eventsource, so `ProjectionRetryPolicy`, `Tracer`, `TenantFilter`,
 `ProjectionCheckpoints` and `DLQRepository` stopped being mentioned by any
 signature of ours and `test_no_documented_foreign_type_is_stale` correctly
 struck their entries. That is the check working, not a gap opening: the five

@@ -129,17 +129,33 @@ class TestTheFilterReachesTheAdapter:
         assert options is not None
         assert options.tenant_id == QUIET
 
-    async def test_no_options_are_sent_when_no_tenant_is_named(self) -> None:
-        """A whole-feed rebuild must not start sending a filter object an
-        adapter might interpret -- `None` is what `read_all` documents as
-        unfiltered."""
+    async def test_no_filter_is_sent_when_no_tenant_is_named(self) -> None:
+        """A whole-feed rebuild must not narrow the read.
+
+        This asserted `options is None` until `eventsource-py` 0.14.0, on the
+        reasoning that `None` is what `read_all` documents as unfiltered and
+        an adapter cannot misinterpret an object it never receives. 0.14.0
+        reads the feed in bounded batches rather than materialising the whole
+        log in one call, and the batch size travels in `FeedReadOptions.limit`
+        -- so options are now sent on every read, including this one, and the
+        old assertion was pinning the absence of an allocation bound rather
+        than the absence of a filter.
+
+        The claim that survives is the one the module is about: *narrowing*
+        happens only when the caller asks for it. So assert the filter fields
+        are unset rather than that the carrier is missing -- the two were the
+        same thing upstream and are not any more, and only one of them was
+        ever this test's subject.
+        """
         rig, _ = await _shared_log()
         feed = RecordingFeed(rig.event_store)
 
         await replay(feed, rig.projections)
 
         ((_, options),) = feed.calls
-        assert options is None
+        assert options is not None
+        assert options.tenant_id is None
+        assert options.aggregate_type is None
 
 
 class TestTheScopedReplayRebuildsOnlyThatTenant:

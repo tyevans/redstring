@@ -100,7 +100,34 @@ dependencies = [
     # CI resolves fresh and therefore always tests the *newest* permitted
     # version, so a too-low floor is invisible here by construction. See
     # BACKLOG B70 for the check that would measure it.
-    "eventsource-py>=0.13.0,<0.14",
+    #
+    # **0.14.0 is the other case, and it is the one that shows what the cap
+    # actually buys.** It carries many breaking changes, and almost all of
+    # them land in surface this library has never touched: subscriptions, the
+    # three broker buses, read models, migration configuration, and the knobs
+    # deleted from `ProjectionCoordinator`. Exactly one reaches this package,
+    # and it reached the *documentation* rather than the code -- the
+    # projections retry Protocol in
+    # `eventsource.application.projections.retry` is now
+    # `ProjectionRetryPolicy` rather than `RetryPolicy`, with no shim. Nothing
+    # under `src/` imports it; a how-to named it in a signature, and that is
+    # the whole cost of the adoption.
+    #
+    # The sharp edge is worth recording, because it is the reason a rename
+    # with no shim is not self-announcing here: `from eventsource import
+    # RetryPolicy` **still resolves**, to an unrelated and structurally
+    # incompatible bus-backoff dataclass. So the reader who meets the
+    # `ImportError` from the projections module and reaches for the top-level
+    # export gets a name that imports and a type that cannot do the job. That
+    # is an argument *for* the one-minor cap on the same terms as the 0.13.0
+    # paragraph above: the cap is what made someone read the changelog, and
+    # reading the changelog is the only thing that distinguishes those two
+    # `RetryPolicy`s.
+    #
+    # **The floor moves to 0.14.0 with the cap**, for the reasoning already
+    # written above -- one supported version rather than a range, because a
+    # two-version window is a test matrix nobody runs.
+    "eventsource-py>=0.14.0,<0.15",
 ]
 
 [project.optional-dependencies]
