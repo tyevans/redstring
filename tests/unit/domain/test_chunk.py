@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.ids import SourceId, TenantId
 
 
 def test_the_same_text_under_the_same_source_gets_the_same_id() -> None:
@@ -109,6 +110,25 @@ def test_a_nul_byte_in_the_metadata_is_rejected() -> None:
             end_char=4,
             metadata={"note": "bad\x00"},
         )
+
+
+def test_a_stored_chunk_has_no_embedding_by_default() -> None:
+    """`None` means not embedded, and is distinct from a zero vector.
+
+    Built directly rather than through a factory: the defaults on the public
+    type are what a caller constructing one gets, and a helper that passes
+    every field never executes them.
+    """
+    chunk = StoredChunk(
+        id="a" * 64,
+        tenant_id=TenantId(UUID(int=1)),
+        source_id=SourceId("doc-1"),
+        text="Ada Lovelace wrote the first algorithm.",
+        chunk_index=0,
+        start_char=0,
+        end_char=39,
+    )
+    assert chunk.embedding is None
 
 
 def test_entity_ids_survive_a_round_trip_as_uuids() -> None:

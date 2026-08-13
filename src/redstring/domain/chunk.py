@@ -16,10 +16,10 @@ genuinely new ids rather than overwriting old ones in place.
 
 Positional identity -- `(source_id, chunk_index)` -- was rejected for that
 reason. Under it, chunk 3 of a re-chunked document is a *different passage*
-wearing the same id, so its stored entity links (and, once chunk embeddings
-land, its stored vector) silently describe text that no longer says what they
-claim. The cost of content addressing is orphans, and `ChunkStore.replace_source`
-is where that cost is paid.
+wearing the same id, so its stored entity links and its stored vector would
+silently describe text that no longer says what they claim. The cost of
+content addressing is orphans, and `ChunkStore.replace_source` is where that
+cost is paid.
 """
 
 from __future__ import annotations
@@ -84,6 +84,14 @@ class StoredChunk(BaseModel):
     end_char: int
     entity_ids: list[EntityId] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    #: This chunk's semantic-channel vector, or `None` if it has not been
+    #: embedded. Safe to store on this row precisely because identity is
+    #: content-addressed: re-chunking a document under different settings
+    #: produces a new `id` rather than overwriting this one in place, so a
+    #: stale embedding can never silently describe text that changed under
+    #: it. Under positional identity this field would need invalidation
+    #: logic; under content addressing it needs none.
+    embedding: list[float] | None = None
 
     @field_validator("text")
     @classmethod
