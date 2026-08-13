@@ -699,45 +699,6 @@ reports 0 and reads as a bad model; scoring the corpus against itself reports
 This is the same corpus B80 needs to settle `PROPERTY_WEIGHT`. Build it once
 and both close.
 
-### B82. Two composition points refuse a dimension mismatch with different exception types
-
-`Retriever.__init__` (`src/redstring/composition/retrieval.py`) raises
-`DimensionMismatchError` when the embedding provider and the vector store
-disagree on width. `build_graph`'s `_check_embedding_wiring`
-(`src/redstring/composition/build_graph.py`) raises **`ValueError`** for the
-same condition. `DimensionMismatchError` extends `RedstringError`, which
-extends `Exception` — it is **not** a `ValueError` subclass, so neither
-`except` catches the other.
-
-That is recurring-defects §1 at the composition layer: one rule, two
-implementations, no mechanism that fails when they disagree. A caller wiring
-both and writing one `except` around the configuration step catches one and
-crashes on the other.
-
-Deliberately not resolved on the spot, because it is not a free change. The
-two are not quite the same check: `build_graph` takes the provider and store
-as *optional* and its `ValueError` covers a second case — one supplied without
-the other — which `Retriever` cannot have, since all three collaborators are
-required. So "make them agree" is really two decisions: whether the
-half-configured case and the mismatched-dimension case should share a type at
-all, and which type the dimension case gets. Changing `build_graph`'s to
-`DimensionMismatchError` is the better answer on the merits and is a
-**breaking change** for anyone catching `ValueError` today, which is why it
-wants a version bump rather than a quiet edit.
-
-`tests/unit/test_build_graph_embeddings.py` asserts the `ValueError` and would
-need updating with it.
-
-**The divergence has no failing test, which is the part that will bite.**
-Nothing anywhere asserts that the composition points agree, so a third one
-picking a third type would be caught by nobody — the two existing tests each
-assert their own entry point's behaviour, which is §1's silent-divergence
-shape exactly. Closing this properly is therefore not just an edit: it is a
-test asserting that *every* composition point refuses a mismatch with the same
-type, which is currently red and cannot be added until the fix lands. Write
-that test first when picking this up; it is the thing that stops the entry
-being re-opened by a fourth caller in a year.
-
 ---
 
 ## 3. Performance and scale
@@ -1462,10 +1423,14 @@ rediscover:
 - **`entity_ids` is on the chunk, not in the graph.** A ranked passage is
   turned into entities by the caller holding both ports. Putting a chunk
   reference into the graph gives `mapping.py` a second id scheme.
-- **The dimension check has a precedent and a filed disagreement.** B82 —
-  two composition points refuse a dimension mismatch with different exception
-  types — is a third instance waiting to happen the moment chunk embeddings
-  acquire their own composition point.
+- **The dimension check has a precedent.** B82 (closed) made every
+  composition point taking an `EmbeddingProvider` refuse a mismatch with
+  `DimensionMismatchError`, and its gate,
+  `tests/unit/composition/test_dimension_mismatch_is_one_type.py`, derives
+  the entry-point list by introspection — so a chunk-embedding composition
+  point is covered by construction once it is added to
+  `redstring.composition`'s public surface, and only needs a `CASES` entry
+  naming its own callable.
 
 `PostgresChunkStore` stores no vector column today, so B2b also has a schema
 migration for a table that is already shipped and already has an integration

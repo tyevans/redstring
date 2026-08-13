@@ -21,6 +21,7 @@ from uuid import uuid4
 import pytest
 
 from redstring import (
+    DimensionMismatchError,
     EmbeddingProviderError,
     FakeEmbeddingProvider,
     FakeLlmProvider,
@@ -164,7 +165,13 @@ class TestTheVectorStoreIsPopulated:
 
 
 class TestHalfConfiguredIsRefused:
-    """One without the other is a silent no-op, so it raises instead."""
+    """One without the other is a silent no-op, so it raises instead.
+
+    This stays `ValueError`, not `DimensionMismatchError` -- B82 changed the
+    *mismatched-dimension* check to agree with `Retriever.__init__`, but
+    arity and disagreement are different mistakes, and there is no dimension
+    to have disagreed on when one collaborator is entirely absent.
+    """
 
     async def test_a_provider_without_a_store_raises(self):
         with pytest.raises(ValueError, match="embedding_provider was given without vector_store"):
@@ -218,10 +225,11 @@ class TestDimensionsMustAgree:
 
         By then the embedding API call has been paid for, and pgvector's
         version of the message is about a column type rather than about a
-        configuration mistake. The message here names the model and both
-        widths, because those are the two things a caller has to reconcile.
+        configuration mistake. `DimensionMismatchError` -- the same type
+        `Retriever.__init__` raises for this condition, per B82 -- names
+        both widths, which is the pair a caller has to reconcile.
         """
-        with pytest.raises(ValueError, match="768-dimensional") as caught:
+        with pytest.raises(DimensionMismatchError, match="384") as caught:
             await build_graph(
                 document(),
                 provider=provider(),
@@ -231,7 +239,7 @@ class TestDimensionsMustAgree:
                 vector_store=InMemoryVectorStore(dimension=384),
             )
 
-        assert "384" in str(caught.value)
+        assert "768" in str(caught.value)
 
     async def test_a_realistic_matching_dimension_is_accepted(self):
         """The `is not` trap, in its positive direction.
