@@ -1714,10 +1714,10 @@ not the same function.
 
 ## Merge strategies
 
-`merge_strategy.py`: one enum and one function. Merging "Ada Lovelace" into
-"Augusta Ada King" leaves one entity and several candidate values for every
-property; `resolve` is that choice, made **per property**, so a caller can
-keep the canonical description while unioning the external ids.
+`merge_strategy.py`: one enum, one value object and three functions. Merging
+"Ada Lovelace" into "Augusta Ada King" leaves one entity and several candidate
+values for every property; `resolve` is that choice, made **per property**, so
+a caller can keep the canonical description while unioning the external ids.
 
 ### `PropertyMergeStrategy` members, and which resolve
 
@@ -1725,35 +1725,74 @@ keep the canonical description while unioning the external ids.
 |---|---|
 | `PREFER_CANONICAL` | implemented; the default |
 | `UNION` | implemented |
-| `PREFER_MERGED` | raises `NotImplementedError` |
-| `LATEST` | raises `NotImplementedError` |
+| `PREFER_MERGED` | implemented |
+| `MOST_RECENTLY_OBSERVED` | implemented |
 | `DEEP_MERGE` | raises `NotImplementedError` |
 
-`IMPLEMENTED` is the frozenset of the first two, so a caller can ask before
+`IMPLEMENTED` is the frozenset of the first four, so a caller can ask before
 committing to a strategy.
 
-**The three unimplemented ones raise, and do not fall back to the default.**
-That is the point rather than an omission: a silent fallback writes the
-canonical value while the caller believes it asked for a deep merge, which
-corrupts data while looking like it worked and leaves nothing in the result to
-show it happened.
+**`DEEP_MERGE` raises, and does not fall back to the default.** That is the
+point rather than an omission: a silent fallback writes the canonical value
+while the caller believes it asked for a deep merge, which corrupts data while
+looking like it worked and leaves nothing in the result to show it happened. It
+stays deferred on its own merits — the pre-merge shape is not recoverable from
+a deep merge's result, so a wrong one is hard to undo.
 
-`LATEST` is not merely unimplemented, it is **unanswerable** with the data
-that exists. Timestamps are per entity, not per property, so "the most
-recently updated value" has nothing behind it — and implementing it against
-the entity timestamp would answer a different question in a way no caller
-could detect.
+`UNION` is structural rather than a preference. Merging *inherently* produces
+alias sets — the whole point is that several names denote one thing — so a
+strategy that accumulates instead of picking is not optional equipment.
 
-`UNION` is structural rather than a preference, which is why it is one of the
-two that exist. Merging *inherently* produces alias sets — the whole point is
-that several names denote one thing — so a strategy that accumulates instead
-of picking is not optional equipment.
+**`MOST_RECENTLY_OBSERVED` was called `LATEST` and raised**, on the argument
+that timestamps were per entity rather than per property. That argument was
+wrong twice: there were no per-entity timestamps either, and per-property ones
+were never the obstacle. The obstacle was `resolve`'s signature, which took
+bare values and so dropped everything a strategy might need beyond the value
+itself. Taking claims fixed it, and `PREFER_MERGED` came along for free — it
+was never hard, only ill-defined about *which* absorbed entity when there are
+several.
 
-### `resolve(strategy, *, canonical, others)`
+The rename narrows a promise rather than tidying a name. Nothing here tracks
+a property's edit history, so "latest" would have invited a caller to assume a
+modification time the library does not have. What it can answer is which of the
+entities asserting this property was *observed* most recently.
 
-`canonical` is the surviving entity's value and **may be `None`, which is a
-value rather than an absence** — `PREFER_CANONICAL` keeps it. `others` are the
-absorbed entities' values, in the order the merge listed those entities.
+### `PropertyClaim` and `claims_for`
+
+A `PropertyClaim` is one entity's value for one property, with the observation
+behind it: `value`, `provenance` (a `Provenance`) and `origin` (the asserting
+`EntityId`).
+
+`claims_for(property_name, canonical, others)` builds them, canonical first.
+An entity whose `properties` lack the key is **skipped**, not given a `None`
+claim: silence is not an assertion, and treating it as one would let an entity
+with no opinion outvote one with an opinion under `MOST_RECENTLY_OBSERVED`
+merely by being newer. An explicit `None` *is* a claim and is kept. It returns
+`[]` when nobody claims the property, which the caller distinguishes from
+"everybody claimed `None`".
+
+### `resolve(strategy, claims)`
+
+`claims` is non-empty — `resolve` raises `ValueError` on an empty sequence
+rather than inventing an answer — and `claims[0]` is the canonical entity's,
+the rest the absorbed entities' in the order the merge listed them. Positional
+rather than a `canonical=`/`others=` pair because every strategy but
+`PREFER_CANONICAL` treats them as one ordered sequence. A claim's value **may
+be `None`, which is a value rather than an absence** — `PREFER_CANONICAL`
+keeps it.
+
+`PREFER_MERGED` returns `claims[1].value`, or `claims[0].value` when nothing
+was absorbed.
+
+`MOST_RECENTLY_OBSERVED` returns the value of the claim greatest under
+`(observed_at, confidence, str(origin))`. Recency is the strategy's content;
+confidence breaks the tie between two observations sharing an instant exactly,
+which happens whenever a batch is extracted together; and `str(origin)` carries
+no meaning at all, existing solely so no two distinct claims compare equal. The
+moment two do, the winner is whichever the caller happened to list first, in a
+durable replayable log — see
+[`0010` one total order for preference](../adr/0010-one-total-order-for-preference.md).
+Totality is asserted as a property test rather than argued in a comment.
 
 `UNION` returns a **list**, canonical first, in first-seen order, flattening
 one level. Three properties of that, each load-bearing:

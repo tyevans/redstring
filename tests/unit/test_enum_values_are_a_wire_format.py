@@ -80,7 +80,7 @@ WIRE_FORMAT: dict[type[enum.Enum], dict[str, str]] = {
         "PREFER_CANONICAL": "prefer_canonical",
         "UNION": "union",
         "PREFER_MERGED": "prefer_merged",
-        "LATEST": "latest",
+        "MOST_RECENTLY_OBSERVED": "most_recently_observed",
         "DEEP_MERGE": "deep_merge",
     },
     # Not persisted, unlike its neighbours here: `RetrievalMode` is an argument
