@@ -1,6 +1,13 @@
 # ADR 0001: The event log's schema, granularity, and aggregates
 
-**Status:** accepted, slice 5b of the ring migration.
+**Status:** accepted, slice 5b of the ring migration. **Amended by
+[`0035` provenance is a value object](0035-provenance-is-a-value-object.md)**,
+which changes the shape of the `Entity` carried inside `DocumentExtracted` —
+five fields move onto a nested `Provenance` and a required `observed_at` joins
+them, so no payload written against the old shape validates. Every decision
+below stands: the granularity, the aggregates, the explicit schema version and
+the `dict[str, Any]` payload fields are untouched. See the Consequences for
+what the break costs and why it was affordable.
 
 **Why this one is an ADR when the rest of the migration is not:** everything
 else in the re-architecture is reversible. A persisted event schema is not.
@@ -724,3 +731,14 @@ wiring a snapshot store into a caller.
   that neither event schema changed to fix it -- the gap was in the read
   model's shape, which is what this ADR predicted by making the events
   permanent and the projections disposable.
+- **The `Entity` inside `DocumentExtracted` changed shape, and it is a clean
+  break** — see
+  [`0035` provenance is a value object](0035-provenance-is-a-value-object.md).
+  Five fields moved onto a nested `Provenance` and a required `observed_at`
+  joined them, so a payload written against the old shape does not validate.
+  This is precisely the irreversibility this ADR was written about, and it was
+  affordable for exactly one reason: nothing had persisted a log yet. A caller
+  who had would owe the upcaster Decision 3 describes, which is what
+  `event_version` is reserved for. **The window in which a payload shape can be
+  corrected for free is the window before the first deployment, and this
+  amendment spent it.**
