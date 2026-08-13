@@ -1291,6 +1291,39 @@ allowed to and this one is not is the actual asymmetry to resolve.
 Related: CLAUDE.md's standing rule that a test hanging is worse than a test
 failing, because in CI it reads as infrastructure and gets retried.
 
+### B-BENCH-2. No test proves `run_point` builds a fresh store per call
+
+`bench/runner.py::run_point` constructs a fresh `InMemoryGraphStore()` and a
+fresh `uuid4()` tenant on every call, but nothing in
+`tests/unit/bench/test_runner.py` proves the store part of that. The test
+that reads as if it does —
+`test_two_runs_of_one_document_report_the_same_counts`, formerly named
+`test_each_run_starts_from_an_empty_store` — only shows that two calls report
+the same entity counts, and it cannot distinguish a fresh store per call from
+one store shared across calls: `InMemoryGraphStore` partitions everything by
+tenant id, and `run_point` mints a new tenant every time it runs, so a store
+hoisted to module scope and reused across calls would land each run in its
+own disjoint partition and report identical counts either way. Proving
+freshness needs two runs made to share one tenant id, and `run_point` has no
+parameter for that — the seam does not exist yet.
+
+**Why this is benign today rather than urgent.** Every metric `run_point`
+returns is read back through the same tenant id the same call minted, so a
+shared store changes no reported number regardless of whether the store is
+actually fresh. The only cost of a hypothetical shared-store bug is memory
+growing across a long sweep, silently, which nothing in this deliverable
+would notice.
+
+**What closing it takes.** `run_point` would need to accept a tenant id or a
+store from its caller, so a test could hold one fixed across two calls and
+assert the second call's entities are the union with the first (proving
+sharing) or assert the second call's tenant partition is empty before it
+runs (proving freshness with an inspectable seam). Nothing in this
+deliverable's sweep needs that seam yet — every sweep point is independent —
+so the honest choice is between adding it now for the sake of this one test,
+or accepting the gap deliberately until a caller actually needs to control
+tenancy or storage across runs.
+
 ---
 
 ## 5. Capabilities deliberately not built, with the route back
