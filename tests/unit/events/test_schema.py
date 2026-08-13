@@ -38,7 +38,7 @@ EXPECTED_EVENT_VERSIONS: dict[str, int] = {
     "DocumentChunked": 1,
     "DocumentExtracted": 2,
     "EntitiesEmbedded": 1,
-    "EntitiesMerged": 1,
+    "EntitiesMerged": 2,
     "MergeUndone": 1,
 }
 

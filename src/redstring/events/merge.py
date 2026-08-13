@@ -13,6 +13,12 @@ aggregate rehydrates its merge history by replay, so when it is asked to undo
 a merge it *derives* the restoration from replayed state and writes it into
 the event. Recovery is by replay; the payload is that recovery, materialised
 once at the boundary so every downstream consumer gets it for free.
+
+The same reasoning covers entity data. A merge's whole effect on it is one
+before/after pair on the canonical entity -- `EntitiesMerged.resolution` --
+recorded rather than recomputed for the same reason `redirections` is: the
+projection overwrote the pre-merge value when it applied the event, so by the
+time anyone might want to recompute it, the input is gone.
 """
 
 from __future__ import annotations
@@ -24,7 +30,11 @@ from eventsource import register_event
 from eventsource.domain.tenant_events import TenantDomainEvent
 from pydantic import Field, model_validator
 
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import (
+    MergeableFields,
+    PropertyResolution,
+    RelationshipRedirection,
+)
 from redstring.domain.ids import EntityId
 from redstring.domain.relationship import Relationship
 from redstring.events.streams import CONSOLIDATION_CATEGORY
@@ -39,15 +49,21 @@ class EntitiesMerged(TenantDomainEvent):
     its endpoints were absorbed. It is recorded here rather than recomputed by
     the projection because recomputing it needs the pre-merge graph, which by
     definition no longer exists once the projection has applied the event.
+
+    `resolution` is the same idea applied to entity data rather than edges: a
+    merge's whole effect on the canonical entity's mergeable fields is one
+    before/after pair, recorded rather than recomputed for the reason above --
+    the projection overwrote the pre-merge value when it applied the event.
     """
 
-    event_version: int = 1
+    event_version: int = 2
     aggregate_type: str = CONSOLIDATION_CATEGORY
 
     canonical_entity_id: EntityId
     merged_entity_ids: list[EntityId] = Field(min_length=1)
     merge_reason: str | None = None
     redirections: list[RelationshipRedirection] = Field(default_factory=list)
+    resolution: PropertyResolution | None = None
 
     @model_validator(mode="after")
     def _the_merge_is_coherent(self) -> EntitiesMerged:
@@ -75,6 +91,11 @@ class EntitiesMerged(TenantDomainEvent):
                 f"redirections carry tenants the event does not belong to: "
                 f"{sorted(str(t) for t in foreign)} != {self.tenant_id}"
             )
+        if self.resolution is not None and self.resolution.entity_id != self.canonical_entity_id:
+            raise ValueError(
+                f"resolution must name the canonical entity: "
+                f"{self.resolution.entity_id} != {self.canonical_entity_id}"
+            )
         return self
 
 
@@ -89,6 +110,7 @@ class MergeUndone(TenantDomainEvent):
     canonical_entity_id: EntityId
     unmerged_entity_ids: list[EntityId] = Field(min_length=1)
     restored_relationships: list[Relationship] = Field(default_factory=list)
+    restored_fields: MergeableFields | None = None
 
     @model_validator(mode="after")
     def _restorations_belong_to_this_tenant(self) -> MergeUndone:

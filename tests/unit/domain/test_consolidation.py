@@ -5,7 +5,8 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import MergeableFields, RelationshipRedirection
+from redstring.domain.merge_strategy import MERGEABLE_FIELDS
 from redstring.domain.relationship import Relationship
 
 
@@ -88,3 +89,17 @@ class TestComparisonsAreByValueNotIdentity:
         after = before.model_copy(update={"tenant_id": UUID(str(before.tenant_id))})
         assert after.tenant_id is not before.tenant_id
         RelationshipRedirection(before=before, after=after)
+
+
+class TestMergeableFields:
+    def test_it_defaults_to_saying_nothing(self):
+        fields = MergeableFields()
+        assert fields.description is None
+        assert fields.external_ids == {}
+        assert fields.properties == {}
+
+    def test_it_holds_exactly_the_three_mergeable_fields(self):
+        """Pinned against `MERGEABLE_FIELDS`, so adding a target to one and not
+        the other fails rather than silently dropping the new field from every
+        event payload."""
+        assert set(MergeableFields.model_fields) == MERGEABLE_FIELDS

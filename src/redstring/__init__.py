@@ -201,7 +201,11 @@ from redstring.domain.chunk_ranking import (
     RankedChunk,
     rank_chunks,
 )
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import (
+    MergeableFields,
+    PropertyResolution,
+    RelationshipRedirection,
+)
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import (
     AliasCycleError,
@@ -376,9 +380,11 @@ __all__ = [
     "MergeAdjudicator",
     "MergeIntoAliasError",
     "MergeUndone",
+    "MergeableFields",
     "MissingEntityError",
     "PartialExtractionError",
     "PipelineResult",
+    "PropertyResolution",
     "PropertySchema",
     "Provenance",
     "RankedChunk",
