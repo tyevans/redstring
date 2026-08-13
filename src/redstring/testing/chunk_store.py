@@ -67,7 +67,10 @@ from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.chunk_ranking import rank_chunks
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.ids import EntityId, SourceId, TenantId
+from redstring.domain.vector import cosine_score
 from redstring.ports.chunk_store import ChunkStore
+
+SCORE_TOLERANCE = 1e-5
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -1164,6 +1167,12 @@ class ChunkStoreCompliance:
         scores = [candidate.score for candidate in result]
         assert scores == sorted(scores, reverse=True)
         assert scores[0] > scores[1] > scores[2]
+        by_id = {high.id: high, mid.id: mid, low.id: low}
+        for candidate in result:
+            embedding = by_id[candidate.chunk.id].embedding
+            assert embedding is not None
+            expected = cosine_score(query, embedding)
+            assert candidate.score == pytest.approx(expected, abs=SCORE_TOLERANCE)
 
     async def test_semantic_candidates_breaks_ties_on_id_ascending(self, store: ChunkStore) -> None:
         """Two chunks at an identical similarity order by id, not by insertion.
