@@ -61,7 +61,7 @@ async def test_it_reports_the_time_the_calls_took() -> None:
     await provider.extract("a", Answer)
     await provider.extract("b", Answer)
 
-    assert provider.elapsed_s == 3.0
+    assert provider.elapsed_in("extract") == 3.0
 
 
 async def test_time_between_calls_is_not_counted_as_model_time() -> None:
@@ -78,7 +78,7 @@ async def test_time_between_calls_is_not_counted_as_model_time() -> None:
     clock.now += 3.0  # merging, mapping, whatever the pipeline does between calls
     await provider.extract("b", Answer)
 
-    assert provider.elapsed_s == 2.0
+    assert provider.elapsed_in("extract") == 2.0
 
 
 async def test_calls_are_attributed_to_the_phase_that_was_running() -> None:
@@ -151,7 +151,7 @@ async def test_a_failing_call_is_still_counted_and_still_timed() -> None:
         await provider.extract("a", Answer)
 
     assert provider.calls == 1
-    assert provider.elapsed_s == 4.0
+    assert provider.elapsed_in("extract") == 4.0
 
 
 async def test_the_wrapped_model_name_shows_through() -> None:

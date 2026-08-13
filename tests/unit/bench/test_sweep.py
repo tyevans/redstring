@@ -75,3 +75,30 @@ def test_the_lowest_concurrency_is_never_skipped() -> None:
     completed = [run(concurrency=2, wall=100.0), run(concurrency=4, wall=140.0)]
 
     assert should_stop_climbing(completed, point(1)) is False
+
+
+def test_a_noisy_repeat_at_one_concurrency_does_not_read_as_a_reversal() -> None:
+    """I3: with repeats > 1 -- 3 is the shipped value -- "the two highest
+    completed concurrencies" used to mean the two highest completed *runs*,
+    which for a document/chunk-size pair with more than one repeat at the
+    top concurrency are usually two repeats of the *same* K, not two
+    different Ks.
+
+    K=2 repeats three times at 100s each (median 100). K=4 repeats three
+    times at 60, 60 and 200s (median 60 -- one noisy repeat, two fast ones).
+    Sorted by concurrency with ties in insertion order, the old
+    implementation's `comparable[-2]` and `comparable[-1]` are K=4's own
+    60s and 200s runs: 200 > 60 stopped the climb without ever comparing to
+    K=2. Grouped by concurrency and reduced to a median, K=4 (60) is faster
+    than K=2 (100), so the climb correctly continues.
+    """
+    completed = [
+        run(concurrency=2, wall=100.0),
+        run(concurrency=2, wall=100.0),
+        run(concurrency=2, wall=100.0),
+        run(concurrency=4, wall=60.0),
+        run(concurrency=4, wall=60.0),
+        run(concurrency=4, wall=200.0),
+    ]
+
+    assert should_stop_climbing(completed, point(8)) is False

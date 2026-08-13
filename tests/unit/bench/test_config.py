@@ -15,6 +15,7 @@ models:
   extraction: muse-glimmer-30b
   embedding: nomic-embed-text
   embedding_dimensions: 768
+  max_tokens: 16384
 corpus:
   graded: true
   long: [harry-potter-1]
@@ -41,6 +42,7 @@ def test_the_scalar_fields_are_read(tmp_path: Path) -> None:
     assert config.extraction_model == "muse-glimmer-30b"
     assert config.embedding_model == "nomic-embed-text"
     assert config.embedding_dimensions == 768
+    assert config.max_tokens == 16384
     assert config.graded is True
     assert config.long_documents == ("harry-potter-1",)
     assert config.repeats == 2
@@ -98,6 +100,19 @@ def test_zero_repeats_is_refused(tmp_path: Path) -> None:
     reports nothing -- the harness's own version of a zero-survivor run."""
     with pytest.raises(BenchConfigError, match="repeats"):
         load_config(write(tmp_path, MINIMAL.replace("repeats: 2", "repeats: 0")))
+
+
+def test_an_empty_chunk_size_list_is_refused(tmp_path: Path) -> None:
+    """`repeats: 0` was the only guard against a sweep that measures
+    nothing; `chunk_size: []` produces the identical empty sweep and used to
+    load cleanly."""
+    with pytest.raises(BenchConfigError, match="chunk_size"):
+        load_config(write(tmp_path, MINIMAL.replace("chunk_size: [3000, 8000]", "chunk_size: []")))
+
+
+def test_an_empty_long_document_list_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(BenchConfigError, match=r"corpus\.long"):
+        load_config(write(tmp_path, MINIMAL.replace("long: [harry-potter-1]", "long: []")))
 
 
 def test_the_raw_document_is_kept_for_the_results_file(tmp_path: Path) -> None:

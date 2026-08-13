@@ -1324,6 +1324,31 @@ so the honest choice is between adding it now for the sake of this one test,
 or accepting the gap deliberately until a caller actually needs to control
 tenancy or storage across runs.
 
+### B-BENCH-3. `bench/runner.py`'s `default_overlap` is a benchmark parameter not in `config.yaml`
+
+`run_point` builds its chunker with
+`default_overlap=min(200, point.chunk_size // 2)` — a formula, not a value
+read from the config file. `bench/config.yaml`'s own header comment says
+"every knob that changes a benchmark number" lives there, and this one
+changes chunk boundaries (and therefore chunk counts and entity counts)
+without appearing beside `chunk_size` or `concurrency`.
+
+**Why it was left as a formula rather than a config key.** At every
+`chunk_size` the shipped sweep actually uses (3000, 8000, 12000), `min(200,
+chunk_size // 2)` evaluates to 200 — the cap is never the binding term. So the
+knob has never varied in a run this project has produced, and adding it to
+`BenchConfig` and `bench/config.yaml` now would be a config key with exactly
+one value anyone has ever set. Deferred rather than fixed for that reason,
+not because it is hard: it is a straightforward addition the moment a sweep
+wants to vary overlap independently of chunk size, or the moment `chunk_size`
+in the config drops below 400 and the `min(200, ...)` cap starts doing
+something.
+
+**What closing it takes.** Add `sweep.overlap` (or `policy.overlap`) to
+`bench/config.yaml`, an `overlap: int` field to `BenchConfig`, and thread it
+through `run_point`'s chunker construction in place of the formula — no
+different in shape from any other knob already in the file.
+
 ---
 
 ## 5. Capabilities deliberately not built, with the route back

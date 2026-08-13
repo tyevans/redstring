@@ -10,6 +10,7 @@ import pytest
 from bench.config import SweepPoint
 from bench.corpus import BenchDocument
 from bench.runner import run_point
+from redstring.domain.exceptions import EmptyCompletionError
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -151,6 +152,19 @@ async def test_time_to_first_entity_is_absent_in_this_deliverable() -> None:
     assert result.event_gaps_s == ()
 
 
+async def test_consolidate_s_is_absent_rather_than_zero() -> None:
+    """`None`, not 0.0: consolidation happens inside `build_graph` and the
+    runner has no seam that could set a phase for it. Reporting 0.0 would
+    read as "consolidation used no model time" rather than "not measured"."""
+    clock = FakeClock()
+
+    result = await run_point(
+        point(), DOCUMENT, provider=SteadyProvider(clock, takes=1.0), clock=clock
+    )
+
+    assert result.consolidate_s is None
+
+
 async def test_the_entities_come_back_normalised_and_sorted_for_comparison() -> None:
     """Stability compares these across repeats, so two runs finding the same
     entities in a different order must produce identical tuples."""
@@ -187,6 +201,35 @@ async def test_two_runs_of_one_document_report_the_same_counts() -> None:
 
     assert first.entities == second.entities
     assert first.entity_names == second.entity_names
+
+
+async def test_a_failing_chunk_is_skipped_rather_than_aborting_the_point() -> None:
+    """C1: a single chunk raising must not discard the whole point.
+
+    Without `skip_failed_chunks=True` this call would raise out of
+    `run_point` and the caller would get nothing back for a document that
+    otherwise extracted fine.
+    """
+    clock = FakeClock()
+
+    class FlakyProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        @property
+        def model(self) -> str:
+            return "flaky-model"
+
+        async def extract(self, text: str, schema: Any, *, system_prompt: str | None = None) -> Any:
+            self.calls += 1
+            if self.calls == 1:
+                raise EmptyCompletionError(model="flaky-model")
+            return _two_entities(schema)
+
+    result = await run_point(point(), DOCUMENT, provider=FlakyProvider(), clock=clock)
+
+    assert result.failed_chunks == 1
+    assert result.chunks > result.failed_chunks
 
 
 async def test_a_concurrency_above_one_is_refused_here_too() -> None:

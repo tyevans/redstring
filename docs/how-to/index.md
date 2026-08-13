@@ -54,3 +54,6 @@ from a concrete goal rather than from a concept — for the concepts, see
 - [**Run the integration and mutation suites**](run-integration-and-mutation-suites.md) —
   everything the default suite deliberately leaves out, including the two
   invocation constraints that produce dozens of failures reading as flakiness.
+- [**Run the ingestion benchmark**](run-the-benchmark.md) — wall-clock and
+  accuracy against a live endpoint, what it refuses and why, and the exit
+  code table.

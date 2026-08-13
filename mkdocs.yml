@@ -129,6 +129,7 @@ nav:
           - Implement a store adapter: how-to/implement-a-store-adapter.md
       - Development:
           - Run the integration and mutation suites: how-to/run-integration-and-mutation-suites.md
+          - Run the ingestion benchmark: how-to/run-the-benchmark.md
   - Reference:
       - reference/index.md
       - Events: reference/events.md

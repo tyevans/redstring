@@ -6,6 +6,7 @@ import json
 from typing import TYPE_CHECKING
 
 from bench.config import SweepPoint, load_config
+from bench.corpus import BenchDocument
 from bench.metrics import RunMetrics
 from bench.report import build_report, write_report
 
@@ -18,6 +19,7 @@ models:
   extraction: muse-glimmer-30b
   embedding: nomic-embed-text
   embedding_dimensions: 768
+  max_tokens: 16384
 corpus:
   graded: true
   long: [hp1]
@@ -39,6 +41,7 @@ models:
   extraction: muse-glimmer-30b
   embedding: nomic-embed-text
   embedding_dimensions: 768
+  max_tokens: 16384
   driver: cuda
 corpus:
   graded: true
@@ -239,6 +242,82 @@ def test_timed_out_is_present_and_empty_when_nothing_timed_out(tmp_path: Path) -
     )
 
     assert report["timed_out"] == []
+
+
+def test_a_failed_point_appears_under_its_own_key_with_its_reason(tmp_path: Path) -> None:
+    """C1: a point that raised for a reason other than a timeout is recorded
+    separately, the same way a timed-out point is -- `runs` alone cannot
+    show it happened, and `timed_out` would conflate two different things a
+    reader needs to tell apart."""
+    point = SweepPoint(document_id="hp1", chunk_size=12000, concurrency=1, repeat=1)
+
+    report = build_report(
+        config(tmp_path),
+        two_runs(),
+        accuracy=None,
+        started_at="t",
+        library_version="v",
+        git_sha="s",
+        failed=[(point, "transport blip")],
+    )
+
+    assert report["failed"] == [
+        {
+            "point": {"document_id": "hp1", "chunk_size": 12000, "concurrency": 1, "repeat": 1},
+            "reason": "transport blip",
+        }
+    ]
+
+
+def test_failed_is_present_and_empty_when_nothing_failed(tmp_path: Path) -> None:
+    report = build_report(
+        config(tmp_path),
+        two_runs(),
+        accuracy=None,
+        started_at="t",
+        library_version="v",
+        git_sha="s",
+    )
+
+    assert report["failed"] == []
+
+
+def test_corpus_provenance_is_written_per_document(tmp_path: Path) -> None:
+    """The provenance that made committing a long document a decision
+    (`bench/corpus.py`) used to be loaded and then dropped on the floor --
+    it now travels with the numbers the same way the config does."""
+    document = BenchDocument(
+        id="hp1", text="text", source="https://example.com", retrieved="2026-08-01", licence="CC0"
+    )
+
+    report = build_report(
+        config(tmp_path),
+        two_runs(),
+        accuracy=None,
+        started_at="t",
+        library_version="v",
+        git_sha="s",
+        documents=[document],
+    )
+
+    assert report["corpus_provenance"] == {
+        "hp1": {"source": "https://example.com", "retrieved": "2026-08-01", "licence": "CC0"}
+    }
+
+
+def test_corpus_provenance_is_present_and_empty_when_no_documents_are_passed(
+    tmp_path: Path,
+) -> None:
+    report = build_report(
+        config(tmp_path),
+        two_runs(),
+        accuracy=None,
+        started_at="t",
+        library_version="v",
+        git_sha="s",
+    )
+
+    assert report["corpus_provenance"] == {}
 
 
 def test_the_file_is_json_named_for_when_the_run_started(tmp_path: Path) -> None:
