@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import itertools
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from redstring.consolidation.planning import duplicate_preference, plan_redirections
+from redstring.consolidation.planning import (
+    duplicate_preference,
+    plan_properties,
+    plan_redirections,
+)
+from redstring.domain.merge_strategy import PropertyMergePolicy, PropertyMergeStrategy
 
-from .conftest import edge
+from .conftest import edge, entity
 
 #: Two ids whose canonical strings sort one way whatever order they are built
 #: in, so a test can say which is "lower" without depending on `uuid4`.
@@ -442,6 +448,198 @@ def test_planning_is_pure() -> None:
     _plan(tenant, canonical, [absorbed], [moved])
 
     assert moved == pristine
+
+
+#: Three instants, so the newest is not also the last-listed. A test where the
+#: most recent entity is the last argument cannot tell
+#: `MOST_RECENTLY_OBSERVED` from `PREFER_MERGED`-taking-the-last.
+FIRST = datetime(2026, 1, 1, tzinfo=UTC)
+MIDDLE = datetime(2026, 2, 1, tzinfo=UTC)
+NEWEST = datetime(2026, 3, 1, tzinfo=UTC)
+
+
+def _group(tenant, canonical_fields, first_fields, second_fields):
+    """A canonical entity and two absorbed ones.
+
+    Two absorbed entities, not one: with a single absorbed entity
+    `PREFER_MERGED` and `MOST_RECENTLY_OBSERVED` pick the same claim for any
+    input, so a one-absorbed test cannot distinguish them.
+    """
+    canonical = entity(tenant, name="Ada", observed_at=MIDDLE, **canonical_fields)
+    first = entity(tenant, name="A. Lovelace", observed_at=NEWEST, **first_fields)
+    second = entity(tenant, name="Countess Lovelace", observed_at=FIRST, **second_fields)
+    return canonical, [first, second]
+
+
+class TestPlanProperties:
+    def test_the_default_policy_keeps_every_canonical_value(self):
+        tenant = uuid4()
+        canonical, others = _group(
+            tenant,
+            {"description": "the analyst", "properties": {"role": "analyst"}},
+            {"description": "a mathematician", "properties": {"role": "mathematician"}},
+            {"description": "a countess", "properties": {"role": "countess"}},
+        )
+
+        plan = plan_properties(policy=PropertyMergePolicy(), canonical=canonical, others=others)
+
+        assert plan.after.description == "the analyst"
+        assert plan.after.properties == {"role": "analyst"}
+
+    def test_before_holds_the_canonical_entitys_values_as_read(self):
+        tenant = uuid4()
+        canonical, others = _group(
+            tenant,
+            {"description": "the analyst", "properties": {"role": "analyst"}},
+            {"properties": {"role": "mathematician"}},
+            {"properties": {"role": "countess"}},
+        )
+
+        plan = plan_properties(
+            policy=PropertyMergePolicy(default=PropertyMergeStrategy.PREFER_MERGED),
+            canonical=canonical,
+            others=others,
+        )
+
+        assert plan.before.description == "the analyst"
+        assert plan.before.properties == {"role": "analyst"}
+        assert plan.entity_id == canonical.id
+
+    def test_most_recently_observed_takes_the_newest_claim_not_the_last(self):
+        """`first` is newest and is listed before `second`. An implementation
+        taking the last claim, or the last absorbed entity, gives "countess"."""
+        tenant = uuid4()
+        canonical, others = _group(
+            tenant,
+            {"properties": {"role": "analyst"}},
+            {"properties": {"role": "mathematician"}},
+            {"properties": {"role": "countess"}},
+        )
+
+        plan = plan_properties(
+            policy=PropertyMergePolicy(default=PropertyMergeStrategy.MOST_RECENTLY_OBSERVED),
+            canonical=canonical,
+            others=others,
+        )
+
+        assert plan.after.properties == {"role": "mathematician"}
+
+    def test_prefer_merged_takes_the_first_absorbed_entity(self):
+        """Same group, same instants, different strategy, different answer --
+        which is what makes either assertion mean anything."""
+        tenant = uuid4()
+        canonical, others = _group(
+            tenant,
+            {"properties": {"role": "analyst"}},
+            {"properties": {"role": "mathematician"}},
+            {"properties": {"role": "countess"}},
+        )
+
+        plan = plan_properties(
+            policy=PropertyMergePolicy(default=PropertyMergeStrategy.PREFER_MERGED),
+            canonical=canonical,
+            others=others,
+        )
+
+        assert plan.after.properties == {"role": "mathematician"}
+
+    def test_after_is_exhaustive_over_every_entitys_keys(self):
+        """`after` replaces the field wholesale, so a key the canonical entity
+        never had must still appear -- and a key only an absorbed entity had
+        must not be dropped."""
+        tenant = uuid4()
+        canonical, others = _group(
+            tenant,
+            {"properties": {"role": "analyst"}},
+            {"properties": {"era": "victorian"}},
+            {"properties": {"field": "computing"}},
+        )
+
+        plan = plan_properties(policy=PropertyMergePolicy(), canonical=canonical, others=others)
+
+        assert plan.after.properties == {
+            "role": "analyst",
+            "era": "victorian",
+            "field": "computing",
+        }
+
+    def test_union_accumulates_across_the_group(self):
+        tenant = uuid4()
+        canonical, others = _group(
+            tenant,
+            {"properties": {"aka": "Ada"}},
+            {"properties": {"aka": "A. Lovelace"}},
+            {"properties": {"aka": "Ada"}},
+        )
+
+        plan = plan_properties(
+            policy=PropertyMergePolicy(overrides={"properties.aka": PropertyMergeStrategy.UNION}),
+            canonical=canonical,
+            others=others,
+        )
+
+        assert plan.after.properties == {"aka": ["Ada", "A. Lovelace"]}
+
+    def test_external_ids_accumulate_key_by_key(self):
+        tenant = uuid4()
+        canonical, others = _group(
+            tenant,
+            {"external_ids": {"wikidata": "Q7259"}},
+            {"external_ids": {"orcid": "0000-1"}},
+            {"external_ids": {"viaf": "12345"}},
+        )
+
+        plan = plan_properties(policy=PropertyMergePolicy(), canonical=canonical, others=others)
+
+        assert plan.after.external_ids == {
+            "wikidata": "Q7259",
+            "orcid": "0000-1",
+            "viaf": "12345",
+        }
+
+    def test_a_field_nobody_described_stays_none(self):
+        """`claims_for` returns `[]` and `resolve` refuses an empty list, so
+        this path must not call it."""
+        tenant = uuid4()
+        canonical, others = _group(tenant, {}, {}, {})
+
+        plan = plan_properties(
+            policy=PropertyMergePolicy(default=PropertyMergeStrategy.MOST_RECENTLY_OBSERVED),
+            canonical=canonical,
+            others=others,
+        )
+
+        assert plan.after.description is None
+
+    def test_the_key_order_is_deterministic_and_canonical_first(self):
+        """Two replays of one log must produce byte-identical payloads, so the
+        union's iteration order cannot depend on a set."""
+        tenant = uuid4()
+        canonical, others = _group(
+            tenant,
+            {"properties": {"role": "analyst"}},
+            {"properties": {"era": "victorian"}},
+            {"properties": {"field": "computing"}},
+        )
+
+        plan = plan_properties(policy=PropertyMergePolicy(), canonical=canonical, others=others)
+
+        assert list(plan.after.properties) == ["role", "era", "field"]
+
+    def test_a_merge_with_nothing_absorbed_keeps_the_canonical_values(self):
+        tenant = uuid4()
+        canonical = entity(
+            tenant, description="the analyst", properties={"role": "analyst"}, observed_at=MIDDLE
+        )
+
+        plan = plan_properties(
+            policy=PropertyMergePolicy(default=PropertyMergeStrategy.PREFER_MERGED),
+            canonical=canonical,
+            others=[],
+        )
+
+        assert plan.after.description == "the analyst"
+        assert plan.after.properties == {"role": "analyst"}
 
 
 if __name__ == "__main__":  # pragma: no cover
