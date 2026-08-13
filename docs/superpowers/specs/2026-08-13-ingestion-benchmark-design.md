@@ -267,6 +267,22 @@ mapped to the same path the serial loop uses.
 Each step commits its results JSON, so the improvement is reviewable as data
 rather than as a claim.
 
+## Against the existing ADRs
+
+Required by `.claude/rules/definition-of-done.md`: every related ADR is named,
+with whether it stands.
+
+| ADR | Verdict |
+|---|---|
+| `0008` the two non-store ports | **Amended by deliverable B.** It settles what `Cache` and `LlmProvider` promise; a third non-store port changes the set it describes. B writes a new ADR and adds an "Amended by" pointer to `0008`'s status. |
+| `0007` composition is the only top layer | **Stands.** `ProgressSink` is a parameter threaded through `build_graph`, not a second module in `composition`. |
+| `0001` event log schema and granularity | **Stands, and deliverable B is the reason it needs saying.** Per-chunk progress is deliberately *not* an event: it has no aggregate state and must not be replayed. Choosing the port is what leaves `0001` untouched, so the alternative belongs in B's ADR as the option rejected. |
+| `0011` domain schemas prompt but do not constrain | **Stands.** Nothing here changes what a schema does. |
+| `0006` the public surface is gated | **Engaged by B.** If `ProgressSink` or the progress value objects appear in `build_graph`'s signature, `__all__` must export them and their closure, or the signature gate fails. That is the gate working, not an obstacle. |
+| `0010` one total order for preference | **Stands, and is the ADR deliverable C must be read against.** Concurrency changes which chunk observes an entity first; if any tie-break depends on extraction order, C changes results rather than only timings. C's plan proves order-independence or amends this. |
+
+Deliverable A touches no ADR: it modifies no library code.
+
 ## Backlog and risks
 
 - Long-document corpus is **ungraded**, so accuracy on it is unmeasurable by
