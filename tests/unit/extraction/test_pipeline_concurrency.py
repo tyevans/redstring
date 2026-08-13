@@ -73,9 +73,11 @@ class RecordingProvider:
             self.in_flight -= 1
 
 
-async def _run(provider, *, concurrency: int, chunks: int = 3):
+async def _run(provider, *, concurrency: int, chunks: int = 3, gleanings: int = 0):
     text = "\n\n".join(_PARAGRAPHS[:chunks])
-    pipeline = ExtractionPipeline(provider, chunker=_CHUNKER, concurrency=concurrency)
+    pipeline = ExtractionPipeline(
+        provider, chunker=_CHUNKER, concurrency=concurrency, gleanings=gleanings
+    )
     return await pipeline.extract(
         SourceDocument(id="doc-1", text=text), uuid4(), observed_at=OBSERVED
     )
@@ -141,3 +143,17 @@ async def test_a_chunk_sees_what_earlier_batches_found_and_not_its_own_batch() -
 async def test_a_concurrency_below_one_is_refused(bad: int) -> None:
     with pytest.raises(ValueError, match="concurrency"):
         ExtractionPipeline(RecordingProvider(), concurrency=bad)
+
+
+async def test_gleaning_calls_are_inside_the_ceiling_too() -> None:
+    """K=2 with one gleaning pass is four calls per batch, not two.
+
+    Without a shared limiter the batch bounds only the first call of each
+    chunk, so this is the case that separates "bounded batches" from "bounded
+    in flight".
+    """
+    provider = RecordingProvider(delay=0.01)
+
+    await _run(provider, concurrency=2, chunks=4, gleanings=1)
+
+    assert provider.peak <= 2

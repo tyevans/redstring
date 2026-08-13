@@ -79,6 +79,7 @@ from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.constrained import constrained_extraction_for
 from redstring.extraction.domains.registry import get_domain_schema
+from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.schema import Extraction
@@ -208,6 +209,7 @@ async def build_graph(
     chunks: ChunkStore | None = None,
     event_store: AggregateStore | None = None,
     observed_at: datetime | None = None,
+    concurrency: int = 1,
 ) -> GraphBuildReport:
     """Extract `document` and write the result into `store`.
 
@@ -301,6 +303,16 @@ async def build_graph(
             wrong answer instead of a new type.
             `docs/adr/0011-domain-schemas-prompt-but-do-not-constrain.md`
             remains the default's reasoning; ADR 0030 is this dial's.
+        concurrency: How many calls against `provider` may be in flight at
+            once, across extraction, gleaning and embedding alike -- one
+            `CallLimiter` built here and shared by the pipeline and the
+            embedding call, so a stated ceiling of four stays four instead of
+            becoming six whenever gleaning or embedding overlaps the next
+            batch. `1` -- the default -- reproduces the serial pipeline byte
+            for byte, the same as passing no value at all. See
+            `redstring.extraction.limiter` and
+            `redstring.extraction.pipeline.ExtractionPipeline`'s `concurrency`
+            parameter, which this both configures and bounds jointly with.
 
     Returns:
         A `GraphBuildReport`. `report.event is None` means this document was
@@ -329,14 +341,22 @@ async def build_graph(
     resolved = await _resolve_prompt(domain, document, provider)
     domain_id, confidence = resolved.domain_id, resolved.confidence
 
+    # One limiter, shared by every call against `provider` this function
+    # makes or hands to the pipeline -- extraction, gleaning, and embedding
+    # below. A second limiter built for the embedding call alone would bound
+    # extraction and embedding separately at `concurrency` each rather than
+    # jointly, which is exactly the gap this parameter exists to close.
+    limiter = CallLimiter(concurrency)
     pipeline = ExtractionPipeline(
         provider,
         chunker=chunker,
         system_prompt=resolved.system_prompt,
         schema=(constrained_extraction_for(resolved.schema) if constrain_to_domain else Extraction),
         skip_failed_chunks=skip_failed_chunks,
+        concurrency=concurrency,
         carryover_entities=carryover_entities,
         gleanings=gleanings,
+        limiter=limiter,
     )
     stream = document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id
     repository = document_repository(event_store) if event_store is not None else None
@@ -387,6 +407,7 @@ async def build_graph(
                 entities=result.entities,
                 provider=embedding_provider,
                 vector_store=vector_store,
+                limiter=limiter,
             )
             await _persist(repository, aggregate, tenant_id)
 
@@ -496,6 +517,7 @@ async def _embed_entities(
     entities: Sequence[Entity],
     provider: EmbeddingProvider,
     vector_store: VectorStore,
+    limiter: CallLimiter,
 ) -> int:
     """Embed `entities` and fold the result into `vector_store`.
 
@@ -509,6 +531,9 @@ async def _embed_entities(
     So did `VectorProjection`. Both were written when the event was designed
     and neither had a caller -- the inert-code shape from
     `recurring-defects.md` §3, sitting in the tree for six slices.
+
+    `limiter` bounds this call jointly with `build_graph`'s pipeline, since
+    both hit the same endpoint the operator sized `concurrency` for.
 
     Returns:
         How many vectors were written.
@@ -524,7 +549,8 @@ async def _embed_entities(
     if not entities:
         return 0
 
-    vectors = await provider.embed([entity.name for entity in entities])
+    async with limiter:
+        vectors = await provider.embed([entity.name for entity in entities])
     if len(vectors) != len(entities):
         raise EmbeddingProviderError(
             f"asked for {len(entities)} embeddings and got {len(vectors)}; "

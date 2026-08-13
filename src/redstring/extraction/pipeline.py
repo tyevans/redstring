@@ -132,6 +132,7 @@ from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES, Carryover
 from redstring.extraction.chunkers import SlidingWindowChunker
 from redstring.extraction.corpus import chunking_digest, stored_chunks
 from redstring.extraction.gleaning import combine, found_nothing, gleaning_prompt
+from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.mapping import MappedExtraction, map_extraction
 from redstring.extraction.merging import merge_extractions
 from redstring.extraction.schema import Extraction
@@ -265,6 +266,7 @@ class ExtractionPipeline:
         carryover_entities: int = DEFAULT_CARRYOVER_ENTITIES,
         gleanings: int = 0,
         schema: type[Extraction] = Extraction,
+        limiter: CallLimiter | None = None,
     ) -> None:
         """Assemble a pipeline.
 
@@ -317,6 +319,16 @@ class ExtractionPipeline:
                 flag because the pipeline has no domain to consult: it is
                 given a prompt, and this is the other half of the same
                 decision, made by whoever chose the prompt.
+            limiter: The ceiling every call against `provider` passes
+                through -- the extraction call and the gleaning call alike.
+                `CallLimiter(concurrency)` when omitted, so a caller who
+                constructs this pipeline directly with `concurrency=4` and no
+                limiter still gets a working ceiling of four. Pass one
+                explicitly to bound this pipeline's calls jointly with a call
+                this pipeline does not own -- `build_graph` does, so its
+                embedding call shares the same limiter rather than getting a
+                second one that would bound extraction and embedding
+                separately at `concurrency` each.
         """
         self._provider = provider
         self._chunker = chunker if chunker is not None else SlidingWindowChunker()
@@ -336,6 +348,7 @@ class ExtractionPipeline:
             raise ValueError(f"gleanings must be >= 0, got {gleanings}")
         self._gleanings = gleanings
         self._schema = schema
+        self._limiter = limiter if limiter is not None else CallLimiter(concurrency)
 
     @property
     def system_prompt(self) -> str:
@@ -482,7 +495,8 @@ class ExtractionPipeline:
         unchanged from before batching existed; this is that code moved, not
         rewritten, so a batch of one behaves exactly as the loop body used to.
         """
-        answer = await self._provider.extract(chunk.text, self._schema, system_prompt=prompt)
+        async with self._limiter:
+            answer = await self._provider.extract(chunk.text, self._schema, system_prompt=prompt)
         answer, passes, glean_failures = await self._glean(chunk.text, prompt, answer)
         mapped = map_extraction(
             answer,
@@ -519,9 +533,10 @@ class ExtractionPipeline:
         failures = 0
         for _ in range(self._gleanings):
             try:
-                extra = await self._provider.extract(
-                    text, self._schema, system_prompt=gleaning_prompt(prompt, answer)
-                )
+                async with self._limiter:
+                    extra = await self._provider.extract(
+                        text, self._schema, system_prompt=gleaning_prompt(prompt, answer)
+                    )
             except LlmProviderError:
                 failures += 1
                 break
