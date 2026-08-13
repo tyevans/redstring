@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
 from eventsource.adapters.memory import (
     InMemoryCheckpointRepository,
     InMemoryDLQRepository,
@@ -31,6 +32,9 @@ from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import AdjudicationBatch, Adjudicator
 from redstring.consolidation.service import ConsolidationService
 from redstring.domain.blocking import blocking_keys_for
+from redstring.domain.exceptions import MissingEntityError
+from redstring.domain.ids import EntityId
+from redstring.domain.merge_strategy import PropertyMergePolicy, PropertyMergeStrategy
 from redstring.events.merge import EntitiesMerged
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.projections import GraphProjection
@@ -245,6 +249,94 @@ class TestTheWholeGroup:
         assert "Ada Lovegood" in prompt
         assert "Zebedee Quill" not in prompt, "the low band cost a model call"
         assert prompt.count("Pair ") == 1, "the high band cost a model call"
+
+
+class TestMergeDecidesFields:
+    async def test_the_emitted_event_carries_a_resolution(self):
+        """The wiring test: without it, `plan_properties` has no caller and
+        this whole change is another unreached component."""
+        rig, tenant = Rig(), uuid4()
+        canonical = keyed(tenant, "Ada Lovelace", properties={"role": "mathematician"})
+        absorbed = keyed(tenant, "Ada Lovelace", properties={"role": "analyst"})
+        await rig.seed(canonical, absorbed)
+
+        event = await rig.service.merge(
+            tenant_id=tenant,
+            canonical_entity_id=canonical.id,
+            merged_entity_ids=[absorbed.id],
+        )
+
+        assert event.resolution is not None
+        assert event.resolution.entity_id == canonical.id
+        assert event.resolution.before.properties == canonical.properties
+
+    async def test_the_services_policy_decides(self):
+        """A non-default policy must reach `plan_properties`. With the policy
+        dropped on the floor the default applies and the canonical value
+        wins, so this is the assertion that catches an ignored argument."""
+        rig, tenant = Rig(), uuid4()
+        canonical = keyed(tenant, "Ada Lovelace", properties={"role": "mathematician"})
+        absorbed = keyed(tenant, "Ada Lovelace", properties={"role": "analyst"})
+        await rig.seed(canonical, absorbed)
+        service = ConsolidationService(
+            event_store=rig.event_store,
+            snapshot_store=InMemorySnapshotStore(),
+            graph_store=rig.graph_store,
+            merge_policy=PropertyMergePolicy(default=PropertyMergeStrategy.PREFER_MERGED),
+        )
+
+        event = await service.merge(
+            tenant_id=tenant,
+            canonical_entity_id=canonical.id,
+            merged_entity_ids=[absorbed.id],
+        )
+
+        assert event.resolution.after.properties == absorbed.properties
+
+    async def test_a_per_call_policy_overrides_the_services(self):
+        rig, tenant = Rig(), uuid4()
+        canonical = keyed(tenant, "Ada Lovelace", properties={"role": "mathematician"})
+        absorbed = keyed(tenant, "Ada Lovelace", properties={"role": "analyst"})
+        await rig.seed(canonical, absorbed)
+
+        event = await rig.service.merge(
+            tenant_id=tenant,
+            canonical_entity_id=canonical.id,
+            merged_entity_ids=[absorbed.id],
+            policy=PropertyMergePolicy(default=PropertyMergeStrategy.PREFER_MERGED),
+        )
+
+        assert event.resolution.after.properties == absorbed.properties
+
+    async def test_a_canonical_entity_with_no_row_is_refused(self):
+        """The log and the graph disagreeing, which is what
+        `MissingEntityError` names -- not a routine miss."""
+        rig, tenant = Rig(), uuid4()
+        absorbed = keyed(tenant, "Ada Lovelace")
+        await rig.seed(absorbed)
+
+        with pytest.raises(MissingEntityError):
+            await rig.service.merge(
+                tenant_id=tenant,
+                canonical_entity_id=EntityId(uuid4()),
+                merged_entity_ids=[absorbed.id],
+            )
+
+    async def test_an_absorbed_entity_with_no_row_is_tolerated(self):
+        """`_apply_merge` already tolerates this when writing aliases; the
+        plan must agree with it rather than refuse where the projection
+        shrugs."""
+        rig, tenant = Rig(), uuid4()
+        canonical = keyed(tenant, "Ada Lovelace")
+        await rig.seed(canonical)
+
+        event = await rig.service.merge(
+            tenant_id=tenant,
+            canonical_entity_id=canonical.id,
+            merged_entity_ids=[EntityId(uuid4())],
+        )
+
+        assert event.resolution is not None
 
 
 class TestWithinDocumentResolutionIsNotASpecialCase:

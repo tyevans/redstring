@@ -38,7 +38,7 @@ from uuid import UUID
 from eventsource.domain.aggregate import AggregateRoot
 from pydantic import BaseModel, Field
 
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import PropertyResolution, RelationshipRedirection
 from redstring.domain.exceptions import (
     DoubleMergeError,
     MergeIntoAliasError,
@@ -62,12 +62,17 @@ class MergeRecord(BaseModel):
     Keeps the `redirections` because that is what an undo restores. Nothing
     else does: reconstructing them at undo time would need the pre-merge
     graph, which the projection overwrote when it applied the merge.
+
+    `resolution` is kept for the same reason `redirections` is: an undo
+    restores it, and reconstructing it later would need the pre-merge entity
+    the projection overwrote.
     """
 
     merge_event_id: UUID
     canonical_entity_id: EntityId
     merged_entity_ids: list[EntityId]
     redirections: list[RelationshipRedirection] = Field(default_factory=list)
+    resolution: PropertyResolution | None = None
     undone: bool = False
 
 
@@ -111,6 +116,7 @@ class ConsolidationLog(AggregateRoot[ConsolidationLogState]):
         merged_entity_ids: Sequence[EntityId],
         merge_reason: str | None = None,
         redirections: Sequence[RelationshipRedirection] = (),
+        resolution: PropertyResolution | None = None,
     ) -> EntitiesMerged:
         """Absorb `merged_entity_ids` into `canonical_entity_id`.
 
@@ -141,6 +147,7 @@ class ConsolidationLog(AggregateRoot[ConsolidationLogState]):
             merged_entity_ids=list(merged_entity_ids),
             merge_reason=merge_reason,
             redirections=list(redirections),
+            resolution=resolution,
         )
 
     def undo_merge(self, *, tenant_id: TenantId, merge_event_id: UUID) -> MergeUndone:
@@ -159,6 +166,7 @@ class ConsolidationLog(AggregateRoot[ConsolidationLogState]):
             canonical_entity_id=record.canonical_entity_id,
             unmerged_entity_ids=list(record.merged_entity_ids),
             restored_relationships=[r.before for r in record.redirections],
+            restored_fields=record.resolution.before if record.resolution is not None else None,
         )
 
     def _merge_in_effect(self, merge_event_id: UUID) -> MergeRecord:
@@ -181,6 +189,7 @@ class ConsolidationLog(AggregateRoot[ConsolidationLogState]):
                 canonical_entity_id=event.canonical_entity_id,
                 merged_entity_ids=list(event.merged_entity_ids),
                 redirections=list(event.redirections),
+                resolution=event.resolution,
             )
         )
         for entity_id in event.merged_entity_ids:

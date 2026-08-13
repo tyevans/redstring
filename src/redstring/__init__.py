@@ -226,6 +226,7 @@ from redstring.domain.exceptions import (
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.interval import Bounds, TemporalRelation
+from redstring.domain.merge_strategy import PropertyMergePolicy, PropertyMergeStrategy
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
@@ -384,6 +385,8 @@ __all__ = [
     "MissingEntityError",
     "PartialExtractionError",
     "PipelineResult",
+    "PropertyMergePolicy",
+    "PropertyMergeStrategy",
     "PropertyResolution",
     "PropertySchema",
     "Provenance",

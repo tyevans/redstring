@@ -56,7 +56,7 @@ from typing import TYPE_CHECKING
 from eventsource.domain.tenant_context import tenant_scope
 
 from redstring.aggregates.repositories import consolidation_repository
-from redstring.consolidation.planning import plan_redirections
+from redstring.consolidation.planning import plan_properties, plan_redirections
 from redstring.consolidation.policy import (
     HIGH_SIMILARITY,
     LOW_SIMILARITY,
@@ -64,6 +64,7 @@ from redstring.consolidation.policy import (
     decide,
 )
 from redstring.domain.exceptions import MergeIntoAliasError, MissingEntityError
+from redstring.domain.merge_strategy import PropertyMergePolicy
 from redstring.events.streams import consolidation_stream
 
 if TYPE_CHECKING:
@@ -85,7 +86,17 @@ if TYPE_CHECKING:
 
 
 class ConsolidationService:
-    """Emits merges and undos. Reads the graph; never writes to it."""
+    """Emits merges and undos. Reads the graph; never writes to it.
+
+    `merge` now reads entities as well as edges: absorbing a duplicate
+    decides not only what happens to its edges (`plan_redirections`) but what
+    happens to the canonical entity's own `description`, `properties` and
+    `external_ids` (`plan_properties`). The policy that decision follows
+    lives here, constructed once at wiring time, because most callers want
+    one merge policy for the whole service and only occasionally need to
+    override it for a single call -- `merge`'s own `policy` argument takes
+    precedence when supplied.
+    """
 
     def __init__(
         self,
@@ -93,15 +104,22 @@ class ConsolidationService:
         event_store: AggregateStore,
         snapshot_store: SnapshotStore,
         graph_store: ConsolidationGraph,
+        merge_policy: PropertyMergePolicy | None = None,
     ) -> None:
         """`graph_store` is the wider `ConsolidationGraph` slice, not just `RelationshipStore`.
 
         `resolve` needs to read entities and resolve aliases before it plans
         redirections, not only edges -- see `resolve`'s handling of a subject
         that has itself been merged away.
+
+        `merge_policy` is the default `PropertyMergePolicy` `merge` uses to
+        decide the canonical entity's fields when a call does not supply its
+        own. `PropertyMergePolicy()` -- prefer the canonical entity's values
+        -- when omitted.
         """
         self._graph = graph_store
         self._log = consolidation_repository(event_store, snapshot_store)
+        self._policy = merge_policy if merge_policy is not None else PropertyMergePolicy()
 
     async def merge(
         self,
@@ -110,6 +128,7 @@ class ConsolidationService:
         canonical_entity_id: EntityId,
         merged_entity_ids: Sequence[EntityId],
         merge_reason: str | None = None,
+        policy: PropertyMergePolicy | None = None,
     ) -> EntitiesMerged:
         """Absorb `merged_entity_ids` into `canonical_entity_id`.
 
@@ -122,6 +141,10 @@ class ConsolidationService:
         Raises `MergeIntoAliasError` or `DoubleMergeError` before writing
         anything. Both are refusals to record a fact rather than failures to
         write one, so there is nothing half-applied to clean up.
+
+        Args:
+            policy: Overrides this service's `merge_policy` for this call
+                only. Omit to use the service's own policy.
         """
         group = [canonical_entity_id, *merged_entity_ids]
         relationships = await self._graph.get_relationships_for(group, tenant_id)
@@ -129,6 +152,26 @@ class ConsolidationService:
             canonical_entity_id=canonical_entity_id,
             merged_entity_ids=merged_entity_ids,
             relationships=relationships,
+        )
+
+        entities = await self._graph.get_entities(group, tenant_id)
+        by_id = {entity.id: entity for entity in entities}
+        canonical = by_id.get(canonical_entity_id)
+        if canonical is None:
+            # The log and the graph disagreeing, not a routine miss: a merge
+            # whose canonical entity has no row cannot decide anything about
+            # its fields, and guessing would write a decision nobody made.
+            # Same reading as `_resolved_subject`.
+            raise MissingEntityError(entity_id=canonical_entity_id, tenant_id=tenant_id)
+        # An absorbed entity with no row is *tolerated*, deliberately:
+        # `GraphProjection._apply_merge` already writes an alias with a null
+        # name for exactly this case, and refusing here would make the plan
+        # stricter than the fold that applies it.
+        others = [by_id[entity_id] for entity_id in merged_entity_ids if entity_id in by_id]
+        resolution = plan_properties(
+            policy=policy if policy is not None else self._policy,
+            canonical=canonical,
+            others=others,
         )
 
         async with tenant_scope(tenant_id):
@@ -141,6 +184,7 @@ class ConsolidationService:
                 merged_entity_ids=merged_entity_ids,
                 merge_reason=merge_reason,
                 redirections=redirections,
+                resolution=resolution,
             )
             await self._log.save(log)
         return event

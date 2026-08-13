@@ -12,7 +12,11 @@ from uuid import UUID, uuid4
 import pytest
 
 from redstring.aggregates.consolidation_log import ConsolidationLog
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import (
+    MergeableFields,
+    PropertyResolution,
+    RelationshipRedirection,
+)
 from redstring.domain.exceptions import (
     DoubleMergeError,
     MergeIntoAliasError,
@@ -194,6 +198,42 @@ class TestUndo:
         log.undo_merge(tenant_id=tenant_id, merge_event_id=log.uncommitted_events[0].event_id)
         log.merge(tenant_id=tenant_id, canonical_entity_id=c, merged_entity_ids=[a])
         assert len(log.uncommitted_events) == 3
+
+
+def _resolution(entity_id):
+    return PropertyResolution(
+        entity_id=entity_id,
+        before=MergeableFields(properties={"role": "analyst"}),
+        after=MergeableFields(properties={"role": "mathematician"}),
+    )
+
+
+class TestUndoRestoresFields:
+    def test_undo_hands_back_the_pre_merge_fields(self, log, tenant_id):
+        """Derived from replayed state, not from the caller -- the same rule
+        `restored_relationships` already follows."""
+        a, b = uuid4(), uuid4()
+        log.merge(
+            tenant_id=tenant_id,
+            canonical_entity_id=a,
+            merged_entity_ids=[b],
+            resolution=_resolution(a),
+        )
+        merge_event_id = log.uncommitted_events[0].event_id
+
+        undone = log.undo_merge(tenant_id=tenant_id, merge_event_id=merge_event_id)
+
+        assert undone.restored_fields is not None
+        assert undone.restored_fields.properties == {"role": "analyst"}
+
+    def test_undoing_a_merge_that_decided_nothing_restores_nothing(self, log, tenant_id):
+        a, b = uuid4(), uuid4()
+        log.merge(tenant_id=tenant_id, canonical_entity_id=a, merged_entity_ids=[b])
+        merge_event_id = log.uncommitted_events[0].event_id
+
+        undone = log.undo_merge(tenant_id=tenant_id, merge_event_id=merge_event_id)
+
+        assert undone.restored_fields is None
 
 
 class TestRehydration:

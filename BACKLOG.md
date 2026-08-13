@@ -2881,3 +2881,18 @@ in `tests/unit/events/test_schema.py`. So the fix is two things, and the second
 is the one worth having: write the missing section, *and* add a test that every
 name in `KG_EVENT_TYPES` appears as a heading in that page. Without it the next
 event will be undocumented in the same silent way and nothing will say so.
+
+### B131. `Consolidator.merge` and `Consolidator.resolve` cannot override `merge_policy` per call
+
+`ConsolidationService.merge` takes a per-call `policy:` argument (Task 4 of
+`2026-08-13-merged-properties`), but `Consolidator.merge` and
+`Consolidator.resolve` in `src/redstring/composition/build_graph.py` do not
+forward one -- only `Consolidator.__init__`'s `merge_policy` is wired through,
+per that task's brief. A caller using the composed entry point therefore gets
+one property-merge policy for the consolidator's whole lifetime, with no way
+to widen or narrow it for a single call the way the service itself allows.
+Deferred rather than added speculatively: the brief scoped Task 4 to the
+`__init__` pass-through, and adding a `policy:` parameter to both `merge` and
+`resolve` (and to `ConsolidationReport`, if the resolution should be visible
+there too) is its own decision about the composed surface, not a mechanical
+extension of this task.
