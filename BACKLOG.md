@@ -1954,46 +1954,6 @@ library was told. Neither subsumes the other, and B76's warning applies here
 too — it is the sharper form of an entry that was once deleted rather than
 fixed.
 
-### B129. `DocumentExtracted.event_version` is still 1 after a breaking payload change
-
-The design
-([spec](docs/superpowers/specs/2026-08-12-property-provenance-design.md),
-[ADR 0035](docs/adr/0035-provenance-is-a-value-object.md)) calls for
-`DocumentExtracted.event_version = 2`, on the grounds that `Entity`'s five
-provenance fields moved onto a nested object and gained a required
-`observed_at`, so **no payload written against the old shape validates**. The
-line still reads `event_version: int = 1`
-(`src/redstring/events/document.py`), and the branch merges with a v1 label on
-a v2 shape.
-
-**It was left because bumping it is not the one-line change the plan implies,
-and the second half is a decision this branch should not take on its own.**
-`tests/unit/events/test_schema.py` asserts, for every event in
-`KG_EVENT_TYPES`, both that `event_version` appears in the class's own
-`__annotations__` *and* that its default `== 1`. That second assertion is
-[ADR 0001](docs/adr/0001-event-log-schema-and-granularity.md) Decision 3
-written down: it exists so that an event which never mentions the field cannot
-look versioned. Bumping one event means weakening the gate to "declared, and
-whatever it says", which is the shape most likely to stop catching the thing it
-was written for — the check would pass for an event that inherits nothing and
-declares 1 by accident just as readily as for one somebody chose.
-
-So the work is: the bump; a replacement assertion that is still falsifiable
-(a per-event expected-version table in `KG_EVENT_TYPES`' neighbourhood is the
-obvious shape, since the tuple already exists to make per-class properties
-assertable by introspection); an amendment to 0001's Decision 3 recording why
-`== 1` stopped being the right assertion; and `docs/reference/events.md`, which
-states "**`event_version` is `1` for all four**" and tabulates it.
-
-**Whether to bump at all is worth a moment's thought rather than assumption.**
-The version exists to tell an upcaster which shape a stored payload has, and
-there are no stored payloads — 0035's whole argument for the clean break is
-that nothing had persisted a log. A `2` with no `1` in existence documents a
-break that no reader can encounter, which is defensible as a record and is not
-the mechanism the field is for. Decide it deliberately and record which way it
-went; the cost of getting it wrong is asymmetric, since a version that should
-have been bumped and was not is unrecoverable once a caller persists anything.
-
 ### B10c1. Hop distance from `neighbors` — deliberately not added
 
 `ports/graph_store.py::neighbors` returns entities without how far away they
@@ -2903,3 +2863,21 @@ delete the exemption, or record in the exemption's reason that the whole port
 is the intended front-door contract. Do not leave it as neither. Note that
 narrowing changes a signature in `redstring.__all__`'s closure, so check
 `tests/unit/test_public_surface_is_self_contained.py` in the same edit.
+
+### B130. `docs/reference/events.md` documents four events; there are five
+
+`DocumentChunked` (`src/redstring/events/document.py:175`) is in
+`KG_EVENT_TYPES`, is registered, and has **no section on the events reference
+page** — no payload table, no field notes, no entry anywhere except the
+`event_version`/`aggregate_type` table this branch just corrected. Every other
+event has a `## <Name>` section running to a few hundred lines.
+
+Found while bumping `DocumentExtracted.event_version` to 2: the version table
+said "in full" and listed four rows, and the fifth had to be added to make the
+correction true. That the omission survived is the point — the page's
+per-event sections are hand-written prose with **no gate tying them to
+`KG_EVENT_TYPES`**, which is the same shape the tuple itself exists to prevent
+in `tests/unit/events/test_schema.py`. So the fix is two things, and the second
+is the one worth having: write the missing section, *and* add a test that every
+name in `KG_EVENT_TYPES` appears as a heading in that page. Without it the next
+event will be undocumented in the same silent way and nothing will say so.

@@ -6,8 +6,11 @@ which changes the shape of the `Entity` carried inside `DocumentExtracted` —
 five fields move onto a nested `Provenance` and a required `observed_at` joins
 them, so no payload written against the old shape validates. Every decision
 below stands: the granularity, the aggregates, the explicit schema version and
-the `dict[str, Any]` payload fields are untouched. See the Consequences for
-what the break costs and why it was affordable.
+the `dict[str, Any]` payload fields are untouched. What moves is one number and
+one assertion — `DocumentExtracted` is at `event_version = 2`, so Decision 3's
+"and its default is 1" is no longer sayable of every event and has been
+replaced by a per-event table. See the Consequences for what the break costs,
+why it was affordable, and what now holds Decision 3's mechanism up.
 
 **Why this one is an ADR when the rest of the migration is not:** everything
 else in the re-architecture is reversible. A persisted event schema is not.
@@ -742,3 +745,31 @@ wiring a snapshot store into a caller.
   `event_version` is reserved for. **The window in which a payload shape can be
   corrected for free is the window before the first deployment, and this
   amendment spent it.**
+- **Decision 3's blanket `default == 1` is gone, and the half of it that was
+  doing work is not.** The two halves of that assertion were never the same
+  claim. `"event_version" in __annotations__` says *somebody chose a number*,
+  which is the whole reason the field is redeclared; `== 1` said *which*
+  number, and was only ever a coincidence of the schema being new. Bumping
+  `DocumentExtracted` made the second half unsayable in that form, and the
+  cheap repair — dropping it, leaving "declared, and whatever it says" — is
+  the shape most likely to stop catching what it was written for. So the
+  number moved into `EXPECTED_EVENT_VERSIONS`, a per-event table in
+  `tests/unit/events/test_schema.py`, typed out by hand and guarded in both
+  directions against `KG_EVENT_TYPES` — the same treatment
+  `tests/unit/test_enum_values_are_a_wire_format.py` gives every other wire
+  fact, and for the same reason: an expectation derived from the classes is
+  true for every number including the wrong one. A version bump is now a
+  visible edit to a table rather than an invisible property of being new.
+  Both halves were proved falsifiable by breaking them on purpose, an event
+  at a time, before the branch closed; the transcripts are in the commit that
+  made the change, per `.claude/rules/recurring-defects.md` §5.
+- **Whether to bump at all was decided rather than assumed.** The argument
+  against is real: `event_version` exists to tell an upcaster which shape a
+  stored payload has, and there are no stored payloads, so a `2` with no `1`
+  in existence documents a break no reader can encounter. It was bumped
+  anyway, because the asymmetry is not close — redstring is a published
+  library, so "no payloads exist" is a claim about this repository and not
+  about its consumers, and a version that should have moved and did not is
+  unrecoverable the moment one of them persists anything. The `2` is a record
+  first and a dispatch key second, and that is an acceptable thing for it to
+  be.

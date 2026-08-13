@@ -141,6 +141,15 @@ clean break, sanctioned because there is no persisted log. A library that
 shipped a log would owe an upcaster here, and 0001's `event_version` plus an
 upcaster is the escape route it describes.
 
+**So `DocumentExtracted` carries `event_version = 2`.** "No persisted log" is
+a claim about this repository, not about the consumers of a published library,
+which is why the number moved even though nothing in the tree can encounter a
+`1`. It cost a gate:
+[`0001`](0001-event-log-schema-and-granularity.md) Decision 3 asserted every
+event's version was *literally 1*, and that assertion had to be split into the
+half that was doing work (the version is declared, not inherited) and a
+per-event table pinning the number. 0001's Consequences record the split.
+
 **The strategies are implemented and unreached.** Consolidation still merges
 edges and discards the absorbed entities' properties, so `resolve` has no
 production caller after this decision, exactly as it had none before it.

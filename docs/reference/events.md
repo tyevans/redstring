@@ -125,7 +125,7 @@ The first two lines of each event body are the same shape:
 ```python
 @register_event
 class DocumentExtracted(TenantDomainEvent):
-    event_version: int = 1
+    event_version: int = 2
     aggregate_type: str = DOCUMENT_CATEGORY
 ```
 
@@ -133,15 +133,20 @@ Current values, in full — there is no other source to consult:
 
 | Event | `event_version` | `aggregate_type` |
 |---|---|---|
-| `DocumentExtracted` | `1` | `DOCUMENT_CATEGORY` = `"Document"` |
+| `DocumentChunked` | `1` | `DOCUMENT_CATEGORY` = `"Document"` |
+| `DocumentExtracted` | `2` | `DOCUMENT_CATEGORY` = `"Document"` |
 | `EntitiesEmbedded` | `1` | `DOCUMENT_CATEGORY` = `"Document"` |
 | `EntitiesMerged` | `1` | `CONSOLIDATION_CATEGORY` = `"Consolidation"` |
 | `MergeUndone` | `1` | `CONSOLIDATION_CATEGORY` = `"Consolidation"` |
 
-**`event_version` is `1` for all four**: nothing in the log has been versioned
-past its first shape yet. A reader may not treat that as permanent — see
+**`DocumentExtracted` is at `2` and everything else at `1`.** The one bump
+happened when `Entity`'s five provenance fields moved onto a nested
+`Provenance` and gained a required `observed_at`, so no payload written
+against the v1 shape validates — see
+[ADR 0035](../adr/0035-provenance-is-a-value-object.md). A reader may not treat
+any of these numbers as permanent — see
 [Compatibility and versioning](#compatibility-and-versioning) — but it may
-rely on this page moving when any of these numbers does.
+rely on this page moving when one does.
 
 The two fields are redeclared for different reasons.
 
@@ -152,9 +157,11 @@ the class does not contain.
 `test_every_event_declares_its_schema_version_explicitly` therefore checks
 `"event_version" in event_type.__annotations__` — the class's **own**
 annotations, not the resolved pydantic field — which is the difference between
-"the value is 1" and "somebody wrote 1". It then asserts the default is `1`,
-which is why a bump is a deliberate two-place edit: the class and the test's
-expectation.
+"the value is 1" and "somebody wrote 1". The *number* is asserted separately,
+against `EXPECTED_EVENT_VERSIONS` in the same module — a per-event table typed
+out by hand, guarded both ways against the tuple, the way
+`tests/unit/test_enum_values_are_a_wire_format.py` pins every other wire fact.
+So a bump is a deliberate two-place edit: the class and that table.
 
 `aggregate_type` is redeclared because it is **required on the base**
 (`Field(...)` on `DomainEvent`) and redstring events do not take it from the
@@ -223,12 +230,14 @@ step, and it is the step the tests refuse to let you skip.
 
 `tests/unit/events/test_schema.py` parametrises seven cases over
 `KG_EVENT_TYPES` — `ids=lambda t: t.__name__`, so a failure names the event —
-plus one that deliberately does not:
+plus three that deliberately do not:
 
 | Test | Asserts, for each event |
 |---|---|
-| `test_the_schema_is_not_empty` | `len(KG_EVENT_TYPES) >= 4`. Not parametrised: a registry-driven suite over an empty registry passes vacuously, so this is the floor under the other seven. |
-| `test_every_event_declares_its_schema_version_explicitly` | `"event_version" in event_type.__annotations__`, **and** `model_fields["event_version"].default == 1`. |
+| `test_the_schema_is_not_empty` | `len(KG_EVENT_TYPES) >= 4`. Not parametrised: a registry-driven suite over an empty registry passes vacuously, so this is the floor under the other nine. |
+| `test_every_event_declares_its_schema_version_explicitly` | `"event_version" in event_type.__annotations__` — somebody wrote a number, rather than inheriting one. |
+| `test_every_event_is_at_the_version_written_down_for_it` | `model_fields["event_version"].default` equals this event's entry in `EXPECTED_EVENT_VERSIONS`. |
+| `test_every_event_has_a_pinned_expected_version` | that table's keys are exactly `KG_EVENT_TYPES`, so it cannot go stale in either direction. Not parametrised. |
 | `test_no_event_declares_its_event_type_by_hand` | `"event_type" not in event_type.__annotations__`, and `event_type_name() == __name__`. |
 | `test_every_event_belongs_to_one_of_the_two_stream_categories` | `model_fields["aggregate_type"].default` is `DOCUMENT_CATEGORY` or `CONSOLIDATION_CATEGORY`. |
 | `test_every_event_requires_a_tenant` | `model_fields["tenant_id"].is_required()`. |
@@ -236,12 +245,12 @@ plus one that deliberately does not:
 | `test_every_event_resolves_from_the_registry_by_its_wire_name` | `get_event_class(event_type.event_type_name()) is event_type`. |
 | `test_the_tuple_lists_exactly_the_registered_events` | the tuple and the registry agree, **both directions**. |
 
-The first six are covered in detail where their fields are:
+The version, category, wire-name and tenant cases are covered in detail where their fields are:
 [`event_version` and `aggregate_type`](#event_version-and-aggregate_type) for
 versions, categories and the wire name;
 [conventions](#conventions-used-in-the-field-tables) for `extra="forbid"`; the
 [envelope table](#inherited-envelope-from-tenantdomainevent--domainevent) for
-the required tenant. Two of the eight are about the tuple itself and are
+the required tenant. Two of the ten are about the tuple itself and are
 worth reading here.
 
 **Registry resolution.** Every event carries `@register_event`
@@ -584,7 +593,7 @@ alongside `EntitiesEmbedded`.
 
 Plus the [inherited
 envelope](#inherited-envelope-from-tenantdomainevent--domainevent), and
-`event_version: int = 1` / `aggregate_type: str = DOCUMENT_CATEGORY`
+`event_version: int = 2` / `aggregate_type: str = DOCUMENT_CATEGORY`
 redeclared on the class. There are no other fields, and `extra="forbid"`
 means there can be none on the wire either.
 
