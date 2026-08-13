@@ -2865,3 +2865,77 @@ with a real embedding would need auditing for whether it ever passes a
 plausible-looking zero by accident, e.g. an uninitialised `[0.0] * dimension`
 placeholder). Whether that duplication of the check is worth paying for the
 earlier, cheaper failure is a call for whoever owns `domain/`.
+
+### B133. `backfill_lexical_index` reads the whole table into Python, unscoped and unbatched
+
+`PostgresChunkStore.backfill_lexical_index()`
+(`src/redstring/chunks/adapters/postgres.py`) runs
+`SELECT id, tenant_id, text FROM {table}` with no `WHERE`, no `LIMIT`, and no
+paging, then builds the whole `doc_lengths`/`term_rows` JSON payload in
+memory before sending it back in one statement. It works for the corpus
+sizes the integration suite and any repo-scale deployment exercise today,
+but it does two things a real corpus will not tolerate: it re-touches every
+row in the table on every call, including rows already correct (there is no
+way to backfill only the rows a migration actually left behind, because
+nothing marks which rows predate the term index), and it holds the entire
+table's `text` in Python at once, which is a straightforward OOM on a corpus
+sized in the hundreds of thousands of chunks or more.
+
+Deferred rather than fixed here because scoping it correctly is its own
+design question, not a one-line change: tenant-scoping alone helps only a
+multi-tenant deployment with many small tenants, and batching needs a cursor
+or a keyset-paginated loop plus a decision about whether a batch failure
+partway through leaves some rows backfilled and others not (this method is
+currently one statement, and the whole point of that shape elsewhere in this
+adapter is that a crash mid-write cannot leave the corpus in a state that
+never existed -- a batched backfill gives that property up on purpose and
+should say so explicitly if it does). Whoever picks this up should decide
+batch size, whether it takes an optional `tenant_id` filter, and whether a
+partial run is idempotent to resume (it should be, given `ON CONFLICT DO
+NOTHING` on the term rows and an unconditional `UPDATE` on `doc_length`, but
+that needs a test once batching exists, not an assumption).
+
+### B134. `_SELECT_COLUMNS` builds its `real[]` cast with a substring replace
+
+`_SELECT_COLUMNS = _COLUMNS.replace("embedding", "embedding::real[] AS
+embedding")` in `src/redstring/chunks/adapters/postgres.py` works today
+because `"embedding"` appears exactly once in `_COLUMNS` and nowhere else in
+it. It is not robust to the column list changing: a future column whose name
+*contains* `embedding` as a substring (`embedding_model`, say) would also get
+silently rewritten to `<name>::real[] AS <name>`, which is either a SQL
+error (if the column is not a `vector`) or a quietly wrong cast (if it
+happens to be one). `_COLUMNS` and `_SELECT_COLUMNS` are both plain
+interpolated strings built once at import time, not composed from a list of
+column names each independently markable as "needs a read-side cast", so
+there is no structural way for the current shape to express "only this one
+column, not any column containing this substring".
+
+Not fixed here because no second column needs a read-side cast yet, and the
+correct fix is a shape change -- `_COLUMNS` becoming a sequence of
+`(name, select_expression)` pairs, or similar -- that is worth doing once
+there is a second case to design it against, rather than speculatively.
+Whoever adds the next `vector`-typed or otherwise cast-needing column should
+either make that change or, at minimum, add a test asserting `_COLUMNS` does
+not contain `"embedding"` as a substring of any other column name.
+
+### B135. `test_semantic_candidates_query_applies_min_score_before_limit` only checks presence, not direction
+
+`tests/unit/chunks/test_postgres_schema.py::test_semantic_candidates_query_applies_min_score_before_limit`
+asserts `"$3" in where_clause`, which passes whether the adapter actually
+tests `>= $3`, `<= $3`, or even `$3 IS NOT NULL` with no comparison at all --
+any wiring of the `min_score` parameter into the `WHERE` clause satisfies it,
+including a wrong one. The port's contract (`min_score` is an inclusive
+lower bound: a candidate scoring exactly `min_score` survives) is pinned
+only by the shared integration case,
+`ChunkStoreCompliance.test_semantic_candidates_applies_min_score_before_limit`
+in `src/redstring/testing/chunk_store.py`, which does assert the boundary is
+inclusive against a real Postgres. The unit test's job was meant to be
+catching a regression before the server-requiring suite runs; as written it
+cannot.
+
+Not fixed here because tightening it needs either a stronger string
+assertion (`"score >= $3" in sql`, or similar, which is brittle to
+reformatting the SQL) or executing the statement's `WHERE` clause against a
+small fixture with a fake connection, which is more machinery than this
+adapter's other unit-level SQL-shape tests use. Whoever picks this up should
+decide which tradeoff is worth it before touching the assertion.

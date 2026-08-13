@@ -50,7 +50,10 @@ class InMemoryChunkStore:
     async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
         # Every element is validated before any is written, so a rejected
         # batch leaves no trace -- the same shape `InMemoryVectorStore.upsert_many`
-        # uses for its own `_check`.
+        # uses for its own `_check`. Width before zero-norm, matching
+        # `semantic_candidates`'s own guard order: a wrong-width vector makes
+        # the zero-norm question meaningless before it is asked.
+        self._reject_wrong_width(chunks)
         self._reject_zero_norm(chunks)
 
         for chunk in chunks:
@@ -60,6 +63,21 @@ class InMemoryChunkStore:
             # content-addressed id are two rows. Content addressing makes that
             # collision ordinary rather than astronomically unlikely.
             tenant[chunk.id] = chunk.model_copy(deep=True)
+
+    def _reject_wrong_width(self, chunks: Sequence[StoredChunk]) -> None:
+        """A stored `embedding` must have exactly `self._dimension` components.
+
+        Unchecked, a wrong-width vector writes cleanly here and only fails
+        later, from inside `semantic_candidates`, with a bare `ValueError`
+        from `zip(..., strict=True)` that names neither the expected nor the
+        actual width -- see `ports/chunk_store.py`'s `upsert_many` docstring
+        for why this is a write-time contract now rather than a query-time
+        surprise. `DimensionMismatchError` is the same type
+        `semantic_candidates` already raises for a wrong-width query vector.
+        """
+        for chunk in chunks:
+            if chunk.embedding is not None and len(chunk.embedding) != self._dimension:
+                raise DimensionMismatchError(expected=self._dimension, actual=len(chunk.embedding))
 
     @staticmethod
     def _reject_zero_norm(chunks: Sequence[StoredChunk]) -> None:
@@ -100,10 +118,11 @@ class InMemoryChunkStore:
         chunks: Sequence[StoredChunk],
     ) -> int:
         reject_foreign_chunks(chunks, source_id, tenant_id)
-        # Same write-time guard as `upsert_many`, checked before the orphan
-        # delete below -- otherwise a rejected zero-norm element would still
-        # have emptied the old chunking first, and `replace_source` is one
+        # Same write-time guards as `upsert_many`, checked before the orphan
+        # delete below -- otherwise a rejected element would still have
+        # emptied the old chunking first, and `replace_source` is one
         # operation, not a delete-then-maybe-write.
+        self._reject_wrong_width(chunks)
         self._reject_zero_norm(chunks)
 
         keep = {chunk.id for chunk in chunks}

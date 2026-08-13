@@ -245,11 +245,28 @@ class PostgresChunkStore:
         `CREATE EXTENSION IF NOT EXISTS vector` runs first, as `PgVectorStore`
         does, because `embedding vector(n)` needs the type to exist before
         either the `CREATE TABLE` or the repair `ALTER`s below can run.
+
+        Raises `DimensionMismatchError` if `embedding` already exists at a
+        different declared width -- mirroring `PgVectorStore.ensure_schema`
+        exactly, and for the same reason: `ADD COLUMN IF NOT EXISTS embedding
+        vector(n)` is a no-op against a column that already exists, silently,
+        regardless of whether `n` agrees with what is already there. Without
+        this check a table carrying `embedding vector(384)` opened with
+        `dimension=768` would pass `ensure_schema` clean and then fail every
+        write at runtime with an opaque Postgres error, rather than failing
+        once, loudly, at startup.
         """
         async with self._pool.acquire() as connection:
             await connection.execute("CREATE EXTENSION IF NOT EXISTS vector")
             for statement in self._schema_statements():
                 await connection.execute(statement)
+            declared = await connection.fetchval(
+                "SELECT atttypmod FROM pg_attribute "
+                "WHERE attrelid = $1::regclass AND attname = 'embedding' AND NOT attisdropped",
+                self._table,
+            )
+        if declared is not None and declared != self._dimension:
+            raise DimensionMismatchError(expected=int(declared), actual=self._dimension)
 
     def _schema_statements(self) -> tuple[str, ...]:
         """The DDL, as data, so a server-free test can read it.
@@ -350,12 +367,33 @@ class PostgresChunkStore:
     # Writes
     # ------------------------------------------------------------------
 
+    def _reject_wrong_width(self, chunks: Sequence[StoredChunk]) -> None:
+        """A stored `embedding` must have exactly `self._dimension` components.
+
+        Unchecked, Postgres itself rejects a wrong-width `vector(n)` value at
+        the statement (a `DataError` naming neither the store nor which chunk
+        was wrong), while `InMemoryChunkStore` used to accept the write and
+        fail later, from inside `semantic_candidates`, with a bare
+        `ValueError` from `zip(..., strict=True)` -- a silent divergence
+        between the two adapters at the exact write this method's caller is
+        one statement away from executing. Checked here, client-side, both
+        adapters now reject with the same `DimensionMismatchError` at the same
+        point in the call, mirroring `PgVectorStore._check`; see
+        `ports/chunk_store.py`'s `upsert_many` docstring for the port-level
+        rule this enforces.
+        """
+        for chunk in chunks:
+            if chunk.embedding is not None and len(chunk.embedding) != self._dimension:
+                raise DimensionMismatchError(expected=self._dimension, actual=len(chunk.embedding))
+
     async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
         # Validated against the raw argument, not the deduplicated rows --
         # matching `PgVectorStore.upsert_many`'s reasoning: collapsing first
         # would let a rejected record vanish because a later one happened to
         # replace its key, so the same call would raise here and succeed
-        # in-memory.
+        # in-memory. Width before zero-norm, matching `semantic_candidates`'s
+        # own guard order.
+        self._reject_wrong_width(chunks)
         reject_zero_norm(chunks)
 
         rows = deduplicate(chunks)
@@ -399,6 +437,7 @@ class PostgresChunkStore:
         # be a partial one, and the obvious ordering -- delete the orphans,
         # then discover the batch is invalid -- empties the source and raises.
         reject_foreign_chunks(chunks, source_id, tenant_id)
+        self._reject_wrong_width(chunks)
         reject_zero_norm(chunks)
 
         rows = deduplicate(chunks)

@@ -105,6 +105,20 @@ class ChunkWriter(AsyncClosable, Protocol):
         NaN and a per-row skip that hides a caller's bug -- rejecting it here
         is the same choice `VectorStore` already made for `upsert`, and this
         port makes it once rather than inventing a second answer.
+
+        A chunk whose `embedding` is not `None` and whose length is not the
+        store's `dimension` raises `DimensionMismatchError(expected=dimension,
+        actual=len(embedding))` -- the same type `semantic_candidates` already
+        raises for a wrong-width *query* vector, so a caller has one type to
+        catch for one kind of mistake regardless of which side of the port
+        made it. Left unchecked, this is a silent divergence rather than a
+        loud one: nothing here validated width on write before this rule was
+        stated, so one adapter accepted a mis-sized vector and only failed
+        later, from inside `semantic_candidates`, with a bare `ValueError`
+        that named neither the expected nor the actual width, while another
+        adapter rejected the write itself with a driver-specific error. Both
+        are wrong for the same reason `VectorStore.upsert` already rejects a
+        mis-sized vector at write rather than at search.
         """
         ...
 
@@ -126,6 +140,10 @@ class ChunkWriter(AsyncClosable, Protocol):
         raises `ValueError` rather than being written under the argument's
         values, because silently rewriting a chunk's provenance is how one
         document's entity links end up on another's passage.
+
+        `upsert_many`'s zero-norm and dimension rules for `embedding` both
+        apply to every element here too -- this is the same write path, not a
+        second one with its own contract.
 
         An empty `chunks` empties the source. That is legal.
         """

@@ -275,6 +275,45 @@ class ChunkStoreCompliance:
         assert await store.get(fine.id, tenant) is None
         assert await store.get(zero.id, tenant) is None
 
+    async def test_upsert_many_rejects_a_stored_embedding_of_the_wrong_width(
+        self, store: ChunkStore
+    ) -> None:
+        """A stored `embedding` must match the store's `dimension`, at write.
+
+        Left unchecked this is a silent divergence between adapters rather
+        than a loud one: nothing validated width on write before this case
+        existed, so `InMemoryChunkStore` accepted a mis-sized vector and
+        only failed later, from inside `semantic_candidates`, with a bare
+        `ValueError` from `zip(..., strict=True)` that named neither the
+        expected nor the actual width, while `PostgresChunkStore` rejected
+        the write itself with a driver-specific `DataError`. Both adapters
+        now raise the same `DimensionMismatchError` at the same point in the
+        call -- the type `semantic_candidates` already raises for a
+        wrong-width *query* vector, so a caller has one type to catch for
+        one kind of mistake.
+
+        The narrow vector is second, after a well-formed chunk, matching
+        `test_upsert_many_rejects_a_zero_norm_embedding`'s shape: an adapter
+        validating only the first element fails here.
+        """
+        tenant = TenantId(uuid4())
+        fine = self._chunk(tenant, "doc-1", "has the right width", embedding=[1.0, 0.0, 0.0, 0.0])
+        narrow = self._chunk(
+            tenant, "doc-1", "too narrow", chunk_index=1, embedding=[1.0, 0.0, 0.0]
+        )
+        assert narrow.embedding is not None
+        assert len(narrow.embedding) != self.DIMENSION
+
+        with pytest.raises(DimensionMismatchError) as raised:
+            await store.upsert_many([fine, narrow])
+
+        assert raised.value.expected == self.DIMENSION
+        assert raised.value.actual == len(narrow.embedding)
+        # Rejected before anything was written: the whole batch, not just the
+        # offending element.
+        assert await store.get(fine.id, tenant) is None
+        assert await store.get(narrow.id, tenant) is None
+
     # ------------------------------------------------------------------
     # The composite key
     # ------------------------------------------------------------------
@@ -592,6 +631,29 @@ class ChunkStoreCompliance:
         with pytest.raises(ValueError, match="zero"):
             await store.replace_source(SourceId("doc-1"), tenant, [zero])
 
+        # Rejected: the old chunking is untouched, exactly as a provenance
+        # rejection leaves it.
+        assert await store.get(held.id, tenant) == held
+
+    async def test_replace_source_rejects_a_stored_embedding_of_the_wrong_width(
+        self, store: ChunkStore
+    ) -> None:
+        """The same width guard `upsert_many` states applies to
+        `replace_source`'s elements too -- it is the same write path."""
+        tenant = TenantId(uuid4())
+        held = self._chunk(tenant, "doc-1", "held", chunk_index=0, embedding=[1.0, 0.0, 0.0, 0.0])
+        await store.upsert_many([held])
+        narrow = self._chunk(
+            tenant, "doc-1", "too narrow", chunk_index=1, embedding=[1.0, 0.0, 0.0]
+        )
+        assert narrow.embedding is not None
+        assert len(narrow.embedding) != self.DIMENSION
+
+        with pytest.raises(DimensionMismatchError) as raised:
+            await store.replace_source(SourceId("doc-1"), tenant, [narrow])
+
+        assert raised.value.expected == self.DIMENSION
+        assert raised.value.actual == len(narrow.embedding)
         # Rejected: the old chunking is untouched, exactly as a provenance
         # rejection leaves it.
         assert await store.get(held.id, tenant) == held

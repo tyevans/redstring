@@ -43,6 +43,7 @@ import pytest
 
 from redstring.chunks.adapters.postgres import PostgresChunkStore
 from redstring.domain.chunk import chunk_id
+from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.tokenize import tokenize
 from redstring.testing.chunk_store import ChunkStoreCompliance
 
@@ -258,6 +259,35 @@ class TestPostgresChunkStoreSpecifics:
     async def test_ensure_schema_is_idempotent(self, store: PostgresChunkStore) -> None:
         await store.ensure_schema()
         await store.ensure_schema()
+
+    async def test_ensure_schema_rejects_a_declared_width_disagreement(
+        self, pool: asyncpg.Pool[Any]
+    ) -> None:
+        """A table already carrying `embedding vector(n)` at a different `n`
+        must fail loudly at `ensure_schema`, not silently at the first write.
+
+        `ADD COLUMN IF NOT EXISTS embedding vector(n)` is a no-op against a
+        column that already exists, regardless of whether the declared `n`
+        agrees with what is already there -- so without this check, a table
+        built at one width and opened at another would pass `ensure_schema`
+        clean and then fail every write at runtime with an opaque Postgres
+        error. Mirrors `PgVectorStore`'s own version of this test.
+        """
+        table = f"{TABLE}_width_mismatch"
+        await pool.execute(f"DROP TABLE IF EXISTS {table}_terms CASCADE")
+        await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+
+        narrow = PostgresChunkStore(pool, table=table, dimension=4)
+        await narrow.ensure_schema()
+
+        wide = PostgresChunkStore(pool, table=table, dimension=8)
+        with pytest.raises(DimensionMismatchError) as raised:
+            await wide.ensure_schema()
+        assert raised.value.expected == 4
+        assert raised.value.actual == 8
+
+        await pool.execute(f"DROP TABLE {table}_terms CASCADE")
+        await pool.execute(f"DROP TABLE {table} CASCADE")
 
     async def test_ensure_schema_creates_the_table_from_nothing(
         self, pool: asyncpg.Pool[Any]

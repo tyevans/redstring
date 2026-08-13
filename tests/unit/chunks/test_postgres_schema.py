@@ -36,6 +36,7 @@ from redstring.chunks.adapters.postgres import (
     encode,
     encode_terms,
 )
+from redstring.chunks.adapters.postgres import encode_vector as chunk_encode_vector
 from redstring.domain.chunk import StoredChunk
 from redstring.ports.chunk_store import ChunkStore
 
@@ -164,6 +165,27 @@ class TestGuardsRunBeforeAnyIO:
         with pytest.raises(ValueError, match="zero"):
             await _store().replace_source("doc-1", tenant, [zero])
 
+    async def test_upsert_many_rejects_a_stored_embedding_of_the_wrong_width_before_any_io(self):
+        from redstring.domain.exceptions import DimensionMismatchError
+
+        narrow = _chunk(embedding=[1.0, 0.0, 0.0])
+        with pytest.raises(DimensionMismatchError) as raised:
+            await _store(dimension=4).upsert_many([narrow])
+        assert raised.value.expected == 4
+        assert raised.value.actual == 3
+
+    async def test_replace_source_rejects_a_stored_embedding_of_the_wrong_width_before_any_io(
+        self,
+    ):
+        from redstring.domain.exceptions import DimensionMismatchError
+
+        tenant = uuid4()
+        narrow = _chunk(tenant_id=tenant, embedding=[1.0, 0.0, 0.0])
+        with pytest.raises(DimensionMismatchError) as raised:
+            await _store(dimension=4).replace_source("doc-1", tenant, [narrow])
+        assert raised.value.expected == 4
+        assert raised.value.actual == 3
+
     async def test_semantic_candidates_rejects_a_negative_limit(self):
         with pytest.raises(ValueError, match="limit"):
             await _store().semantic_candidates([1.0, 0.0, 0.0, 0.0], uuid4(), -1)
@@ -279,6 +301,33 @@ class TestSqlConstruction:
         from redstring.vector.adapters.pgvector import _SCORE as VECTOR_SCORE
 
         assert _SCORE == VECTOR_SCORE
+
+    def test_encode_vector_matches_the_vector_stores(self):
+        """`encode_vector`'s own docstring claims this duplicate is proved
+        identical the way `_SCORE` is -- by a test, not by sharing code, since
+        `chunks` and `vector` are forbidden siblings. This is that test: it
+        was missing, so the claim was unenforced rather than false, which is
+        `recurring-defects.md` shape (g) -- a comment asserting an invariant
+        nothing held to it. Compared by body, not by docstring, since the two
+        modules deliberately give the duplicate different surrounding prose.
+        """
+        import ast
+        import inspect
+
+        from redstring.vector.adapters.pgvector import encode_vector as vector_encode_vector
+
+        def body_source(func: object) -> str:
+            tree = ast.parse(inspect.getsource(func))
+            [function_def] = tree.body
+            assert isinstance(function_def, ast.FunctionDef)
+            body = function_def.body
+            # Drop a leading docstring expression statement, which the two
+            # copies are expected to state differently.
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                body = body[1:]
+            return "\n".join(ast.unparse(statement) for statement in body)
+
+        assert body_source(chunk_encode_vector) == body_source(vector_encode_vector)
 
     def test_embedding_is_a_column_but_not_in_on_conflict(self):
         """Same reasoning as `doc_length`: written once per content-addressed
