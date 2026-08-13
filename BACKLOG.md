@@ -2719,6 +2719,20 @@ contract"). Thorough fix: make it executable, either a compliance case that
 asserts the adapters agree after such a write (would currently fail on
 Postgres) or `chunk_id`-derived validation on `StoredChunk` construction.
 
+**Update:** the cheap half landed — the prose is now on
+`ChunkWriter.upsert_many` in `src/redstring/ports/chunk_store.py`, as part of
+the chunk-semantic-channel work (see
+`docs/adr/XXXX-the-chunks-vector-lives-on-the-chunk.md`), because the new
+`embedding` column inherits the same assumption `doc_length` and the term
+index already made. The executable half is still open, and closing it needs
+a decision this entry hasn't made: whether the port promises last-write-wins
+on *derived* state (`doc_length`, the term index, and now `embedding`) for a
+same-id-different-text write, or whether that write is simply outside the
+contract and the compliance suite should assert the adapters both leave the
+old derived state in place. Those are different contracts, and picking one is
+what a test would pin — not something to infer from what's convenient to
+implement.
+
 ### B98. `PostgresChunkStore.lexical_candidates` is three unsynchronised reads
 
 It acquires one connection and issues the corpus-statistics query, the

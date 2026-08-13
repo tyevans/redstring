@@ -26,6 +26,7 @@ from collections.abc import Sequence
 
 from redstring.domain.chunk import ChunkId, StoredChunk
 from redstring.domain.chunk_ranking import LexicalCandidates
+from redstring.domain.chunk_retrieval import SemanticCandidate
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.ports.chunk_store import ChunkStore
 from redstring.testing.chunk_store import ChunkStoreCompliance
@@ -39,6 +40,7 @@ _PORT_NAMESPACE = {
     "TenantId": TenantId,
     "EntityId": EntityId,
     "LexicalCandidates": LexicalCandidates,
+    "SemanticCandidate": SemanticCandidate,
     "Sequence": Sequence,
 }
 
@@ -71,14 +73,16 @@ def read_methods() -> set[str]:
     *contains* domain objects leaks exactly as one that *is* a domain object,
     and `_mentions` cannot see through a type it was not told to look for.
     Omitting it here would silently skip the method this gate exists to
-    catch.
+    catch. `SemanticCandidate` is in the set for the same reason:
+    `semantic_candidates` returns `list[SemanticCandidate]`, each wrapping a
+    `StoredChunk` the same way `LexicalCandidate` does.
     """
     found = set()
     for name, function in inspect.getmembers(ChunkStore, inspect.isfunction):
         if name.startswith("_"):
             continue
         hints = typing.get_type_hints(function, localns=_PORT_NAMESPACE)
-        if _mentions(hints.get("return"), {StoredChunk, LexicalCandidates}):
+        if _mentions(hints.get("return"), {StoredChunk, LexicalCandidates, SemanticCandidate}):
             found.add(name)
     return found
 
@@ -107,6 +111,7 @@ class TestEveryReadMethodIsCovered:
             "get_by_source",
             "get_by_entity",
             "lexical_candidates",
+            "semantic_candidates",
         }
 
     def test_every_read_method_declares_isolation_coverage(self) -> None:
