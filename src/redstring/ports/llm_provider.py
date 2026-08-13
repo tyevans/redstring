@@ -19,8 +19,8 @@ and it is checked by `tests/unit/test_dependencies_stay_confined.py`.
 
 ## `model` is provenance, not configuration
 
-`Entity.model` records which artifact produced an entity, and that value
-lands in a durable event log where "re-extract everything the old model
+`Entity.provenance.model` records which artifact produced an entity, and that
+value lands in a durable event log where "re-extract everything the old model
 touched" has to stay answerable. The provider is the only thing that knows
 its own identity, so it exposes it rather than making each caller pass a
 string it might get wrong. Convention is provider-qualified and versioned --
@@ -57,7 +57,7 @@ class LlmProvider(Protocol):
 
     @property
     def model(self) -> str:
-        """Which model this provider speaks to, for `Entity.model` provenance."""
+        """Which model this provider speaks to, for `Entity.provenance.model`."""
         ...
 
     async def extract[S: BaseModel](
