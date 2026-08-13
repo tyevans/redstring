@@ -1,0 +1,38 @@
+# Every knob that changes a benchmark number. Re-running a variant is an edit
+# here; the resolved contents are embedded verbatim in each results file.
+endpoint: http://192.168.1.14:8080/v1/
+
+models:
+  extraction: muse-glimmer-30b
+  embedding: nomic-embed-text
+  # nomic-embed-text. Checked in preflight, because a different embedding
+  # model behind the same id is a silent dimension change.
+  embedding_dimensions: 768
+  # The library default (8192) is too small for the graded corpus against a
+  # reasoning model -- see tests/accuracy/test_extraction_accuracy.py, whose
+  # MAX_TOKENS comment documents the same 16384 used here.
+  max_tokens: 16384
+
+corpus:
+  # The five hand-graded documents in tests/accuracy/corpus.yaml. This is the
+  # only accuracy number the harness produces; the long documents below are
+  # ungraded and score stability, which is a different claim.
+  #
+  # A boolean, not a selector: bool("all") is also True, so a config that
+  # wrote `graded: all` would silently mean the same thing this does. There
+  # is no partial-grading mode -- either the whole five-document corpus runs
+  # or none of it does.
+  graded: true
+  long: [harry-potter-1]
+
+sweep:
+  chunk_size: [3000, 8000, 12000]
+  # Only 1 until deliverable C lands. Any other value is refused rather than
+  # ignored -- a knob a serial library silently discards would make the
+  # concurrency work look like it changed nothing.
+  concurrency: [1]
+
+policy:
+  repeats: 3
+  stop_climbing_concurrency: true
+  per_document_timeout_s: 1800

@@ -152,11 +152,15 @@ often:
 
 ## Quality gates
 
-Do not run ruff, bandit, `lint-imports`, or pytest as separate steps. They are
-wired into `pre-commit` and run on `git commit`; running them by hand
-duplicates the work. Write the change, then commit; the hook reports what is
-wrong and often fixes it in place (re-`git add` and commit again when it
-does). See `CLAUDE.md`.
+Do not run ruff, bandit, or `lint-imports` as separate steps. They are wired
+into `pre-commit` and run on `git commit`; running them by hand duplicates the
+work. Write the change, then commit; the hook reports what is wrong and often
+fixes it in place (re-`git add` and commit again when it does).
+
+**pytest is the exception.** No hook runs it any more — `git commit` succeeds
+whether or not the suite passes — so run `uv run pytest` yourself before
+committing; CI is otherwise the first thing to disagree, on a branch already
+pushed. See `CLAUDE.md`.
 
 Work is not done until the commit passes the gate — not until it passes
 "except for the hook", and not with a check disabled. A rule you ignored is a
@@ -174,7 +178,11 @@ deferral: it goes in `BACKLOG.md` with why ignoring it was correct.
    of examples.
 4. New dependencies added with `uv add` / `uv add --optional <extra>` — never
    by hand-editing `pyproject.toml`.
-5. Commit passes the gate, including the coverage ratchet.
+5. Commit passes the gate, and `uv run pytest` is green with coverage not
+   below `.coverage-baseline` — no hook runs the suite any more, so CI is the
+   first place a regression would otherwise be caught. Run
+   `uv run python scripts/coverage_ratchet.py` if the change raises coverage,
+   so the new baseline lands in the same commit; see `BACKLOG.md` B-RATCHET-1.
 
 ## Bug fix
 

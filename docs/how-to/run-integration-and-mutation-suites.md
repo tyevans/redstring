@@ -1,7 +1,7 @@
 # Run the integration and mutation suites
 
-Two families of tests in this repo are deliberately outside the commit gate,
-and neither runs unless you ask for it:
+Two families of tests in this repo are deliberately outside the default
+suite, and neither runs unless you ask for it:
 
 - the **integration suite** (`-m integration`), which exercises the `GraphStore`
   and `VectorStore` adapters against the real Neo4j and Postgres containers in
@@ -12,9 +12,11 @@ and neither runs unless you ask for it:
   unit tests can tell a correct implementation from a broken one.
 
 Both are excluded by `addopts = ["-m", "not accuracy and not integration"]` in
-`pyproject.toml`, which is what keeps the commit gate infra-free and fast — see
-[quality gates](../reference/quality-gates.md) for what does run on commit. A
-CLI `-m` overrides that setting, which is why every command below passes one.
+`pyproject.toml`, which is what keeps the default suite infra-free and fast —
+CI's `pytest` job included, since no hook runs the suite any more; see
+[quality gates](../reference/quality-gates.md) for what does and does not run
+on commit. A CLI `-m` overrides that setting, which is why every command below
+passes one.
 
 This guide gives the exact invocations, the environment variables each suite
 reads, and the four failure modes this project has actually hit — all of
@@ -377,8 +379,9 @@ so each worker truncates only its own rows. Postgres lets you have as many
 tables as you like; that is the entire difference. So `-n auto` over
 `tests/integration/vector` alone is safe, and over the suite as a whole is not.
 
-None of this touches the commit gate, whose own `-n auto` is fine: `addopts`
-deselects `integration` before xdist ever sees a test. The trap is for whoever
+None of this touches the default suite, whose own `-n auto` is fine —
+CI's `pytest` job included: `addopts` deselects `integration` before xdist
+ever sees a test. The trap is for whoever
 builds the combined-coverage CI target B10a asks for — see
 [why it is not in the commit gate](#why-it-is-not-in-the-commit-gate), and note
 that the same target has a second trap in
@@ -422,8 +425,8 @@ function has two executors, which is exactly what that health check is for.
 over.
 
 This has never been seen in normal use, and the reason is worth knowing: each
-suite alone is fine. `addopts` deselects `integration`, so the commit gate runs
-only the in-memory subclass, and an explicit `-m integration` runs only the
+suite alone is fine. `addopts` deselects `integration`, so the default suite
+runs only the in-memory subclass, and an explicit `-m integration` runs only the
 real one. **The single invocation is the only way to produce it** — which is
 why it will find whoever writes the combined-coverage CI target rather than
 whoever runs the suites by hand.
@@ -506,8 +509,8 @@ produces [36 Neo4j failures](#step-3-run-it-serially---m-integration-never--n-au
 
 `tests/unit/vector/test_compliance_coverage.py::TestTheSuiteIsTunable` asserts
 that `compliance_settings.max_examples` still tracks `DEFAULT_MAX_EXAMPLES`, so
-a hard-coded value reintroduced into the suite fails the commit gate rather
-than silently ignoring your environment.
+a hard-coded value reintroduced into the suite fails there rather than
+silently ignoring your environment.
 
 Finally, the knob has a hazard attached, and it is the reason mutation runs set
 it low (`KG_COMPLIANCE_MAX_EXAMPLES=5` in the recorded cosmic-ray

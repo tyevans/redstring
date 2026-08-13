@@ -93,10 +93,23 @@ repos:
         files: ^(src/|pyproject\.toml$)
         require_serial: true
 
-      - id: pytest-coverage-ratchet
-        name: pytest + coverage ratchet
-        entry: uv run python scripts/coverage_ratchet.py
-        language: system
-        pass_filenames: false
-        files: ^(src/|tests/|pyproject\.toml$|scripts/coverage_ratchet\.py$)
-        require_serial: true
+      # The suite does NOT run here. It ran on every commit touching `src/` or
+      # `tests/` and duplicated CI's `pytest` job exactly -- `addopts` already
+      # deselects `integration` and `accuracy`, so both invocations selected
+      # the same tests -- while costing minutes on every commit of a
+      # many-small-commits workflow.
+      #
+      # **What that hook did beyond running the suite is the part to keep in
+      # view.** `scripts/coverage_ratchet.py` compared total coverage against
+      # `.coverage-baseline` and raised it when it rose, and CI ran no such
+      # comparison: it collected coverage and uploaded it. Deleting the hook
+      # without moving the floor would have removed the ratchet from the
+      # project entirely, and nothing would have said so -- coverage would
+      # simply have been free to fall. So CI's `pytest` job now passes
+      # `--cov-fail-under="$(cat .coverage-baseline)"`, which enforces the same
+      # floor one step later.
+      #
+      # The half that did not survive the move: the baseline no longer rises by
+      # itself. `write_baseline` staged the new value into the commit that
+      # earned it, and a CI run has no commit to stage into. Raising it is now
+      # a deliberate edit -- see BACKLOG B-RATCHET-1.

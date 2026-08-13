@@ -6,15 +6,27 @@ configuration each one reads.
 The gates are not a suite of independent tools that happen to be installed.
 They are one pipeline with a single entry point: `git commit` runs
 `pre-commit`, `pre-commit` runs the formatters, the type checker, the security
-scanner, the architecture contract and the test suite behind a coverage
-ratchet, and `fail_fast: true` stops at the first one that complains. Nothing
-in this page needs to be run by hand as a pre-commit step — running it
-separately duplicates work the hook already does.
+scanner and the architecture contract, and `fail_fast: true` stops at the
+first one that complains. Nothing in this page needs to be run by hand as a
+pre-commit step — running it separately duplicates work the hook already
+does.
 
-Two things sit outside that pipeline because they are too slow for it: the
-integration suite, which needs the backends in `docker-compose.test.yml`, and
-the two mutation-testing runners. Both are excluded from the default run and
-invoked deliberately.
+**The test suite is not part of that pipeline.** It used to be — a
+`pytest-coverage-ratchet` hook ran the whole unit suite on every commit — and
+was removed because it duplicated CI's `pytest` job exactly on every commit of
+a many-small-commits workflow. CI's `pytest` job now carries the coverage
+floor that hook used to enforce, via `--cov-fail-under="$(cat
+.coverage-baseline)"`, so coverage still cannot fall — it just cannot be
+caught until CI runs. Run the suite yourself before committing; nothing else
+will before CI does. See
+[Pre-commit configuration](#pre-commit-configuration) for what remains in the
+hook and [`python scripts/coverage_ratchet.py`](#python-scriptscoverage_ratchetpy)
+for what the script still does on demand.
+
+Two things sit outside the commit-time pipeline because they are too slow for
+it: the integration suite, which needs the backends in
+`docker-compose.test.yml`, and the two mutation-testing runners. Both are
+excluded from the default run and invoked deliberately.
 
 Every claim on this page is sourced from a file in the repository:
 
@@ -22,7 +34,8 @@ Every claim on this page is sourced from a file in the repository:
 | --- | --- |
 | Hook set, order, and `fail_fast` | `.pre-commit-config.yaml` |
 | ruff, mypy, bandit, pytest, coverage, mutmut, import-linter | `pyproject.toml` |
-| Coverage ratchet behaviour | `scripts/coverage_ratchet.py`, `.coverage-baseline` |
+| Coverage ratchet behaviour (on demand; the floor CI enforces) | `scripts/coverage_ratchet.py`, `.coverage-baseline` |
+| Coverage floor as enforced in CI | `.github/workflows/ci.yml` (`--cov-fail-under`) |
 | cosmic-ray session settings | `cosmic-ray.toml` |
 | Integration backends | `docker-compose.test.yml` |
 | Compliance-suite example count | `src/redstring/testing/graph_store.py`, `src/redstring/testing/vector_store.py` |
@@ -50,10 +63,14 @@ than restated here:
 [`README.md`](https://github.com/tyevans/redstring/blob/main/README.md) has the short version — first-time setup and
 the handful of commands most sessions need.
 
-Throughout, "the gate" means the default `git commit` run: `pytest` with
-`addopts = ["-m", "not accuracy and not integration"]` applied, under the
-coverage ratchet, plus the lint, type, security and architecture hooks. A
-check described as running "outside the gate" is one you have to ask for.
+Throughout, "the commit gate" means the lint, type, security and architecture
+hooks that run on `git commit` — the suite is no longer among them. "The
+default run" or "the default selection" means `pytest` with
+`addopts = ["-m", "not accuracy and not integration"]` applied, which now runs
+in CI (with the coverage floor from `.coverage-baseline` enforced there) and
+on demand locally, never automatically on commit. A check described as
+running "outside the gate" is one you have to ask for, and that now includes
+the suite itself.
 
 ## Environment setup
 
@@ -102,20 +119,19 @@ checks are not wired into anything else, so an uninstalled hook is a silent
 absence rather than a visible failure.
 
 Every local hook runs its tool as `uv run <tool>` (`ruff`, `mypy`, `bandit`,
-`lint-imports`, `python scripts/coverage_ratchet.py`), so the versions the
-gate uses are the ones in the synced environment — not whatever is on `PATH`.
-A tool missing from the venv fails the hook rather than falling through to a
-system copy.
+`lint-imports`), so the versions the gate uses are the ones in the synced
+environment — not whatever is on `PATH`. A tool missing from the venv fails
+the hook rather than falling through to a system copy.
 
 ### Verifying the environment
 
-The environment is sound when the default gate is green:
+The environment is sound when the default suite is green:
 
 ```
 uv run pytest
 ```
 
-That is the same invocation the ratchet drives, with
+That is the same invocation CI runs and the ratchet script drives, with
 `addopts = ["-m", "not accuracy and not integration"]` applied. Run it before
 trusting any result that depends on the environment being complete — in
 particular before reading a mutation session, where a green unmutated
@@ -211,7 +227,7 @@ repository wants `--all-extras`, which is a superset — it adds `dev`.
 ## Pre-commit configuration
 
 `.pre-commit-config.yaml` declares the whole gate: two settings at the top of
-the file, one pinned upstream repo, and a `local` repo of six hooks that run
+the file, one pinned upstream repo, and a `local` repo of five hooks that run
 out of the project's `uv` environment.
 
 ```yaml
@@ -248,14 +264,15 @@ Hooks execute in file order, so the run is a cheapest-first pipeline:
 3. `mypy`
 4. `bandit`
 5. `lint-imports`
-6. the pytest + coverage ratchet
 
-The ordering is the point. A file with a syntax error fails `check-ast` in
-milliseconds rather than after a full test run, and a lint violation is
+The suite is not hook 6 any more — see
+[the top of this page](#quality-gates) for why it moved to CI. The ordering
+that remains is still the point: a file with a syntax error fails `check-ast`
+in milliseconds rather than after a slower tool runs, and a lint violation is
 reported before mypy spends time on a file ruff is about to rewrite. The cost
 is that **one commit attempt reports one problem**: with `fail_fast` on, a
-green `ruff` says nothing about mypy, and a green mypy says nothing about the
-suite. Expect to commit, fix, and commit again — and read a passing hook as
+green `ruff` says nothing about mypy, and a green mypy says nothing about
+bandit. Expect to commit, fix, and commit again — and read a passing hook as
 "this hook passed", never as "everything below it would have".
 
 `fail_fast` also interacts with the auto-fixing hooks. `trailing-whitespace`,
@@ -269,7 +286,7 @@ report: the fix is already applied. Re-`git add` the files and commit again.
 | Block | `rev` | What it holds |
 | --- | --- | --- |
 | `https://github.com/pre-commit/pre-commit-hooks` | `v6.0.0` | the twelve stock file/syntax checks |
-| `local` | — | ruff (×2), mypy, bandit, import-linter, coverage ratchet |
+| `local` | — | ruff (×2), mypy, bandit, import-linter |
 
 The upstream repo is pinned to a tag; `pre-commit` builds it into its own
 cached environment, so its version is independent of the project venv.
@@ -290,9 +307,9 @@ supported sync.
 
 Every `local` hook also sets `require_serial: true`. `pre-commit` would
 otherwise shard the file list across processes and run several copies of each
-tool concurrently; for tools that already parallelise internally (`mypy`'s
-cache, `pytest-xdist` under the ratchet) that is contention rather than
-speed-up, and for the in-place fixers it is a race on the same files.
+tool concurrently; for a tool that already parallelises internally (`mypy`'s
+cache) that is contention rather than speed-up, and for the in-place fixers it
+is a race on the same files.
 
 Per-hook file filters, `pass_filenames`, and which hooks see the staged file
 list at all are covered in
@@ -378,8 +395,8 @@ those breaks every later hook with an error that does not name the cause.
 Every hook here uses its upstream `types`/`files` defaults, so the Python
 hooks see staged Python files and the format parsers see their own
 extensions — none of them is scoped to `src/` or `tests/` by this config. The
-project's own scoping (`bandit`'s `exclude: ^tests/`, `import-linter`'s and
-the ratchet's `files:` patterns) applies only to the `local` block; see
+project's own scoping (`bandit`'s `exclude: ^tests/`, `import-linter`'s
+`files:` pattern) applies only to the `local` block; see
 [Hook file filters and `pass_filenames` behaviour](#hook-file-filters-and-pass_filenames-behaviour).
 
 These hooks also run in `pre-commit`'s own cached environment built from the
@@ -390,13 +407,13 @@ second.
 
 ## Local hooks run through `uv`
 
-The `local` repo block holds six hooks. None of them declares a
+The `local` repo block holds five hooks. None of them declares a
 `pre-commit`-managed environment: every one sets `language: system` and an
 `entry` beginning `uv run`, so the tool that executes is the one in the synced
 project venv. Bumping any of them is a `uv add`, not a `rev` edit, and a venv
 missing the tool fails the hook rather than falling through to a system copy.
 
-All six also set `require_serial: true` — `pre-commit` would otherwise shard
+All five also set `require_serial: true` — `pre-commit` would otherwise shard
 the staged file list and run several copies concurrently, which is contention
 for tools that already parallelise internally and a race for the ones that
 rewrite files in place.
@@ -408,16 +425,17 @@ rewrite files in place.
 | `mypy` | `uv run mypy` |
 | `bandit` | `uv run bandit -c pyproject.toml -q` |
 | `import-linter` | `uv run lint-imports` |
-| `pytest-coverage-ratchet` | `uv run python scripts/coverage_ratchet.py` |
 
 They run in that order, and under `fail_fast: true` the order is the pipeline:
 the two sub-second fixers, then the type checker, then the security scan and
-the architecture contract, then the suite. A green hook says nothing about the
-ones below it.
+the architecture contract. A green hook says nothing about the ones below it,
+and a green run of all five says nothing about the suite — nothing here runs
+it any more. See [`python scripts/coverage_ratchet.py`](#python-scriptscoverage_ratchetpy)
+below for what took the sixth hook's place.
 
 ### `ruff check --fix --force-exclude`
 
-Runs first of the six and **rewrites files**. Like the stock fixers, a run
+Runs first of the five and **rewrites files**. Like the stock fixers, a run
 that changed anything fails the hook with the correction already on disk —
 re-`git add` and commit again. Placing it before `mypy` is deliberate: there
 is no value in type-checking a file ruff is about to reformat.
@@ -505,34 +523,52 @@ layer order — is in
 [import-linter contract](#import-linter-contract).
 It sees first-party imports only, so it cannot catch a `langchain` or `neo4j`
 import appearing outside the directory that library belongs in;
-`tests/unit/test_dependencies_stay_confined.py` is what covers that, and it
-runs in the hook below.
+`tests/unit/test_dependencies_stay_confined.py` is what covers that — but that
+test runs as part of the suite, which is no longer a hook. It runs in CI's
+`pytest` job, and on demand via `uv run pytest`.
 
 ### `python scripts/coverage_ratchet.py`
 
-The last and slowest hook: the full default suite under coverage, with a
-one-way ratchet on the total. `pass_filenames: false` — the script builds its
-own `pytest` invocation and would ignore arguments anyway.
+**Not a hook — nothing in `.pre-commit-config.yaml` runs this any more.**
+Until commit `ec7861f`, a `pytest-coverage-ratchet` hook ran it last, on
+every commit touching `src/`, `tests/`, `pyproject.toml` or the script itself:
+it ran the full default suite under coverage and applied a one-way ratchet on
+the total. It was removed because it duplicated CI's `pytest` job exactly —
+`addopts` already deselects `integration` and `accuracy`, so both invocations
+selected the same tests — and cost minutes on every commit of a
+many-small-commits workflow.
 
-`files: ^(src/|tests/|pyproject\.toml$|scripts/coverage_ratchet\.py$)` scopes
-when it runs. Source, tests, the file holding the pytest and coverage
-configuration, and the ratchet script itself — a documentation-only commit
-does not pay for a test run. The last two entries are the same instinct as
-import-linter's: changing the *gate* must re-run the gate.
+**The floor moved to CI; the script still does the comparison, on demand.**
+CI's `pytest` job now passes `--cov-fail-under="$(cat .coverage-baseline)"`,
+which enforces the same floor the hook did, one step later — coverage still
+cannot fall without failing a check, it just fails in CI instead of at commit
+time. The script itself is unchanged and still works:
 
-Because it is the last hook, `fail_fast` means it only ever executes on a
-commit where the five checks above it are already clean. Its own contract —
-the baseline file, `TOLERANCE`, the exact pytest arguments, the exit codes,
-and how to accept a deliberate drop — is
-[documented below](#python-scriptscoverage_ratchetpy).
+```
+uv run python scripts/coverage_ratchet.py
+```
 
-### None of these should be run as a separate pre-commit step
+It runs the full default suite under coverage, compares the total against
+`.coverage-baseline` with `TOLERANCE = 0.1`, and calls `write_baseline` to
+raise and stage the baseline when coverage rose. **That last part is what CI
+cannot do**: `write_baseline` stages the new high-water mark into the commit
+that earned it, and a CI run has no commit to stage into. So the baseline no
+longer raises itself — see `BACKLOG.md` B-RATCHET-1, which records why a floor
+that never follows the work is worse than it sounds and lists three routes
+back. Run the script yourself after adding tests that raise coverage, so the
+new baseline lands in the same commit as the work that earned it.
 
-Running `ruff`, `mypy`, `bandit`, `lint-imports` or `pytest` by hand *before*
-committing duplicates work the hook is about to do. Write the change, then
-commit; the hook reports what is wrong and frequently fixes it in place. The
-exception is diagnosis — when a hook has already failed and you want a tighter
-loop on one file — and there the caveat above applies: an invocation that
+### Run the suite yourself — nothing else will before CI does
+
+Running `ruff`, `mypy`, `bandit` or `lint-imports` by hand *before* committing
+still duplicates work the hook is about to do; write the change, then commit,
+and the hook reports what is wrong and frequently fixes it in place. **`pytest`
+is the exception now.** No hook runs it, so run it yourself before committing
+— `uv run pytest`, or `uv run python scripts/coverage_ratchet.py` if the
+change might raise coverage — because otherwise the first thing to disagree
+with a broken commit is CI, on a branch already pushed. For the other four,
+the exception is diagnosis — when a hook has already failed and you want a
+tighter loop on one file — and there the caveat above applies: an invocation that
 names files explicitly is not always asking the configured question. Prefer
 many small commits, which keeps each hook run short.
 
@@ -549,7 +585,9 @@ source of surprise:
    from configuration.
 
 A hook can therefore be triggered by one file and check the entire package.
-That is exactly what `mypy`, `lint-imports` and the ratchet do.
+That is exactly what `mypy` and `lint-imports` do — the ratchet used to be a
+third, when it was a hook; it is covered separately below since it now runs
+on demand rather than on a filter match at all.
 
 ### The filters, as configured
 
@@ -561,23 +599,28 @@ That is exactly what `mypy`, `lint-imports` and the ratchet do.
 | `mypy` | `types_or: [python, pyi]` | **`false`** | `[tool.mypy] files` |
 | `bandit` | `types: [python]`, `exclude: ^tests/` | `true` | staged non-test `.py` |
 | `import-linter` | `files: ^(src/\|pyproject\.toml$)` | **`false`** | the whole contract |
-| `pytest-coverage-ratchet` | `files: ^(src/\|tests/\|pyproject\.toml$\|scripts/coverage_ratchet\.py$)` | **`false`** | the whole suite |
 
 Note `bandit` uses `types` (singular) and the ruff hooks use `types_or`: the
 ruff hooks accept `.pyi` stubs, bandit does not. No `local` hook sets `files`
 *and* passes filenames, so the two mechanisms never interact here.
 
-### Why three hooks pass no filenames
+### Why two hooks pass no filenames
 
-Each of the three checks a property that is not a property of one file:
+Each of the two checks a property that is not a property of one file:
 
 - **mypy** — a changed return type breaks callers in files nobody staged. A
   filename-scoped run would not look at them.
 - **import-linter** — a violation is a *pair* of modules, and only one of them
   is likely in the commit.
-- **the ratchet** — the number it compares against `.coverage-baseline` is
-  total coverage of the package. Restricting the run to staged tests would
-  compute a different, meaningless number.
+
+`scripts/coverage_ratchet.py` used to be a third example, with
+`files: ^(src/|tests/|pyproject\.toml$|scripts/coverage_ratchet\.py$)` and
+`pass_filenames: false`, for the same reason: the number it compares against
+`.coverage-baseline` is total coverage of the package, and restricting the run
+to staged tests would compute a different, meaningless number. That reasoning
+is still correct — it is just no longer wired to a `files:` filter, because
+nothing triggers it automatically any more. See
+[`python scripts/coverage_ratchet.py`](#python-scriptscoverage_ratchetpy).
 
 There is a second reason for mypy specifically: **naming files on the command
 line bypasses `exclude`.** A filename-passing mypy hook would answer a
@@ -586,10 +629,10 @@ different question than the configured run. This project currently has no
 [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md)),
 which makes it moot today and worth keeping correct.
 
-The trade is cost. These three run in full whenever their filter matches, so a
-one-line source edit pays for a whole-package type check, the whole contract,
-and the whole suite. That is what `files:` is buying back: a docs-only commit
-matches none of the three patterns and skips all of them.
+The trade is cost. These two run in full whenever their filter matches, so a
+one-line source edit pays for a whole-package type check and the whole
+contract. That is what `files:` is buying back: a docs-only commit matches
+neither pattern and skips both.
 
 ### `--force-exclude` is the filename-passing counterpart
 
@@ -628,7 +671,7 @@ uv run pre-commit run --all-files
 That ignores staging and the `files:` patterns' practical effect, since every
 tracked file is offered to every hook. It is the check to run before a merge,
 and after any edit to `.pre-commit-config.yaml` itself — which, notably, is
-matched by none of the three `files:` patterns above.
+matched by neither `files:` pattern above.
 
 ## ruff configuration
 
@@ -1125,7 +1168,7 @@ markers rot the same way. Extending it turned up four unsuppressed findings in
 `scripts/coverage_ratchet.py`, which would have failed the hook the next time
 anyone touched that file.
 
-The hook is the fourth of the six `local` hooks:
+The hook is the fourth of the five `local` hooks:
 
 ```yaml
 - id: bandit
@@ -1567,17 +1610,20 @@ this marker expression applied.
 
 ### What it excludes, and why
 
-Two marked suites, both of which need something the commit gate cannot assume:
+Two marked suites, both of which need something the default run cannot
+assume — CI's `pytest` job included, since it runs the same `addopts`:
 
 | Marker | Needs | Where it lives |
 | --- | --- | --- |
 | `integration` | the backends in `docker-compose.test.yml`, or a live LLM endpoint | `tests/integration/` |
 | `accuracy` | a live LLM, and a judgement about extraction *quality* | `tests/accuracy/` |
 
-Excluding them is what keeps `git commit` infra-free and fast. A gate that
-fails because Docker is not running is a gate people learn to bypass, and
-`--no-verify` skips the entire pipeline rather than the one hook that
-complained — see [Pre-commit configuration](#pre-commit-configuration).
+Excluding them is what keeps the default run infra-free and fast — CI would
+otherwise need Docker or a live model endpoint just to run the tests that do
+not, and a slow gate is one people learn to bypass. This is a `pytest`
+concern rather than a `git commit` one: the suite is not part of the commit
+gate at all any more, so there is no `--no-verify` for it to skip — see
+[the top of this page](#quality-gates).
 
 Note the shape of the expression: it deselects by **marker**, not by path.
 `tests/integration/` is a convention, not the mechanism, and a
@@ -1589,13 +1635,12 @@ $ uv run pytest --collect-only -q
 1761/1958 tests collected (197 deselected)
 ```
 
-— so roughly a tenth of the suite does not run on commit.
+— so roughly a tenth of the suite does not run on a default invocation.
 
 `tests/accuracy/` is excluded for a different reason: it needs a live model.
-Its scorer and corpus need nothing and do run on commit, through
-`tests/unit/accuracy/`, which is what makes a live number from it believable.
-Nothing else in this repo can tell
-correct.
+Its scorer and corpus need nothing and do run on every default invocation,
+through `tests/unit/accuracy/`, which is what makes a live number from it
+believable.
 
 ### A `-m` on the command line replaces this one
 
@@ -1726,7 +1771,7 @@ to announce; see
 
 `tests/accuracy/test_extraction_accuracy.py` carries the marker and needs a
 live model, so it is deselected for the same reason `integration` is: the
-commit gate stays infra-free.
+default run stays infra-free.
 
 What is *not* deselected is the part that can be checked cheaply. The scorer
 (`tests/accuracy/scoring.py`) and the graded corpus are pure, and
@@ -1734,7 +1779,7 @@ What is *not* deselected is the part that can be checked cheaply. The scorer
 `FakeLlmProvider` — because an accuracy suite fails silently in two directions
 that both look like results, and neither is visible from a live run.
 
-The exclusion keeps the commit gate infra-free; the split keeps the suite
+The exclusion keeps the default run infra-free; the split keeps the suite
 honest. Both are deliberate.
 
 **Read the collected count, not the exit code**, which is the habit the marker
@@ -1790,15 +1835,15 @@ uv run pytest -m "not accuracy and not integration and not slow"
 
 `addopts` is `["-m", "not accuracy and not integration"]` and nothing else, so
 an unregistered marker is a `PytestUnknownMarkWarning`, not an error. A typo'd
-`@pytest.mark.integraton` therefore **warns and runs on every commit** — the
-test is not deselected, because the expression does not match a marker that
-does not exist.
+`@pytest.mark.integraton` therefore **warns and runs on every default
+invocation** — the test is not deselected, because the expression does not
+match a marker that does not exist.
 
 That is the failure this list of four declarations does not protect against,
 and it is worth knowing which way it fails: a mistyped exclusion marker makes a
-test run when it should not, so the symptom is a commit gate that suddenly
-needs Docker, not a test that quietly stops running. Loud, but only if you read
-the warning summary.
+test run when it should not, so the symptom is a default run — CI's included —
+that suddenly needs Docker, not a test that quietly stops running. Loud, but
+only if you read the warning summary.
 
 ## Running the excluded suites deliberately
 
@@ -1902,8 +1947,8 @@ its table is `kg_vectors_test_{PYTEST_XDIST_WORKER}` (`kg_vectors_test_main`
 outside xdist), so a worker truncates only its own rows. Postgres permits as
 many tables as you like; that is the whole difference.
 
-None of this touches the commit gate, whose own `-n auto` under the ratchet is
-fine: `addopts` deselects `integration` before xdist sees a test.
+None of this touches the default run — CI's `pytest -n auto --dist worksteal`
+included — since `addopts` deselects `integration` before xdist sees a test.
 
 ### The wheel test needs no backend
 
@@ -2044,8 +2089,8 @@ def test_max_examples_is_tunable_without_editing_the_suite(self):
 
 They live in `tests/unit/graph/test_memory_store.py` and
 `tests/unit/vector/test_compliance_coverage.py::TestTheSuiteIsTunable`, and
-both run on the commit gate. A hard-coded `max_examples` reintroduced into
-either shared suite fails there, rather than silently ignoring your
+both run on every default invocation. A hard-coded `max_examples` reintroduced
+into either shared suite fails there, rather than silently ignoring your
 environment — which is the same instinct as
 [ADR 0014](../adr/0014-exemption-lists-are-empty-and-must-stay-falsifiable.md):
 a knob nothing checks is indistinguishable from a knob that has stopped

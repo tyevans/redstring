@@ -1291,6 +1291,64 @@ allowed to and this one is not is the actual asymmetry to resolve.
 Related: CLAUDE.md's standing rule that a test hanging is worse than a test
 failing, because in CI it reads as infrastructure and gets retried.
 
+### B-BENCH-2. No test proves `run_point` builds a fresh store per call
+
+`bench/runner.py::run_point` constructs a fresh `InMemoryGraphStore()` and a
+fresh `uuid4()` tenant on every call, but nothing in
+`tests/unit/bench/test_runner.py` proves the store part of that. The test
+that reads as if it does —
+`test_two_runs_of_one_document_report_the_same_counts`, formerly named
+`test_each_run_starts_from_an_empty_store` — only shows that two calls report
+the same entity counts, and it cannot distinguish a fresh store per call from
+one store shared across calls: `InMemoryGraphStore` partitions everything by
+tenant id, and `run_point` mints a new tenant every time it runs, so a store
+hoisted to module scope and reused across calls would land each run in its
+own disjoint partition and report identical counts either way. Proving
+freshness needs two runs made to share one tenant id, and `run_point` has no
+parameter for that — the seam does not exist yet.
+
+**Why this is benign today rather than urgent.** Every metric `run_point`
+returns is read back through the same tenant id the same call minted, so a
+shared store changes no reported number regardless of whether the store is
+actually fresh. The only cost of a hypothetical shared-store bug is memory
+growing across a long sweep, silently, which nothing in this deliverable
+would notice.
+
+**What closing it takes.** `run_point` would need to accept a tenant id or a
+store from its caller, so a test could hold one fixed across two calls and
+assert the second call's entities are the union with the first (proving
+sharing) or assert the second call's tenant partition is empty before it
+runs (proving freshness with an inspectable seam). Nothing in this
+deliverable's sweep needs that seam yet — every sweep point is independent —
+so the honest choice is between adding it now for the sake of this one test,
+or accepting the gap deliberately until a caller actually needs to control
+tenancy or storage across runs.
+
+### B-BENCH-3. `bench/runner.py`'s `default_overlap` is a benchmark parameter not in `config.yaml`
+
+`run_point` builds its chunker with
+`default_overlap=min(200, point.chunk_size // 2)` — a formula, not a value
+read from the config file. `bench/config.yaml`'s own header comment says
+"every knob that changes a benchmark number" lives there, and this one
+changes chunk boundaries (and therefore chunk counts and entity counts)
+without appearing beside `chunk_size` or `concurrency`.
+
+**Why it was left as a formula rather than a config key.** At every
+`chunk_size` the shipped sweep actually uses (3000, 8000, 12000), `min(200,
+chunk_size // 2)` evaluates to 200 — the cap is never the binding term. So the
+knob has never varied in a run this project has produced, and adding it to
+`BenchConfig` and `bench/config.yaml` now would be a config key with exactly
+one value anyone has ever set. Deferred rather than fixed for that reason,
+not because it is hard: it is a straightforward addition the moment a sweep
+wants to vary overlap independently of chunk size, or the moment `chunk_size`
+in the config drops below 400 and the `min(200, ...)` cap starts doing
+something.
+
+**What closing it takes.** Add `sweep.overlap` (or `policy.overlap`) to
+`bench/config.yaml`, an `overlap: int` field to `BenchConfig`, and thread it
+through `run_point`'s chunker construction in place of the formula — no
+different in shape from any other knob already in the file.
+
 ---
 
 ## 5. Capabilities deliberately not built, with the route back
@@ -1977,6 +2035,45 @@ divergence with different code.
 ---
 
 ## 6. Tooling, packaging and hygiene
+
+### B-RATCHET-1. The coverage baseline no longer raises itself
+
+The `pytest-coverage-ratchet` pre-commit hook was removed: it ran the whole
+unit suite on every commit touching `src/` or `tests/`, which duplicated CI's
+`pytest` job exactly — `addopts` already deselects `integration` and
+`accuracy`, so both selected the same tests — and cost minutes per commit in a
+workflow built on many small commits.
+
+**The floor moved; the ratchet did not.** CI's `pytest` job now passes
+`--cov-fail-under="$(cat .coverage-baseline)"`, so coverage still cannot fall.
+What was lost is the *rise*: `scripts/coverage_ratchet.py::write_baseline`
+wrote the new high-water mark and `git add`ed it, so a commit that earned more
+coverage carried the new baseline with it. A CI run has no commit to stage
+into, so the baseline now sits at whatever it last held (96.22 at the time of
+writing) until someone edits it.
+
+Why that is worse than it sounds, and worth fixing rather than accepting: a
+ratchet that only ever holds is a floor, and the value of the original was
+that the floor *followed* the work. Coverage can now drift upward for months
+and a later regression back to 96.22 passes silently — the exact class of
+"passing check you have never seen fail" that CLAUDE.md warns about, since the
+gate keeps reporting green while measuring a bar nobody has moved.
+
+Routes back, cheapest first:
+
+- A CI step on `main` only that runs the script and opens a PR (or pushes a
+  commit) when the baseline rises. Costs a bot commit per improvement.
+- Keep the script as an on-demand command (`uv run python
+  scripts/coverage_ratchet.py`) and name it in the definition of done for work
+  that adds tests, so raising it is a human step someone is told to take. Free,
+  and relies on a rule rather than a mechanism — which this project has
+  repeatedly found is indistinguishable from nothing.
+- Compute the floor as "last release's coverage" rather than a checked-in
+  number, removing the second declaration site entirely.
+
+Note also that `scripts/coverage_ratchet.py` is now referenced by no hook. It
+still works and is still the only implementation of the comparison; it is not
+dead code, but nothing runs it automatically any more.
 
 ### B126. The version is one fact with two declaration sites
 
@@ -2961,3 +3058,34 @@ copied from. Fixing one without the other would be inconsistent; fixing both
 is a small, separate, argued change (special-case `-1` and report it as
 "unconstrained" rather than as a mismatched width) that belongs in its own
 commit rather than riding in on the semantic-channel branch.
+
+### B-BENCH-1. The long benchmark documents are ungraded, so nothing scored against them is accuracy
+
+`bench/corpus/*.txt` produce timings and a stability score (`bench/stability.py`),
+never an accuracy score. Stability is Jaccard agreement between repeats, and
+both sides of that comparison come from the code under test: a pipeline that
+deterministically drops half of every document scores 1.0. It detects variance
+— which is the live risk in deliverable C, where concurrency may cause naming
+drift at chunk boundaries — and nothing else.
+
+Deferred rather than skipped, and what was learned deciding it:
+
+- Hand-grading a 100k-character document is hours of work, and CLAUDE.md's
+  grading convention makes a *partial* grading actively misleading: "omission
+  is a claim", so every ungraded entity the model correctly finds is scored as
+  a false positive. A half-graded long document reports a precision failure
+  belonging to the grader.
+- The grading convention that makes the short corpus trustworthy — grade what
+  the text states, not what is true — is hardest exactly where a model knows
+  the subject. A Harry Potter article is the worst case: an extractor that
+  supplies Hermione's house from its own training rather than from the text
+  is wrong, and a grader who knows the books will not notice.
+
+Options, cheapest first: grade a *bounded excerpt* (the first 5k characters)
+and score only entities whose mentions fall inside it; or grade a long
+document in an unfamiliar domain where the grader has no prior knowledge to
+leak. Neither is free, and both are better than the third option of quietly
+renaming stability to accuracy.
+
+Until then: `bench/report.py` writes `stability` and `accuracy` as separate
+keys, and `accuracy` is `null` whenever the graded corpus did not run.
