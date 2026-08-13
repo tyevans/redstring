@@ -330,7 +330,7 @@ ignore = []
 # BACKLOG B15, closed.
 
 [tool.ruff.lint.isort]
-known-first-party = ["redstring"]
+known-first-party = ["bench", "redstring"]
 
 # datetime.utcnow() returns a NAIVE datetime and is deprecated from 3.12.
 # DTZ003 catches the call form but not a bare reference such as
