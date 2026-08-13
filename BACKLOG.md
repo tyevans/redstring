@@ -2924,3 +2924,40 @@ nothing extra (Python already holds the object); `PostgresChunkStore` pays a
 size this repository has exercised is unmeasured. Whoever picks this up
 should measure `get_by_source` over a document with hundreds of chunks before
 deciding whether a column-selecting variant is worth the port change.
+
+### B137. `min_score` compares a clamped score in memory, unclamped in Postgres
+
+`InMemoryChunkStore.semantic_candidates` (`chunks/adapters/memory.py:247,253`)
+scores with `cosine_score`, which clamps into `0..1` before the `min_score`
+comparison runs. `PgVectorChunkStore` (`chunks/adapters/postgres.py:698`)
+filters on the raw `_SCORE` expression in SQL and only clamps afterwards, at
+line 670, when building each `SemanticCandidate`.
+
+Not fixed here: the divergence window is one ulp around 0.0 or 1.0 -- exactly
+the accumulated-rounding case `cosine_score`'s own docstring names, where an
+identical pair's raw dot product can land marginally above its squared norm.
+pgvector clamps cosine distance internally (it is computed as `1 - <=>`
+against normalised-length vectors in the query the adapter emits), so the raw
+`_SCORE` a caller could observe diverging from the clamped one is already a
+edge a real deployment is unlikely to produce, and reordering the filter to
+run after clamping would cost an extra pass over every candidate row to save
+a comparison that only ever differs by float epsilon. Worth revisiting if a
+future backend's raw score is not already bounded on the way out.
+
+### B138. `ensure_schema`'s width check reads `atttypmod`, which is `-1` for an unconstrained `vector` column
+
+`chunks/adapters/postgres.py`'s `ensure_schema` inherited its dimension-width
+check verbatim from `PgVectorStore`. Postgres reports `atttypmod` as `-1` for
+a `vector` column declared with no width (`vector` rather than
+`vector(768)`), so a table created that way would raise
+`DimensionMismatchError(expected=-1, ...)` instead of the width mismatch the
+check means to report.
+
+Not fixed here: nothing this repository writes ever creates an unconstrained
+`vector` column -- both adapters always declare a width -- so the path is
+unreachable from any migration or `ensure_schema` call in the tree, and the
+same latent issue already exists in `PgVectorStore`, which this code was
+copied from. Fixing one without the other would be inconsistent; fixing both
+is a small, separate, argued change (special-case `-1` and report it as
+"unconstrained" rather than as a mismatched width) that belongs in its own
+commit rather than riding in on the semantic-channel branch.

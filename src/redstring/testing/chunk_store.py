@@ -1279,6 +1279,17 @@ class ChunkStoreCompliance:
 
         assert result == []
 
+    async def test_semantic_candidates_over_an_empty_corpus_returns_nothing(
+        self, store: ChunkStore
+    ) -> None:
+        """Every other read method here pins its empty answer; this one now does too."""
+        tenant = TenantId(uuid4())
+        query = [1.0, 0.0, 0.0, 0.0]
+
+        result = await store.semantic_candidates(query, tenant, 10)
+
+        assert result == []
+
     async def test_semantic_candidates_rejects_a_negative_limit(self, store: ChunkStore) -> None:
         tenant = TenantId(uuid4())
         query = [1.0, 0.0, 0.0, 0.0]
