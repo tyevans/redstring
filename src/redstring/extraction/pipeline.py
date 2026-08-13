@@ -39,13 +39,32 @@ The default is to raise on the first failed chunk, for the reason the
 `LlmProvider` port already gives: an empty extraction and a failed one are
 indistinguishable downstream, and only one of them is an answer.
 
-## Chunks are extracted one at a time
+## Chunks are extracted in bounded wavefront batches
 
-Deliberate, and cheap to change if measurement asks for it. The merge is
-order-independent and idempotent, both proved by property tests, so nothing
-about correctness depends on the sequence -- but the reference deployment is a
-single-GPU llama.cpp server that processes one request at a time, and firing
-ten concurrent requests at it converts a queue into ten timeouts.
+Measurement asked: a 33k-character document is 14 serial calls at roughly 24s
+each, and the merge is order-independent and idempotent -- both proved by
+property tests -- so nothing about correctness depends on the sequence, only
+the caller's inference backend decides how many requests it can absorb at
+once. `concurrency` (default `1`) is that bound. Chunks are grouped into
+consecutive batches of that size; every chunk in a batch is sent with the same
+prompt, computed once before the batch runs, and `asyncio.gather` fires the
+batch with `return_exceptions=True` so one chunk's failure does not cancel
+siblings whose answers are already paid for -- `skip_failed_chunks` still
+decides whether a failure propagates or is counted, and anything that is not
+an `LlmProviderError` is re-raised unchanged. Carryover is folded in from the
+batch's results afterwards, in chunk order, never as each call returns:
+updating on completion would make a chunk's prompt depend on which sibling
+happened to finish first, so two runs of the same document could disagree with
+each other.
+
+`concurrency=1` is not a special case of this -- it is the same code with a
+batch size of one, and is byte-identical to the pipeline before this
+parameter existed: the same calls, the same prompts, in the same order. That
+is what makes the knob a measurement rather than a rewrite, and it is why the
+default stays `1`: a single-GPU llama.cpp server that processes one request at
+a time turns ten concurrent requests into ten timeouts, and this module has no
+way to know what is on the other end of `LlmProvider` unless the caller says
+so.
 
 ## Each chunk is told what the ones before it found
 
@@ -105,6 +124,7 @@ model version is what keeps this path's key space distinct from
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from redstring.domain.exceptions import LlmProviderError, RedstringError
@@ -117,6 +137,7 @@ from redstring.extraction.merging import merge_extractions
 from redstring.extraction.schema import Extraction
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
     from datetime import datetime
 
     from redstring.aggregates.document import Document
@@ -126,6 +147,7 @@ if TYPE_CHECKING:
     from redstring.domain.relationship import Relationship
     from redstring.domain.source import SourceDocument
     from redstring.events.document import DocumentExtracted
+    from redstring.extraction.chunking import Chunk
     from redstring.extraction.protocols import Chunker
     from redstring.ports.llm_provider import LlmProvider
 
@@ -223,6 +245,12 @@ class PipelineResult(NamedTuple):
     failed_gleanings: int = 0
 
 
+def _batches(chunks: Sequence[Chunk], size: int) -> Iterator[Sequence[Chunk]]:
+    """Consecutive groups of `size`, in order. `size=1` yields one chunk each."""
+    for start in range(0, len(chunks), size):
+        yield chunks[start : start + size]
+
+
 class ExtractionPipeline:
     """Turns one `SourceDocument` into one `DocumentExtracted`."""
 
@@ -233,6 +261,7 @@ class ExtractionPipeline:
         chunker: Chunker | None = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         skip_failed_chunks: bool = False,
+        concurrency: int = 1,
         carryover_entities: int = DEFAULT_CARRYOVER_ENTITIES,
         gleanings: int = 0,
         schema: type[Extraction] = Extraction,
@@ -255,6 +284,18 @@ class ExtractionPipeline:
                 failed, counting it. Off by default; see the module
                 docstring, and note that `record` still refuses the result
                 unless asked twice.
+            concurrency: How many chunks may be in flight at once. `1` --
+                the default -- reproduces the serial pipeline byte for byte:
+                the same calls, the same prompts, in the same order. Above
+                `1`, chunks are extracted in consecutive batches of this
+                size; every chunk in a batch shares one prompt, computed
+                before the batch runs, and carryover is updated from the
+                whole batch's results afterwards, in chunk order -- never as
+                each call returns, which would make a chunk's prompt depend
+                on which sibling happened to finish first. Refused below `1`
+                at construction, for the same reason `carryover_entities`
+                is: a bad limit belongs to the caller, not to the first
+                document it is used on.
             carryover_entities: How many previously-seen entities are named in
                 the next chunk's prompt, so the model spells a recurring
                 entity the way the earlier chunk spelled it. `0` disables it,
@@ -281,6 +322,9 @@ class ExtractionPipeline:
         self._chunker = chunker if chunker is not None else SlidingWindowChunker()
         self._system_prompt = system_prompt
         self._skip_failed = skip_failed_chunks
+        if concurrency < 1:
+            raise ValueError(f"concurrency must be >= 1, got {concurrency}")
+        self._concurrency = concurrency
         # Constructed and discarded, purely so a bad limit is refused here
         # rather than on the first `extract` -- a constructor argument that
         # validates a document later is a constructor argument that validates
@@ -350,39 +394,53 @@ class ExtractionPipeline:
         gleaned = 0
         failed_gleanings = 0
 
-        for chunk in chunks:
+        for batch in _batches(chunks, self._concurrency):
+            # One prompt for the whole batch, computed before any call in it
+            # runs -- every chunk in the batch sees the same carryover. At
+            # concurrency=1 a batch is one chunk, so this is exactly the
+            # prompt the serial loop computed.
             prompt = self._system_prompt + carryover.block()
-            try:
-                answer = await self._provider.extract(
-                    chunk.text, self._schema, system_prompt=prompt
-                )
-            except LlmProviderError:
-                if not self._skip_failed:
-                    raise
-                failed += 1
-                continue
-            answer, passes, glean_failures = await self._glean(chunk.text, prompt, answer)
-            gleaned += passes
-            failed_gleanings += glean_failures
-            mapped = map_extraction(
-                answer,
-                tenant_id=tenant_id,
-                source_id=document.id,
-                model=self._provider.model,
-                reference_date=document.published_at,
-                observed_at=observed_at,
+            results = await asyncio.gather(
+                *(
+                    self._extract_one(chunk, prompt, document, tenant_id, observed_at)
+                    for chunk in batch
+                ),
+                return_exceptions=True,
             )
-            parts.append(mapped)
-            # Here and not after the fold: `merge_extractions` deduplicates
-            # across chunks and has no reason to remember which one reported
-            # what. This is the last moment the answer and the chunk that
-            # produced it are both in hand.
-            found_by_index[chunk.chunk_index] = [entity.id for entity in mapped.entities]
-            # After mapping, not from `answer`: the mapper is what normalizes
-            # a name and drops a row the domain refuses, and a carryover built
-            # from the raw answer would offer later chunks a spelling that no
-            # entity in this document actually has.
-            carryover.remember(mapped.entities)
+            for chunk, result in zip(batch, results, strict=True):
+                if isinstance(result, LlmProviderError):
+                    if not self._skip_failed:
+                        raise result
+                    failed += 1
+                    continue
+                if isinstance(result, BaseException):
+                    raise result
+                mapped, passes, glean_failures = result
+                gleaned += passes
+                failed_gleanings += glean_failures
+                parts.append(mapped)
+                # Here and not after the fold: `merge_extractions` deduplicates
+                # across chunks and has no reason to remember which one
+                # reported what. This is the last moment the answer and the
+                # chunk that produced it are both in hand.
+                found_by_index[chunk.chunk_index] = [entity.id for entity in mapped.entities]
+            # A second pass, in chunk order, after every call in the batch has
+            # completed -- not as each one returns. Updating on completion
+            # would make a chunk's prompt depend on which sibling finished
+            # first, so two runs of one document could disagree with each
+            # other. At concurrency=1 this pass has one entry and matches the
+            # serial loop exactly.
+            # `batch` is not read here -- the pass exists for its order, which
+            # `results` already carries, since `gather` returns in argument
+            # order rather than completion order.
+            for result in results:
+                if not isinstance(result, BaseException):
+                    # After mapping, not from the raw answer: the mapper is
+                    # what normalizes a name and drops a row the domain
+                    # refuses, and a carryover built from the raw answer would
+                    # offer later chunks a spelling that no entity in this
+                    # document actually has.
+                    carryover.remember(result[0].entities)
 
         merged = merge_extractions(parts)
         passages = stored_chunks(
@@ -407,6 +465,34 @@ class ExtractionPipeline:
             gleaning_passes=gleaned,
             failed_gleanings=failed_gleanings,
         )
+
+    async def _extract_one(
+        self,
+        chunk: Chunk,
+        prompt: str,
+        document: SourceDocument,
+        tenant_id: TenantId,
+        observed_at: datetime,
+    ) -> tuple[MappedExtraction, int, int]:
+        """One chunk's whole answer: model call, gleaning, mapping.
+
+        Raises `LlmProviderError` on a failed model call, same as the serial
+        loop did inline -- the caller decides whether that propagates or is
+        counted, via `skip_failed_chunks`. Everything after the call is
+        unchanged from before batching existed; this is that code moved, not
+        rewritten, so a batch of one behaves exactly as the loop body used to.
+        """
+        answer = await self._provider.extract(chunk.text, self._schema, system_prompt=prompt)
+        answer, passes, glean_failures = await self._glean(chunk.text, prompt, answer)
+        mapped = map_extraction(
+            answer,
+            tenant_id=tenant_id,
+            source_id=document.id,
+            model=self._provider.model,
+            reference_date=document.published_at,
+            observed_at=observed_at,
+        )
+        return mapped, passes, glean_failures
 
     async def _glean(
         self, text: str, prompt: str, answer: Extraction
