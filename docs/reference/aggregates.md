@@ -442,6 +442,7 @@ by a caller: the only writer is `_apply`, from an applied `EntitiesMerged`.
 | `canonical_entity_id` | `EntityId` | — | `event.canonical_entity_id` |
 | `merged_entity_ids` | `list[EntityId]` | — | `list(event.merged_entity_ids)` |
 | `redirections` | `list[RelationshipRedirection]` | `[]` | `list(event.redirections)` |
+| `resolution` | `PropertyResolution \| None` | `None` | `event.resolution` |
 | `undone` | `bool` | `False` | not carried — set by `MergeUndone` |
 
 #### `merge_event_id`
@@ -561,6 +562,7 @@ merge(
     merged_entity_ids: Sequence[EntityId],
     merge_reason: str | None = None,
     redirections: Sequence[RelationshipRedirection] = (),
+    resolution: PropertyResolution | None = None,
 ) -> EntitiesMerged
 ```
 
@@ -575,6 +577,7 @@ every refusal is an exception.
 | `merged_entity_ids` | `Sequence[EntityId]` | at least one, none already an alias; copied with `list(...)` |
 | `merge_reason` | `str \| None` | free text, default `None`; unvalidated, unread by the aggregate |
 | `redirections` | `Sequence[RelationshipRedirection]` | the edge effect, default `()`; copied with `list(...)` |
+| `resolution` | `PropertyResolution \| None` | the canonical entity's field decision, default `None`; carried onto the event unchanged |
 
 Two guards run before anything is created, in this order:
 

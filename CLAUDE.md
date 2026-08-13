@@ -207,8 +207,8 @@ reading the code:
 ## Testing notes
 
 - **When a test's input makes two candidate implementations agree, it is not
-  testing the difference.** This project has hit the same shape twenty times,
-  and every one passed review while proving nothing:
+  testing the difference.** This project has hit the same shape twenty-one
+  times, and every one passed review while proving nothing:
 
   | Test used | Wrong implementation it could not distinguish |
   |---|---|
@@ -232,6 +232,19 @@ reading the code:
   | a *month range* whose endpoints differ | `end < start` widened to `<=` — "1900-1900" becomes unparseable and every other range still works |
   | a *year range* whose endpoints differ, in a case that declines for a **different** clause of the same `or` | `end.year <= start.year` written as `is` — "2023-2023" renders as a range the parser then refuses to read back |
   | tie-break claims whose `origin` is a fresh `uuid4()` | *any* ordering of the components above it — with the intended component deleted, the winner is whichever random id sorted higher, so a deliberate break passes about half its runs |
+  | two absorbed entities, one of them both *newest* and *first-listed* | mapping one merge strategy onto another internally — a fixture's own docstring claimed the collision was prevented, having fixed only the single-absorbed-entity case and not the case where the newest claim and the first-absorbed claim are still the same entity |
+
+  **Fixing one coincidence is not fixing the family, and a docstring claiming
+  a fixture is safe is a claim to check rather than trust.** The two-absorbed
+  row's fixture had a docstring that said, correctly, why one absorbed entity
+  cannot distinguish `PREFER_MERGED` from `MOST_RECENTLY_OBSERVED` — but the
+  fix it described addressed only *that* collision, not the second one the
+  same shared entity created: with `first` carrying both the newest instant
+  and the first-absorbed position, the two strategies still agreed. A
+  docstring asserting a fixture prevents a defect is a claim about the
+  fixture, not evidence about it — the same standing instruction as "break
+  the implementation on purpose before trusting a property" a few rows below,
+  applied to a comment instead of a test.
 
   **The interned-string and coinciding-year-range rows are the same row, two years and two modules
   apart**, which is why "bounds that never coincide" is worth reading as a
@@ -277,7 +290,7 @@ reading the code:
   lesson generalises past bits: **when a test's example is the one the domain
   makes obvious, ask what that example is quietly making true.**
 
-  **Five of the twenty rows are identity-vs-equality**, and they are the
+  **Five of the twenty-one rows are identity-vs-equality**, and they are the
   ones to expect rather than to be surprised by. Three fired because the test
   value sat inside a CPython cache — interned strings, cached small ints, and
   `len()` on a short collection returning that same cached int. Test numeric

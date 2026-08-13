@@ -44,6 +44,7 @@ from redstring.domain.exceptions import (
     MergeIntoAliasError,
     UnknownMergeError,
 )
+from redstring.domain.merge_strategy import PropertyMergePolicy, PropertyMergeStrategy
 from redstring.events.streams import document_stream
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.projections import GraphProjection
@@ -275,6 +276,49 @@ class TestTheRoundTrip:
 
         assert report.failed == 0
         assert await rig.snapshot(tenant_id) == live
+
+    async def test_merge_then_undo_restores_the_canonical_entitys_fields(self):
+        """The expectation is recorded **before** the merge and independently of
+        the projection.
+
+        Asserting that the entity after undo equals the entity the projection
+        produced would be a self-consistency check: both sides run the same
+        fold, so a fold that does too little leaves both sides agreeing on the
+        same wrong state. That is the replay-equivalence lesson in CLAUDE.md,
+        and it is why `expected` is captured from the store before anything is
+        applied.
+        """
+        rig, tenant_id = Rig(), uuid4()
+        canonical = entity(
+            tenant_id, name="Ada Lovelace", description="a computer scientist", properties={}
+        )
+        absorbed = entity(
+            tenant_id,
+            name="A. Lovelace",
+            description="a mathematician",
+            external_ids={"wikidata": "Q7259"},
+            properties={"role": "mathematician"},
+        )
+        await rig.extract(tenant_id, "doc-1", [canonical, absorbed], [])
+        await rig.catch_up()
+        expected = await rig.graph_store.get_entity(canonical.id, tenant_id)
+
+        merged = await rig.service.merge(
+            tenant_id=tenant_id,
+            canonical_entity_id=canonical.id,
+            merged_entity_ids=[absorbed.id],
+            policy=PropertyMergePolicy(default=PropertyMergeStrategy.PREFER_MERGED),
+        )
+        await rig.catch_up()
+        # The merge must actually have changed something, or the round trip is
+        # vacuous -- a no-op fold passes any restoration test ever written.
+        assert (await rig.graph_store.get_entity(canonical.id, tenant_id)) != expected
+
+        undone = await rig.service.undo(tenant_id=tenant_id, merge_event_id=merged.event_id)
+        await rig.catch_up()
+
+        assert (await rig.graph_store.get_entity(canonical.id, tenant_id)) == expected
+        assert undone.restored_fields is not None
 
 
 class TestTheRoundTripCanFail:

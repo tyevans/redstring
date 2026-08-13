@@ -136,15 +136,19 @@ Current values, in full — there is no other source to consult:
 | `DocumentChunked` | `1` | `DOCUMENT_CATEGORY` = `"Document"` |
 | `DocumentExtracted` | `2` | `DOCUMENT_CATEGORY` = `"Document"` |
 | `EntitiesEmbedded` | `1` | `DOCUMENT_CATEGORY` = `"Document"` |
-| `EntitiesMerged` | `1` | `CONSOLIDATION_CATEGORY` = `"Consolidation"` |
+| `EntitiesMerged` | `2` | `CONSOLIDATION_CATEGORY` = `"Consolidation"` |
 | `MergeUndone` | `1` | `CONSOLIDATION_CATEGORY` = `"Consolidation"` |
 
-**`DocumentExtracted` is at `2` and everything else at `1`.** The one bump
-happened when `Entity`'s five provenance fields moved onto a nested
-`Provenance` and gained a required `observed_at`, so no payload written
-against the v1 shape validates — see
-[ADR 0035](../adr/0035-provenance-is-a-value-object.md). A reader may not treat
-any of these numbers as permanent — see
+**`DocumentExtracted` and `EntitiesMerged` are at `2`; everything else is at
+`1`.** `DocumentExtracted`'s bump happened when `Entity`'s five provenance
+fields moved onto a nested `Provenance` and gained a required `observed_at`,
+so no payload written against the v1 shape validates — see
+[ADR 0035](../adr/0035-provenance-is-a-value-object.md). `EntitiesMerged`'s
+bump happened when a merge gained a `resolution: PropertyResolution | None`
+field recording the before/after of the canonical entity's `description`,
+`external_ids` and `properties` — see
+[ADR 0036](../adr/0036-a-merge-resolves-the-canonical-entitys-fields.md). A
+reader may not treat any of these numbers as permanent — see
 [Compatibility and versioning](#compatibility-and-versioning) — but it may
 rely on this page moving when one does.
 

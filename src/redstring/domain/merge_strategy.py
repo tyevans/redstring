@@ -51,16 +51,19 @@ obstacle. The signature was.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 # `EntityId` and `Provenance` are imported at runtime, not under
 # `TYPE_CHECKING`: pydantic resolves `PropertyClaim`'s field annotations at
 # schema-build time, and a type-checking-only import leaves the model "not
 # fully defined" at every construction site. `Entity` and `datetime` appear
-# only in plain function signatures and so stay below.
+# only in plain function signatures and so stay below. `Mapping` is likewise
+# a field annotation on `PropertyMergePolicy` and must resolve at
+# schema-build time too.
 from redstring.domain.ids import EntityId
 from redstring.domain.provenance import Provenance
 
@@ -96,6 +99,89 @@ IMPLEMENTED = frozenset(
         PropertyMergeStrategy.MOST_RECENTLY_OBSERVED,
     }
 )
+
+#: The `Entity` fields a merge may decide. `name`, `entity_type` and `temporal`
+#: are deliberately absent: preference between whole entities is ADR 0010's
+#: `domain.preference`, and re-deciding `name` here would put two answers to
+#: one question in the codebase.
+MERGEABLE_FIELDS = frozenset({"description", "external_ids", "properties"})
+
+#: The one field whose values `UNION` can legally produce. `external_ids` is
+#: `dict[str, str]` and `description` is `str | None`; a list type-checks
+#: against neither.
+_UNION_FIELD = "properties"
+
+
+class PropertyMergePolicy(BaseModel, frozen=True):
+    """Which strategy applies to which field, by dotted path.
+
+    One key space for a scalar field and a dict key:
+
+    | Path | Means |
+    |---|---|
+    | `description` | the scalar field |
+    | `properties` | the default for every key of `properties` |
+    | `properties.role` | that one key |
+
+    `strategy_for` resolves **exact path, then field default, then
+    `default`**, and that order is the whole content of this type.
+
+    Note the asymmetry with `claims_for` below: a bare `properties` is a
+    legal *override key* here -- it names a per-field default -- while
+    `claims_for` refuses a bare `properties` as a *claim path*, because a
+    claim needs a key and resolving the whole dict as one value is not what
+    any strategy means. Both rules are intentional; do not "fix" either to
+    match the other.
+
+    ## Two refusals, at two different times, on purpose
+
+    `UNION` outside `properties` is refused **here, at construction**. It is a
+    type error that nothing downstream can fix: the projection would hand a
+    `list` to `Entity.external_ids`, pydantic would raise inside a fold, and
+    the event is durably in the log by then with no way to make progress.
+    Refusing when a caller wires up a service is the only point at which that
+    is cheap.
+
+    `DEEP_MERGE` is **not** refused here. It raises from `resolve` at plan
+    time, on the write side, before any event exists -- so the failure is
+    already cheap and already names BACKLOG B28. Encoding "which strategies
+    are implemented" a second time in this validator would give that question
+    two answers, and the one here would be the one nobody updates.
+    """
+
+    default: PropertyMergeStrategy = PropertyMergeStrategy.PREFER_CANONICAL
+    overrides: Mapping[str, PropertyMergeStrategy] = {}
+
+    @model_validator(mode="after")
+    def _paths_are_real_and_union_stays_in_properties(self) -> PropertyMergePolicy:
+        if self.default is PropertyMergeStrategy.UNION:
+            raise ValueError(
+                "UNION cannot be the policy default: it would reach description "
+                "and external_ids, whose types a list does not satisfy"
+            )
+        for path, strategy in self.overrides.items():
+            field = path.partition(".")[0]
+            if field not in MERGEABLE_FIELDS:
+                raise ValueError(
+                    f"override path {path!r} names no mergeable field; "
+                    f"expected one of {sorted(MERGEABLE_FIELDS)}"
+                )
+            if strategy is PropertyMergeStrategy.UNION and field != _UNION_FIELD:
+                raise ValueError(
+                    f"UNION is not legal on {path!r}: it returns a list, which "
+                    f"{field} does not accept"
+                )
+        return self
+
+    def strategy_for(self, path: str) -> PropertyMergeStrategy:
+        """The strategy for `path`: exact, then its field's default, then `default`."""
+        exact = self.overrides.get(path)
+        if exact is not None:
+            return exact
+        field = self.overrides.get(path.partition(".")[0])
+        if field is not None:
+            return field
+        return self.default
 
 
 class PropertyClaim(BaseModel):
@@ -219,23 +305,55 @@ def _union(values: Sequence[Any]) -> list[Any]:
     return merged
 
 
-def claims_for(
-    property_name: str, canonical: Entity, others: Sequence[Entity]
-) -> list[PropertyClaim]:
-    """Every claim about `property_name`, canonical first.
+def claims_for(path: str, canonical: Entity, others: Sequence[Entity]) -> list[PropertyClaim]:
+    """Every claim about `path`, canonical first.
+
+    `path` is `description`, or `properties.<key>`, or `external_ids.<key>`.
+
+    ## Silence is not an assertion, and the two field shapes say it differently
 
     An entity whose `properties` lack the key is **skipped**, not given a
-    `None` claim. Silence is not an assertion, and treating it as one would let
-    an entity with no opinion outvote one with an opinion under
-    `MOST_RECENTLY_OBSERVED` merely by being newer. An explicit `None` *is* a
-    claim and is kept -- which is why this tests `in`, not truthiness.
+    `None` claim -- treating absence as a claim would let an entity with no
+    opinion outvote one with an opinion under `MOST_RECENTLY_OBSERVED` merely
+    by being newer. An explicit `None` *is* a claim and is kept, which is why
+    this tests `in`, not truthiness.
 
-    Returns `[]` when nobody claims the property, which the caller must
+    `description` has no such distinction -- the field always exists and
+    `None` is its absence, so **a `None` description is silence and is
+    skipped**. The asymmetry is real rather than an inconsistency, and it is
+    stated here because a reader who knows the dict rule will expect the
+    opposite. (`PropertyMergePolicy` above has the mirror-image asymmetry: a
+    bare `properties` is a legal *override key* there, naming a per-field
+    default, while it is refused here as a claim path. Both are intentional.)
+
+    A bare `properties` or `external_ids` is refused. Those are policy keys --
+    a default for every key of the field -- and resolving a whole dict as one
+    value is not what any strategy means.
+
+    Returns `[]` when nobody claims the path, which the caller must
     distinguish from "everybody claimed `None`". `resolve` refuses an empty
     list rather than inventing an answer for it.
     """
+    field, dot, key = path.partition(".")
+    if field not in MERGEABLE_FIELDS:
+        raise ValueError(
+            f"{path!r} names no mergeable field; expected one of {sorted(MERGEABLE_FIELDS)}"
+        )
+    entities = (canonical, *others)
+    if field == "description":
+        if dot:
+            raise ValueError(f"description is a scalar field; {path!r} names nothing")
+        return [
+            PropertyClaim(value=e.description, provenance=e.provenance, origin=e.id)
+            for e in entities
+            if e.description is not None
+        ]
+    if not dot:
+        raise ValueError(
+            f"{field!r} is a policy key, not a claim path; name a key, as in {field}.role"
+        )
     return [
-        PropertyClaim(value=e.properties[property_name], provenance=e.provenance, origin=e.id)
-        for e in (canonical, *others)
-        if property_name in e.properties
+        PropertyClaim(value=getattr(e, field)[key], provenance=e.provenance, origin=e.id)
+        for e in entities
+        if key in getattr(e, field)
     ]

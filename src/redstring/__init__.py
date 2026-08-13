@@ -151,6 +151,13 @@ upstream version does that this one did not.
   for the blocking, or a human review queue for the model, no longer means
   subclassing a class whose constructor demands collaborators you do not
   have. `CandidateFinder` and `Adjudicator` remain the defaults.
+
+  A merge also decides the canonical entity's own `description`,
+  `external_ids` and `properties` now, under a `PropertyMergePolicy`
+  (`PropertyMergeStrategy`) keyed by dotted path -- `MergeableFields` and
+  `PropertyResolution` are the before/after pair `EntitiesMerged` carries so
+  the projection applies the decision rather than recomputing it, exactly as
+  it already does for `redirections` (ADR 0036).
 - **No scraping, no HTML preprocessing.** A caller supplies a
   `SourceDocument`. Fetching content is a different job with different
   failure modes, and it was removed rather than left unfinished (slice 1).
@@ -201,7 +208,11 @@ from redstring.domain.chunk_ranking import (
     RankedChunk,
     rank_chunks,
 )
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import (
+    MergeableFields,
+    PropertyResolution,
+    RelationshipRedirection,
+)
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import (
     AliasCycleError,
@@ -222,6 +233,7 @@ from redstring.domain.exceptions import (
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.interval import Bounds, TemporalRelation
+from redstring.domain.merge_strategy import PropertyMergePolicy, PropertyMergeStrategy
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
@@ -376,9 +388,13 @@ __all__ = [
     "MergeAdjudicator",
     "MergeIntoAliasError",
     "MergeUndone",
+    "MergeableFields",
     "MissingEntityError",
     "PartialExtractionError",
     "PipelineResult",
+    "PropertyMergePolicy",
+    "PropertyMergeStrategy",
+    "PropertyResolution",
     "PropertySchema",
     "Provenance",
     "RankedChunk",

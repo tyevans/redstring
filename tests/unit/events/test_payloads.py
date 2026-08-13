@@ -12,8 +12,13 @@ import pytest
 from pydantic import ValidationError
 
 from redstring.domain.chunk import StoredChunk, chunk_id
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import (
+    MergeableFields,
+    PropertyResolution,
+    RelationshipRedirection,
+)
 from redstring.domain.entity import Entity
+from redstring.domain.ids import EntityId
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.vector import VectorRecord
@@ -271,6 +276,55 @@ class TestEntitiesMerged:
         redirection = RelationshipRedirection(before=_relationship(other))
         with pytest.raises(ValidationError, match="redirections carry tenants"):
             _merged(PIVOT_TENANT, redirections=[redirection])
+
+
+CANONICAL = EntityId(UUID(int=1))
+ABSORBED = EntityId(UUID(int=2))
+
+
+def _resolution(entity_id):
+    return PropertyResolution(
+        entity_id=entity_id,
+        before=MergeableFields(properties={"role": "analyst"}),
+        after=MergeableFields(properties={"role": "mathematician"}),
+    )
+
+
+class TestResolutionBelongsToTheCanonicalEntity:
+    def test_a_resolution_naming_an_absorbed_entity_is_refused(self):
+        """The projection upserts the row the resolution names. Naming an
+        absorbed entity would overwrite the wrong row and have undo restore it,
+        with nothing downstream able to tell."""
+        with pytest.raises(ValidationError, match="canonical"):
+            EntitiesMerged(
+                aggregate_id=PIVOT_TENANT,
+                tenant_id=PIVOT_TENANT,
+                canonical_entity_id=CANONICAL,
+                merged_entity_ids=[ABSORBED],
+                resolution=_resolution(ABSORBED),
+            )
+
+    def test_a_resolution_naming_the_canonical_entity_is_accepted(self):
+        event = EntitiesMerged(
+            aggregate_id=PIVOT_TENANT,
+            tenant_id=PIVOT_TENANT,
+            canonical_entity_id=CANONICAL,
+            merged_entity_ids=[ABSORBED],
+            resolution=_resolution(CANONICAL),
+        )
+        assert event.resolution is not None
+        assert event.resolution.after.properties == {"role": "mathematician"}
+
+    def test_a_merge_may_decide_nothing_about_fields(self):
+        """`None` is a true state: `ConsolidationLog` holds no entity data, so
+        a direct aggregate caller genuinely has no resolution to give."""
+        event = EntitiesMerged(
+            aggregate_id=PIVOT_TENANT,
+            tenant_id=PIVOT_TENANT,
+            canonical_entity_id=CANONICAL,
+            merged_entity_ids=[ABSORBED],
+        )
+        assert event.resolution is None
 
 
 class TestMergeUndone:

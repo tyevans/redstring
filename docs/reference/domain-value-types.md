@@ -50,6 +50,8 @@ concern, **in page order**:
 | Temporal intervals | `interval.py` |
 | Merge strategies | `merge_strategy.py` |
 | RelationshipRedirection | `consolidation.py` |
+| MergeableFields | `consolidation.py` |
+| PropertyResolution | `consolidation.py` |
 | Temporal parsing | `temporal_parsing.py` |
 | Error types | `exceptions.py` |
 
@@ -1831,6 +1833,57 @@ place — and undoing it by upserting `before` would not remove that second
 edge, so the undo would silently be a no-op on half the change. The
 `tenant_id` check is the same argument where the leak crosses a tenant
 boundary.
+
+## MergeableFields
+
+`consolidation.py` holds one model: exactly the `Entity` fields a merge may
+decide — `description`, `external_ids` and `properties`, the same three names
+`merge_strategy.MERGEABLE_FIELDS` pins them against.
+
+| Field | Type | Default |
+|---|---|---|
+| `description` | `str \| None` | `None` |
+| `external_ids` | `dict[str, str]` | `{}` |
+| `properties` | `dict[str, Any]` | `{}` |
+
+It is a value object rather than three bare fields on the event because it
+appears twice — as a `PropertyResolution`'s `after` and as an undo's
+restoration — and the two must not be able to drift apart from each other.
+
+`GraphProjection._apply_fields` applies it with
+`entity.model_copy(update=fields.model_dump())`, which performs **no
+validation**: an unknown key would be written as a stray attribute rather than
+rejected. Nothing in this model or in `MERGEABLE_FIELDS` alone can catch that
+— see `tests/unit/domain/test_consolidation.py`'s
+`test_every_mergeable_field_names_a_real_entity_field`, which pins
+`MERGEABLE_FIELDS` as a subset of `Entity.model_fields` for exactly this
+reason.
+
+## PropertyResolution
+
+What a merge decided about the canonical entity's fields, before and after.
+
+| Field | Type | Default |
+|---|---|---|
+| `entity_id` | `EntityId` | — |
+| `before` | `MergeableFields` | — |
+| `after` | `MergeableFields` | — |
+
+### Why one entity, when a merge combines several
+
+A merge does not touch the entities it absorbs: `GraphStore` has no
+`delete_entity` ([ADR 0002](../adr/0002-two-store-ports.md)), the projection
+writes an `Alias` per absorbed entity and nothing else, and those rows survive
+unchanged. So the whole effect of a merge on entity data is one before/after
+pair on the canonical entity, and an undo restores it by upserting `before`.
+
+### `after` is the complete post-merge value, not a diff
+
+The projection replaces all three fields wholesale, so a key omitted from
+`after` is a key *deleted*. A resolution is therefore exhaustive over the
+union of the group's keys rather than over what changed — computed by
+`redstring.consolidation.planning.plan_properties`, and see
+[`0036` a merge resolves the canonical entity's fields](../adr/0036-a-merge-resolves-the-canonical-entitys-fields.md).
 
 ## Temporal parsing
 

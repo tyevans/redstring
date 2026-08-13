@@ -12,6 +12,13 @@ one assertion — `DocumentExtracted` is at `event_version = 2`, so Decision 3's
 replaced by a per-event table. See the Consequences for what the break costs,
 why it was affordable, and what now holds Decision 3's mechanism up.
 
+**Amended by
+[`0036` a merge resolves the canonical entity's fields](0036-a-merge-resolves-the-canonical-entitys-fields.md)**:
+`EntitiesMerged` gains a field resolution and goes to `event_version = 2`;
+`MergeUndone` gains its restoration. Every decision below still stands — this
+is another instance of Decision 3's per-event table, not a change to the
+granularity or the aggregates.
+
 **Why this one is an ADR when the rest of the migration is not:** everything
 else in the re-architecture is reversible. A persisted event schema is not.
 Code can be refactored; a log that already holds a million `DocumentExtracted`
@@ -773,3 +780,12 @@ wiring a snapshot store into a caller.
   unrecoverable the moment one of them persists anything. The `2` is a record
   first and a dispatch key second, and that is an acceptable thing for it to
   be.
+- **`EntitiesMerged` carries the same bump, for the same reason, and
+  `MergeUndone` gains a restoration alongside it** — see
+  [`0036` a merge resolves the canonical entity's fields](0036-a-merge-resolves-the-canonical-entitys-fields.md).
+  A merge now decides the canonical entity's `description`, `external_ids`
+  and `properties` and records the decision as a before/after pair on the
+  event, rather than leaving the projection to recompute it; an undo restores
+  the pre-merge values from `MergeUndone.restored_fields`. Both fields are
+  optional on their events for replay compatibility with a caller's existing
+  log, exactly as Decision 3 anticipates.

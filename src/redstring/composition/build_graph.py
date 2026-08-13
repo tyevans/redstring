@@ -97,6 +97,7 @@ if TYPE_CHECKING:
     from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
+    from redstring.domain.merge_strategy import PropertyMergePolicy
     from redstring.domain.source import SourceDocument
     from redstring.events.document import DocumentExtracted
     from redstring.events.merge import EntitiesMerged, MergeUndone
@@ -678,6 +679,7 @@ class Consolidator:
         snapshot_store: SnapshotStore | None = None,
         vector_store: VectorStore | None = None,
         use_graph_signal: bool = True,
+        merge_policy: PropertyMergePolicy | None = None,
     ) -> None:
         """Wire a consolidator over `store`.
 
@@ -698,6 +700,9 @@ class Consolidator:
                 This is the expensive feature (one `get_relationships_for`
                 per subject and per candidate); turning it off is a stated
                 trade rather than a silent degradation.
+            merge_policy: How a merge reconciles the canonical entity's
+                fields -- `description`, `properties` and `external_ids`. The
+                default keeps every canonical value.
         """
         self._store = store
         self._service = ConsolidationService(
@@ -706,6 +711,7 @@ class Consolidator:
                 snapshot_store if snapshot_store is not None else InMemorySnapshotStore()
             ),
             graph_store=store,
+            merge_policy=merge_policy,
         )
         self._default_finder = CandidateFinder(
             store, vector_store=vector_store, use_graph_signal=use_graph_signal

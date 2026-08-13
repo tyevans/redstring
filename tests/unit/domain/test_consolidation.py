@@ -5,7 +5,9 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import MergeableFields, RelationshipRedirection
+from redstring.domain.entity import Entity
+from redstring.domain.merge_strategy import MERGEABLE_FIELDS
 from redstring.domain.relationship import Relationship
 
 
@@ -88,3 +90,34 @@ class TestComparisonsAreByValueNotIdentity:
         after = before.model_copy(update={"tenant_id": UUID(str(before.tenant_id))})
         assert after.tenant_id is not before.tenant_id
         RelationshipRedirection(before=before, after=after)
+
+
+class TestMergeableFields:
+    def test_it_defaults_to_saying_nothing(self):
+        fields = MergeableFields()
+        assert fields.description is None
+        assert fields.external_ids == {}
+        assert fields.properties == {}
+
+    def test_it_holds_exactly_the_three_mergeable_fields(self):
+        """Pinned against `MERGEABLE_FIELDS`, so adding a target to one and not
+        the other fails rather than silently dropping the new field from every
+        event payload."""
+        assert set(MergeableFields.model_fields) == MERGEABLE_FIELDS
+
+    def test_every_mergeable_field_names_a_real_entity_field(self):
+        """`MERGEABLE_FIELDS` and `MergeableFields.model_fields` can agree with
+        each other while both being wrong about `Entity`: nothing above pins
+        either against the type they are supposed to describe.
+
+        This seam has no runtime guard. `GraphProjection._apply_fields` builds
+        the merge payload with `fields.model_dump()` and applies it via
+        `entity.model_copy(update=...)`, and `model_copy(update=...)` performs
+        **no validation** -- it accepts unknown keys silently, writing them as
+        stray attributes rather than raising. So renaming `Entity.external_ids`
+        would leave `MergeableFields` and `MERGEABLE_FIELDS` agreeing with each
+        other while every merge silently failed to touch the real field and
+        instead set an attribute nothing else reads, with no test failing
+        anywhere else in the suite.
+        """
+        assert set(Entity.model_fields) >= MERGEABLE_FIELDS

@@ -66,18 +66,40 @@ The signature is **ordered**: `A -> X` and `X -> A` of the same type are
 different edges and both survive. Relationships here are directed, and
 collapsing them would turn "Ada wrote the Notes" and "the Notes were written by
 Ada" into one claim in whichever direction happened to be seen first.
+
+## `plan_properties`, `plan_redirections`'s sibling
+
+Where `plan_redirections` decides what happens to the *edges* an absorbed
+entity carried, `plan_properties` decides what happens to the canonical
+entity's own `description`, `properties` and `external_ids` -- the fields
+`redstring.domain.merge_strategy.MERGEABLE_FIELDS` names. It is where
+`merge_strategy.resolve` gets its caller.
+
+`after` is the **complete** post-merge value of all three fields, not a diff:
+the projection replaces each field wholesale, so an omitted key is a deleted
+key, and the result must be exhaustive over the union of every entity's keys
+rather than over what changed. Key order is deterministic -- the canonical
+entity's own key order, then each absorbed entity's new keys in the order the
+merge listed them -- rather than a `set`, because two replays of one log must
+produce byte-identical payloads.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from redstring.domain.consolidation import RelationshipRedirection
+from redstring.domain.consolidation import (
+    MergeableFields,
+    PropertyResolution,
+    RelationshipRedirection,
+)
+from redstring.domain.merge_strategy import PropertyMergePolicy, claims_for, resolve
 from redstring.domain.preference import relationship_preference
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
 
+    from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId
     from redstring.domain.relationship import Relationship
 
@@ -179,3 +201,70 @@ def plan_redirections(
                 redirections.append(RelationshipRedirection(before=before, after=moved))
 
     return sorted(redirections, key=lambda r: str(r.before.id))
+
+
+def plan_properties(
+    *,
+    policy: PropertyMergePolicy,
+    canonical: Entity,
+    others: Sequence[Entity],
+) -> PropertyResolution:
+    """What the merge decides about the canonical entity's fields.
+
+    `before` is the canonical entity as read; `after` is the complete
+    post-merge value of all three fields. Exhaustive rather than a diff,
+    because the projection replaces each field wholesale -- an omitted key is
+    a deleted key.
+
+    Key order is the canonical entity's own, then each absorbed entity's new
+    keys in the order the merge listed them. Deterministic rather than a
+    `set`, so two replays of one log produce identical payloads; the
+    replay-equivalence tests compare them.
+    """
+    return PropertyResolution(
+        entity_id=canonical.id,
+        before=MergeableFields(
+            description=canonical.description,
+            external_ids=dict(canonical.external_ids),
+            properties=dict(canonical.properties),
+        ),
+        after=MergeableFields(
+            description=_resolved_description(policy, canonical, others),
+            external_ids=_resolved_mapping(policy, "external_ids", canonical, others),
+            properties=_resolved_mapping(policy, "properties", canonical, others),
+        ),
+    )
+
+
+def _resolved_description(
+    policy: PropertyMergePolicy, canonical: Entity, others: Sequence[Entity]
+) -> str | None:
+    """`None` when nobody described the entity.
+
+    `claims_for` skips a `None` description -- for a scalar field, `None` is
+    the absence and absence is silence -- so an undescribed group produces no
+    claims at all. `resolve` refuses an empty list rather than inventing an
+    answer, and `None` is the only correct one here.
+    """
+    claims = claims_for("description", canonical, others)
+    if not claims:
+        return None
+    return cast("str | None", resolve(policy.strategy_for("description"), claims))
+
+
+def _resolved_mapping(
+    policy: PropertyMergePolicy, field: str, canonical: Entity, others: Sequence[Entity]
+) -> dict[str, Any]:
+    """Every key any entity in the group claims, resolved one at a time.
+
+    The claim list for a key in the union is never empty: the key is in the
+    union because some entity has it, and that entity claims it.
+    """
+    resolved: dict[str, Any] = {}
+    for entity in (canonical, *others):
+        for key in getattr(entity, field):
+            if key in resolved:
+                continue
+            path = f"{field}.{key}"
+            resolved[key] = resolve(policy.strategy_for(path), claims_for(path, canonical, others))
+    return resolved
