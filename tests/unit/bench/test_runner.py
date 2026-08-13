@@ -3,6 +3,7 @@ arithmetic is proved before any live number is believed."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -31,6 +32,36 @@ class FakeClock:
 
     def __call__(self) -> float:
         return self.now
+
+
+class RecordingConcurrencyProvider:
+    """Like `SteadyProvider`, but records peak in-flight calls instead of
+    advancing a fake clock -- copied from
+    `tests/unit/extraction/test_pipeline_concurrency.py::RecordingProvider`,
+    the module that pins `ExtractionPipeline`'s concurrency ceiling directly.
+    The delay is real (`asyncio.sleep`), not the fake clock, because
+    overlap has to be observed by the scheduler actually interleaving calls.
+    """
+
+    def __init__(self, clock: FakeClock, *, delay: float) -> None:
+        self._clock = clock
+        self._delay = delay
+        self.in_flight = 0
+        self.peak = 0
+
+    @property
+    def model(self) -> str:
+        return "recording-model"
+
+    async def extract(self, text: str, schema: Any, *, system_prompt: str | None = None) -> Any:
+        self.in_flight += 1
+        self.peak = max(self.peak, self.in_flight)
+        try:
+            self._clock.now += self._delay
+            await asyncio.sleep(self._delay)
+            return _two_entities(schema)
+        finally:
+            self.in_flight -= 1
 
 
 class SteadyProvider:
@@ -232,15 +263,27 @@ async def test_a_failing_chunk_is_skipped_rather_than_aborting_the_point() -> No
     assert result.chunks > result.failed_chunks
 
 
-async def test_a_concurrency_above_one_is_refused_here_too() -> None:
-    """Config refuses it, and so does the runner: a caller building a
-    SweepPoint directly must not silently get serial behaviour labelled 4."""
-    clock = FakeClock()
+async def test_run_point_passes_concurrency_through_to_build_graph() -> None:
+    """A knob accepted and silently dropped is precisely the failure the old
+    refusal existed to prevent, wearing the opposite sign: this proves the
+    value actually reaches the pipeline rather than merely that `run_point`
+    does not raise.
 
-    with pytest.raises(ValueError, match="deliverable C"):
-        await run_point(
-            point(concurrency=4), DOCUMENT, provider=SteadyProvider(clock, takes=0.0), clock=clock
-        )
+    The document is chunked at 100 characters, which the fixture text below
+    splits into more than four chunks -- more than `concurrency=2` -- so a
+    batch really does have to wait on the ceiling rather than every chunk
+    fitting in one batch regardless of whether concurrency is honoured.
+    """
+    clock = FakeClock()
+    provider = RecordingConcurrencyProvider(clock, delay=0.01)
+
+    result = await run_point(
+        point(chunk_size=100, concurrency=2), DOCUMENT, provider=provider, clock=clock
+    )
+
+    assert result.chunks > 4
+    assert provider.peak > 1
+    assert provider.peak <= 2
 
 
 class DriftingProvider(SteadyProvider):

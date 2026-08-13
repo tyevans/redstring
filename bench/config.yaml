@@ -27,10 +27,12 @@ corpus:
 
 sweep:
   chunk_size: [3000, 8000, 12000]
-  # Only 1 until deliverable C lands. Any other value is refused rather than
-  # ignored -- a knob a serial library silently discards would make the
-  # concurrency work look like it changed nothing.
-  concurrency: [1]
+  # The ceiling here is in-flight requests against the endpoint, not
+  # anything the library itself limits further -- see
+  # src/redstring/extraction/limiter.py. The sweep stops climbing on a
+  # reversal (policy.stop_climbing_concurrency), so a value that would
+  # overload the endpoint costs one point rather than the whole grid.
+  concurrency: [1, 2, 4, 8]
 
 policy:
   repeats: 3

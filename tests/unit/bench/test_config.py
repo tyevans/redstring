@@ -81,11 +81,24 @@ def test_two_long_documents_each_get_the_whole_grid(tmp_path: Path) -> None:
     assert len(set(config.sweep())) == 8
 
 
-def test_a_concurrency_above_one_is_refused_by_name(tmp_path: Path) -> None:
-    """The axis exists; the library does not yet. A silently ignored knob
-    would make deliverable C look like it changed nothing."""
-    with pytest.raises(BenchConfigError, match="deliverable C"):
-        load_config(write(tmp_path, MINIMAL.replace("concurrency: [1]", "concurrency: [1, 4]")))
+def test_a_concurrency_above_one_is_accepted_now_that_the_library_supports_it(
+    tmp_path: Path,
+) -> None:
+    """The refusal was correct while the library was serial: a knob a serial
+    library silently discards makes the concurrency work look like it changed
+    nothing. Deliverable C landed, so it is a real value now."""
+    config = load_config(
+        write(tmp_path, MINIMAL.replace("concurrency: [1]", "concurrency: [1, 4]"))
+    )
+
+    assert config.concurrencies == (1, 4)
+    assert len(config.sweep()) == 8
+
+
+@pytest.mark.parametrize("bad", ["[0]", "[-1]"])
+def test_a_concurrency_below_one_is_still_refused(tmp_path: Path, bad: str) -> None:
+    with pytest.raises(BenchConfigError, match="concurrency"):
+        load_config(write(tmp_path, MINIMAL.replace("concurrency: [1]", f"concurrency: {bad}")))
 
 
 def test_a_missing_required_key_names_the_key(tmp_path: Path) -> None:
