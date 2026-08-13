@@ -464,10 +464,22 @@ def _group(tenant, canonical_fields, first_fields, second_fields):
     Two absorbed entities, not one: with a single absorbed entity
     `PREFER_MERGED` and `MOST_RECENTLY_OBSERVED` pick the same claim for any
     input, so a one-absorbed test cannot distinguish them.
+
+    That alone is not enough. `PREFER_MERGED` picks `claims[1]` -- the first
+    *absorbed* entity, i.e. `first`, regardless of when it was observed --
+    while `MOST_RECENTLY_OBSERVED` picks whichever claim is newest. If `first`
+    were also given the newest instant, the two strategies would agree again,
+    just as they would with only one absorbed entity: "first absorbed" and
+    "newest" would coincide, and a test could not tell a planner that maps
+    `MOST_RECENTLY_OBSERVED` to `PREFER_MERGED` internally from a correct one.
+    So `second` -- not `first` -- carries `NEWEST`, and `first` carries
+    `FIRST`: the newest entity is neither the first absorbed nor the last
+    listed, so no two of the three orderings (first-absorbed, last-listed,
+    newest-observed) agree with each other.
     """
     canonical = entity(tenant, name="Ada", observed_at=MIDDLE, **canonical_fields)
-    first = entity(tenant, name="A. Lovelace", observed_at=NEWEST, **first_fields)
-    second = entity(tenant, name="Countess Lovelace", observed_at=FIRST, **second_fields)
+    first = entity(tenant, name="A. Lovelace", observed_at=FIRST, **first_fields)
+    second = entity(tenant, name="Countess Lovelace", observed_at=NEWEST, **second_fields)
     return canonical, [first, second]
 
 
@@ -506,8 +518,11 @@ class TestPlanProperties:
         assert plan.entity_id == canonical.id
 
     def test_most_recently_observed_takes_the_newest_claim_not_the_last(self):
-        """`first` is newest and is listed before `second`. An implementation
-        taking the last claim, or the last absorbed entity, gives "countess"."""
+        """`second` is newest even though it is listed after `first`, and it
+        is not the first absorbed entity either. An implementation that maps
+        `MOST_RECENTLY_OBSERVED` onto `PREFER_MERGED` internally -- picking
+        the first absorbed claim regardless of timestamp -- gives
+        "mathematician" instead."""
         tenant = uuid4()
         canonical, others = _group(
             tenant,
@@ -522,11 +537,13 @@ class TestPlanProperties:
             others=others,
         )
 
-        assert plan.after.properties == {"role": "mathematician"}
+        assert plan.after.properties == {"role": "countess"}
 
     def test_prefer_merged_takes_the_first_absorbed_entity(self):
         """Same group, same instants, different strategy, different answer --
-        which is what makes either assertion mean anything."""
+        which is what makes either assertion mean anything. `first` is not the
+        newest claim, so this also distinguishes `PREFER_MERGED` from an
+        implementation that maps it onto `MOST_RECENTLY_OBSERVED`."""
         tenant = uuid4()
         canonical, others = _group(
             tenant,
