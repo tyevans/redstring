@@ -37,7 +37,11 @@ Subclass and supply `new_store`::
             return InMemoryChunkStore()
 
 `new_store` must return an **empty** store, and each call must return one
-isolated from every other. `dispose` is a no-op by default and must be
+isolated from every other. A store built for `semantic_candidates` must be
+built at width `DIMENSION` -- a plain class attribute, `4` here, read through
+`self` inside each semantic test the way `VectorStoreCompliance.DIMENSION`
+already is; an adapter whose backing store takes a configurable width
+overrides it. `dispose` is a no-op by default and must be
 overridden by any adapter holding a connection or pool.
 
 ## If you add a read method to the port, add its isolation test here
@@ -61,6 +65,7 @@ import pytest
 
 from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.chunk_ranking import rank_chunks
+from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.ports.chunk_store import ChunkStore
 
@@ -87,6 +92,12 @@ def _mutate(chunk: StoredChunk) -> None:
 
 class ChunkStoreCompliance:
     """Tests every `ChunkStore` implementation must pass."""
+
+    #: Width `new_store` must build its store at. `semantic_candidates` cases
+    #: draw vectors of exactly this length; an adapter with a configurable
+    #: embedding dimension overrides it, the same shape as
+    #: `VectorStoreCompliance.DIMENSION`.
+    DIMENSION = 4
 
     async def new_store(self) -> ChunkStore:
         """Return a fresh, empty store. Adapters override."""
@@ -121,6 +132,7 @@ class ChunkStoreCompliance:
         chunk_index: int = 0,
         entity_ids: list[EntityId] | None = None,
         metadata: dict[str, Any] | None = None,
+        embedding: list[float] | None = None,
     ) -> StoredChunk:
         """A chunk with its real content-addressed id.
 
@@ -143,6 +155,7 @@ class ChunkStoreCompliance:
             end_char=len(text),
             entity_ids=[] if entity_ids is None else entity_ids,
             metadata={} if metadata is None else metadata,
+            embedding=embedding,
         )
 
     # ------------------------------------------------------------------
@@ -1018,6 +1031,220 @@ class ChunkStoreCompliance:
         assert len(result.candidates) == 1
         assert result.candidates[0].chunk.metadata == {"owner": "left"}
         assert result.candidates[0].chunk.tenant_id == left
+
+    # ------------------------------------------------------------------
+    # `semantic_candidates`
+    #
+    # Every store here must be built at `self.DIMENSION` -- 4 by default --
+    # so a vector below is always a 4-tuple. `cosine_score` from
+    # `redstring.domain.vector` is the documented formula behind the score
+    # ("`VectorMatch` scale, cosine mapped onto 0..1") and is used as the
+    # oracle the same way `VectorStoreCompliance` already does for `search`;
+    # it is not the adapter's own arithmetic, so it does not check
+    # determinism against itself.
+    # ------------------------------------------------------------------
+
+    async def test_semantic_candidates_orders_by_score_descending(
+        self, store: ChunkStore
+    ) -> None:
+        """Three genuinely different similarities -- a store returning them
+        in insertion or storage order rather than by score fails here."""
+        tenant = TenantId(uuid4())
+        query = [1.0, 0.0, 0.0, 0.0]
+        # Written low-then-high-then-mid, so neither insertion order nor a
+        # stable no-op sort could pass by accident.
+        low = self._chunk(tenant, "doc-1", "orthogonal", embedding=[0.0, 1.0, 0.0, 0.0])
+        high = self._chunk(tenant, "doc-1", "identical", embedding=[1.0, 0.0, 0.0, 0.0])
+        mid = self._chunk(tenant, "doc-1", "forty five degrees", embedding=[1.0, 1.0, 0.0, 0.0])
+        await store.upsert_many([low, high, mid])
+
+        result = await store.semantic_candidates(query, tenant, 10)
+
+        assert [candidate.chunk.id for candidate in result] == [high.id, mid.id, low.id]
+        scores = [candidate.score for candidate in result]
+        assert scores == sorted(scores, reverse=True)
+        assert scores[0] > scores[1] > scores[2]
+
+    async def test_semantic_candidates_breaks_ties_on_id_ascending(
+        self, store: ChunkStore
+    ) -> None:
+        """Two chunks at an identical similarity order by id, not by insertion.
+
+        The vectors are chosen so the similarities are *equal*, and the ids are
+        the digests of two texts whose order is known -- a tie-break test whose
+        scores merely differ tests nothing about the tie-break.
+
+        `query = [1, 0, 0, 0]`, `alpha = [1, 1, 0, 0]`, `beta = [1, -1, 0, 0]`:
+        both have dot product 1 and magnitude sqrt(2) against the unit query,
+        so `cosine_score` is `(1 + 1/sqrt(2)) / 2` for each, bit-for-bit --
+        this is not a rounded near-tie, the two computations are identical.
+        `chunk_id(SourceId("doc-1"), "tie candidate beta")` sorts *below*
+        `chunk_id(SourceId("doc-1"), "tie candidate alpha")`, so the correct
+        order is `beta` then `alpha`. Written alpha-first so insertion order
+        disagrees with the required id order instead of agreeing by accident.
+        """
+        tenant = TenantId(uuid4())
+        query = [1.0, 0.0, 0.0, 0.0]
+        alpha = self._chunk(
+            tenant, "doc-1", "tie candidate alpha", embedding=[1.0, 1.0, 0.0, 0.0]
+        )
+        beta = self._chunk(
+            tenant, "doc-1", "tie candidate beta", embedding=[1.0, -1.0, 0.0, 0.0]
+        )
+        assert beta.id < alpha.id
+        await store.upsert_many([alpha, beta])
+
+        result = await store.semantic_candidates(query, tenant, 10)
+
+        assert [candidate.chunk.id for candidate in result] == [beta.id, alpha.id]
+        assert result[0].score == result[1].score
+
+    async def test_semantic_candidates_skips_unembedded_chunks(
+        self, store: ChunkStore
+    ) -> None:
+        """A chunk with no vector is absent, not present with score 0."""
+        tenant = TenantId(uuid4())
+        query = [1.0, 0.0, 0.0, 0.0]
+        embedded = self._chunk(tenant, "doc-1", "has a vector", embedding=[1.0, 0.0, 0.0, 0.0])
+        unembedded = self._chunk(tenant, "doc-1", "no vector at all", chunk_index=1)
+        assert unembedded.embedding is None
+        await store.upsert_many([embedded, unembedded])
+
+        result = await store.semantic_candidates(query, tenant, 10)
+
+        assert [candidate.chunk.id for candidate in result] == [embedded.id]
+
+    async def test_semantic_candidates_applies_min_score_before_limit(
+        self, store: ChunkStore
+    ) -> None:
+        """`min_score` genuinely shrinks the candidate set below `limit`.
+
+        A `limit` larger than the number of chunks clearing `min_score`
+        catches a store that never applies the filter at all -- it would
+        return every chunk up to `limit` rather than only the ones
+        qualifying on score, which is the same shape as
+        `VectorStoreCompliance.test_min_score_drops_results_below_it`.
+        """
+        tenant = TenantId(uuid4())
+        query = [1.0, 0.0, 0.0, 0.0]
+        identical = self._chunk(tenant, "doc-1", "identical", embedding=[1.0, 0.0, 0.0, 0.0])
+        orthogonal = self._chunk(
+            tenant, "doc-1", "orthogonal", chunk_index=1, embedding=[0.0, 1.0, 0.0, 0.0]
+        )
+        opposite = self._chunk(
+            tenant, "doc-1", "opposite", chunk_index=2, embedding=[-1.0, 0.0, 0.0, 0.0]
+        )
+        await store.upsert_many([identical, orthogonal, opposite])
+
+        result = await store.semantic_candidates(query, tenant, 10, min_score=0.5)
+
+        assert {candidate.chunk.id for candidate in result} == {identical.id, orthogonal.id}
+        # Inclusive at the boundary: orthogonal scores exactly 0.5.
+        result_strict = await store.semantic_candidates(query, tenant, 10, min_score=0.75)
+        assert [candidate.chunk.id for candidate in result_strict] == [identical.id]
+
+    async def test_semantic_candidates_with_a_zero_limit_returns_nothing(
+        self, store: ChunkStore
+    ) -> None:
+        """Pinned as an example, not left to a sampler.
+
+        `KG_COMPLIANCE_MAX_EXAMPLES` is environment-tunable and mutation runs
+        lower it, so a boundary reachable only through a hypothesis draw is
+        covered non-deterministically -- exactly the `InMemoryVectorStore.search`
+        `k=0` incident CLAUDE.md's Testing notes record, where the same suite
+        against unchanged source killed the mutant on one cosmic-ray run and
+        not the next.
+        """
+        tenant = TenantId(uuid4())
+        query = [1.0, 0.0, 0.0, 0.0]
+        chunk = self._chunk(tenant, "doc-1", "has a vector", embedding=[1.0, 0.0, 0.0, 0.0])
+        await store.upsert_many([chunk])
+
+        result = await store.semantic_candidates(query, tenant, 0)
+
+        assert result == []
+
+    async def test_semantic_candidates_rejects_a_negative_limit(
+        self, store: ChunkStore
+    ) -> None:
+        tenant = TenantId(uuid4())
+        query = [1.0, 0.0, 0.0, 0.0]
+
+        with pytest.raises(ValueError, match="-1"):
+            await store.semantic_candidates(query, tenant, -1)
+
+    async def test_semantic_candidates_rejects_a_vector_of_the_wrong_width(
+        self, store: ChunkStore
+    ) -> None:
+        tenant = TenantId(uuid4())
+        narrow = [1.0, 0.0, 0.0]
+        assert len(narrow) != self.DIMENSION
+
+        with pytest.raises(DimensionMismatchError) as raised:
+            await store.semantic_candidates(narrow, tenant, 10)
+
+        assert raised.value.expected == self.DIMENSION
+        assert raised.value.actual == len(narrow)
+
+    async def test_semantic_candidates_returns_copies(self, store: ChunkStore) -> None:
+        """A shallow copy shares the `embedding` list with stored state and
+        passes every behavioural assertion above -- `_mutate` covers
+        `entity_ids` and `metadata`, and this test additionally mutates the
+        returned `embedding` itself, which `_mutate` does not reach."""
+        tenant = TenantId(uuid4())
+        query = [1.0, 0.0, 0.0, 0.0]
+        chunk = self._chunk(
+            tenant,
+            "doc-1",
+            "has a vector",
+            embedding=[1.0, 0.0, 0.0, 0.0],
+            entity_ids=[EntityId(uuid4())],
+            metadata={"nested": {"k": "v"}, "list": ["a"]},
+        )
+        pristine = chunk.model_copy(deep=True)
+        await store.upsert_many([chunk])
+
+        result = await store.semantic_candidates(query, tenant, 10)
+        assert len(result) == 1
+        returned = result[0].chunk
+        _mutate(returned)
+        assert returned.embedding is not None
+        returned.embedding.append(999.0)
+        returned.embedding[0] = -999.0
+
+        again = await store.semantic_candidates(query, tenant, 10)
+        assert len(again) == 1
+        assert again[0].chunk == pristine
+        assert again[0].chunk.embedding == pristine.embedding
+
+    async def test_semantic_candidates_never_crosses_tenants(
+        self, store: ChunkStore
+    ) -> None:
+        """Two tenants holding the same content-addressed chunk id, each with
+        its own embedding -- the case that catches a key compared on `id`
+        alone."""
+        left, right = TenantId(uuid4()), TenantId(uuid4())
+        shared_text = "common rare alpha"
+        query = [1.0, 0.0, 0.0, 0.0]
+        left_chunk = self._chunk(
+            left, "doc-1", shared_text, embedding=[1.0, 0.0, 0.0, 0.0], metadata={"owner": "left"}
+        )
+        right_chunk = self._chunk(
+            right,
+            "doc-1",
+            shared_text,
+            embedding=[1.0, 0.0, 0.0, 0.0],
+            metadata={"owner": "right"},
+        )
+        assert left_chunk.id == right_chunk.id
+        await store.upsert_many([left_chunk, right_chunk])
+
+        result = await store.semantic_candidates(query, left, 10)
+
+        assert len(result) == 1
+        assert result[0].chunk.id == left_chunk.id
+        assert result[0].chunk.metadata == {"owner": "left"}
+        assert result[0].chunk.tenant_id == left
 
     # ------------------------------------------------------------------
     # `get_by_entity`
