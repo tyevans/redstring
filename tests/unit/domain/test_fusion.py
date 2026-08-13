@@ -97,3 +97,32 @@ def test_the_order_is_total_so_no_two_results_are_interchangeable(
     keys = [(-score, str(entity_id)) for entity_id, score in fused]
     assert keys == sorted(keys)
     assert len(set(keys)) == len(keys)
+
+
+def test_fuses_string_ids_that_are_not_entity_ids() -> None:
+    """The function is generic: a ChunkId is a str newtype, like an EntityId."""
+    fused = reciprocal_rank_fusion([["bbb", "aaa"], ["aaa", "bbb"]])
+    assert [chunk_id for chunk_id, _ in fused] == ["aaa", "bbb"]
+
+
+def test_ties_break_on_the_id_ascending() -> None:
+    """Two ids at identical rank in both channels order by id, not by chance.
+
+    `zzz` is listed first in both rankings, so position cannot decide this;
+    only the stated tie-break can. Without it the order is whatever the dict
+    iteration happened to produce, which passes on some runs.
+    """
+    fused = reciprocal_rank_fusion([["zzz", "aaa"], ["aaa", "zzz"]])
+    scores = dict(fused)
+    assert scores["aaa"] == scores["zzz"]
+    assert [chunk_id for chunk_id, _ in fused] == ["aaa", "zzz"]
+
+
+def test_a_chunk_outside_k_in_both_channels_can_beat_a_first_place() -> None:
+    """The property `overfetch` exists for, stated as an example.
+
+    `both` is second in each channel; `top_a` and `top_b` are first in one
+    and absent from the other. Two seconds beat one first under RRF.
+    """
+    fused = reciprocal_rank_fusion([["top_a", "both"], ["top_b", "both"]])
+    assert fused[0][0] == "both"
