@@ -3233,3 +3233,24 @@ recall gain. Fix, if it is worth it: an explicit caller-supplied alias table
 consulted during blocking, which is a different mechanism from scoring and
 would need its own ADR (it puts caller assertions into merge decisions, which
 `ConsolidationLog`'s audit story has opinions about).
+
+### B-ADR-TABLE — `.claude/rules/definition-of-done.md`'s ADR table stops at 0019
+
+`.claude/rules/definition-of-done.md` carries a table of "the ADRs a spec has
+to be run against", listing `0001` through `0019`. The tree is at `0040`.
+
+Twenty-one ADRs are therefore invisible to the rule that exists to make specs
+account for existing decisions, in a file loaded into every session. This is
+`recurring-defects.md` §5 happening to the file that documents §5 -- the same
+way that section's own module map went stale, and the same way its ADR-count
+sentence did.
+
+Not fixed here because the fix is not "append twenty-one rows": the table's
+value is the one-line "settles" summary per ADR, and writing that many
+accurately means reading each ADR in turn. Doing it badly is worse than the
+gap, because a wrong summary is trusted.
+
+Fix: read `docs/adr/0020` through the current highest, add a row each, and add
+a test that the table's row count matches the number of files in `docs/adr/`
+excluding `index.md` -- so the next gap fails rather than accumulating. That
+test is the actual deliverable; the rows go stale again without it.
