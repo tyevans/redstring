@@ -218,6 +218,77 @@ class Adjudicator:
         except ValueError:
             return [None] * len(batch)
 
+    async def adjudicate_many(
+        self, work: Sequence[tuple[Entity, Sequence[ScoredCandidate]]]
+    ) -> list[list[AdjudicationVerdict | None]]:
+        """Verdicts for many subjects, in batches that span subject boundaries.
+
+        One list per entry in `work`, in the same order and the same length as
+        that entry's candidates -- a subject with no candidates gets `[]` and
+        keeps its slot, because the caller re-pairs by position here too.
+
+        ## Why this exists
+
+        `adjudicate` batches within one subject, so a subject with two
+        ambiguous candidates spends a whole model call on two pairs. Over a
+        corpus pass that is most of the calls: the band is a small fraction of
+        a block by design, so per-subject batches are nearly always short.
+
+        ## Batches still may not mix questions from one prompt
+
+        Each batch is rendered and asked exactly as `_one_batch` does, and
+        every property that made it safe is unchanged: verdicts re-pair by
+        position, ids stay out of the prompt, and a batch whose verdict count
+        disagrees yields `None` for **every** pair in it. What is new is that a
+        poisoned batch can now span subjects -- so it yields `None` for the
+        pairs of *every* subject it touched, which is the same rule applied to
+        a wider unit rather than a weaker one.
+        """
+        flat: list[tuple[Entity, ScoredCandidate]] = [
+            (subject, candidate) for subject, candidates in work for candidate in candidates
+        ]
+        verdicts: list[AdjudicationVerdict | None] = []
+        for start in range(0, len(flat), self._batch_size):
+            verdicts.extend(await self._one_mixed_batch(flat[start : start + self._batch_size]))
+
+        # Re-slice by each subject's candidate count. A running cursor rather
+        # than `len()` comparisons, so a mismatch between what was asked and
+        # what came back raises here rather than silently shifting one
+        # subject's answers onto another.
+        results: list[list[AdjudicationVerdict | None]] = []
+        cursor = 0
+        for _, candidates in work:
+            results.append(verdicts[cursor : cursor + len(candidates)])
+            cursor += len(candidates)
+        if cursor != len(verdicts):
+            raise AssertionError(f"re-paired {cursor} verdicts against {len(verdicts)} asked for")
+        return results
+
+    async def _one_mixed_batch(
+        self, batch: Sequence[tuple[Entity, ScoredCandidate]]
+    ) -> list[AdjudicationVerdict | None]:
+        """`_one_batch`, but each pair carries its own subject."""
+        questions = [
+            AdjudicationQuestion(
+                left=subject.name,
+                right=candidate.entity.name,
+                entity_type=subject.entity_type,
+                left_description=subject.description,
+                right_description=candidate.entity.description,
+            )
+            for subject, candidate in batch
+        ]
+        try:
+            answer = await self._provider.extract(
+                _render(questions), AdjudicationBatch, system_prompt=_SYSTEM_PROMPT
+            )
+        except LlmProviderError:
+            return [None] * len(batch)
+        try:
+            return [verdict for _, verdict in zip(batch, answer.verdicts, strict=True)]
+        except ValueError:
+            return [None] * len(batch)
+
 
 def _render(questions: Sequence[AdjudicationQuestion]) -> str:
     """The batch as text. Numbered, because the answers re-pair by position."""
