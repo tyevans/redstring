@@ -77,6 +77,15 @@ def band(left: str, right: str) -> MergeDecision:
 # to "John Smith" against "Jane Smith", where one pair is the same person and
 # the other is not, and nothing in the four strings says which. That case
 # belongs to the embedding and graph features; see BACKLOG B-ALIAS-1.
+#
+# **Only the first three actually exercise containment.** "Dr. Grant",
+# "President Bartlet" and "Professor Albus Dumbledore" are the ones Jaro-Winkler
+# alone cannot lift into the band -- 0.437, 0.519 and 0.578, none of which clear
+# `LOW_SIMILARITY`. The remaining six already clear the floor on Jaro-Winkler
+# alone, by as little as 0.02; they pin a recall floor for that measure, not a
+# claim about the containment term. Disabling containment and rerunning this
+# module makes exactly the first three fail -- see the commit that added this
+# note for the transcript.
 MUST_REACH_THE_MODEL = [
     ("Dr. Grant", "Grant"),
     ("President Bartlet", "Bartlet"),
@@ -98,6 +107,19 @@ MUST_REACH_THE_MODEL = [
 # designed: they are exactly the ambiguous middle it exists for. Asserting
 # `REJECT` here would fail against untouched behaviour and invite someone to
 # move a threshold to satisfy a test written after the design.
+#
+# **This list is vacuous by construction today.** `CONTAINMENT_CEILING` (0.85)
+# sits strictly below `HIGH_SIMILARITY` (0.92), so `combined_score` on the name
+# feature alone can never reach MERGE through containment, whatever pair is
+# chosen -- and every pair below already scores under 0.92 on Jaro-Winkler
+# alone. So this list currently passes for reasons that have nothing to do
+# with which six pairs are in it. It is kept anyway as a guard: if
+# `CONTAINMENT_CEILING` is ever raised to or above `HIGH_SIMILARITY`, these are
+# the pairs that would start merging unasked, and this list is what would go
+# red. Until then, its passing is evidence about the arithmetic between the
+# three constants, not about these pairs -- the same posture
+# `src/redstring/testing/vector_store.py`'s tier-2 banner takes toward a
+# recall property that currently passes trivially.
 MUST_NOT_MERGE_UNASKED = [
     ("John Smith", "Jane Smith"),
     ("University of Oxford", "University of Cambridge"),
