@@ -1,0 +1,52 @@
+# Below 3000, which nothing has tested. 3000 was the smallest value in the
+# original sweep config and has been treated as a floor ever since; nothing
+# measured says it is one.
+#
+# Two reasons to look down rather than up. Entity and relationship counts both
+# fall as chunks grow -- 209 -> 166 entities and 276 -> 141 relationships from
+# 3000 to 12000 -- so the (ungraded) quality trend points here.
+#
+# **This comment previously cited precision "0.71 vs 0.46 at the ends" as the
+# trend, and that was a misreading**: those are the entity and relationship
+# precision of a *single* graded run at the default chunker, not two chunk
+# sizes compared. The harness scores its graded corpus once per invocation and
+# does not vary it by chunk size, so no accuracy number here is attributable
+# to one. See BACKLOG B-BENCH-9. The counts above are real and are what this
+# probe is actually reasoning from.
+#
+# And smaller chunks help the *speed* axis too, which is unusual
+# for a quality knob: 1500 gives roughly 28 chunks against 14, which is more
+# work to spread across the server's slots, at a per-call latency that should
+# fall with the input size. What made 3000 x K=8 the best configuration
+# measured is exactly what 1500 would have more of.
+#
+# **The failure this is looking for is a recall cliff, not a slow number.** A
+# chunk small enough to sever a sentence from its subject loses the entity
+# that sentence was about, and carryover only partly covers that -- it carries
+# names forward, not the clause that mentioned them. So there is a floor
+# somewhere below 3000, and the point of running 1500 and 2000 is to find
+# which side of it 3000 sits on. Read a *rising* entity count with steady
+# relationships as the trend continuing, and a rising entity count with
+# collapsing relationships as the cliff: fragments naming people nothing
+# connects.
+endpoint: http://192.168.1.14:8080/v1/
+
+models:
+  extraction: muse-glimmer-30b
+  embedding: nomic-embed-text
+  embedding_dimensions: 768
+  max_tokens: 16384
+
+corpus:
+  graded: false
+  long: [harry-potter-1]
+
+sweep:
+  chunk_size: [2000, 1500]
+  concurrency: [8]
+
+policy:
+  repeats: 1
+  # Off: one concurrency value, nothing to climb.
+  stop_climbing_concurrency: false
+  per_document_timeout_s: 1800

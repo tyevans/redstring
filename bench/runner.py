@@ -21,6 +21,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from bench.drift import variant_pairs
 from bench.instruments import TimingProvider
 from bench.metrics import RunMetrics
 from redstring import InMemoryGraphStore, SourceDocument, build_graph
@@ -41,19 +42,7 @@ async def run_point(
     provider: LlmProvider,
     clock: Callable[[], float] = perf_counter,
 ) -> RunMetrics:
-    """Extract one document at one sweep point, timing what it took.
-
-    Raises:
-        ValueError: `point.concurrency` is not 1. The library extracts chunks
-            serially; recording a run as concurrency 4 when it was serial
-            would make deliverable C's measurement meaningless.
-    """
-    if point.concurrency != 1:
-        raise ValueError(
-            f"concurrency {point.concurrency} needs deliverable C; this run would be "
-            "serial and recorded as concurrent"
-        )
-
+    """Extract one document at one sweep point, timing what it took."""
     timed = TimingProvider(provider, clock=clock)
     store = InMemoryGraphStore()
     tenant_id = uuid4()
@@ -78,6 +67,7 @@ async def run_point(
         # chunk would still abort the point one call later.
         skip_failed_chunks=True,
         allow_partial=True,
+        concurrency=point.concurrency,
     )
     wall_clock = clock() - started
 
@@ -104,4 +94,5 @@ async def run_point(
         failed_chunks=report.failed_chunks,
         unresolved_relationships=report.unresolved_relationships,
         entity_names=names,
+        variant_pairs=variant_pairs(names),
     )

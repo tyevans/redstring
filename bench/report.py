@@ -70,6 +70,11 @@ def _run_json(run: RunMetrics) -> dict[str, Any]:
         "relationships": run.relationships,
         "failed_chunks": run.failed_chunks,
         "unresolved_relationships": run.unresolved_relationships,
+        # A lower bound on naming drift, not a total -- see `bench/drift.py`'s
+        # module docstring for what the heuristic cannot see, and divide by
+        # "entities" above before comparing this across two runs with
+        # different entity counts.
+        "variant_pairs": run.variant_pairs,
     }
 
 

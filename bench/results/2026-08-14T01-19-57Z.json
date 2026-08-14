@@ -1,0 +1,111 @@
+{
+  "started_at": "2026-08-14T01-19-57Z",
+  "library_version": "0.7.0",
+  "git_sha": "0ccf533",
+  "config": {
+    "endpoint": "http://192.168.1.14:8080/v1/",
+    "models": {
+      "extraction": "muse-glimmer-30b",
+      "embedding": "nomic-embed-text",
+      "embedding_dimensions": 768,
+      "max_tokens": 16384
+    },
+    "corpus": {
+      "graded": false,
+      "long": [
+        "harry-potter-1"
+      ]
+    },
+    "sweep": {
+      "chunk_size": [
+        12000
+      ],
+      "concurrency": [
+        2,
+        4,
+        8
+      ]
+    },
+    "policy": {
+      "repeats": 1,
+      "stop_climbing_concurrency": true,
+      "per_document_timeout_s": 1800
+    }
+  },
+  "runs": [
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 12000,
+        "concurrency": 2,
+        "repeat": 0
+      },
+      "wall_clock_s": 153.18942503002472,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 4,
+      "extract_s": 259.7916008180473,
+      "consolidate_s": null,
+      "chunks": 4,
+      "entities": 176,
+      "relationships": 176,
+      "failed_chunks": 0,
+      "unresolved_relationships": 6,
+      "variant_pairs": 49
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 12000,
+        "concurrency": 4,
+        "repeat": 0
+      },
+      "wall_clock_s": 116.8621998479939,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 4,
+      "extract_s": 345.2420137890731,
+      "consolidate_s": null,
+      "chunks": 4,
+      "entities": 181,
+      "relationships": 147,
+      "failed_chunks": 0,
+      "unresolved_relationships": 15,
+      "variant_pairs": 57
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 12000,
+        "concurrency": 8,
+        "repeat": 0
+      },
+      "wall_clock_s": 129.31075962196337,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 4,
+      "extract_s": 383.58815506106475,
+      "consolidate_s": null,
+      "chunks": 4,
+      "entities": 188,
+      "relationships": 161,
+      "failed_chunks": 0,
+      "unresolved_relationships": 17,
+      "variant_pairs": 44
+    }
+  ],
+  "stability": [],
+  "accuracy": null,
+  "timed_out": [],
+  "failed": [],
+  "corpus_provenance": {
+    "harry-potter-1": {
+      "source": "https://en.wikipedia.org/wiki/Harry_Potter_and_the_Philosopher%27s_Stone",
+      "retrieved": "2026-08-13",
+      "licence": "CC BY-SA 4.0"
+    }
+  }
+}

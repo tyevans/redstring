@@ -86,6 +86,11 @@ class RunMetrics:
     #: Normalised entity names, kept for the stability comparison across
     #: repeats. Sorted by the runner so two runs are comparable directly.
     entity_names: tuple[str, ...]
+    #: Pairs of extracted names that look like one entity spelled two ways --
+    #: see `bench.drift`. A **lower bound** on naming drift, and the metric
+    #: deliverable C is judged by, because entity count cannot see drift at
+    #: all -- see BACKLOG B-BENCH-4 for what this heuristic misses.
+    variant_pairs: int = 0
 
     @property
     def gaps(self) -> GapSummary | None:

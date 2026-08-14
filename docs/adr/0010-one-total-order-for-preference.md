@@ -1,7 +1,10 @@
 # ADR 0010: One total order decides which mapping of a thing survives
 
 **Status:** accepted, slice 8 of the ring migration (the `temporal` slot),
-extended in slice 10 by consolidation composing over it.
+extended in slice 10 by consolidation composing over it. Amended by
+[`0039` bounded concurrency over chunks](0039-bounded-concurrency-over-chunks.md),
+which depends on the order-independence this ADR argues for a second reason
+beyond the fold.
 
 **Why this is an ADR:** the decision is load-bearing and expensive to reverse.
 Three call sites now defer to one order, and the moment a second definition
@@ -519,6 +522,19 @@ discarded. Reconciling values across the objects a *merge* combines is
 `domain/merge_strategy.py`, which raises rather than falling back on anything
 it cannot answer (BACKLOG B28). Extraction has no equivalent, and giving it one
 would be a new decision, not an extension of this one.
+
+**Amended by `0039`: this total order is now depended on by concurrent
+extraction, not only by the fold.** Chunk extraction can run in bounded
+wavefronts of caller-set size rather than strictly serially, which means
+`merge_extractions` genuinely can receive chunk results in more than one
+completion order depending on which chunk the backend answers first. Nothing
+about that changes what this ADR argues — totality was always what made the
+fold order-independent — but it changes what leans on the argument: before
+`0039`, order-independence was a property of a pipeline whose order never
+varied in practice; after it, the property is exercised on every run with
+`concurrency > 1`. It is asserted directly, over the fold rather than over
+`preference` alone, by
+`tests/unit/extraction/test_merging.py::test_the_fold_does_not_depend_on_the_order_of_its_parts`.
 
 **The claim order composes with this one rather than competing with it** — see
 [`0035` provenance is a value object](0035-provenance-is-a-value-object.md).

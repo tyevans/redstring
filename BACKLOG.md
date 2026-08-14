@@ -1291,6 +1291,41 @@ allowed to and this one is not is the actual asymmetry to resolve.
 Related: CLAUDE.md's standing rule that a test hanging is worse than a test
 failing, because in CI it reads as infrastructure and gets retried.
 
+### B-BENCH-4. The drift metric is a floor, and its blind spots are the interesting half
+
+`bench/drift.py` counts pairs where one name's tokens are a strict subset of
+the other's — `dudley` inside `dudley dursley`. That catches the drift shape a
+chunk boundary produces most often, and it is stable enough across
+configurations to be worth reading (62 against 59 where entity count moved no
+more than noise).
+
+**It cannot see the cases where neither name contains the other**, and those
+are not exotic:
+
+- `mum` / `mom` — one referent, two spellings, no shared token. British and
+  American editions of this corpus differ exactly here, and the document under
+  test names both.
+- `dahl` / `roald dahl` is caught, but `r. dahl` / `roald dahl` is not, because
+  `r.` and `roald` are different tokens.
+- Abbreviations and initialisms: `alarte ascendare` / `a. ascendare`,
+  `american library association` / `ala`.
+- Transposition: `dursley, dudley` / `dudley dursley` — same tokens, neither a
+  strict subset, so the pair is invisible even though the names are equal as
+  sets. This one is a genuine gap in the heuristic rather than a hard problem:
+  equal token sets with different orderings should count.
+
+So a **rise** in this number is evidence of drift, and a **flat** number is not
+evidence of its absence. Anything reported from it says "at least".
+
+Routes forward, cheapest first: count equal-token-set pairs too (fixes
+transposition, a few lines); add edit distance over the whole name with a
+threshold, which catches `mum`/`mom` and costs a tuning parameter nobody has
+calibrated; or embed the names and cluster them, which is the only approach
+that catches synonyms and which requires the embedding provider the harness
+already configures. The third is the one to do if drift ever becomes the
+number a decision rests on — until then, the floor is honest as long as every
+report says it is one.
+
 ### B-BENCH-2. No test proves `run_point` builds a fresh store per call
 
 `bench/runner.py::run_point` constructs a fresh `InMemoryGraphStore()` and a
@@ -1324,7 +1359,7 @@ so the honest choice is between adding it now for the sake of this one test,
 or accepting the gap deliberately until a caller actually needs to control
 tenancy or storage across runs.
 
-### B-BENCH-3. `bench/runner.py`'s `default_overlap` is a benchmark parameter not in `config.yaml`
+### B-BENCH-5. `bench/runner.py`'s `default_overlap` is a benchmark parameter not in `config.yaml`
 
 `run_point` builds its chunker with
 `default_overlap=min(200, point.chunk_size // 2)` — a formula, not a value
@@ -1348,6 +1383,71 @@ something.
 `bench/config.yaml`, an `overlap: int` field to `BenchConfig`, and thread it
 through `run_point`'s chunker construction in place of the formula — no
 different in shape from any other knob already in the file.
+
+### B-BENCH-8. The 12,000-character concurrency series ran on an unrecorded server configuration
+
+`bench/CONCURRENCY.md` cannot name one overall winner, and this is why. The
+inference server's slot count changed three times while the sweep ran — one
+slot, then a restart with an unrecorded number greater than one, then a
+restart with eight — and the 12,000-character K-series (`K=2`/`4`/`8`, results
+`bench/results/2026-08-14T01-19-57Z.json`) landed entirely in the middle
+configuration. Every other configuration in that document ran at eight slots.
+
+So the fastest non-degenerate number measured, `12,000 x K=4` at **116.9s**,
+sits 40s below the 8-slot recommendation (`2,000 x K=8`, 166.4s) across an
+unknown change in server parallelism. **That gap is not a finding and must
+not be quoted as one.** Within the 8-slot rows, which are mutually
+comparable, 2,000 x K=8 wins, and that is what the document recommends.
+
+**Why it was not simply re-run.** The user called the measuring phase closed
+while this was outstanding, which is a scoping decision rather than an
+oversight — the recommendation the data *can* support was already available
+from the 8-slot rows alone. Re-running only sharpens a comparison that is
+currently declined.
+
+**What closing it takes.** `bench/probe-12000.yaml` still exists and is
+already shaped for it: set `concurrency: [2, 4, 8]` and run it against an
+8-slot server, then fold the rows into `bench/CONCURRENCY.md`'s overlap table
+and delete its "The comparison this run cannot make" section. Record the slot
+count in the results file this time — the harness does not capture it, which
+is the deeper gap and is why an hour of runs produced numbers that cannot be
+placed beside each other.
+
+### B-BENCH-9. No accuracy measurement has ever been attributable to a chunk size
+
+`bench/CONCURRENCY.md` recommends **2,000** characters, and no graded run in
+this repository can support or refute that, because the harness does not vary
+the graded corpus by chunk size at all. `scripts/benchmark.py`'s
+`run_accuracy(provider)` takes no chunk size, is called **once** after the
+whole sweep, and scores `tests/accuracy/corpus.yaml` at `build_graph`'s
+default chunker; `bench/report.py` writes one top-level `accuracy` object per
+report. So `BASELINE.md`'s precision figures — 0.71 and 0.46 — are the
+**entity** and **relationship** precision of a single run. They are not 3,000
+against 12,000.
+
+**This entry previously said the opposite, and that misreading spread.** Four
+documents on this branch cited "precision falling from 0.71 to 0.46 between
+3,000 and 12,000" as a measured trend, and one of them used it as a stated
+reason to reject 12,000. It is not a trend; it is two different metrics from
+one run, which look like one when placed side by side. All five sites are
+corrected, and the shape is worth remembering: the page that spells out what
+the numbers are (`BASELINE.md`) is the page every other page cites, so a
+misreading at the citation propagated without ever contradicting its source.
+
+So 2,000's quality claim rests entirely on two *ungraded* proxies, and they
+disagree in direction: relationship count says it extracts more (384 against
+3,000's 288), while variant pairs per entity say it also manufactures more
+duplicate identities (0.38 against 0.29). Which dominates is exactly what a
+graded run would settle and nothing here can.
+
+**What closing it takes.** Two pieces, and the first is the real work:
+`run_accuracy` has to accept a chunk size and be called per sweep point, with
+`bench/report.py` carrying accuracy per point rather than once per report.
+Then run `chunk_size: [1500, 2000, 3000]` with `graded: true`. Note the graded
+corpus documents are short, so at 2,000 characters several become single-chunk
+runs — which measures a different thing than the long document does, and is
+why this is not a five-minute job. `tests/accuracy/corpus.py` says at the top
+why a change in those figures is noise until it is large.
 
 ---
 

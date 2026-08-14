@@ -1,5 +1,16 @@
 # Ingestion baseline, 2026-08-13
 
+> **Superseded as a recommendation by `bench/CONCURRENCY.md`, and still the
+> baseline it is read against.** This page's headline — that 12,000-character
+> chunks are 2.2× faster than the 3,000 default — held only because
+> `concurrency` could not be anything but 1 when it was written. With a
+> wavefront available, the answer inverts: *smaller* chunks win, because they
+> give concurrency more to overlap. The measured recommendation is now **2,000
+> characters at a concurrency matching the server's slot count**, which beats
+> everything here on wall clock *and* on what it extracts. The findings below
+> about stability, about entity count not being a quality metric, and about
+> what cannot be measured until deliverable B all still stand.
+
 Read from `bench/results/2026-08-13T21-54-30Z.json`. One machine, one day, one
 model id: `muse-glimmer-30b` behind llama-swap at `192.168.1.14:8080`,
 redstring 0.7.0 at `e2f84f8`. Document: the plain-text Wikipedia article for
@@ -38,9 +49,44 @@ the name — so naming drift at a boundary does not merge, it creates a second
 entity. Relationship count moves the same way and further (276 → 141), which
 is consistent with either story.
 
-Nothing here distinguishes them, because these documents are **ungraded**.
-That is BACKLOG `B-BENCH-1`, and this is precisely the question it was filed
-for. Do not quote the 21% as a quality loss, and do not quote the 2.2× as free.
+Nothing in *this table* distinguishes them, because these documents are
+**ungraded**. That is BACKLOG `B-BENCH-1`.
+
+### It was probed, and the answer is neither
+
+A follow-up run extracted the same document once at each size and compared the
+entity-name sets rather than their sizes. Both hypotheses are largely wrong:
+
+| | |
+|---|---|
+| shared between the two runs | 138 |
+| only at 3,000 | 54 |
+| only at 12,000 | 43 |
+| **cross-configuration jaccard** | **0.587** |
+| within-configuration jaccard (table below) | 0.601 – 0.667 |
+
+**Changing the chunk size perturbs the entity set no more than re-running the
+same configuration does.** 0.587 against 0.601 — the difference between 3,000
+and 12,000 sits inside the run-to-run noise, and that pair came out 195 against
+187 entities, a 4% gap rather than 21%. Duplicate manufacture is real but *not
+worse* at 3,000: 62 within-run variant pairs against 59, with both sizes
+producing first-name drift (`dudley` beside `dudley dursley`) at about the same
+rate.
+
+One difference is systematic and runs the opposite way to the worry. **77% of
+what only the 12,000 run found contains a date or month** — `26 june 1997`,
+`8 july 1999` — against 6% of what only the 3,000 run found. The larger chunk
+keeps the publication-chronology section intact and extracts it as temporal
+entities; the smaller one splits it across boundaries and returns descriptive
+noun phrases instead (`1998 best book of the year`, `best book of 1998` and
+`book of the year award for 1998` are all one award, all in the 3,000 run). The
+larger chunk is not losing entities. It is finding a different category of them.
+
+So: **the 2.2× is not paid for in any way this data can detect**, and *entity
+count is not a quality metric here* — it should gate nothing. One run per arm
+is a weak design, which the cross-configuration comparison survives (it is read
+against a three-repeat within-configuration baseline) but the date finding does
+not; that one wants a second pair before anything is built on it.
 
 ## Stability is low, and it changes how every later comparison must be run
 

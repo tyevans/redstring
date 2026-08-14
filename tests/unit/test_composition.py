@@ -195,6 +195,89 @@ class TestTheModelIsAskedOnce:
         assert len(provider.calls) == 2
 
 
+class TestTheClassifierCallSharesTheCeiling:
+    """`domain=AUTO`'s classification call must go through the same
+    `CallLimiter` as extraction, gleaning and embedding -- not run before it
+    exists, which is what `BACKLOG.md`'s (now closed) B-BENCH-6 described.
+
+    `build_graph` builds its `CallLimiter` internally and never hands it out,
+    so a counting subclass has to be substituted for the real class at the
+    point `build_graph` constructs one, via `monkeypatch`. The signal is a
+    *count*, not a peak or a timing: `AUTO` must pass exactly one more call
+    through the ceiling than an explicit domain does, since a classification
+    call is the only extra work `AUTO` adds before extraction even starts.
+    """
+
+    async def test_auto_passes_one_more_call_through_the_ceiling_than_an_explicit_domain(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import importlib
+
+        from redstring.extraction.limiter import CallLimiter
+
+        # `redstring.composition.__init__` re-exports the `build_graph`
+        # function under the same name as this submodule, which shadows the
+        # submodule as an attribute of the package -- `import
+        # redstring.composition.build_graph as m` resolves `m` to the
+        # function, not the module, because that form is attribute lookup
+        # after the plain import. `importlib.import_module` goes through
+        # `sys.modules` instead and returns the actual module `CallLimiter`
+        # is patched on.
+        build_graph_module = importlib.import_module("redstring.composition.build_graph")
+
+        class _CountingLimiter(CallLimiter):
+            def __init__(self, limit: int) -> None:
+                super().__init__(limit)
+                self.enters = 0
+
+            async def __aenter__(self) -> None:
+                self.enters += 1
+                await super().__aenter__()
+
+        built: list[_CountingLimiter] = []
+
+        def _build(limit: int) -> _CountingLimiter:
+            limiter = _CountingLimiter(limit)
+            built.append(limiter)
+            return limiter
+
+        monkeypatch.setattr(build_graph_module, "CallLimiter", _build)
+
+        # Long enough to actually reach the classifier: `ContentClassifier`
+        # falls back without a model call below `MIN_CONTENT_LENGTH`, and
+        # that fallback would go through no limiter at all -- the same
+        # non-distinguishing-input trap as `document()`'s short default text.
+        classifiable = document("Hamlet " * 40)
+
+        await build_graph(
+            classifiable,
+            provider=CountingProvider(
+                answer={"domain": "literature_fiction", "confidence": 0.9, "reasoning": "x"}
+            ),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain=AUTO,
+        )
+        auto_enters = built[-1].enters
+
+        await build_graph(
+            classifiable,
+            provider=CountingProvider(),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            domain="literature_fiction",
+        )
+        explicit_enters = built[-1].enters
+
+        # The difference alone is invariant to the *pipeline's* limiter use: a
+        # `build_graph` whose `ExtractionPipeline` had stopped passing calls
+        # through the shared limiter would count 1 and 0, and the difference
+        # would still be exactly one. Pinning the explicit arm above zero is
+        # what stops this test passing for that second, unrelated defect.
+        assert explicit_enters >= 1
+        assert auto_enters == explicit_enters + 1
+
+
 class TestTheSignatureAndTheReportAreThemselvesContracts:
     """Two shapes no behavioural test can see. Both found by cosmic-ray.
 

@@ -1,0 +1,89 @@
+{
+  "started_at": "2026-08-14T01-33-39Z",
+  "library_version": "0.7.0",
+  "git_sha": "0ccf533",
+  "config": {
+    "endpoint": "http://192.168.1.14:8080/v1/",
+    "models": {
+      "extraction": "muse-glimmer-30b",
+      "embedding": "nomic-embed-text",
+      "embedding_dimensions": 768,
+      "max_tokens": 16384
+    },
+    "corpus": {
+      "graded": false,
+      "long": [
+        "harry-potter-1"
+      ]
+    },
+    "sweep": {
+      "chunk_size": [
+        24000,
+        40000
+      ],
+      "concurrency": [
+        2
+      ]
+    },
+    "policy": {
+      "repeats": 1,
+      "stop_climbing_concurrency": false,
+      "per_document_timeout_s": 1800
+    }
+  },
+  "runs": [
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 24000,
+        "concurrency": 2,
+        "repeat": 0
+      },
+      "wall_clock_s": 126.67917211697204,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 3,
+      "extract_s": 235.6966667859233,
+      "consolidate_s": null,
+      "chunks": 3,
+      "entities": 163,
+      "relationships": 121,
+      "failed_chunks": 0,
+      "unresolved_relationships": 10,
+      "variant_pairs": 24
+    },
+    {
+      "point": {
+        "document_id": "harry-potter-1",
+        "chunk_size": 40000,
+        "concurrency": 2,
+        "repeat": 0
+      },
+      "wall_clock_s": 53.790022358996794,
+      "time_to_first_entity_s": null,
+      "event_gaps_s": [],
+      "gaps": null,
+      "model_calls": 1,
+      "extract_s": 53.7819657670334,
+      "consolidate_s": null,
+      "chunks": 1,
+      "entities": 103,
+      "relationships": 39,
+      "failed_chunks": 0,
+      "unresolved_relationships": 1,
+      "variant_pairs": 12
+    }
+  ],
+  "stability": [],
+  "accuracy": null,
+  "timed_out": [],
+  "failed": [],
+  "corpus_provenance": {
+    "harry-potter-1": {
+      "source": "https://en.wikipedia.org/wiki/Harry_Potter_and_the_Philosopher%27s_Stone",
+      "retrieved": "2026-08-13",
+      "licence": "CC BY-SA 4.0"
+    }
+  }
+}

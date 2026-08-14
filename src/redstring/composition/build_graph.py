@@ -79,6 +79,7 @@ from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.constrained import constrained_extraction_for
 from redstring.extraction.domains.registry import get_domain_schema
+from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.schema import Extraction
@@ -208,6 +209,7 @@ async def build_graph(
     chunks: ChunkStore | None = None,
     event_store: AggregateStore | None = None,
     observed_at: datetime | None = None,
+    concurrency: int = 1,
 ) -> GraphBuildReport:
     """Extract `document` and write the result into `store`.
 
@@ -301,6 +303,37 @@ async def build_graph(
             wrong answer instead of a new type.
             `docs/adr/0011-domain-schemas-prompt-but-do-not-constrain.md`
             remains the default's reasoning; ADR 0030 is this dial's.
+        concurrency: How many calls against `provider` may be in flight at
+            once -- classification, extraction, gleaning and embedding alike.
+            One `CallLimiter` is built here, before any of those calls runs,
+            and shared by all four, so a stated ceiling of four stays four
+            instead of becoming five when `domain=AUTO` adds a classification
+            call ahead of the batch, or six when gleaning or embedding
+            overlaps the next one. `1` -- the default -- reproduces the
+            serial pipeline byte for byte, the same as passing no value at
+            all. See `redstring.extraction.limiter` and
+            `redstring.extraction.pipeline.ExtractionPipeline`'s `concurrency`
+            parameter, which this both configures and bounds jointly with.
+
+            **Raising this past the document's chunk count does nothing.**
+            What runs at once is `min(concurrency, chunks in the batch)`, so a
+            document that splits into four chunks issues four calls whether
+            this is `4` or `40`. The two knobs therefore cannot be tuned
+            independently: getting more concurrency out of a fixed document
+            means smaller chunks, not a larger ceiling.
+
+            Get that chunk count from `chunker.chunk(text).total_chunks`
+            rather than estimating it as `len(text) / chunk_size` -- the
+            chunker advances by `chunk_size - overlap` and backs each break up
+            to a paragraph, sentence or word boundary, so the estimate ran
+            28-47% low at every size the benchmark measured, which caps
+            `concurrency` below what the document could have used.
+
+            There is a floor on shrinking chunks -- smaller ones manufacture
+            more naming variants, since identity is derived from the name and
+            every boundary is a chance to drift -- and
+            `docs/how-to/tune-ingestion-throughput.md` carries the
+            measurements and how to take your own.
 
     Returns:
         A `GraphBuildReport`. `report.event is None` means this document was
@@ -326,7 +359,18 @@ async def build_graph(
 
     _check_vocabulary_wiring(domain, constrain_to_domain)
 
-    resolved = await _resolve_prompt(domain, document, provider)
+    # One limiter, shared by every call against `provider` this function
+    # makes or hands to a collaborator -- classification, extraction,
+    # gleaning and embedding alike. Constructed before the first of those
+    # calls (`_resolve_prompt`'s classifier call on the `domain=AUTO` path)
+    # runs, so nothing can slip out ahead of it the way the classifier call
+    # used to. A second limiter built later for the embedding call alone
+    # would bound extraction and embedding separately at `concurrency` each
+    # rather than jointly, which is exactly the gap this parameter exists to
+    # close.
+    limiter = CallLimiter(concurrency)
+
+    resolved = await _resolve_prompt(domain, document, provider, limiter)
     domain_id, confidence = resolved.domain_id, resolved.confidence
 
     pipeline = ExtractionPipeline(
@@ -335,8 +379,10 @@ async def build_graph(
         system_prompt=resolved.system_prompt,
         schema=(constrained_extraction_for(resolved.schema) if constrain_to_domain else Extraction),
         skip_failed_chunks=skip_failed_chunks,
+        concurrency=concurrency,
         carryover_entities=carryover_entities,
         gleanings=gleanings,
+        limiter=limiter,
     )
     stream = document_stream(tenant_id=tenant_id, source_id=document.id).aggregate_id
     repository = document_repository(event_store) if event_store is not None else None
@@ -387,6 +433,7 @@ async def build_graph(
                 entities=result.entities,
                 provider=embedding_provider,
                 vector_store=vector_store,
+                limiter=limiter,
             )
             await _persist(repository, aggregate, tenant_id)
 
@@ -496,6 +543,7 @@ async def _embed_entities(
     entities: Sequence[Entity],
     provider: EmbeddingProvider,
     vector_store: VectorStore,
+    limiter: CallLimiter,
 ) -> int:
     """Embed `entities` and fold the result into `vector_store`.
 
@@ -509,6 +557,9 @@ async def _embed_entities(
     So did `VectorProjection`. Both were written when the event was designed
     and neither had a caller -- the inert-code shape from
     `recurring-defects.md` §3, sitting in the tree for six slices.
+
+    `limiter` bounds this call jointly with `build_graph`'s pipeline, since
+    both hit the same endpoint the operator sized `concurrency` for.
 
     Returns:
         How many vectors were written.
@@ -524,7 +575,8 @@ async def _embed_entities(
     if not entities:
         return 0
 
-    vectors = await provider.embed([entity.name for entity in entities])
+    async with limiter:
+        vectors = await provider.embed([entity.name for entity in entities])
     if len(vectors) != len(entities):
         raise EmbeddingProviderError(
             f"asked for {len(entities)} embeddings and got {len(vectors)}; "
@@ -570,12 +622,19 @@ async def _resolve_prompt(
     domain: str | DomainSchema | AutoDomain | None,
     document: SourceDocument,
     provider: LlmProvider,
+    limiter: CallLimiter,
 ) -> _ResolvedDomain:
-    """The domain chosen, how sure the classifier was, and what to ask with."""
+    """The domain chosen, how sure the classifier was, and what to ask with.
+
+    `limiter` bounds the classifier's call jointly with `build_graph`'s
+    pipeline and embedding call, on the `AUTO` branch -- the only branch that
+    calls `provider` at all. `None` and an explicit domain both return
+    without touching `limiter` or the network.
+    """
     if domain is None:
         return _ResolvedDomain(None, None, DEFAULT_SYSTEM_PROMPT, None)
     if isinstance(domain, AutoDomain):
-        classification = await ContentClassifier(provider).classify(document.text)
+        classification = await ContentClassifier(provider, limiter=limiter).classify(document.text)
         return _ResolvedDomain(
             classification.domain,
             classification.confidence,

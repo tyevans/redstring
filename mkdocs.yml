@@ -113,6 +113,7 @@ nav:
       - Build and extract:
           - Author a domain schema: how-to/author-a-domain-schema.md
           - Harden model calls: how-to/harden-model-calls.md
+          - Tune ingestion throughput: how-to/tune-ingestion-throughput.md
       - Search and read:
           - Retrieve entities: how-to/retrieve-entities.md
           - Retrieve chunks: how-to/retrieve-chunks.md
@@ -178,4 +179,5 @@ nav:
       - "0036 · A merge resolves the canonical entity's fields": adr/0036-a-merge-resolves-the-canonical-entitys-fields.md
       - "0037 · One exception type for a dimension mismatch": adr/0037-one-exception-for-a-dimension-mismatch.md
       - "0038 · The chunk's vector lives on the chunk": adr/0038-the-chunks-vector-lives-on-the-chunk.md
+      - "0039 · Bounded concurrency over chunks": adr/0039-bounded-concurrency-over-chunks.md
   - Contributing: contributing.md

@@ -100,11 +100,8 @@ def load_config(path: Path) -> BenchConfig:
         raise BenchConfigError(f"{path} is not a YAML mapping")
 
     concurrencies = tuple(_require(raw, "sweep", "concurrency"))
-    if set(concurrencies) != {1}:
-        raise BenchConfigError(
-            f"concurrency {sorted(concurrencies)} needs deliverable C; the library "
-            "extracts chunks serially, so any value but 1 would be ignored"
-        )
+    if any(c < 1 for c in concurrencies):
+        raise BenchConfigError(f"concurrency {sorted(concurrencies)} must be >= 1")
 
     repeats = int(_require(raw, "policy", "repeats"))
     if repeats < 1:

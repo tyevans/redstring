@@ -1,0 +1,47 @@
+# What a 131k-token context buys, if anything. The corpus document is 32,791
+# characters -- roughly 8,200 tokens -- so the model's context was never the
+# binding constraint at any chunk size this harness has run. Two points:
+#
+#   24000 -> 3 chunks (not 2 -- chunks overlap and breaks snap back to
+#            sentence boundaries, so len/chunk_size always understates)
+#   40000 -> 1 chunk, the whole document in a single call, no chunking, no
+#            carryover between chunks, and therefore no wavefront at all
+#
+# **The measurement to distrust here is the fast one.** Every step up in chunk
+# size so far has cost extraction quality in the same direction: entity counts
+# fell 209 -> 166 and relationships 276 -> 141 from 3000 to 12000. (An earlier
+# version of this comment also cited precision "0.71 against 0.46" as a
+# per-chunk-size result. It is not one -- those are the entity and
+# relationship precision of a single graded run at the default chunker, and
+# the harness never varies the graded corpus by chunk size. See BACKLOG
+# B-BENCH-9.) A single-call run should be the
+# fastest number this harness has produced and, if that trend holds, the
+# thinnest. Wall clock alone cannot recommend it.
+#
+# The constraint that *is* live is output tokens, not input: `max_tokens` is
+# 16384, and one call asked for every entity in a whole document is the most
+# likely configuration to hit that ceiling. A truncated response is not
+# reported as an error -- it arrives as a shorter answer -- so read a low
+# entity count here as possible truncation rather than as the model's opinion.
+endpoint: http://192.168.1.14:8080/v1/
+
+models:
+  extraction: muse-glimmer-30b
+  embedding: nomic-embed-text
+  embedding_dimensions: 768
+  max_tokens: 16384
+
+corpus:
+  graded: false
+  long: [harry-potter-1]
+
+sweep:
+  chunk_size: [24000, 40000]
+  concurrency: [2]
+
+policy:
+  repeats: 1
+  # Off: with one chunk at 40000 there is nothing to climb, and a reversal
+  # between two different chunk sizes is not a concurrency reversal at all.
+  stop_climbing_concurrency: false
+  per_document_timeout_s: 1800
