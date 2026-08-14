@@ -16,6 +16,11 @@ from a concrete goal rather than from a concept — for the concepts, see
   limiting, circuit breaking, and caching, all composed over the `Cache` port
   so a single process and a fleet behave the same way.
 
+- [**Tune ingestion throughput**](tune-ingestion-throughput.md) — `chunk_size`
+  and `concurrency` interact, so tuning either alone gives the wrong answer:
+  the arithmetic that decides how many calls actually run at once, and the
+  chunk size below which extraction starts inventing duplicate identities.
+
 ## Search and read
 
 - [**Retrieve entities**](retrieve-entities.md) — a query string to ranked

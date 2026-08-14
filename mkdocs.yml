@@ -113,6 +113,7 @@ nav:
       - Build and extract:
           - Author a domain schema: how-to/author-a-domain-schema.md
           - Harden model calls: how-to/harden-model-calls.md
+          - Tune ingestion throughput: how-to/tune-ingestion-throughput.md
       - Search and read:
           - Retrieve entities: how-to/retrieve-entities.md
           - Retrieve chunks: how-to/retrieve-chunks.md

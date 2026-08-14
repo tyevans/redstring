@@ -1,0 +1,46 @@
+# A probe, not the grid. `bench/config.yaml` is still the full sweep; this
+# file exists because the full grid is ~36 points of which the K=1 columns
+# alone cost half an hour each, and the question deliverable C exists to
+# answer -- does concurrency buy wall clock, and does the wavefront
+# manufacture naming drift -- is answerable at one chunk size.
+#
+# 12000 is the chunk size to probe, because bench/BASELINE.md already shows it
+# as the fastest serial configuration (153.4s vs 3000's 332.7s) at no
+# detectable cost in stability or drift. If concurrency helps anywhere it has
+# to help here, and a K that beats 12000x1 is the recommendation; a K that
+# does not means the backend was already saturated by one caller.
+#
+# K=1 is *not* run. Its reference is bench/BASELINE.md's 153.4s, measured on
+# this endpoint two hours earlier at the same chunk size. That is a weaker
+# comparison than a same-session serial point -- it cannot see endpoint drift
+# between then and now -- and it is the trade deliberately taken, because the
+# serial point is the single most expensive one in the grid and the question
+# here is where the curve turns over among K>1, not what K=1 costs. Any
+# recommendation that turns on a small margin against 153.4s needs the serial
+# point re-run beside it.
+#
+# repeats: 1 -- this probe locates the turnover, it does not measure variance.
+# Whatever K it points at gets repeats before anything is recommended.
+endpoint: http://192.168.1.14:8080/v1/
+
+models:
+  extraction: muse-glimmer-30b
+  embedding: nomic-embed-text
+  embedding_dimensions: 768
+  max_tokens: 16384
+
+corpus:
+  # No graded run: accuracy does not vary with concurrency -- the wavefront
+  # changes the order chunks are folded in, not what any one call is asked.
+  # Drift and stability, which do vary, come from the long document.
+  graded: false
+  long: [harry-potter-1]
+
+sweep:
+  chunk_size: [12000]
+  concurrency: [8]
+
+policy:
+  repeats: 1
+  stop_climbing_concurrency: true
+  per_document_timeout_s: 1800

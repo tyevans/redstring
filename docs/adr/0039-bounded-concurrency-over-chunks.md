@@ -101,13 +101,21 @@ existed.** A batch of size one is the same calls, the same prompts, in the
 same order, so every existing caller is unaffected and the default did not
 move.
 
-**A caller raising `concurrency` trades naming stability for wall clock.**
-Widening the wavefront shortens the run at the cost of more chunks being
-mutually blind to each other's carryover within a batch; the trade-off will
-be recorded in `bench/CONCURRENCY.md`, rather than argued here, once the
-sweep that measures it runs (`BACKLOG.md` B-BENCH-7) — deferred for this
-deliverable because the endpoint it needs was unavailable, not because the
-measurement doesn't matter.
+**A caller raising `concurrency` trades naming stability for wall clock —
+and the measurement says the trade is not the one that binds.** Widening the
+wavefront shortens the run at the cost of more chunks being mutually blind to
+each other's carryover within a batch. `bench/CONCURRENCY.md` now records the
+sweep: naming drift did not track `concurrency` in any readable way, and the
+drift that *is* measurable tracks **chunk size** instead — variant pairs per
+entity rise 0.29 → 0.38 → 0.50 as chunks shrink 3,000 → 2,000 → 1,500,
+because a smaller chunk means more boundaries for a name to drift across, not
+because a wider batch does.
+
+The consequence that replaced it is arithmetic, and callers hit it first:
+**effective concurrency is `min(K, chunks in the batch)`**, so raising `K`
+past a document's chunk count does nothing at all. The two knobs cannot be
+tuned independently, which `docs/how-to/tune-ingestion-throughput.md` covers
+for callers.
 
 **The ceiling composes with a backend serving other tenants.** Because the
 bound is calls in flight rather than a property of one pipeline run, a

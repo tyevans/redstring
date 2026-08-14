@@ -1,5 +1,16 @@
 # Ingestion baseline, 2026-08-13
 
+> **Superseded as a recommendation by `bench/CONCURRENCY.md`, and still the
+> baseline it is read against.** This page's headline — that 12,000-character
+> chunks are 2.2× faster than the 3,000 default — held only because
+> `concurrency` could not be anything but 1 when it was written. With a
+> wavefront available, the answer inverts: *smaller* chunks win, because they
+> give concurrency more to overlap. The measured recommendation is now **2,000
+> characters at a concurrency matching the server's slot count**, which beats
+> everything here on wall clock *and* on what it extracts. The findings below
+> about stability, about entity count not being a quality metric, and about
+> what cannot be measured until deliverable B all still stand.
+
 Read from `bench/results/2026-08-13T21-54-30Z.json`. One machine, one day, one
 model id: `muse-glimmer-30b` behind llama-swap at `192.168.1.14:8080`,
 redstring 0.7.0 at `e2f84f8`. Document: the plain-text Wikipedia article for

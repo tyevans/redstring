@@ -1384,49 +1384,58 @@ something.
 through `run_point`'s chunker construction in place of the formula — no
 different in shape from any other knob already in the file.
 
-### B-BENCH-7. The concurrency sweep this deliverable exists to produce has not been run
+### B-BENCH-8. The 12,000-character concurrency series ran on an unrecorded server configuration
 
-Bounded concurrency (`ExtractionPipeline(concurrency=...)`, `CallLimiter`, ADR
-0039) trades wall clock for a risk: a wavefront batch computes one prompt for
-several chunks at once, so a caller raising `concurrency` is trading naming
-stability it has not yet measured. `bench/` has the machinery to measure it —
-`bench/drift.py`'s `variant_pairs` is the metric, because entity *count*
-cannot see a name drifting between spellings across a batch boundary, only
-`variant_pairs` can. Nobody has pointed that machinery at `concurrency` yet.
-The deliberate scope is: three chunk sizes × four concurrencies × three
-repeats, over `bench/corpus/harry-potter-1.txt` (the corpus `BASELINE.md`
-already measured), writing to `bench/CONCURRENCY.md`.
+`bench/CONCURRENCY.md` cannot name one overall winner, and this is why. The
+inference server's slot count changed three times while the sweep ran — one
+slot, then a restart with an unrecorded number greater than one, then a
+restart with eight — and the 12,000-character K-series (`K=2`/`4`/`8`, results
+`bench/results/2026-08-14T01-19-57Z.json`) landed entirely in the middle
+configuration. Every other configuration in that document ran at eight slots.
 
-**Why it was not run rather than fixed.** The user's inference endpoint was
-busy with other work for the whole session this deliverable landed in, and
-`CLAUDE.md`'s standing instruction for this branch was explicit: do not run
-`scripts/benchmark.py` or anything reaching it. This is not a capability gap
-like B-BENCH-2 or B-BENCH-5 above — the runner, the metric and the config
-shape all exist and are exercised by the unit suite against
-`FakeLlmProvider` (`tests/unit/bench/`). What is missing is the one live run
-against a real endpoint that would populate `bench/CONCURRENCY.md`.
+So the fastest non-degenerate number measured, `12,000 x K=4` at **116.9s**,
+sits 40s below the 8-slot recommendation (`2,000 x K=8`, 166.4s) across an
+unknown change in server parallelism. **That gap is not a finding and must
+not be quoted as one.** Within the 8-slot rows, which are mutually
+comparable, 2,000 x K=8 wins, and that is what the document recommends.
 
-**What is unmeasured until it runs.** Two separate claims, and neither has a
-number behind it yet: the wall-clock benefit of raising `concurrency` is
-*expected* (linear in the ceiling, modulo how much the backend actually
-parallelises) but not measured on this codebase; and the drift cost —
-whether a wavefront's shared-prompt batching measurably degrades naming
-consistency relative to the serial pipeline at the same corpus and chunk
-size — is completely unknown in either direction. `test_carryover_folds_in_chunk_order_not_completion_order`
-and its neighbours in `tests/unit/extraction/test_pipeline_concurrency.py`
-prove the *mechanism* is deterministic and order-independent; they say
-nothing about whether a real model's answers drift more when several chunks
-share one carryover snapshot than when each chunk sees the previous chunk's
-own answer.
+**Why it was not simply re-run.** The user called the measuring phase closed
+while this was outstanding, which is a scoping decision rather than an
+oversight — the recommendation the data *can* support was already available
+from the 8-slot rows alone. Re-running only sharpens a comparison that is
+currently declined.
 
-**What closing it takes.** Point `KG_LLM_BASE_URL` at a free endpoint and run
-the sweep described above through `scripts/benchmark.py` (or its `bench/`
-equivalent), producing `bench/CONCURRENCY.md` in the same shape as
-`BASELINE.md`: report `variant_pairs` alongside `entities` per B-BENCH-4's
-own caveat about the metric being a floor, not just the raw pair count.
-ADR 0039's Consequences section currently says this trade-off "will be
-recorded" there once the sweep runs — update its citation to nothing further
-once this entry closes.
+**What closing it takes.** `bench/probe-12000.yaml` still exists and is
+already shaped for it: set `concurrency: [2, 4, 8]` and run it against an
+8-slot server, then fold the rows into `bench/CONCURRENCY.md`'s overlap table
+and delete its "The comparison this run cannot make" section. Record the slot
+count in the results file this time — the harness does not capture it, which
+is the deeper gap and is why an hour of runs produced numbers that cannot be
+placed beside each other.
+
+### B-BENCH-9. Nothing below 3,000 characters has ever been graded for accuracy
+
+`bench/CONCURRENCY.md` recommends **2,000** characters, and the graded corpus
+(`tests/accuracy/corpus.yaml`, five hand-graded documents) has only ever run
+at 3,000, 8,000 and 12,000 — the three sizes in the original sweep config.
+2,000's quality claim therefore rests on two *ungraded* proxies: relationship
+count (384 against 3,000's 288) and variant pairs per entity (0.38 against
+0.29). Neither is a precision or recall measurement.
+
+This matters more than the usual "more data would be nice", because the two
+proxies disagree about direction. Relationship count says 2,000 extracts more;
+variant pairs per entity says it also manufactures more duplicate identities.
+Both can be true, and which one dominates is exactly what a graded run would
+settle. `BASELINE.md` measured precision falling from 0.71 to 0.46 between
+3,000 and 12,000 — the trend that made looking *below* 3,000 worth doing —
+but a trend with no point below its own floor cannot say where it turns.
+
+**What closing it takes.** Run `scripts/benchmark.py` with `graded: true` and
+`chunk_size: [1500, 2000, 3000]`. Note the graded corpus documents are short,
+so at 2,000 characters several become single-chunk runs — which measures a
+different thing than the long document does, and is the reason this is not a
+five-minute job. `tests/accuracy/corpus.py` says at the top why a change in
+those figures is noise until it is large.
 
 ---
 
