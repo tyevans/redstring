@@ -1,15 +1,17 @@
 """A ceiling on calls in flight against the inference endpoint.
 
-`ExtractionPipeline`'s batch size bounds how many *chunks* are extracted at
-once. It does not bound gleaning, which fires a further call per chunk, or
-embedding, which `build_graph` runs after the extraction it does not own. The
-operator's constraint is the backend's queue depth -- a single-GPU llama.cpp
-server processes one request at a time and converts ten concurrent requests
-into ten timeouts -- so the ceiling has to be one object every call passes
-through, not a property of any one loop.
+Not owned by any one pipeline, and that is the point. The operator's
+constraint is the backend's queue depth -- a single-GPU llama.cpp server
+processes one request at a time and converts ten concurrent requests into ten
+timeouts -- and the queue does not care which code path issued a request. So
+the ceiling has to be one object every call passes through, shared across
+callers that cannot import each other.
 
-Deliberately thinner than `asyncio.Semaphore`: it refuses a limit below one,
-and it is a named type so a caller can see what it is holding.
+It lives in `domain` for exactly that reason: `extraction` and `consolidation`
+are siblings in the layer contract and forbidden from importing each other,
+and two limiters would be two ceilings, which is no ceiling. Nothing here does
+I/O or depends on anything above `domain` -- it is a semaphore with a name and
+a refusal, which is the same test every other module in this layer passes.
 """
 
 from __future__ import annotations

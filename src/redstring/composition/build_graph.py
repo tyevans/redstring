@@ -73,13 +73,13 @@ from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.consolidation.service import ConsolidationService
 from redstring.domain.exceptions import DimensionMismatchError, EmbeddingProviderError
+from redstring.domain.limiter import CallLimiter
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import document_stream
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.constrained import constrained_extraction_for
 from redstring.extraction.domains.registry import get_domain_schema
-from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.schema import Extraction
@@ -311,7 +311,7 @@ async def build_graph(
             call ahead of the batch, or six when gleaning or embedding
             overlaps the next one. `1` -- the default -- reproduces the
             serial pipeline byte for byte, the same as passing no value at
-            all. See `redstring.extraction.limiter` and
+            all. See `redstring.domain.limiter` and
             `redstring.extraction.pipeline.ExtractionPipeline`'s `concurrency`
             parameter, which this both configures and bounds jointly with.
 

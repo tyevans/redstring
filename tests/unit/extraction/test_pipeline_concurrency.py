@@ -16,9 +16,9 @@ from uuid import uuid4
 import pytest
 
 from redstring.domain.exceptions import LlmProviderError
+from redstring.domain.limiter import CallLimiter
 from redstring.domain.source import SourceDocument
 from redstring.extraction.chunkers import SlidingWindowChunker
-from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.pipeline import ExtractionPipeline
 
 if TYPE_CHECKING:

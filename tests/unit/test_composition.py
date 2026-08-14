@@ -213,7 +213,7 @@ class TestTheClassifierCallSharesTheCeiling:
     ) -> None:
         import importlib
 
-        from redstring.extraction.limiter import CallLimiter
+        from redstring.domain.limiter import CallLimiter
 
         # `redstring.composition.__init__` re-exports the `build_graph`
         # function under the same name as this submodule, which shadows the

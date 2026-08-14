@@ -128,11 +128,11 @@ import asyncio
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from redstring.domain.exceptions import LlmProviderError, RedstringError
+from redstring.domain.limiter import CallLimiter
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES, Carryover
 from redstring.extraction.chunkers import SlidingWindowChunker
 from redstring.extraction.corpus import chunking_digest, stored_chunks
 from redstring.extraction.gleaning import combine, found_nothing, gleaning_prompt
-from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.mapping import MappedExtraction, map_extraction
 from redstring.extraction.merging import merge_extractions
 from redstring.extraction.schema import Extraction

@@ -250,6 +250,7 @@ from redstring.domain.exceptions import (
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.interval import Bounds, TemporalRelation
+from redstring.domain.limiter import CallLimiter
 from redstring.domain.merge_strategy import PropertyMergePolicy, PropertyMergeStrategy
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
@@ -276,7 +277,6 @@ from redstring.extraction.domains.models import (
 )
 from redstring.extraction.domains.registry import list_available_domains
 from redstring.extraction.errors import ChunkerError, ChunkingError, ChunkSizeError
-from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.pipeline import (
     DEFAULT_SYSTEM_PROMPT,
     ExtractionPipeline,
