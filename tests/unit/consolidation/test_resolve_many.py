@@ -132,7 +132,7 @@ class TestThePhaseBarrier:
 
 
 class TestMergingTheSameCandidateFromTwoSubjects:
-    async def test_two_subjects_confirming_the_same_candidate_merge_it_once(self):
+    async def test_a_candidate_confirmed_by_two_subjects_is_merged_exactly_once(self):
         """First emit wins; the second finds its own subject already an
         alias, so its whole decision is skipped.
 
