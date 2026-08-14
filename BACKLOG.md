@@ -2146,6 +2146,19 @@ workflow built on many small commits.
 
 **The floor moved; the ratchet did not.** CI's `pytest` job now passes
 `--cov-fail-under="$(cat .coverage-baseline)"`, so coverage still cannot fall.
+
+> **The move shipped broken and nobody looked.** `--cov-fail-under` was added
+> without `--cov-precision`, and coverage's `should_fail_under` returns
+> `round(total, precision) < fail_under` with precision defaulting to **0** —
+> so a two-decimal baseline of 96.22 was compared against a total rounded to
+> 96.0 and failed *while coverage was above the floor*. The job could only
+> have passed at 96.5 or better. It failed on its first run, took `main` red,
+> and stayed red through a second merge, because the branch that introduced it
+> was verified with a bare `uv run pytest` rather than with CI's own command.
+> Fixed by `--cov-precision=2`. **The lesson is not about rounding**: a gate
+> whose invocation differs from the one you tested is an untested gate, and
+> the one command worth running before changing a CI check is the one CI runs.
+
 What was lost is the *rise*: `scripts/coverage_ratchet.py::write_baseline`
 wrote the new high-water mark and `git add`ed it, so a commit that earned more
 coverage carried the new baseline with it. A CI run has no commit to stage

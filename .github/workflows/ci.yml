@@ -166,10 +166,21 @@ jobs:
       # What did not move: the baseline no longer raises itself. The script
       # staged a rise into the commit that earned it, and a CI run has no
       # commit to stage into. See BACKLOG B-RATCHET-1.
+      #
+      # **`--cov-precision=2` is load-bearing, not cosmetic.** coverage's
+      # `should_fail_under` returns `round(total, precision) < fail_under`,
+      # and the precision defaults to 0. `.coverage-baseline` carries two
+      # decimals, so at the default a total of 96.30 rounds to 96.0, compares
+      # against 96.22, and *fails while being above the floor* -- the gate
+      # could only pass by rounding up, i.e. at 96.5 or better. It failed on
+      # its very first run for that reason and took `main` red with it. Match
+      # the precision to the baseline's decimals, or the floor means something
+      # other than what the file says.
       - name: pytest
         run: |
           uv run pytest -n auto --dist worksteal \
             --cov=src/redstring --cov-report=xml --cov-report=term-missing \
+            --cov-precision=2 \
             --cov-fail-under="$(cat .coverage-baseline)"
 
       - name: Upload coverage report
