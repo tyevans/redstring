@@ -12,6 +12,92 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [0.9.0] - 2026-08-14
+
+Consolidation gets two things: a name scorer that stops throwing away the most
+common alias shape in prose, and a pass that consolidates a whole corpus
+instead of one entity at a time.
+
+The scorer is the part that changes results. `string_similarity` was
+Jaro-Winkler alone, which is prefix-weighted — so a name qualified by a
+leading title scored *worse* the longer the qualifier got. "Dr. Grant" against
+"Grant" scored 0.437 and could not reach the adjudication band at any
+embedding value; "Lord Voldemort" against "Voldemort" cleared the floor by
+0.02, which any embedding below 0.717 erased. Those pairs now score 0.85 —
+one number for every qualified form, whatever its length.
+
+### Added
+
+- **Token containment in `string_similarity`.** The name feature is now the
+  better of Jaro-Winkler and a token overlap coefficient capped at
+  `CONTAINMENT_CEILING` (0.85). Pairs sharing no whole token are untouched:
+  the overlap term is 0.0 for them and `max` leaves Jaro-Winkler in place.
+
+  The cap is the safety property, not a tuning knob. It sits at or above
+  `LOW_SIMILARITY` (0.75) and **strictly below** `HIGH_SIMILARITY` (0.92), so a
+  token-subset match always buys a model call and can never merge unasked —
+  which matters because `{smith}` is a subset of `{john, smith}`. Moving
+  either threshold without re-checking that relation is how this becomes a
+  silent over-merger.
+
+  Containment fires only on a *strict* subset. A partial overlap — "Ada
+  Lovelace" against "Countess of Lovelace", one shared token of two — is
+  arithmetically identical to "John Smith" against "Jane Smith" and is left
+  alone deliberately.
+
+- **`ConsolidationService.resolve_many` and `Consolidator.resolve_many`.**
+  Consolidate a whole corpus in one pass rather than calling `resolve` per
+  entity. Three phases: score and band every subject concurrently (store reads
+  only), adjudicate the ambiguous pairs in batches that span subject
+  boundaries, then emit serially.
+
+  Cross-subject batching is the throughput win. The ambiguous band is a small
+  fraction of a block by design, so per-subject batches are nearly always
+  short; filling them across subjects drops the call count from
+  `sum(ceil(band_i / batch))` to `ceil(sum(band_i) / batch)`.
+
+  **A pass is not a fixed point.** A subject that an earlier merge in the same
+  pass absorbed is skipped, not re-scored — chains that only appear after a
+  merge are the next pass's work. `concurrency` bounds phase 1's wavefronts;
+  see the how-to for what it does and does not bound in phase 2.
+
+### Documentation
+
+- **`docs/how-to/run-a-corpus-consolidation-pass.md`** — when to run a pass,
+  what `concurrency` bounds (phase 1's wavefronts) and what it does not
+  (phase 2 makes a single `adjudicate_many` call held under the limiter for
+  its duration), and why a chain may need a second pass.
+- [ADR 0040](https://github.com/tyevans/redstring/blob/main/docs/adr/0040-overlap-aware-name-similarity.md)
+  records why the name feature absorbed containment rather than becoming a
+  fourth feature, and why the ceiling sits between the two thresholds.
+- [ADR 0041](https://github.com/tyevans/redstring/blob/main/docs/adr/0041-the-consolidation-pass-is-decide-then-emit.md)
+  records the three phases, why the fan-out is not over `resolve`, and why a
+  subject merged away mid-pass is skipped rather than retried.
+
+### Changed
+
+- **`MergeAdjudicator` gained a required `adjudicate_many` method — breaking
+  for any implementation written outside this repo.** `ConsolidationService.
+  resolve_many` needed cross-subject adjudication batching, so
+  `adjudicate_many` was added to
+  `src/redstring/consolidation/protocols.py` alongside it. An implementation
+  written against the prior, single-subject-only shape (`adjudicate` only)
+  stops satisfying `isinstance(_, MergeAdjudicator)` until it adds the new
+  method. The migration is a one-line delegation, documented directly in
+  `MergeAdjudicator.adjudicate_many`'s docstring:
+
+  ```python
+  async def adjudicate_many(self, work):
+      return [await self.adjudicate(subject, candidates) for subject, candidates in work]
+  ```
+
+  This loses only the cross-subject batching `resolve_many` exists to
+  provide, not correctness. There is currently no compliance suite for
+  `MergeAdjudicator` or `CandidateSource` (see BACKLOG **B101**), so the
+  blast radius on external implementers is unknown — recorded here rather
+  than discovered on upgrade. See
+  [ADR 0041](https://github.com/tyevans/redstring/blob/main/docs/adr/0041-the-consolidation-pass-is-decide-then-emit.md).
+
 ## [0.8.0] - 2026-08-14
 
 Extraction can now run several chunks against the model at once, bounded by a
@@ -56,30 +142,6 @@ not be copied.
   rather than finding more.
 - [ADR 0039](https://github.com/tyevans/redstring/blob/main/docs/adr/0039-bounded-concurrency-over-chunks.md)
   records the decision and what makes `concurrency=1` byte-identical.
-
-### Changed
-
-- **`MergeAdjudicator` gained a required `adjudicate_many` method — breaking
-  for any implementation written outside this repo.** `ConsolidationService.
-  resolve_many` needed cross-subject adjudication batching, so
-  `adjudicate_many` was added to
-  `src/redstring/consolidation/protocols.py` alongside it. An implementation
-  written against the prior, single-subject-only shape (`adjudicate` only)
-  stops satisfying `isinstance(_, MergeAdjudicator)` until it adds the new
-  method. The migration is a one-line delegation, documented directly in
-  `MergeAdjudicator.adjudicate_many`'s docstring:
-
-  ```python
-  async def adjudicate_many(self, work):
-      return [await self.adjudicate(subject, candidates) for subject, candidates in work]
-  ```
-
-  This loses only the cross-subject batching `resolve_many` exists to
-  provide, not correctness. There is currently no compliance suite for
-  `MergeAdjudicator` or `CandidateSource` (see BACKLOG **B101**), so the
-  blast radius on external implementers is unknown — recorded here rather
-  than discovered on upgrade. See
-  [ADR 0041](https://github.com/tyevans/redstring/blob/main/docs/adr/0041-the-consolidation-pass-is-decide-then-emit.md).
 
 ## [0.7.0] - 2026-08-12
 
@@ -744,6 +806,7 @@ First release.
   accurate are different properties (`BACKLOG.md` B12).
 
 [Unreleased]: https://github.com/tyevans/redstring/compare/v0.8.0...HEAD
+[0.9.0]: https://github.com/tyevans/redstring/releases/tag/v0.9.0
 [0.8.0]: https://github.com/tyevans/redstring/releases/tag/v0.8.0
 [0.7.0]: https://github.com/tyevans/redstring/releases/tag/v0.7.0
 [0.6.0]: https://github.com/tyevans/redstring/releases/tag/v0.6.0
