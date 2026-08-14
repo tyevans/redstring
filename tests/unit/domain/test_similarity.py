@@ -11,15 +11,73 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from redstring.domain.similarity import (
+    CONTAINMENT_CEILING,
     FeatureWeights,
     SimilarityFeatures,
     combined_score,
     graph_similarity,
+    name_tokens,
+    overlap_coefficient,
     string_similarity,
 )
 
 #: Non-empty text, since a name on an `Entity` cannot be blank.
 names = st.text(min_size=1, max_size=30).filter(lambda value: value.strip())
+
+
+def test_name_tokens_splits_the_normalized_name_on_whitespace():
+    assert name_tokens("Lord  VOLDEMORT") == frozenset({"lord", "voldemort"})
+
+
+def test_name_tokens_of_a_single_word_is_one_token():
+    assert name_tokens("Voldemort") == frozenset({"voldemort"})
+
+
+def test_name_tokens_deduplicates_repeated_words():
+    """A set, not a list: "New York, New York" is two distinct tokens.
+
+    Stated because the overlap coefficient divides by `min(|A|, |B|)`, so a
+    repeated token in a multiset would inflate the denominator and quietly
+    lower every score involving a name that repeats a word.
+    """
+    assert name_tokens("New York New York") == frozenset({"new", "york"})
+
+
+def test_overlap_coefficient_of_a_subset_is_one():
+    assert overlap_coefficient({"voldemort"}, {"lord", "voldemort"}) == 1.0
+
+
+def test_overlap_coefficient_is_symmetric():
+    """At the boundary (a subset) both orders are forced to 1.0 regardless of
+    argument order, so that case cannot distinguish symmetric from not. Use
+    the interior `2/3` case instead, where the two orders would disagree if
+    the function were not actually symmetric."""
+    a, b = {"university", "of", "oxford"}, {"university", "of", "cambridge", "college"}
+    assert overlap_coefficient(a, b) == overlap_coefficient(b, a)
+
+
+def test_overlap_coefficient_of_disjoint_sets_is_zero():
+    assert overlap_coefficient({"tom", "riddle"}, {"voldemort"}) == 0.0
+
+
+def test_overlap_coefficient_divides_by_the_smaller_set():
+    """`2/3`, not `2/4`: the divisor is `min`, which is what makes a subset 1.0."""
+    assert overlap_coefficient(
+        {"university", "of", "oxford"}, {"university", "of", "cambridge", "college"}
+    ) == pytest.approx(2 / 3)
+
+
+def test_overlap_coefficient_of_an_empty_set_is_zero():
+    """Nothing is known about one side, which must not read as perfect agreement.
+
+    The same reasoning as `graph_similarity`'s two-empty-sets case in this
+    module's docstring: the mathematically conventional answer for a vacuous
+    containment is 1.0, and 1.0 here would drag a merge over a threshold on
+    the strength of an unparseable name.
+    """
+    assert overlap_coefficient(set(), {"voldemort"}) == 0.0
+    assert overlap_coefficient({"voldemort"}, set()) == 0.0
+    assert overlap_coefficient(set(), set()) == 0.0
 
 
 class TestStringSimilarity:
@@ -224,3 +282,83 @@ class TestCombinedScore:
         higher = combined_score(SimilarityFeatures(name=high, **features))
 
         assert lower <= higher
+
+
+def test_a_name_qualified_by_a_title_scores_at_the_containment_ceiling():
+    """Jaro-Winkler scores this 0.770 -- inside the band, but only just.
+
+    The margin is the problem rather than the score: 0.770 clears
+    LOW_SIMILARITY by 0.02, so an embedding below 0.717 drags the pair out of
+    the band entirely. At the ceiling it survives an embedding down to 0.50.
+    """
+    assert string_similarity("Lord Voldemort", "Voldemort") == pytest.approx(CONTAINMENT_CEILING)
+
+
+def test_containment_is_symmetric():
+    assert string_similarity("Voldemort", "Lord Voldemort") == pytest.approx(
+        string_similarity("Lord Voldemort", "Voldemort")
+    )
+
+
+def test_a_surname_only_mention_also_reaches_the_ceiling():
+    assert string_similarity("Ada Lovelace", "Lovelace") == pytest.approx(CONTAINMENT_CEILING)
+
+
+def test_names_sharing_no_tokens_are_unchanged():
+    """`max` must leave Jaro-Winkler alone where containment says nothing.
+
+    Asserted against the literal Jaro-Winkler value rather than against
+    `string_similarity` itself -- an expectation written in terms of the
+    function under test would hold for any implementation, including one
+    where containment had swallowed the other branch entirely.
+    """
+    import jellyfish
+
+    assert string_similarity("Tom Riddle", "Voldemort") == pytest.approx(
+        jellyfish.jaro_winkler_similarity("tom riddle", "voldemort")
+    )
+
+
+def test_jaro_winkler_still_wins_when_it_is_the_higher_signal():
+    """A near-typo shares no whole token, so containment is 0.0 and JW carries it."""
+    score = string_similarity("Voldemort", "Voldemorte")
+    assert score > CONTAINMENT_CEILING
+
+
+def test_identical_names_still_score_exactly_one():
+    """The ceiling is strictly below 1.0, so only Jaro-Winkler can reach it."""
+    assert string_similarity("Ada  LOVELACE", "ada lovelace") == 1.0
+
+
+def test_a_containment_match_can_never_reach_one():
+    """Otherwise a subset name could merge without ever being asked about."""
+    assert CONTAINMENT_CEILING < 1.0
+    assert string_similarity("Lord Voldemort", "Voldemort") < 1.0
+
+
+def test_partial_token_overlap_contributes_nothing():
+    """The precision half. A shared "University of" must not carry the pair.
+
+    Asserted as "containment did not raise the score" rather than as a bound
+    on the score itself. Jaro-Winkler already scores this pair 0.899, which is
+    *above* the ceiling and has nothing to do with this change; a test written
+    as `< CONTAINMENT_CEILING` would fail on pre-existing behaviour and invite
+    someone to move a threshold to satisfy a test written after the design.
+    """
+    import jellyfish
+
+    assert string_similarity("University of Oxford", "University of Cambridge") == pytest.approx(
+        jellyfish.jaro_winkler_similarity("university of oxford", "university of cambridge")
+    )
+
+
+def test_containment_can_never_produce_an_unasked_merge():
+    """The invariant that makes the term safe, stated over every input at once.
+
+    The containment branch is capped at `CONTAINMENT_CEILING`, so no input
+    whatever can reach `HIGH_SIMILARITY` through it. A property of the
+    arithmetic rather than of any corpus, so it is asserted as one rather than
+    sampled -- see the banding corpus for why the corpus states the weaker,
+    per-pair form of this.
+    """
+    assert CONTAINMENT_CEILING * 1.0 < 0.92

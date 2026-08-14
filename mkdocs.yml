@@ -120,6 +120,7 @@ nav:
           - Rank passages: how-to/rank-passages.md
       - Keep the graph honest:
           - Consolidate duplicate entities: how-to/consolidate-duplicate-entities.md
+          - Run a corpus consolidation pass: how-to/run-a-corpus-consolidation-pass.md
           - Query a timeline: how-to/query-a-timeline.md
       - Storage and projections:
           - Use the write model: how-to/use-the-write-model.md
@@ -180,4 +181,6 @@ nav:
       - "0037 · One exception type for a dimension mismatch": adr/0037-one-exception-for-a-dimension-mismatch.md
       - "0038 · The chunk's vector lives on the chunk": adr/0038-the-chunks-vector-lives-on-the-chunk.md
       - "0039 · Bounded concurrency over chunks": adr/0039-bounded-concurrency-over-chunks.md
+      - "0040 · Overlap-aware name similarity": adr/0040-overlap-aware-name-similarity.md
+      - "0041 · The consolidation pass is decide-then-emit": adr/0041-the-consolidation-pass-is-decide-then-emit.md
   - Contributing: contributing.md

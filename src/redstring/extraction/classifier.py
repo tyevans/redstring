@@ -41,9 +41,9 @@ from typing import TYPE_CHECKING
 
 # Import directly from submodules to avoid circular imports through __init__
 from redstring.domain.exceptions import LlmProviderError
+from redstring.domain.limiter import CallLimiter
 from redstring.extraction.domains.models import ClassificationResult
 from redstring.extraction.domains.registry import get_domain_registry
-from redstring.extraction.limiter import CallLimiter
 
 if TYPE_CHECKING:
     from redstring.domain.ids import TenantId

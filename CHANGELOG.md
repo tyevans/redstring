@@ -57,6 +57,30 @@ not be copied.
 - [ADR 0039](https://github.com/tyevans/redstring/blob/main/docs/adr/0039-bounded-concurrency-over-chunks.md)
   records the decision and what makes `concurrency=1` byte-identical.
 
+### Changed
+
+- **`MergeAdjudicator` gained a required `adjudicate_many` method — breaking
+  for any implementation written outside this repo.** `ConsolidationService.
+  resolve_many` needed cross-subject adjudication batching, so
+  `adjudicate_many` was added to
+  `src/redstring/consolidation/protocols.py` alongside it. An implementation
+  written against the prior, single-subject-only shape (`adjudicate` only)
+  stops satisfying `isinstance(_, MergeAdjudicator)` until it adds the new
+  method. The migration is a one-line delegation, documented directly in
+  `MergeAdjudicator.adjudicate_many`'s docstring:
+
+  ```python
+  async def adjudicate_many(self, work):
+      return [await self.adjudicate(subject, candidates) for subject, candidates in work]
+  ```
+
+  This loses only the cross-subject batching `resolve_many` exists to
+  provide, not correctness. There is currently no compliance suite for
+  `MergeAdjudicator` or `CandidateSource` (see BACKLOG **B101**), so the
+  blast radius on external implementers is unknown — recorded here rather
+  than discovered on upgrade. See
+  [ADR 0041](https://github.com/tyevans/redstring/blob/main/docs/adr/0041-the-consolidation-pass-is-decide-then-emit.md).
+
 ## [0.7.0] - 2026-08-12
 
 Nothing on the public surface moved: no name was added, removed or renamed,

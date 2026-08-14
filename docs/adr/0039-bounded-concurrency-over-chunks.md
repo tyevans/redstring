@@ -1,6 +1,9 @@
 # ADR 0039: Bounded concurrency over chunks
 
-**Status:** accepted.
+**Status:** accepted. Amended by [`0041` the consolidation pass is
+decide-then-emit](0041-the-consolidation-pass-is-decide-then-emit.md), which
+moves `CallLimiter` from `extraction` to `domain` so consolidation can share
+one ceiling with the pipeline. The Decision below stands unchanged.
 
 **Decision:** `ExtractionPipeline` and `build_graph` take a `concurrency`
 parameter (default `1`). Chunks are extracted in consecutive wavefront

@@ -73,13 +73,13 @@ from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.consolidation.service import ConsolidationService
 from redstring.domain.exceptions import DimensionMismatchError, EmbeddingProviderError
+from redstring.domain.limiter import CallLimiter
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import document_stream
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 from redstring.extraction.classifier import ContentClassifier
 from redstring.extraction.constrained import constrained_extraction_for
 from redstring.extraction.domains.registry import get_domain_schema
-from redstring.extraction.limiter import CallLimiter
 from redstring.extraction.pipeline import DEFAULT_SYSTEM_PROMPT, ExtractionPipeline
 from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.schema import Extraction
@@ -311,7 +311,7 @@ async def build_graph(
             call ahead of the batch, or six when gleaning or embedding
             overlaps the next one. `1` -- the default -- reproduces the
             serial pipeline byte for byte, the same as passing no value at
-            all. See `redstring.extraction.limiter` and
+            all. See `redstring.domain.limiter` and
             `redstring.extraction.pipeline.ExtractionPipeline`'s `concurrency`
             parameter, which this both configures and bounds jointly with.
 
@@ -875,6 +875,49 @@ class Consolidator:
         if event is None:
             return None
         return await self._project_merge(event)
+
+    async def resolve_many(
+        self,
+        subjects: Sequence[Entity],
+        *,
+        finder: CandidateSource | None = None,
+        adjudicator: MergeAdjudicator | None = None,
+        concurrency: int = 1,
+        limiter: CallLimiter | None = None,
+        high: float = HIGH_SIMILARITY,
+        low: float = LOW_SIMILARITY,
+    ) -> list[ConsolidationReport]:
+        """`resolve` over a whole corpus, in one decide-then-emit pass.
+
+        One report per merge actually emitted, in emit order -- shorter than
+        `subjects` whenever a subject decided nothing, which is the common
+        case.
+
+        Each report's graph effects are already applied: this folds every
+        event through the projection as it goes, exactly as `resolve` does for
+        one.
+
+        See `ConsolidationService.resolve_many` for the phase structure and
+        for why a subject merged away mid-pass is skipped rather than retried.
+        Two knobs are worth knowing before raising them: `concurrency` bounds
+        phase 1's wavefronts of subjects scored at once; phase 2 makes a
+        single `adjudicate_many` call over the whole batch, held under the
+        limiter for that call's entire duration, so `concurrency` does not
+        multiply model calls in flight the way it does in `build_graph`.
+        `limiter` is the endpoint ceiling, and it is only load-bearing when
+        shared across callers -- pass a shared one to bound a backend serving
+        more than this pass.
+        """
+        events = await self._service.resolve_many(
+            subjects,
+            finder=finder if finder is not None else self._default_finder,
+            adjudicator=adjudicator,
+            concurrency=concurrency,
+            limiter=limiter,
+            high=high,
+            low=low,
+        )
+        return [await self._project_merge(event) for event in events]
 
     async def undo(self, *, tenant_id: TenantId, merge_event_id: UUID) -> ConsolidationReport:
         """Reverse the merge that `merge_event_id` recorded.

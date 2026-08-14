@@ -3202,3 +3202,173 @@ renaming stability to accuracy.
 
 Until then: `bench/report.py` writes `stability` and `accuracy` as separate
 keys, and `accuracy` is `null` whenever the graded corpus did not run.
+
+### B-ALIAS-1 — a name-only feature cannot link a name to its titled alias when the tokens only partly overlap
+
+`domain/similarity.string_similarity` now scores a strict token subset at
+`CONTAINMENT_CEILING` ("Dr. Grant" against "Grant", "Lord Voldemort" against
+"Voldemort"). It does nothing for a *partial* overlap, and the gap is
+arithmetic rather than an oversight:
+
+```
+"Ada Lovelace"  / "Countess of Lovelace"   1 shared token of 2  ->  0.585  reject
+"John Smith"    / "Jane Smith"             1 shared token of 2  ->  0.880  adjudicate
+```
+
+The first pair is one person and the second is two, and **the two cases are
+indistinguishable from the strings alone** -- the overlap coefficient is 0.5
+for both. (They land in different bands only because Jaro-Winkler happens to
+score the second higher, which is luck, not signal.) So lowering the overlap
+term to catch the first would pull in every pair of strangers sharing a
+surname, at a type-key block's scale.
+
+What actually separates them is evidence outside the name: an embedding that
+has seen both in context, a graph neighbourhood they share, or an explicit
+alias supplied by the caller. Two of those three already exist as features and
+are simply absent for freshly extracted entities with no vector and no edges --
+which is exactly the case this whole change was aimed at.
+
+Not fixed because every name-only fix is a precision loss with no matching
+recall gain. Fix, if it is worth it: an explicit caller-supplied alias table
+consulted during blocking, which is a different mechanism from scoring and
+would need its own ADR (it puts caller assertions into merge decisions, which
+`ConsolidationLog`'s audit story has opinions about).
+
+### B-ADR-TABLE — `.claude/rules/definition-of-done.md`'s ADR table stops at 0019
+
+`.claude/rules/definition-of-done.md` carries a table of "the ADRs a spec has
+to be run against", listing `0001` through `0019`. The tree is at `0041`.
+
+Twenty-one ADRs are therefore invisible to the rule that exists to make specs
+account for existing decisions, in a file loaded into every session. This is
+`recurring-defects.md` §5 happening to the file that documents §5 -- the same
+way that section's own module map went stale, and the same way its ADR-count
+sentence did.
+
+Not fixed here because the fix is not "append twenty-one rows": the table's
+value is the one-line "settles" summary per ADR, and writing that many
+accurately means reading each ADR in turn. Doing it badly is worse than the
+gap, because a wrong summary is trusted.
+
+Fix: read `docs/adr/0020` through the current highest, add a row each, and add
+a test that the table's row count matches the number of files in `docs/adr/`
+excluding `index.md` -- so the next gap fails rather than accumulating. That
+test is the actual deliverable; the rows go stale again without it.
+
+### B140. The endpoint bound in `resolve_many` is per-pass, not per-model-call
+
+`ConsolidationService.resolve_many`'s `limiter` wraps the single
+`adjudicator.adjudicate_many(work)` call for its whole duration -- one
+acquire, held until every batch inside that call has been adjudicated. With
+the shipped `Adjudicator`, which awaits its own batches serially, this means
+`concurrency` never bounds how many model calls are in flight; it bounds how
+many *passes* may have a call in flight at once, which is a coarser and more
+conservative ceiling than the name suggests.
+
+Today this is conservative rather than wrong -- the endpoint never sees more
+concurrent adjudication requests than `resolve_many` callers, which is never
+more than `limit` allows -- but it is coarse in a way that costs a caller
+sharing one `CallLimiter` between `build_graph` (which bounds each individual
+model call) and `resolve_many` (which bounds the whole pass): that caller's
+pipeline is starved of endpoint slots for the entire duration of a
+consolidation pass, not just for the calls the pass is actually making.
+
+Fix: bound the endpoint per model call rather than per pass, either by
+threading the shared `CallLimiter` into the adjudicator so each batch inside
+`adjudicate_many` acquires and releases it individually, or by having
+`resolve_many` drive the cross-subject batches itself rather than delegating
+the whole list to one `adjudicate_many` call. Either changes the
+`MergeAdjudicator` contract or `resolve_many`'s phase-2 structure, so it wants
+its own ADR amending 0041.
+
+### B141. Adjudication volume against a real corpus is unmeasured
+
+The corpus test suite's `REJECT` half
+(`tests/unit/consolidation/test_banding_corpus.py`) states pairs that must
+cost no model call, and is the closest thing this branch has to a bound on
+adjudication volume -- but it cannot actually bound it: it is a fixed list of
+example pairs, not a claim about call counts against a real corpus at scale.
+Nothing here measures how many `adjudicate_many` calls a real consolidation
+pass makes, or how that scales with corpus size and duplicate density.
+
+The actual mitigation for call volume is cross-subject batching: phase 2
+groups by `Adjudicator._batch_size` over the *flattened* cross-subject
+candidate list, reducing call count from `Σ ceil(band_i / batch_size)` (one
+batching pass per subject) to `ceil(Σ band_i / batch_size)` (one batching pass
+over everyone's undecided candidates together) -- but this is an argument from
+the code, not a measurement.
+
+Fix: run `resolve_many` against a real or realistic corpus with tunable
+duplicate density, and record observed `adjudicate_many` call counts and
+batch fill rates against the `Σ ceil` vs `ceil(Σ)` prediction above, so a
+regression in batching effectiveness has something to trip against.
+
+### B140. The endpoint ceiling is per pass, not per model call
+
+`ConsolidationService.resolve_many` acquires its `CallLimiter` once, around
+the whole `adjudicate_many` call:
+
+```python
+async with limiter:
+    verdict_lists = await adjudicator.adjudicate_many(work)
+```
+
+The shipped `Adjudicator.adjudicate_many` awaits its batches serially, so this
+is conservative -- it can never exceed `limit` requests in flight -- but it is
+far coarser than a ceiling on calls, and two consequences follow that a caller
+will notice before they read the code.
+
+**The internally-built limiter is inert.** With no `limiter` argument,
+`resolve_many` constructs `CallLimiter(concurrency)` and is its only acquirer,
+so it never waits. Deleting that construction would change no behaviour on the
+default path -- `recurring-defects.md` section 3's shape, surviving only
+because the caller-supplied path is real.
+
+**A shared limiter starves the pipeline.** `docs/how-to/run-a-corpus-consolidation-pass.md`
+recommends sharing one `CallLimiter` between `build_graph` and `resolve_many`,
+which is the right advice for the ceiling it describes -- but a consolidation
+pass then holds a slot for its *entire* adjudication phase, which is N
+sequential model calls and can be minutes. Extraction blocks that whole time
+for one slot's worth of work.
+
+**A foreign adjudicator can escape the bound entirely.** Because the limiter
+wraps the call rather than each request, an `adjudicate_many` that fans its
+batches out concurrently is unbounded past the first request. The protocol
+docstring now warns about this, which is a stopgap: a bound that depends on an
+implementer reading a docstring is a convention, not a ceiling.
+
+Fix: make the bound per model call -- either thread the limiter into the
+adjudicator so `_one_mixed_batch` acquires it, or have `resolve_many` drive the
+batching itself and acquire per batch. The first keeps batching where it is and
+widens the `MergeAdjudicator` contract again (see the B139 break already taken
+this release); the second moves batching out of the adjudicator, which is a
+bigger change to who owns what. Decide deliberately rather than by whichever is
+easier to type.
+
+### B141. Nothing measures adjudication volume, and this release raises it
+
+Two changes in 0.8.0 multiply. `string_similarity` now lifts every
+strict-token-subset pair that clears a blocking key into the adjudication band
+(`{smith}` in `{john, smith}` is the archetype, and a real corpus has many of
+them), and `resolve_many` makes a pass run over a whole corpus rather than one
+subject. More pairs per subject, over more subjects, and each one that lands in
+the band costs part of a model call.
+
+**The bound the spec claimed does not exist.** `docs/plans/2026-08-14-consolidation-recall-and-throughput.md`
+said the banding corpus's `REJECT` half checks "that containment has not turned
+a type-key block into a stream of model calls". It cannot: those pairs share no
+whole token, so the overlap coefficient is `0.0` by construction and the list
+is structurally incapable of observing containment firing at all. The comment
+in `tests/unit/consolidation/test_banding_corpus.py` has been corrected; the
+missing measurement is this entry.
+
+**What does help, and is not credited anywhere:** cross-subject batching drops
+the call count from `sum(ceil(band_i / batch))` to `ceil(sum(band_i) / batch)`.
+Per-subject batches are nearly always short -- the band is a small fraction of a
+block by design -- so this is a real reduction and may well exceed the increase
+above. It is an argument, not a measurement.
+
+Fix: measure. Run a corpus pass over a graded corpus with a counting
+adjudicator, before and after the `CONTAINMENT_CEILING` change, and record
+calls-per-thousand-entities in `bench/`. Until then the cost of this release's
+recall improvement is unknown in the only unit anyone pays it in.

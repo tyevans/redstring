@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-from redstring.extraction.limiter import CallLimiter
+from redstring.domain.limiter import CallLimiter
 
 
 async def test_it_admits_no_more_than_its_limit_at_once() -> None:

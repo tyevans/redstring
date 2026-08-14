@@ -16,6 +16,12 @@ is a real finding about two entities". Ids are namespaced per document by
 rather than a finding, and it scored the same 0.7143 rejection this ADR was
 written to remove.
 
+Also amended by [`0041` the consolidation pass is
+decide-then-emit](0041-the-consolidation-pass-is-decide-then-emit.md), which
+gives the composed entry point a corpus-level method alongside the
+per-subject one this ADR describes. The Decision below is otherwise
+unchanged.
+
 **Why this is an ADR:** it changes the public surface, and it changes what a
 merge decision is. Either alone would qualify under
 `.claude/rules/definition-of-done.md`; they are one ADR because the second was
