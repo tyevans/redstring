@@ -3202,3 +3202,34 @@ renaming stability to accuracy.
 
 Until then: `bench/report.py` writes `stability` and `accuracy` as separate
 keys, and `accuracy` is `null` whenever the graded corpus did not run.
+
+### B-ALIAS-1 — a name-only feature cannot link a name to its titled alias when the tokens only partly overlap
+
+`domain/similarity.string_similarity` now scores a strict token subset at
+`CONTAINMENT_CEILING` ("Dr. Grant" against "Grant", "Lord Voldemort" against
+"Voldemort"). It does nothing for a *partial* overlap, and the gap is
+arithmetic rather than an oversight:
+
+```
+"Ada Lovelace"  / "Countess of Lovelace"   1 shared token of 2  ->  0.585  reject
+"John Smith"    / "Jane Smith"             1 shared token of 2  ->  0.880  adjudicate
+```
+
+The first pair is one person and the second is two, and **the two cases are
+indistinguishable from the strings alone** -- the overlap coefficient is 0.5
+for both. (They land in different bands only because Jaro-Winkler happens to
+score the second higher, which is luck, not signal.) So lowering the overlap
+term to catch the first would pull in every pair of strangers sharing a
+surname, at a type-key block's scale.
+
+What actually separates them is evidence outside the name: an embedding that
+has seen both in context, a graph neighbourhood they share, or an explicit
+alias supplied by the caller. Two of those three already exist as features and
+are simply absent for freshly extracted entities with no vector and no edges --
+which is exactly the case this whole change was aimed at.
+
+Not fixed because every name-only fix is a precision loss with no matching
+recall gain. Fix, if it is worth it: an explicit caller-supplied alias table
+consulted during blocking, which is a different mechanism from scoring and
+would need its own ADR (it puts caller assertions into merge decisions, which
+`ConsolidationLog`'s audit story has opinions about).
