@@ -216,7 +216,12 @@ from redstring.domain.similarity import CONTAINMENT_CEILING, string_similarity
 
 
 def test_a_name_qualified_by_a_title_scores_at_the_containment_ceiling():
-    """The forcing case. Jaro-Winkler alone scores this 0.531 and rejects it."""
+    """Jaro-Winkler scores this 0.770 -- inside the band, but only just.
+
+    The margin is the problem rather than the score: 0.770 clears
+    LOW_SIMILARITY by 0.02, so an embedding below 0.717 drags the pair out of
+    the band entirely. At the ceiling it survives an embedding down to 0.50.
+    """
     assert string_similarity("Lord Voldemort", "Voldemort") == pytest.approx(CONTAINMENT_CEILING)
 
 
@@ -262,17 +267,38 @@ def test_a_containment_match_can_never_reach_one():
     assert string_similarity("Lord Voldemort", "Voldemort") < 1.0
 
 
-def test_sibling_institutions_do_not_reach_the_ceiling():
-    """The precision half. "of" is a shared token and must not carry the pair."""
-    assert (
-        string_similarity("University of Oxford", "University of Cambridge") < CONTAINMENT_CEILING
+def test_partial_token_overlap_contributes_nothing():
+    """The precision half. A shared "University of" must not carry the pair.
+
+    Asserted as "containment did not raise the score" rather than as a bound
+    on the score itself. Jaro-Winkler already scores this pair 0.899, which is
+    *above* the ceiling and has nothing to do with this change; a test written
+    as `< CONTAINMENT_CEILING` would fail on pre-existing behaviour and invite
+    someone to move a threshold to satisfy a test written after the design.
+    """
+    import jellyfish
+
+    assert string_similarity("University of Oxford", "University of Cambridge") == pytest.approx(
+        jellyfish.jaro_winkler_similarity("university of oxford", "university of cambridge")
     )
+
+
+def test_containment_can_never_produce_an_unasked_merge():
+    """The invariant that makes the term safe, stated over every input at once.
+
+    The containment branch is capped at `CONTAINMENT_CEILING`, so no input
+    whatever can reach `HIGH_SIMILARITY` through it. A property of the
+    arithmetic rather than of any corpus, so it is asserted as one rather than
+    sampled -- see the banding corpus for why the corpus states the weaker,
+    per-pair form of this.
+    """
+    assert CONTAINMENT_CEILING * 1.0 < 0.92
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/unit/domain/test_similarity.py -v -p no:randomly`
-Expected: FAIL — `ImportError: cannot import name 'CONTAINMENT_CEILING'`, and once that is added, `test_a_name_qualified_by_a_title_scores_at_the_containment_ceiling` fails with `0.531 != 0.85`.
+Expected: FAIL — `ImportError: cannot import name 'CONTAINMENT_CEILING'`, and once that is added, `test_a_name_qualified_by_a_title_scores_at_the_containment_ceiling` fails with `0.7698... != 0.85`.
 
 - [ ] **Step 3: Implement**
 
@@ -319,9 +345,15 @@ def string_similarity(left: str, right: str) -> float:
     Jaro-Winkler alone is prefix-weighted, which penalises hardest the alias
     shape natural-language text produces most: a name qualified by a leading
     title, honorific or epithet. `"Lord Voldemort"` against `"Voldemort"`
-    scores `0.531`, and under the default `FeatureWeights` that pair cannot
-    reach the adjudication band however strong the other features are -- so
-    the model is never asked about a duplicate a human resolves instantly.
+    scores `0.437`, `0.519` and `0.578` for `"Dr. Grant"/"Grant"`,
+    `"President Bartlet"/"Bartlet"` and
+    `"Professor Albus Dumbledore"/"Dumbledore"` -- none of which can reach the
+    adjudication band however strong the other features are. The score
+    collapses as the qualifier grows relative to the name it qualifies, so a
+    one-word epithet like `"Lord Voldemort"/"Voldemort"` survives at `0.770`
+    and everything longer does not. Even the survivors clear the floor by
+    hundredths, and a pair at `0.770` needs an embedding of `0.717` just to
+    stay where it is -- so a mediocre second feature deletes it.
 
     Token containment answers exactly that case and nothing else: it is
     `0.0` for two names sharing no whole word, so `max` leaves Jaro-Winkler
@@ -379,10 +411,11 @@ git add src/redstring/domain/similarity.py tests/unit/domain/test_similarity.py
 git commit -m "Score a name against its own qualified forms
 
 Jaro-Winkler is prefix-weighted, so it scores "Lord Voldemort" against
-"Voldemort" at 0.531 -- and under the default weights that pair needs
-both remaining features above 0.97 to reach LOW_SIMILARITY at all. The
-alias shape prose produces most often was the one shape that could not
-buy a model call.
+"Voldemort" at 0.770 and "Grant" against "Dr. Grant" at 0.437: the score
+collapses as the qualifier grows relative to the name, crossing
+LOW_SIMILARITY at about one short title. So the longer forms could not
+buy a model call at all, and the shorter ones cleared the floor by 0.02
+-- a margin any embedding below 0.717 erases.
 
 string_similarity is now the max of Jaro-Winkler and a token overlap
 coefficient capped at CONTAINMENT_CEILING = 0.85, which sits at or above
@@ -420,13 +453,24 @@ needs neither: which band a pair lands in is decided by `decide` over a
 what makes it a gate on the thresholds and weights rather than a periodic
 measurement.
 
-## Both directions, or it measures nothing
+## Three claims, not two, and the middle one is the interesting one
 
-The `REJECT` half is not padding. A corpus of should-merge pairs alone is
-satisfied by a scorer that returns `1.0` for everything, and the specific risk
-of the containment term is precisely over-merging: `{smith}` is a subset of
-`{john, smith}`, and so is `{york}` of `{new, york}`. Every pair that must
-stay apart is a pair containment could plausibly have joined.
+A corpus of should-merge pairs alone is satisfied by a scorer returning `1.0`
+for everything, so the precision half is what makes the recall half mean
+anything. But "precision" here splits in two, and collapsing them writes a
+test that fails against untouched behaviour:
+
+- **`MUST_NOT_MERGE_UNASKED`** — the claim containment actually bears on.
+  `{smith}` is a subset of `{john, smith}`, and so is `{york}` of
+  `{new, york}`; the ceiling is what guarantees such a pair buys a model call
+  rather than a merge.
+- **`MUST_REJECT`** — no model call at all. Restricted to names sharing no
+  whole token, because that is the behaviour this change must *preserve*.
+
+Pairs like "John Smith"/"Jane Smith" belong to the first list and not the
+second: Jaro-Winkler alone already scores them near 0.88, so they reach the
+model today and should. Demanding `REJECT` there would be a test asserting
+that the band should not exist.
 
 ## Names only, no embedding, no graph
 
@@ -464,27 +508,51 @@ def band(left: str, right: str) -> MergeDecision:
 # Pairs a human resolves without hesitating. Each must at least reach the
 # model; whether it merges outright is not asserted, because that is a
 # threshold question and these are recall claims.
+#
+# Ordered roughly by how badly Jaro-Winkler alone handles them, because that
+# ordering is the finding: the score collapses as the qualifier grows relative
+# to the name it qualifies. The first four score 0.437, 0.519, 0.578 and 0.585
+# today and are unreachable at any embedding; the rest clear the floor only by
+# hundredths.
 MUST_REACH_THE_MODEL = [
-    ("Lord Voldemort", "Voldemort"),
-    ("Voldemort", "Lord Voldemort"),
-    ("Ada Lovelace", "Lovelace"),
     ("Dr. Grant", "Grant"),
     ("President Bartlet", "Bartlet"),
+    ("Professor Albus Dumbledore", "Dumbledore"),
+    ("Ada Lovelace", "Countess of Lovelace"),
+    ("Ada Lovelace", "Lovelace"),
+    ("Lord Voldemort", "Voldemort"),
+    ("Voldemort", "Lord Voldemort"),
     ("The Ministry of Magic", "Ministry of Magic"),
     ("Ada Lovelace", "Ada Lovelacce"),
     ("Ada  LOVELACE", "ada lovelace"),
 ]
 
-# Pairs that must stay apart with no model call. Every one of these shares at
-# least one token with its partner, so each is a case the containment term
-# could have joined and must not.
-MUST_NOT_REACH_THE_MODEL = [
+# Pairs that must never merge *without being asked*. Each shares at least one
+# token with its partner, so each is a case containment could have carried.
+#
+# The claim is `not MERGE`, not `REJECT`, and the difference is the point.
+# Jaro-Winkler alone already scores these between 0.86 and 0.90 -- they reach
+# the model today, before this branch, and that is the band working as
+# designed: they are exactly the ambiguous middle it exists for. Asserting
+# `REJECT` here would fail against untouched behaviour and invite someone to
+# move a threshold to satisfy a test written after the design.
+MUST_NOT_MERGE_UNASKED = [
     ("John Smith", "Jane Smith"),
     ("University of Oxford", "University of Cambridge"),
     ("New York Times", "New York Yankees"),
     ("Bank of England", "Bank of Japan"),
+    ("Lord Voldemort", "Voldemort"),
+    ("Ada Lovelace", "Lovelace"),
+]
+
+# Pairs that must still cost no model call at all. Restricted to names sharing
+# no whole token and scoring low on Jaro-Winkler: this is behaviour the change
+# must *preserve*, and it is the half that would catch containment firing where
+# it has no business firing.
+MUST_REJECT = [
     ("Tom Riddle", "Voldemort"),
     ("Ada Lovelace", "Charles Babbage"),
+    ("Ministry of Magic", "Hogwarts"),
 ]
 
 
@@ -493,8 +561,13 @@ def test_the_pair_at_least_reaches_the_adjudication_band(left: str, right: str):
     assert band(left, right) is not MergeDecision.REJECT
 
 
-@pytest.mark.parametrize(("left", "right"), MUST_NOT_REACH_THE_MODEL)
-def test_the_pair_is_rejected_without_a_model_call(left: str, right: str):
+@pytest.mark.parametrize(("left", "right"), MUST_NOT_MERGE_UNASKED)
+def test_the_pair_never_merges_without_a_model_call(left: str, right: str):
+    assert band(left, right) is not MergeDecision.MERGE
+
+
+@pytest.mark.parametrize(("left", "right"), MUST_REJECT)
+def test_the_pair_costs_no_model_call(left: str, right: str):
     assert band(left, right) is MergeDecision.REJECT
 
 
@@ -536,7 +609,9 @@ git checkout HEAD~1 -- src/redstring/domain/similarity.py
 uv run pytest tests/unit/consolidation/test_banding_corpus.py -v -p no:randomly
 ```
 
-Expected: the `MUST_REACH_THE_MODEL` cases for the title/surname pairs FAIL, and the `MUST_NOT_REACH_THE_MODEL` cases still pass. Record which failed and paste the list into the commit body.
+Expected: **exactly four** `MUST_REACH_THE_MODEL` cases FAIL — `"Dr. Grant"`, `"President Bartlet"`, `"Professor Albus Dumbledore"`, and `"Countess of Lovelace"`, which score 0.437, 0.519, 0.578 and 0.585 on Jaro-Winkler alone. The other `MUST_REACH` pairs pass either way: they already clear `LOW_SIMILARITY`, by as little as 0.02, which is the margin this change widens rather than creates. Both `MUST_NOT_MERGE_UNASKED` and `MUST_REJECT` pass unchanged.
+
+If *more* than those four fail, something else moved — stop and report. If *fewer*, the corpus is not pinning what it claims. Record the exact list in the commit body.
 
 Then restore:
 
@@ -1681,7 +1756,7 @@ git push -u origin HEAD
 gh pr create --title "Consolidation: overlap-aware name similarity and a corpus-level pass" --body "..."
 ```
 
-The PR body covers: the forcing measurement (0.531 and the arithmetic showing the pair is unreachable), what Part A changes and the two-sided constant relation that makes it safe, Part B's three phases and why the fan-out is not over `resolve`, the mutation survivors and their classification, and what was deliberately left out (cross-tenant concurrency, transitive closure, adaptive tuning).
+The PR body covers: the forcing measurement (the score's collapse with qualifier length, and the margin arithmetic showing a 0.770 pair needs a 0.717 embedding to survive), what Part A changes and the two-sided constant relation that makes it safe, Part B's three phases and why the fan-out is not over `resolve`, the mutation survivors and their classification, and what was deliberately left out (cross-tenant concurrency, transitive closure, adaptive tuning).
 
 ---
 

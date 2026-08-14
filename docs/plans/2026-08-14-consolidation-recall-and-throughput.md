@@ -17,29 +17,32 @@ entities. Tracing that pair through the existing pipeline:
   and no soundex key (the whole name is coded, so the title changes it), but
   they share the entity-type key, which exists precisely so nothing is
   unblockable. The pair reaches `CandidateFinder.candidates`.
-- **Scoring rejects it.** `string_similarity` is Jaro-Winkler, which is
-  prefix-weighted:
+- **Scoring nearly rejects it, and rejects its close relatives outright.**
+  `string_similarity` is Jaro-Winkler, which is prefix-weighted. On the name
+  feature alone:
 
   ```
-  string_similarity("Lord Voldemort", "Voldemort") = 0.531
+  0.770  adjudicate   "Lord Voldemort" / "Voldemort"
+  0.838  adjudicate   "The Ministry of Magic" / "Ministry of Magic"
+  0.585  reject       "Ada Lovelace" / "Countess of Lovelace"
+  0.578  reject       "Professor Albus Dumbledore" / "Dumbledore"
+  0.519  reject       "President Bartlet" / "Bartlet"
+  0.437  reject       "Dr. Grant" / "Grant"
   ```
 
-  Under the default `FeatureWeights(name=0.5, embedding=0.3, graph=0.2)`, the
-  pair reaches `LOW_SIMILARITY = 0.75` — the floor to be *asked about* — only
-  if
+  The score collapses as the qualifier grows relative to the name it
+  qualifies, and the collapse is not gradual in effect: it crosses
+  `LOW_SIMILARITY = 0.75` somewhere around a single short title, so a
+  one-word epithet survives and everything longer does not.
 
-  ```
-  0.3·embedding + 0.2·graph ≥ 0.485      (maximum attainable: 0.500)
-  ```
-
-  which needs both remaining features above ~0.97. In practice the pair scores
-  `REJECT` and no model call is ever made.
-
-The failure is structural rather than a tuning miss. Jaro-Winkler's prefix
-bonus penalises hardest exactly the alias shape natural-language text produces
-most: **a name qualified by a leading title, honorific, or epithet.** "Lord
-Voldemort"/"Voldemort", "Dr. Grant"/"Grant", "President Bartlet"/"Bartlet" all
-fail the same way, and each is a pair a human resolves without hesitating.
+- **The survivors survive by a margin any second feature erases.** 0.770
+  clears the floor by 0.02. Under the default
+  `FeatureWeights(name=0.5, embedding=0.3, graph=0.2)`, a pair scoring 0.770
+  on the name stays in the band only if its embedding is at least **0.717**;
+  at a merely-decent 0.60 it falls to 0.706 and is rejected without a call.
+  So the pairs that do reach the model reach it on the name alone and lose
+  the band as soon as anything corroborates them weakly -- which is the
+  opposite of how a corroborating feature should behave.
 
 Widening the band would not fix it — `LOW_SIMILARITY` would have to fall below
 0.53, which sends most of a type-key block to the model and reintroduces the
@@ -96,10 +99,20 @@ reasons would silently move which entities merge. Name tokens are
 `normalize_name(x).split()` — defined in `similarity.py`, owned by the thing
 that uses them.
 
-### What this changes for the Voldemort pair
+### What this changes
 
 `overlap_coefficient({lord, voldemort}, {voldemort}) = 1/1 = 1.0`, so the name
-feature becomes `0.85` rather than `0.531`. With no embedding and no graph
+feature becomes `0.85` rather than `0.770` — and `0.85` rather than `0.437` for
+"Dr. Grant"/"Grant", which is the case that was genuinely unreachable. Every
+qualified form of a name lands on the same number however long the qualifier
+is, which is exactly the property Jaro-Winkler lacks here.
+
+The `0.85` also buys margin the `0.770` never had. A pair scoring `0.85` on the
+name survives an embedding down to **0.50** before dropping out of the band,
+where `0.770` needed `0.717` — so a corroborating feature that is merely
+mediocre stops silently deleting the pair.
+
+With no embedding and no graph
 neighbours the combined score is `0.85` — `ADJUDICATE`. The model is asked, the
 verdict lands on `EntitiesMerged.merge_reason`, and the merge is auditable and
 undoable. That is the outcome the band was designed to produce.
