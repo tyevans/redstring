@@ -455,12 +455,19 @@ class ConsolidationService:
             adjudicator: Consulted for the band. Without one the band is
                 **rejected**, not merged -- the same asymmetry `resolve`
                 documents, for the same reason.
-            concurrency: How many subjects are scored at once, and how many
-                adjudication batches may be in flight. Must be at least 1.
+            concurrency: How many subjects phase 1 scores at once, in
+                wavefronts of this size. Phase 2 makes a single
+                `adjudicate_many` call over the whole cross-subject batch,
+                held under the limiter for the call's entire duration -- with
+                the shipped `Adjudicator`, which awaits its own batches
+                serially, that means exactly one model call is in flight at
+                any `concurrency`. Must be at least 1.
             limiter: The endpoint ceiling. Built from `concurrency` when
-                omitted. Pass one shared across callers to bound a backend
-                serving more than this pass -- which is the whole reason the
-                bound is an object rather than a number.
+                omitted, in which case it has one acquirer and never waits.
+                It is only load-bearing when shared across callers -- pass
+                one shared instance to bound a backend serving more than this
+                pass, which is the whole reason the bound is an object rather
+                than a number.
             high: At or above this score, merge without asking.
             low: Below this score, never merge and never ask.
         """

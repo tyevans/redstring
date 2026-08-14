@@ -48,7 +48,12 @@ def test_overlap_coefficient_of_a_subset_is_one():
 
 
 def test_overlap_coefficient_is_symmetric():
-    assert overlap_coefficient({"lord", "voldemort"}, {"voldemort"}) == 1.0
+    """At the boundary (a subset) both orders are forced to 1.0 regardless of
+    argument order, so that case cannot distinguish symmetric from not. Use
+    the interior `2/3` case instead, where the two orders would disagree if
+    the function were not actually symmetric."""
+    a, b = {"university", "of", "oxford"}, {"university", "of", "cambridge", "college"}
+    assert overlap_coefficient(a, b) == overlap_coefficient(b, a)
 
 
 def test_overlap_coefficient_of_disjoint_sets_is_zero():

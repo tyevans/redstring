@@ -264,7 +264,7 @@ class TestTheConcurrencyBound:
         assert tracker.max_in_flight <= 2
         assert tracker.max_in_flight >= 2, "the concurrency bound was never actually exercised"
 
-    async def test_no_more_than_concurrency_model_calls_are_in_flight_at_once(self):
+    async def test_two_passes_sharing_a_limiter_do_not_adjudicate_concurrently(self):
         """The limiter, on the phase that actually talks to the endpoint.
 
         Phase 1 makes no model calls at all, so a test bounding phase 1

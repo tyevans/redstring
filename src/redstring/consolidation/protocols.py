@@ -183,5 +183,14 @@ class MergeAdjudicator(Protocol):
         `tests/unit/consolidation/test_substitution.py`'s `ReviewQueue` is
         exactly this: a foreign implementation with no notion of a
         cross-subject batch, satisfying the protocol by delegating.
+
+        **`resolve_many` holds its `CallLimiter` for the duration of this
+        call, not per request inside it.** An implementation that awaits its
+        batches serially -- the shipped `Adjudicator` does -- keeps exactly
+        one model call in flight regardless of the caller's `concurrency`. An
+        implementation that fans its batches out concurrently is free to do
+        so, but anything it starts beyond the first request is outside the
+        limiter's bound: the limiter wraps this call, it does not gate each
+        request this call happens to make.
         """
         ...

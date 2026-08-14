@@ -40,20 +40,26 @@ found stale before it emitted.
 ## `concurrency` bounds two different things
 
 Unlike `build_graph`'s `concurrency`, which bounds one wavefront of chunk
-calls, `resolve_many`'s `concurrency` bounds two things at once, because the
-pass has two phases that can each be concurrent:
+calls, `resolve_many`'s `concurrency` only bounds phase 1 — phase 2 makes a
+single call, not a wavefront of them:
 
 - **Phase 1 (score and band):** how many subjects are scored against the
   store at once, in wavefronts of `concurrency`. This phase makes no model
   calls, so it is bounding connection-pool usage, not endpoint load.
-- **Phase 2 (adjudicate):** how many adjudication batches may be in flight at
-  once, via the `CallLimiter` built from `concurrency` (or passed explicitly —
-  see below). This is the only phase that talks to the model endpoint.
+- **Phase 2 (adjudicate):** one call to `adjudicator.adjudicate_many`, over
+  the whole cross-subject batch, held under the `CallLimiter` built from
+  `concurrency` (or passed explicitly — see below) for that call's entire
+  duration. `concurrency` does not multiply how many adjudication requests
+  are in flight; with the shipped `Adjudicator`, which awaits its own
+  batches serially, exactly one model call is in flight at a time regardless
+  of `concurrency`. The limiter only does work when it is shared across
+  concurrent callers — see the next section — or when a different
+  `MergeAdjudicator` fans its own batches out concurrently, in which case it
+  is the only thing bounding them.
 
-Both are governed by the same number because both are the "how much of this
-pass may proceed without waiting for something else to finish" knob — there
-is no separate parameter for each, so raising `concurrency` widens both
-phases together.
+So `concurrency` governs phase 1's wavefront size and, indirectly, the
+`CallLimiter`'s capacity if you let `resolve_many` build one for you — not
+"how many model calls this pass makes at once."
 
 **Raising `concurrency` past the number of subjects does nothing.** A
 wavefront of size `concurrency` over fewer than `concurrency` subjects simply

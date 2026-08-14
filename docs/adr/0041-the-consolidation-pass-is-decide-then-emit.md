@@ -117,11 +117,19 @@ is the only way the bound means what it says.
 
 ## Consequences
 
-**`concurrency=1` is equivalent to a serial loop over `resolve`.** A
-wavefront of size one processes subjects one at a time in phase 1, and phase
-2's batch is then a single subject-sized unit — no output differs from
-calling `resolve` in a loop over the same subjects, aside from the derived
-emit order.
+**`concurrency=1` is equivalent to a serial loop over `resolve` for
+`ConsolidationService`, not for `Consolidator`.** `resolve_many` projects only
+after the whole pass, so at `concurrency=1` it still scores every subject
+against the graph as phase 1 read it, and a subject absorbed earlier in the
+pass is skipped rather than re-scored against its new canonical. `resolve`,
+by contrast, projects each merge immediately, so a serial loop calling it
+re-reads an updated graph on every iteration and can catch that case.
+`ConsolidationService.resolve_many` does not call `resolve` in a loop and so
+does not have this difference — its `concurrency=1` output matches a serial
+loop over its own `resolve`, aside from the derived emit order. Phase 2's
+batching is a separate axis: it groups by `Adjudicator._batch_size` over the
+flattened cross-subject candidate list, independent of `concurrency` — it is
+not "a single subject-sized unit" at `concurrency=1`.
 
 **The staleness window is wider than `resolve`'s, and re-resolution before
 each emit is what makes that acceptable.** `resolve` documents a window

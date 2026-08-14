@@ -900,9 +900,13 @@ class Consolidator:
         See `ConsolidationService.resolve_many` for the phase structure and
         for why a subject merged away mid-pass is skipped rather than retried.
         Two knobs are worth knowing before raising them: `concurrency` bounds
-        both how many subjects are scored at once and how many adjudication
-        batches are in flight, and `limiter` is the endpoint ceiling -- pass a
-        shared one to bound a backend serving more than this pass.
+        phase 1's wavefronts of subjects scored at once; phase 2 makes a
+        single `adjudicate_many` call over the whole batch, held under the
+        limiter for that call's entire duration, so `concurrency` does not
+        multiply model calls in flight the way it does in `build_graph`.
+        `limiter` is the endpoint ceiling, and it is only load-bearing when
+        shared across callers -- pass a shared one to bound a backend serving
+        more than this pass.
         """
         events = await self._service.resolve_many(
             subjects,

@@ -131,8 +131,10 @@ MUST_NOT_MERGE_UNASKED = [
 
 # Pairs that must still cost no model call at all. Restricted to names sharing
 # no whole token and scoring low on Jaro-Winkler: this is behaviour the change
-# must *preserve*, and it is the half that would catch containment firing where
-# it has no business firing.
+# must *preserve*. These pairs share no whole token, so the overlap
+# coefficient is 0.0 by construction and the containment term is structurally
+# zero -- this list cannot observe a containment regression at all. It pins a
+# regression in `name_tokens` or in Jaro-Winkler instead.
 MUST_REJECT = [
     ("Tom Riddle", "Voldemort"),
     ("Ada Lovelace", "Charles Babbage"),
