@@ -21,6 +21,15 @@ shorter is not a subset. Report it as a lower bound and never as a total.
 **Expects lowercase input.** This function receives `normalized_name` from the
 runner, which is already lowercased. Calling with mixed-case names would see
 them as different tokens and give different results.
+
+**The raw count is not comparable across runs with different entity counts.**
+It is quadratic in the number of spellings of one entity and grows with the
+total number of distinct names in a run, so two runs at different `chunk_size`
+or `concurrency` will not in general extract the same entity count -- a rise
+in `variant_pairs` is confounded with a rise in names unless the reader
+divides by the entity count reported alongside it. `report.py` emits both in
+the same JSON object for exactly this reason; read the ratio, not the bare
+integer.
 """
 
 from __future__ import annotations
@@ -38,6 +47,12 @@ def _tokens(name: str) -> frozenset[str]:
     Possessives and hyphens are folded because they are spelling, not
     identity: `harry's wand` and `harry wand` are the same drift pair as
     `harry` and `harry potter`, and leaving them distinct would undercount.
+
+    Note this strips any `'s`, not only a trailing possessive -- `o'sullivan`
+    tokenises to `oullivan` rather than `osullivan`. Harmless for the count
+    (both spellings of an O'-name mangle the same way, so a pair is still
+    caught or missed consistently), but the docstring says "possessives" and
+    the code does something slightly broader.
     """
     return frozenset(name.replace("'s", "").replace("'", "").replace("-", " ").split())
 

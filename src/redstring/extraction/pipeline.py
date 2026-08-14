@@ -297,7 +297,12 @@ class ExtractionPipeline:
                 on which sibling happened to finish first. Refused below `1`
                 at construction, for the same reason `carryover_entities`
                 is: a bad limit belongs to the caller, not to the first
-                document it is used on.
+                document it is used on. This bounds the *batch size*, not
+                calls in flight -- see `limiter`, which bounds that
+                separately and can be narrower. `concurrency=8` with an
+                explicit `limiter=CallLimiter(2)` batches eight chunks and
+                admits two calls at a time; passing a limiter never changes
+                the batch size this parameter sets.
             carryover_entities: How many previously-seen entities are named in
                 the next chunk's prompt, so the model spells a recurring
                 entity the way the earlier chunk spelled it. `0` disables it,
@@ -328,7 +333,11 @@ class ExtractionPipeline:
                 this pipeline does not own -- `build_graph` does, so its
                 embedding call shares the same limiter rather than getting a
                 second one that would bound extraction and embedding
-                separately at `concurrency` each.
+                separately at `concurrency` each. Bounds calls *in flight*,
+                not batch size -- see `concurrency`, which sets that
+                separately. A limiter narrower than `concurrency` is a
+                legitimate, useful combination: it batches at `concurrency`
+                and admits fewer than a batch's worth of calls at once.
         """
         self._provider = provider
         self._chunker = chunker if chunker is not None else SlidingWindowChunker()

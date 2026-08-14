@@ -1425,6 +1425,50 @@ limiter:` on the `AUTO` branch only. A few lines, and it changes no behaviour
 at `concurrency=1`, since a limiter of one still admits the classifier call
 immediately when nothing else holds it.
 
+### B-BENCH-7. The concurrency sweep this deliverable exists to produce has not been run
+
+Bounded concurrency (`ExtractionPipeline(concurrency=...)`, `CallLimiter`, ADR
+0039) trades wall clock for a risk: a wavefront batch computes one prompt for
+several chunks at once, so a caller raising `concurrency` is trading naming
+stability it has not yet measured. `bench/` has the machinery to measure it —
+`bench/drift.py`'s `variant_pairs` is the metric, because entity *count*
+cannot see a name drifting between spellings across a batch boundary, only
+`variant_pairs` can. Nobody has pointed that machinery at `concurrency` yet.
+The deliberate scope is: three chunk sizes × four concurrencies × three
+repeats, over `bench/corpus/harry-potter-1.txt` (the corpus `BASELINE.md`
+already measured), writing to `bench/CONCURRENCY.md`.
+
+**Why it was not run rather than fixed.** The user's inference endpoint was
+busy with other work for the whole session this deliverable landed in, and
+`CLAUDE.md`'s standing instruction for this branch was explicit: do not run
+`scripts/benchmark.py` or anything reaching it. This is not a capability gap
+like B-BENCH-2 or B-BENCH-5 above — the runner, the metric and the config
+shape all exist and are exercised by the unit suite against
+`FakeLlmProvider` (`tests/unit/bench/`). What is missing is the one live run
+against a real endpoint that would populate `bench/CONCURRENCY.md`.
+
+**What is unmeasured until it runs.** Two separate claims, and neither has a
+number behind it yet: the wall-clock benefit of raising `concurrency` is
+*expected* (linear in the ceiling, modulo how much the backend actually
+parallelises) but not measured on this codebase; and the drift cost —
+whether a wavefront's shared-prompt batching measurably degrades naming
+consistency relative to the serial pipeline at the same corpus and chunk
+size — is completely unknown in either direction. `test_carryover_folds_in_chunk_order_not_completion_order`
+and its neighbours in `tests/unit/extraction/test_pipeline_concurrency.py`
+prove the *mechanism* is deterministic and order-independent; they say
+nothing about whether a real model's answers drift more when several chunks
+share one carryover snapshot than when each chunk sees the previous chunk's
+own answer.
+
+**What closing it takes.** Point `KG_LLM_BASE_URL` at a free endpoint and run
+the sweep described above through `scripts/benchmark.py` (or its `bench/`
+equivalent), producing `bench/CONCURRENCY.md` in the same shape as
+`BASELINE.md`: report `variant_pairs` alongside `entities` per B-BENCH-4's
+own caveat about the metric being a floor, not just the raw pair count.
+ADR 0039's Consequences section currently says this trade-off "will be
+recorded" there once the sweep runs — update its citation to nothing further
+once this entry closes.
+
 ---
 
 ## 5. Capabilities deliberately not built, with the route back

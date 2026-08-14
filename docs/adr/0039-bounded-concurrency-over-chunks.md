@@ -103,9 +103,11 @@ move.
 
 **A caller raising `concurrency` trades naming stability for wall clock.**
 Widening the wavefront shortens the run at the cost of more chunks being
-mutually blind to each other's carryover within a batch; the measured
-trade-off is recorded in `bench/CONCURRENCY.md` rather than argued here, per
-the rule against numbers decaying in ADR bodies.
+mutually blind to each other's carryover within a batch; the trade-off will
+be recorded in `bench/CONCURRENCY.md`, rather than argued here, once the
+sweep that measures it runs (`BACKLOG.md` B-BENCH-7) — deferred for this
+deliverable because the endpoint it needs was unavailable, not because the
+measurement doesn't matter.
 
 **The ceiling composes with a backend serving other tenants.** Because the
 bound is calls in flight rather than a property of one pipeline run, a
