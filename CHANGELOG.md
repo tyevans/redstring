@@ -12,6 +12,51 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [0.8.0] - 2026-08-14
+
+Extraction can now run several chunks against the model at once, bounded by a
+ceiling the caller sets. The default is unchanged and byte-identical to the
+serial pipeline — `concurrency=1` issues the same calls, with the same
+prompts, in the same order — so this release is additive for every existing
+caller.
+
+Measured on one 33k-character document against a local 30B model with an
+8-slot server: **332.7s to 166.4s**, while extracting *more* (329 entities and
+384 relationships against 209 and 276). The gain is not mostly the concurrency
+— it is that concurrency makes smaller chunks affordable, and smaller chunks
+extract more. If you have tuned `chunk_size` upward for speed, that trade may
+now run the other way; `docs/how-to/tune-ingestion-throughput.md` covers how
+to check against your own model and hardware, and why the numbers above should
+not be copied.
+
+### Added
+
+- **`concurrency` on `build_graph` and `ExtractionPipeline`.** How many calls
+  against the provider may be in flight at once. Chunks go out in batches of
+  that size, and carryover folds back in **chunk order** rather than
+  completion order, so a concurrent run is reproducible rather than dependent
+  on which call returned first. Defaults to `1`.
+
+  Note that effective concurrency is `min(concurrency, chunks in the batch)`:
+  raising it past a document's chunk count does nothing, and the chunk count
+  is *not* `len(text) / chunk_size` — ask
+  `chunker.chunk(text).total_chunks` instead.
+
+- **`CallLimiter`**, exported. One shared ceiling over every model call a
+  `build_graph` makes — classification, extraction, gleaning and embedding
+  alike — so a stated ceiling of four stays four rather than becoming six when
+  gleaning overlaps the next batch. Construct one and pass it to several
+  `build_graph` calls to bound a whole batch of documents against one endpoint.
+
+### Documentation
+
+- **`docs/how-to/tune-ingestion-throughput.md`** — how `chunk_size` and
+  `concurrency` interact, why raising one alone often changes nothing, and the
+  chunk size below which extraction starts manufacturing duplicate identities
+  rather than finding more.
+- [ADR 0039](https://github.com/tyevans/redstring/blob/main/docs/adr/0039-bounded-concurrency-over-chunks.md)
+  records the decision and what makes `concurrency=1` byte-identical.
+
 ## [0.7.0] - 2026-08-12
 
 Nothing on the public surface moved: no name was added, removed or renamed,
@@ -674,7 +719,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/tyevans/redstring/releases/tag/v0.8.0
 [0.7.0]: https://github.com/tyevans/redstring/releases/tag/v0.7.0
 [0.6.0]: https://github.com/tyevans/redstring/releases/tag/v0.6.0
 [0.5.0]: https://github.com/tyevans/redstring/releases/tag/v0.5.0
