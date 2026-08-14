@@ -285,8 +285,10 @@ class TestResolveMany:
             babbage_twin.id: babbage.id
         }
 
-    async def test_resolve_many_with_one_subject_matches_resolve(self, store, tenant_id):
-        """The composed path agrees with the single-subject one it generalises."""
+    async def test_resolve_many_with_one_subject_emits_the_expected_single_merge(
+        self, store, tenant_id
+    ):
+        """A single-subject call produces exactly the one merge expected."""
         ada = entity(tenant_id, "Ada Lovelace")
         twin = entity(tenant_id, "Ada Lovelace")
         await store.upsert_entities([ada, twin])
