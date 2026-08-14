@@ -3254,3 +3254,31 @@ Fix: read `docs/adr/0020` through the current highest, add a row each, and add
 a test that the table's row count matches the number of files in `docs/adr/`
 excluding `index.md` -- so the next gap fails rather than accumulating. That
 test is the actual deliverable; the rows go stale again without it.
+
+### B139. `MergeAdjudicator` gained a required method this release -- breaking for external implementers
+
+`resolve_many` (`src/redstring/consolidation/service.py`) needed
+cross-subject adjudication batching, so `MergeAdjudicator.adjudicate_many`
+was added to `src/redstring/consolidation/protocols.py` alongside it. Any
+implementation of `MergeAdjudicator` written outside this repo against the
+prior shape (`adjudicate` only) now fails to satisfy the protocol until it
+adds the new method -- confirmed in-repo: `ReviewQueue` in
+`tests/unit/consolidation/test_substitution.py`, a foreign implementation
+holding no library types, stopped satisfying `isinstance(_, MergeAdjudicator)`
+until it grew a delegating `adjudicate_many`.
+
+The migration is a one-line delegation, documented directly in
+`MergeAdjudicator.adjudicate_many`'s docstring: an implementation with no
+notion of cross-subject batching wraps `adjudicate` per subject and loses
+only the batching benefit `resolve_many` exists to provide.
+
+Cross-reference **B101**: `CandidateSource` and `MergeAdjudicator` have no
+compliance suite, which is why the blast radius of this break is unknown --
+there is no shared body a second implementation could have run to catch the
+gap before it shipped, only the one in-repo fixture that happened to notice.
+
+Not fixed here because there is nothing to fix -- the break is intentional
+and accepted (see `.superpowers/sdd/2026-08-14-consolidation-recall-and-throughput/`
+task 8's report). This entry exists so the break reaches the changelog and
+the ADR the resolve_many work needs (Task 10 in that plan). Delete this entry
+once that ADR records the change and any changelog/release notes are written.

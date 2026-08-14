@@ -161,5 +161,27 @@ class MergeAdjudicator(Protocol):
         per subject regardless of what this method could do. A subject with
         no candidates gets `[]` and keeps its slot -- the caller re-pairs by
         position.
+
+        **Required, not optional -- `resolve_many` calls only this method,
+        never `adjudicate`.** An optional method with a per-subject fallback
+        inside `resolve_many` would be a branch nothing in this tree ever
+        exercises, which is exactly the inert-code shape
+        `.claude/rules/recurring-defects.md` #3 warns about; better a
+        required method with a one-line migration than a silent dead path.
+
+        **Migration for an existing implementation that predates this
+        method** (added alongside `resolve_many`, so any substitute written
+        against the single-subject `adjudicate` needs this to keep
+        satisfying `MergeAdjudicator`): delegate per subject and accept that
+        you lose the cross-subject batching `resolve_many` exists to get --
+
+        ```python
+        async def adjudicate_many(self, work):
+            return [await self.adjudicate(subject, candidates) for subject, candidates in work]
+        ```
+
+        `tests/unit/consolidation/test_substitution.py`'s `ReviewQueue` is
+        exactly this: a foreign implementation with no notion of a
+        cross-subject batch, satisfying the protocol by delegating.
         """
         ...
