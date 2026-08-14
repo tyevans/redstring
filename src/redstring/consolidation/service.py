@@ -51,6 +51,7 @@ never happened.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from eventsource.domain.tenant_context import tenant_scope
@@ -83,6 +84,26 @@ if TYPE_CHECKING:
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
     from redstring.events.merge import EntitiesMerged, MergeUndone
+
+
+@dataclass(frozen=True, slots=True)
+class _Banded:
+    """One subject's candidates, split by what the score alone settled.
+
+    Carried as one object rather than three parallel lists because
+    `resolve_many` holds a collection of these across an await boundary, and
+    lists kept aligned by hand are how a verdict gets recorded against the
+    wrong pair.
+    """
+
+    #: Already resolved through aliases. Not the subject the caller passed.
+    subject: Entity
+    #: Candidate and the reason it is being merged, carried together -- a
+    #: merge attributed to the wrong reason is an audit trail that lies while
+    #: looking complete.
+    confirmed: list[tuple[ScoredCandidate, str]]
+    #: The band. Empty unless an adjudicator is going to be asked.
+    undecided: list[ScoredCandidate]
 
 
 class ConsolidationService:
@@ -260,6 +281,37 @@ class ConsolidationService:
         rejections are the training data for tuning the thresholds, and they
         are being thrown away.
         """
+        banded = await self._score_and_band(subject, finder=finder, high=high, low=low)
+        if banded is None:
+            return None
+
+        confirmed = list(banded.confirmed)
+        if banded.undecided and adjudicator is not None:
+            verdicts = await adjudicator.adjudicate(banded.subject, banded.undecided)
+            confirmed += [
+                (candidate, verdict.reason)
+                # `verdict is None` is "the model did not answer", which is not
+                # a yes. See `policy.Adjudicator.adjudicate`.
+                for candidate, verdict in zip(banded.undecided, verdicts, strict=True)
+                if verdict is not None and verdict.same
+            ]
+        return await self._emit(banded, confirmed)
+
+    async def _score_and_band(
+        self,
+        subject: Entity,
+        *,
+        finder: CandidateSource,
+        high: float,
+        low: float,
+    ) -> _Banded | None:
+        """Resolve, block, score, band. **No writes and no model call.**
+
+        Split out of `resolve` so `resolve_many` can run this half
+        concurrently over many subjects: it touches no aggregate and no
+        stream, so nothing here contends on the tenant's optimistic
+        concurrency. `None` when there is nothing to decide about.
+        """
         subject = await self._resolved_subject(subject)
 
         # `minimum_score=low` means `decide` below can never answer `REJECT`:
@@ -276,28 +328,27 @@ class ConsolidationService:
         banded = [
             (candidate, decide(candidate.score, high=high, low=low)) for candidate in candidates
         ]
-        undecided = [c for c, decision in banded if decision is MergeDecision.ADJUDICATE]
-        # A candidate and the reason it is being merged, carried together
-        # rather than in two lists kept aligned by hand -- the reason is what
-        # lands on `merge_reason`, and a merge attributed to the wrong reason
-        # is an audit trail that lies while looking complete.
-        confirmed: list[tuple[ScoredCandidate, str]] = [
-            (c, f"score >= {high}") for c, decision in banded if decision is MergeDecision.MERGE
-        ]
+        return _Banded(
+            subject=subject,
+            confirmed=[
+                (c, f"score >= {high}") for c, decision in banded if decision is MergeDecision.MERGE
+            ],
+            undecided=[c for c, decision in banded if decision is MergeDecision.ADJUDICATE],
+        )
 
-        if undecided and adjudicator is not None:
-            verdicts = await adjudicator.adjudicate(subject, undecided)
-            confirmed += [
-                (candidate, verdict.reason)
-                # `verdict is None` is "the model did not answer", which is not
-                # a yes. See `policy.Adjudicator.adjudicate`.
-                for candidate, verdict in zip(undecided, verdicts, strict=True)
-                if verdict is not None and verdict.same
-            ]
+    async def _emit(
+        self, banded: _Banded, confirmed: list[tuple[ScoredCandidate, str]]
+    ) -> EntitiesMerged | None:
+        """Append one merge covering everything that came out a yes.
 
+        `confirmed` is passed rather than read off `banded` because
+        `resolve_many` adds the adjudicated yeses to the score-confirmed ones
+        after the fact, and the caller that assembled that list is the one
+        that knows it is complete.
+        """
         if not confirmed:
             return None
-
+        subject = banded.subject
         confirmed_ids = [candidate.entity.id for candidate, _ in confirmed]
         merge_reason = "; ".join(reason for _, reason in confirmed)
         try:
@@ -308,15 +359,15 @@ class ConsolidationService:
                 merge_reason=merge_reason,
             )
         except MergeIntoAliasError:
-            # `subject` was already resolved to its canonical above, before
-            # `finder` ran, so this is not the stale-subject case -- it is a
-            # genuine race: something merged this call's canonical into
+            # `subject` was already resolved to its canonical in
+            # `_score_and_band`, so this is not the stale-subject case -- it
+            # is a genuine race: something merged this call's canonical into
             # something else in the window between that resolution and the
             # append inside `merge`. Retried once against the new canonical,
-            # because the caller did nothing wrong the first time either.
-            # Not retried a second time: two races on one call is not the
-            # same event happening twice, it is a sign something is
-            # genuinely wrong, and that should surface rather than loop.
+            # because the caller did nothing wrong the first time either. Not
+            # retried a second time: two races on one call is not the same
+            # event happening twice, it is a sign something is genuinely
+            # wrong, and that should surface rather than loop.
             subject = await self._resolved_subject(subject)
             return await self.merge(
                 tenant_id=subject.tenant_id,
