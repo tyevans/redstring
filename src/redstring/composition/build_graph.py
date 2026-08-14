@@ -304,13 +304,14 @@ async def build_graph(
             `docs/adr/0011-domain-schemas-prompt-but-do-not-constrain.md`
             remains the default's reasoning; ADR 0030 is this dial's.
         concurrency: How many calls against `provider` may be in flight at
-            once, across extraction, gleaning and embedding alike -- one
-            `CallLimiter` built here and shared by the pipeline and the
-            embedding call, so a stated ceiling of four stays four instead of
-            becoming six whenever gleaning or embedding overlaps the next
-            batch. `1` -- the default -- reproduces the serial pipeline byte
-            for byte, the same as passing no value at all. See
-            `redstring.extraction.limiter` and
+            once -- classification, extraction, gleaning and embedding alike.
+            One `CallLimiter` is built here, before any of those calls runs,
+            and shared by all four, so a stated ceiling of four stays four
+            instead of becoming five when `domain=AUTO` adds a classification
+            call ahead of the batch, or six when gleaning or embedding
+            overlaps the next one. `1` -- the default -- reproduces the
+            serial pipeline byte for byte, the same as passing no value at
+            all. See `redstring.extraction.limiter` and
             `redstring.extraction.pipeline.ExtractionPipeline`'s `concurrency`
             parameter, which this both configures and bounds jointly with.
 
@@ -338,15 +339,20 @@ async def build_graph(
 
     _check_vocabulary_wiring(domain, constrain_to_domain)
 
-    resolved = await _resolve_prompt(domain, document, provider)
+    # One limiter, shared by every call against `provider` this function
+    # makes or hands to a collaborator -- classification, extraction,
+    # gleaning and embedding alike. Constructed before the first of those
+    # calls (`_resolve_prompt`'s classifier call on the `domain=AUTO` path)
+    # runs, so nothing can slip out ahead of it the way the classifier call
+    # used to. A second limiter built later for the embedding call alone
+    # would bound extraction and embedding separately at `concurrency` each
+    # rather than jointly, which is exactly the gap this parameter exists to
+    # close.
+    limiter = CallLimiter(concurrency)
+
+    resolved = await _resolve_prompt(domain, document, provider, limiter)
     domain_id, confidence = resolved.domain_id, resolved.confidence
 
-    # One limiter, shared by every call against `provider` this function
-    # makes or hands to the pipeline -- extraction, gleaning, and embedding
-    # below. A second limiter built for the embedding call alone would bound
-    # extraction and embedding separately at `concurrency` each rather than
-    # jointly, which is exactly the gap this parameter exists to close.
-    limiter = CallLimiter(concurrency)
     pipeline = ExtractionPipeline(
         provider,
         chunker=chunker,
@@ -596,12 +602,19 @@ async def _resolve_prompt(
     domain: str | DomainSchema | AutoDomain | None,
     document: SourceDocument,
     provider: LlmProvider,
+    limiter: CallLimiter,
 ) -> _ResolvedDomain:
-    """The domain chosen, how sure the classifier was, and what to ask with."""
+    """The domain chosen, how sure the classifier was, and what to ask with.
+
+    `limiter` bounds the classifier's call jointly with `build_graph`'s
+    pipeline and embedding call, on the `AUTO` branch -- the only branch that
+    calls `provider` at all. `None` and an explicit domain both return
+    without touching `limiter` or the network.
+    """
     if domain is None:
         return _ResolvedDomain(None, None, DEFAULT_SYSTEM_PROMPT, None)
     if isinstance(domain, AutoDomain):
-        classification = await ContentClassifier(provider).classify(document.text)
+        classification = await ContentClassifier(provider, limiter=limiter).classify(document.text)
         return _ResolvedDomain(
             classification.domain,
             classification.confidence,

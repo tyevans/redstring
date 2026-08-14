@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING
 from redstring.domain.exceptions import LlmProviderError
 from redstring.extraction.domains.models import ClassificationResult
 from redstring.extraction.domains.registry import get_domain_registry
+from redstring.extraction.limiter import CallLimiter
 
 if TYPE_CHECKING:
     from redstring.domain.ids import TenantId
@@ -117,6 +118,7 @@ class ContentClassifier:
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         fallback_domain: str = DEFAULT_FALLBACK_DOMAIN,
         registry: DomainSchemaRegistry | None = None,
+        limiter: CallLimiter | None = None,
     ) -> None:
         """Initialize the classifier.
 
@@ -128,12 +130,22 @@ class ContentClassifier:
             fallback_domain: Domain to use when classification fails or
                 confidence is below threshold.
             registry: Optional custom domain registry (for testing).
+            limiter: The ceiling this classifier's one call against `provider`
+                passes through. `CallLimiter(1)` when omitted, which admits
+                that single call immediately and changes nothing for a caller
+                using this class on its own -- pass one explicitly to bound
+                this call jointly with other calls against the same endpoint,
+                which is what `redstring.composition.build_graph` does for
+                `domain=AUTO`: without this, its classification call would sit
+                outside the same ceiling that bounds extraction, gleaning and
+                embedding.
         """
         self._provider = provider
         self._timeout = timeout_seconds
         self._confidence_threshold = confidence_threshold
         self._fallback_domain = fallback_domain
         self._registry = registry
+        self._limiter = limiter if limiter is not None else CallLimiter(1)
 
     def _get_registry(self) -> DomainSchemaRegistry:
         """Get the domain schema registry.
@@ -180,14 +192,16 @@ class ContentClassifier:
         prompt = self._build_prompt(truncated)
 
         try:
-            result = await self._provider.extract(
-                prompt,
-                ClassificationResult,
-                system_prompt=(
-                    "You are a content classifier. Classify the text into one "
-                    "of the domains listed, and say how confident you are."
-                ),
-            )
+            async with self._limiter:
+                result = await self._provider.extract(
+                    prompt,
+                    ClassificationResult,
+                    system_prompt=(
+                        "You are a content classifier. Classify the text into "
+                        "one of the domains listed, and say how confident you "
+                        "are."
+                    ),
+                )
 
             # Check confidence threshold
             if result.confidence < self._confidence_threshold:
