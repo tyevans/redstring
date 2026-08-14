@@ -108,6 +108,16 @@ class ReviewQueue:
                 )
         return verdicts
 
+    async def adjudicate_many(self, work) -> list[list[AdjudicationVerdict | None]]:
+        """Delegates to `adjudicate` per subject.
+
+        A queue with no notion of cross-subject batches is still a
+        `MergeAdjudicator` -- `resolve_many` needs this method on the
+        protocol because it is the only one it calls, but nothing requires
+        an implementation to batch across subjects to provide it.
+        """
+        return [await self.adjudicate(subject, candidates) for subject, candidates in work]
+
 
 def service(graph_store: InMemoryGraphStore) -> ConsolidationService:
     return ConsolidationService(

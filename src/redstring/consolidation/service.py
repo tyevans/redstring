@@ -51,6 +51,7 @@ never happened.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -65,11 +66,12 @@ from redstring.consolidation.policy import (
     decide,
 )
 from redstring.domain.exceptions import MergeIntoAliasError, MissingEntityError
+from redstring.domain.limiter import CallLimiter
 from redstring.domain.merge_strategy import PropertyMergePolicy
 from redstring.events.streams import consolidation_stream
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
     from uuid import UUID
 
     from eventsource.ports.snapshots import SnapshotStore
@@ -84,6 +86,12 @@ if TYPE_CHECKING:
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
     from redstring.events.merge import EntitiesMerged, MergeUndone
+
+
+def _batches[T](items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
+    """Consecutive slices of at most `size`. The last may be short."""
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,6 +383,192 @@ class ConsolidationService:
                 merged_entity_ids=confirmed_ids,
                 merge_reason=merge_reason,
             )
+
+    async def resolve_many(
+        self,
+        subjects: Sequence[Entity],
+        *,
+        finder: CandidateSource,
+        adjudicator: MergeAdjudicator | None = None,
+        concurrency: int = 1,
+        limiter: CallLimiter | None = None,
+        high: float = HIGH_SIMILARITY,
+        low: float = LOW_SIMILARITY,
+    ) -> list[EntitiesMerged]:
+        """Consolidate a whole corpus in one pass: decide concurrently, emit serially.
+
+        Returns the events emitted, in emit order. A subject that decided
+        nothing contributes nothing, so the result is usually shorter than
+        `subjects`.
+
+        ## Three phases, and why the fan-out is not over `resolve`
+
+        `resolve` cannot simply be fired concurrently over a list. Two things
+        forbid it, and neither is incidental:
+
+        1. **Each merge changes the graph the next subject reads.** Candidate
+           finding resolves through aliases, so a merge emitted for one
+           subject changes what the next one blocks against.
+        2. **`ConsolidationLog` uses optimistic concurrency on the tenant
+           stream.** Two concurrent merges within one tenant collide by
+           construction -- the stream is the tenant deliberately.
+
+        So the pass splits where those constraints do:
+
+        - **Phase 1, concurrent:** score and band every subject. Store reads
+          only -- **no model calls at all** -- so what is bounded here is the
+          adapters' connection pools, and `concurrency` bounds it directly, in
+          wavefronts.
+        - **Phase 2, a barrier:** adjudicate, in batches that span subjects.
+          This is the only phase that talks to the endpoint, so this is where
+          `limiter` applies. The barrier is a real cost -- no emit starts
+          until every subject is scored -- and it is accepted rather than
+          engineered around, because without it a batch can only be filled
+          from subjects that happen to have finished, which is the
+          per-subject batching this phase exists to replace.
+        - **Phase 3, serial:** emit, in a deterministic order.
+
+        ## What phase 3 re-checks, and why skipping is right
+
+        Phase 1 completes before any of phase 3 runs, so the staleness window
+        `resolve` already documents between its read and its append is wider
+        here. Before each merge the subject and its confirmed candidates are
+        re-resolved through `resolve_entity_ids`, and anything that has since
+        become an alias is dropped. A subject that has itself been merged
+        away is skipped entirely.
+
+        **Skipped, not retried.** Retrying would mean re-scoring against a
+        graph that phase 1's other decisions are still changing, which is a
+        fixed-point computation wearing a pass's clothes. The duplicates that
+        subject found now belong to whatever absorbed it, and the next pass
+        will find them there. Saying "one pass is one pass" is cheaper and
+        more predictable than converging inside one call.
+
+        Args:
+            subjects: The entities to consolidate around. Order does not
+                affect the result -- emit order is derived, not taken from
+                this list -- but each is resolved through aliases first, so
+                passing an already-merged entity is harmless.
+            finder: Supplies and scores candidates. One instance, used
+                concurrently, so it must be safe to call re-entrantly;
+                `CandidateFinder` is.
+            adjudicator: Consulted for the band. Without one the band is
+                **rejected**, not merged -- the same asymmetry `resolve`
+                documents, for the same reason.
+            concurrency: How many subjects are scored at once, and how many
+                adjudication batches may be in flight. Must be at least 1.
+            limiter: The endpoint ceiling. Built from `concurrency` when
+                omitted. Pass one shared across callers to bound a backend
+                serving more than this pass -- which is the whole reason the
+                bound is an object rather than a number.
+            high: At or above this score, merge without asking.
+            low: Below this score, never merge and never ask.
+        """
+        if concurrency < 1:
+            raise ValueError(f"concurrency must be >= 1, got {concurrency}")
+        if not subjects:
+            return []
+        limiter = limiter if limiter is not None else CallLimiter(concurrency)
+
+        # Phase 1 -- score and band, in wavefronts of `concurrency`.
+        banded: list[_Banded] = []
+        for batch in _batches(subjects, concurrency):
+            results = await asyncio.gather(
+                *(
+                    self._score_and_band(subject, finder=finder, high=high, low=low)
+                    for subject in batch
+                )
+            )
+            banded.extend(result for result in results if result is not None)
+
+        # Emit order is derived rather than inherited from `subjects`, so two
+        # runs over one graph agree regardless of what order phase 1 finished
+        # in. The subject id as a string, matching how `CandidateFinder`
+        # breaks score ties -- one convention for "an arbitrary but total
+        # order over entities", not two.
+        banded.sort(key=lambda decision: str(decision.subject.id))
+
+        # Phase 2 -- adjudicate, in batches spanning subjects.
+        confirmed_per_subject = [list(decision.confirmed) for decision in banded]
+        if adjudicator is not None:
+            work = [
+                (decision.subject, decision.undecided) for decision in banded if decision.undecided
+            ]
+            if work:
+                async with limiter:
+                    verdict_lists = await adjudicator.adjudicate_many(work)
+                by_subject = {
+                    subject.id: verdicts
+                    for (subject, _), verdicts in zip(work, verdict_lists, strict=True)
+                }
+                for index, decision in enumerate(banded):
+                    verdicts = by_subject.get(decision.subject.id)
+                    if verdicts is None:
+                        continue
+                    confirmed_per_subject[index] += [
+                        (candidate, verdict.reason)
+                        # `verdict is None` is "the model did not answer",
+                        # which is not a yes.
+                        for candidate, verdict in zip(decision.undecided, verdicts, strict=True)
+                        if verdict is not None and verdict.same
+                    ]
+
+        # Phase 3 -- emit, serially, re-resolving as we go.
+        #
+        # `GraphStore.resolve_entity_ids` cannot see a merge emitted earlier
+        # in *this* pass: the graph is a read model, updated only by a
+        # projection replaying the log, and `resolve_many` never runs one.
+        # So staleness within the pass is tracked here, locally, as each
+        # event lands -- `in_pass_alias_of` maps an id absorbed during this
+        # call to the id it was absorbed into. Staleness from *before* the
+        # pass (an earlier call, a concurrent writer) is still caught by
+        # `self._graph.resolve_entity_ids`, which is why both are consulted.
+        events: list[EntitiesMerged] = []
+        in_pass_alias_of: dict[EntityId, EntityId] = {}
+        for decision, confirmed in zip(banded, confirmed_per_subject, strict=True):
+            if not confirmed:
+                continue
+            fresh = await self._still_mergeable(decision, confirmed, in_pass_alias_of)
+            if fresh is None:
+                continue
+            event = await self._emit(decision, fresh)
+            if event is not None:
+                events.append(event)
+                for merged_id in event.merged_entity_ids:
+                    in_pass_alias_of[merged_id] = event.canonical_entity_id
+        return events
+
+    async def _still_mergeable(
+        self,
+        decision: _Banded,
+        confirmed: list[tuple[ScoredCandidate, str]],
+        in_pass_alias_of: dict[EntityId, EntityId],
+    ) -> list[tuple[ScoredCandidate, str]] | None:
+        """`confirmed` minus anything an earlier emit in this pass consumed.
+
+        `None` when the subject itself has been merged away, which drops the
+        whole decision -- see `resolve_many` for why that is a skip rather
+        than a retry.
+
+        Checks two things, because they catch different windows: the graph
+        (staleness from before this pass began) and `in_pass_alias_of`
+        (staleness from an emit earlier in this same pass, which the graph
+        cannot see -- see `resolve_many`).
+        """
+        subject = decision.subject
+        ids = [subject.id, *(candidate.entity.id for candidate, _ in confirmed)]
+        canonical = await self._graph.resolve_entity_ids(ids, subject.tenant_id)
+
+        def is_alias(entity_id: EntityId) -> bool:
+            return canonical[entity_id] != entity_id or entity_id in in_pass_alias_of
+
+        if is_alias(subject.id):
+            return None
+        return [
+            (candidate, reason)
+            for candidate, reason in confirmed
+            if not is_alias(candidate.entity.id)
+        ]
 
     async def _resolved_subject(self, subject: Entity) -> Entity:
         """`subject`, or the entity now standing for it if it was itself merged away.

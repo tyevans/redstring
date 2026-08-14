@@ -149,3 +149,17 @@ class MergeAdjudicator(Protocol):
         those positions and keeps the length.
         """
         ...
+
+    async def adjudicate_many(
+        self, work: Sequence[tuple[Entity, Sequence[ScoredCandidate]]]
+    ) -> list[list[AdjudicationVerdict | None]]:
+        """One verdict list per entry in `work`, same order, same length.
+
+        `resolve_many` calls this rather than `adjudicate` in a loop: the
+        whole reason it exists is to batch across subjects, and a caller
+        that fanned `adjudicate` out itself would be back to one model call
+        per subject regardless of what this method could do. A subject with
+        no candidates gets `[]` and keeps its slot -- the caller re-pairs by
+        position.
+        """
+        ...
