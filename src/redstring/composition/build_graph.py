@@ -99,6 +99,7 @@ if TYPE_CHECKING:
     from redstring.domain.entity import Entity
     from redstring.domain.ids import EntityId, TenantId
     from redstring.domain.merge_strategy import PropertyMergePolicy
+    from redstring.domain.similarity import FeatureWeights
     from redstring.domain.source import SourceDocument
     from redstring.events.document import DocumentExtracted
     from redstring.events.merge import EntitiesMerged, MergeUndone
@@ -740,6 +741,7 @@ class Consolidator:
         snapshot_store: SnapshotStore | None = None,
         vector_store: VectorStore | None = None,
         use_graph_signal: bool = True,
+        weights: FeatureWeights | None = None,
         merge_policy: PropertyMergePolicy | None = None,
     ) -> None:
         """Wire a consolidator over `store`.
@@ -761,6 +763,30 @@ class Consolidator:
                 This is the expensive feature (one `get_relationships_for`
                 per subject and per candidate); turning it off is a stated
                 trade rather than a silent degradation.
+            weights: What each similarity feature is worth to the default
+                finder. `use_graph_signal` decides whether a feature is
+                computed at all; this decides what it counts for once it is,
+                and the difference matters because **a computed `0.0` is not
+                a missing feature**. `combined_score` renormalises over the
+                features that are *present*, so a graph score of `0.0` stays
+                in the denominator and drags the mean, while an absent one
+                does not.
+
+                That is the knob a cross-document corpus needs. Two documents
+                can name the same entity while describing different
+                neighbourhoods, and the graph feature then honestly reports
+                `0.0` -- a true statement about neighbourhoods, used as
+                evidence about identity. Under the defaults it caps such a
+                pair: a name at `CONTAINMENT_CEILING` and a perfect embedding
+                reach `0.5(0.85) + 0.3(1.0) + 0.2(0.0) = 0.725`, below
+                `LOW_SIMILARITY`, so the pair is rejected without ever being
+                adjudicated and no embedding can rescue it.
+
+                Supplying weights that discount the graph feature is the
+                supported answer, and it is deliberately a caller's decision:
+                whether neighbourhood disagreement is evidence depends on
+                whether the corpus is one document or many, which the library
+                cannot know.
             merge_policy: How a merge reconciles the canonical entity's
                 fields -- `description`, `properties` and `external_ids`. The
                 default keeps every canonical value.
@@ -775,7 +801,10 @@ class Consolidator:
             merge_policy=merge_policy,
         )
         self._default_finder = CandidateFinder(
-            store, vector_store=vector_store, use_graph_signal=use_graph_signal
+            store,
+            vector_store=vector_store,
+            weights=weights,
+            use_graph_signal=use_graph_signal,
         )
         self._durable = event_store is not None
 

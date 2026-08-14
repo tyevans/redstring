@@ -19,7 +19,7 @@ So each test below reads the *store* after the call, not the returned event.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from eventsource.adapters.memory import InMemoryEventStore, InMemorySnapshotStore
@@ -28,6 +28,7 @@ from redstring import (
     Consolidator,
     Entity,
     ExtractionMethod,
+    FeatureWeights,
     InMemoryGraphStore,
     Provenance,
     Relationship,
@@ -473,3 +474,102 @@ class TestTheStoresTheCallerSupplies:
 
         with pytest.raises(TypeError):
             await Consolidator(store).resolve(ada, None, None, 0.92)  # type: ignore[misc]
+
+
+class TestFeatureWeights:
+    """`weights` on the constructor, and the deployment shape that needs it.
+
+    `use_graph_signal` already exists so a caller can decline the graph
+    feature's cost. `weights` is the same knob one notch finer: keep the
+    feature, decide what it is worth. Without it, changing a weight means
+    constructing a `CandidateFinder` by hand and passing it to every call,
+    which is a lot of ceremony for one number and leaves `Consolidator`'s own
+    default finder unreachable.
+    """
+
+    @staticmethod
+    def _isolated_pair(tenant_id):
+        """A title-qualified duplicate whose neighbourhoods genuinely disagree.
+
+        This is the shape a cross-document corpus actually produces, and the
+        one that motivated the parameter. Both entities have edges, so the
+        graph feature is *present* and honestly `0.0` -- they share no
+        neighbour name. `_graph_feature` returns `None` only when neither side
+        has neighbours, which is not this case.
+
+        Under the default weights the arithmetic caps the pair below
+        `LOW_SIMILARITY` no matter how good the other evidence is: containment
+        puts the name feature at `CONTAINMENT_CEILING` (0.85), and
+        `0.5(0.85) + 0.3(1.0) + 0.2(0.0)` is `0.725` against a floor of `0.75`.
+        A perfect embedding cannot rescue it -- the embedding would have to
+        exceed 1.0.
+        """
+        grant = entity(tenant_id, "Dr. Grant")
+        bare = entity(tenant_id, "Grant")
+        return grant, bare
+
+    async def test_the_default_weights_reject_a_title_alias_whose_neighbours_disagree(
+        self, store, tenant_id
+    ):
+        """The problem, pinned before the fix so the fix is observable."""
+        grant, bare = self._isolated_pair(tenant_id)
+        theirs = entity(tenant_id, "Sattler")
+        ours = entity(tenant_id, "Malcolm")
+        await store.upsert_entities([grant, bare, theirs, ours])
+        await store.upsert_relationships(
+            [edge(tenant_id, grant.id, theirs.id), edge(tenant_id, bare.id, ours.id)]
+        )
+
+        assert await Consolidator(store).resolve(grant) is None
+
+    async def test_weights_that_discount_the_graph_let_the_same_pair_through(
+        self, store, tenant_id
+    ):
+        """The fix, on the identical graph -- only the weights differ.
+
+        Asserted as a merge rather than a band, because with the graph feature
+        weighted to zero the pair scores exactly `CONTAINMENT_CEILING` on the
+        name alone, and no adjudicator is wired here. `resolve` rejects the
+        band without one, so a merge is only reachable if the caller's weights
+        actually took effect.
+        """
+        grant, bare = self._isolated_pair(tenant_id)
+        theirs = entity(tenant_id, "Sattler")
+        ours = entity(tenant_id, "Malcolm")
+        await store.upsert_entities([grant, bare, theirs, ours])
+        await store.upsert_relationships(
+            [edge(tenant_id, grant.id, theirs.id), edge(tenant_id, bare.id, ours.id)]
+        )
+
+        consolidator = Consolidator(
+            store, weights=FeatureWeights(name=1.0, embedding=0.0, graph=0.0)
+        )
+        report = await consolidator.resolve(grant, high=0.85)
+
+        assert report is not None
+        assert report.affected_entity_ids == (bare.id,)
+
+    async def test_omitting_weights_is_the_library_default(self, tenant_id):
+        """No behaviour change for every existing caller.
+
+        Two *separate* stores, because the first `resolve` merges the pair and
+        a second consolidator over the same store would then find nothing left
+        to merge -- agreement produced by the first call's side effect rather
+        than by the weights being equivalent.
+        """
+
+        async def outcome(weights):
+            fresh = InMemoryGraphStore()
+            # Pinned, not `uuid4()`: the assertion compares which id was
+            # absorbed across two runs, so random ids would compare unequal
+            # whatever the weights did.
+            ada = entity(tenant_id, "Ada Lovelace", entity_id=UUID(int=1))
+            same = entity(tenant_id, "Ada Lovelace", entity_id=UUID(int=2))
+            await fresh.upsert_entities([ada, same])
+            consolidator = (
+                Consolidator(fresh) if weights is None else Consolidator(fresh, weights=weights)
+            )
+            report = await consolidator.resolve(ada)
+            return None if report is None else report.affected_entity_ids
+
+        assert await outcome(None) == await outcome(FeatureWeights())
