@@ -2,9 +2,12 @@
 
 Three signals, deliberately independent, because they fail in different places:
 
-- **name** -- `string_similarity`, Jaro-Winkler over normalized names. Catches
-  typos and inflections, and is fooled by two different people with the same
-  name.
+- **name** -- `string_similarity`, the better of Jaro-Winkler and a capped
+  token overlap over normalized names. Jaro-Winkler catches typos and
+  inflections; the overlap term catches a name qualified by a title or
+  epithet, which Jaro-Winkler's prefix bonus punishes hardest. Both are
+  fooled by two different people with the same name, which is what the
+  adjudication band is for.
 - **embedding** -- not computed here. It comes from `VectorStore.search`,
   already on the port's `0..1` scale, because computing it needs an embedding
   provider and a store; `combined_score` takes it as a number.
@@ -48,19 +51,79 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Hashable
 
 
+#: The most a token-containment match alone may score.
+#:
+#: Chosen against the two thresholds in `consolidation.policy`, and the
+#: relation between the three is the whole safety argument:
+#:
+#: ```
+#: LOW_SIMILARITY (0.75)  <=  CONTAINMENT_CEILING (0.85)  <  HIGH_SIMILARITY (0.92)
+#: ```
+#:
+#: **Strictly below `HIGH`** means containment buys a pair a model call, never
+#: a merge. That matters because containment is weak in one direction:
+#: `{smith}` is a subset of `{john, smith}` and scores 1.0, and "Smith" is a
+#: surname shared by millions. Those pairs must be adjudicated, and this
+#: ceiling is what guarantees they are rather than leaving it to whether the
+#: other two features happen to be present.
+#:
+#: **At or above `LOW`** means a containment match always reaches the band,
+#: rather than reaching it only when an embedding is available to carry it.
+#:
+#: The relation cannot be asserted in this module -- `domain` is the bottom
+#: layer and cannot import `consolidation` -- so it is pinned from the
+#: consolidation side, in `tests/unit/consolidation/test_banding_corpus.py`.
+CONTAINMENT_CEILING = 0.85
+
+
 def string_similarity(left: str, right: str) -> float:
-    """Jaro-Winkler similarity of two names, on `0..1`.
+    """How alike two names are, on `0..1`. The better of two signals.
 
     Both sides are normalized first, so casing and whitespace do not count as
-    differences -- `"Ada  LOVELACE"` and `"ada lovelace"` are the same name and
-    score `1.0`.
+    differences -- `"Ada  LOVELACE"` and `"ada lovelace"` are the same name
+    and score `1.0`.
 
-    Symmetric, and `1.0` exactly when the normalized names are equal. Both
-    properties are checked in the test module; neither is free, because
-    Jaro-Winkler's prefix bonus is applied to whichever string is passed first
-    in some implementations.
+    ## Why this is a maximum of two measures
+
+    Jaro-Winkler alone is prefix-weighted, which penalises hardest the alias
+    shape natural-language text produces most: a name qualified by a leading
+    title, honorific or epithet. `"Lord Voldemort"` against `"Voldemort"`
+    scores `0.437`, `0.519` and `0.578` for `"Dr. Grant"/"Grant"`,
+    `"President Bartlet"/"Bartlet"` and
+    `"Professor Albus Dumbledore"/"Dumbledore"` -- none of which can reach the
+    adjudication band however strong the other features are. The score
+    collapses as the qualifier grows relative to the name it qualifies, so a
+    one-word epithet like `"Lord Voldemort"/"Voldemort"` survives at `0.770`
+    and everything longer does not. Even the survivors clear the floor by
+    hundredths, and a pair at `0.770` needs an embedding of `0.717` just to
+    stay where it is -- so a mediocre second feature deletes it.
+
+    Token containment answers exactly that case and nothing else: it is
+    `0.0` for two names sharing no whole word, so `max` leaves Jaro-Winkler
+    in place everywhere it was already right. Capping the containment term at
+    `CONTAINMENT_CEILING` is what keeps a subset match from merging unasked;
+    see that constant.
+
+    A fourth *feature* was rejected rather than this: `combined_score`
+    renormalizes over the features present, so adding one dilutes the other
+    three for every existing caller and moves every score in the corpus.
+    Strengthening the name feature moves only the pairs the name feature was
+    wrong about.
+
+    ## The two properties this has always had, and still has
+
+    Symmetric -- `max` of two symmetric measures, and `overlap_coefficient`
+    divides by `min`, so argument order does not matter. (Not free:
+    Jaro-Winkler's prefix bonus is applied to whichever string comes first in
+    some implementations.)
+
+    Exactly `1.0` iff the normalized names are equal. The containment term is
+    capped strictly below `1.0`, so only Jaro-Winkler can reach it.
     """
-    return jellyfish.jaro_winkler_similarity(normalize_name(left), normalize_name(right))
+    normalized_left, normalized_right = normalize_name(left), normalize_name(right)
+    jaro_winkler = jellyfish.jaro_winkler_similarity(normalized_left, normalized_right)
+    containment = overlap_coefficient(name_tokens(normalized_left), name_tokens(normalized_right))
+    return max(jaro_winkler, CONTAINMENT_CEILING * containment)
 
 
 def name_tokens(name: str) -> frozenset[str]:
