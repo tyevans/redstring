@@ -15,11 +15,63 @@ from redstring.domain.similarity import (
     SimilarityFeatures,
     combined_score,
     graph_similarity,
+    name_tokens,
+    overlap_coefficient,
     string_similarity,
 )
 
 #: Non-empty text, since a name on an `Entity` cannot be blank.
 names = st.text(min_size=1, max_size=30).filter(lambda value: value.strip())
+
+
+def test_name_tokens_splits_the_normalized_name_on_whitespace():
+    assert name_tokens("Lord  VOLDEMORT") == frozenset({"lord", "voldemort"})
+
+
+def test_name_tokens_of_a_single_word_is_one_token():
+    assert name_tokens("Voldemort") == frozenset({"voldemort"})
+
+
+def test_name_tokens_deduplicates_repeated_words():
+    """A set, not a list: "New York, New York" is two distinct tokens.
+
+    Stated because the overlap coefficient divides by `min(|A|, |B|)`, so a
+    repeated token in a multiset would inflate the denominator and quietly
+    lower every score involving a name that repeats a word.
+    """
+    assert name_tokens("New York New York") == frozenset({"new", "york"})
+
+
+def test_overlap_coefficient_of_a_subset_is_one():
+    assert overlap_coefficient({"voldemort"}, {"lord", "voldemort"}) == 1.0
+
+
+def test_overlap_coefficient_is_symmetric():
+    assert overlap_coefficient({"lord", "voldemort"}, {"voldemort"}) == 1.0
+
+
+def test_overlap_coefficient_of_disjoint_sets_is_zero():
+    assert overlap_coefficient({"tom", "riddle"}, {"voldemort"}) == 0.0
+
+
+def test_overlap_coefficient_divides_by_the_smaller_set():
+    """`2/3`, not `2/4`: the divisor is `min`, which is what makes a subset 1.0."""
+    assert overlap_coefficient(
+        {"university", "of", "oxford"}, {"university", "of", "cambridge", "college"}
+    ) == pytest.approx(2 / 3)
+
+
+def test_overlap_coefficient_of_an_empty_set_is_zero():
+    """Nothing is known about one side, which must not read as perfect agreement.
+
+    The same reasoning as `graph_similarity`'s two-empty-sets case in this
+    module's docstring: the mathematically conventional answer for a vacuous
+    containment is 1.0, and 1.0 here would drag a merge over a threshold on
+    the strength of an unparseable name.
+    """
+    assert overlap_coefficient(set(), {"voldemort"}) == 0.0
+    assert overlap_coefficient({"voldemort"}, set()) == 0.0
+    assert overlap_coefficient(set(), set()) == 0.0
 
 
 class TestStringSimilarity:

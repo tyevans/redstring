@@ -63,6 +63,46 @@ def string_similarity(left: str, right: str) -> float:
     return jellyfish.jaro_winkler_similarity(normalize_name(left), normalize_name(right))
 
 
+def name_tokens(name: str) -> frozenset[str]:
+    """The distinct words of a normalized name.
+
+    **Not `domain.tokenize.tokenize`, deliberately.** That function exists for
+    BM25 and drops stopwords; reusing it would couple which entities merge to
+    the lexical retrieval tokenizer, so a change made for ranking reasons
+    would silently move merge decisions. The two tokenizers answer different
+    questions and are allowed to disagree.
+
+    A `frozenset` rather than a list, because `overlap_coefficient` divides by
+    the size of the smaller side: in a multiset, "New York, New York" would
+    have three tokens and every overlap involving it would be understated.
+    """
+    return frozenset(normalize_name(name).split())
+
+
+def overlap_coefficient(left: Collection[Hashable], right: Collection[Hashable]) -> float:
+    """`|A n B| / min(|A|, |B|)`, on `0..1`.
+
+    The overlap coefficient rather than Jaccard, and the difference is the
+    entire point: Jaccard of `{voldemort}` against `{lord, voldemort}` is
+    `0.5`, because the extra token counts against the match. Here a title or
+    epithet added to a name is not evidence against it, so the divisor is the
+    smaller set and a subset scores `1.0`.
+
+    That asymmetry of *meaning* does not make the function asymmetric --
+    `min` is symmetric, so argument order does not matter.
+
+    **An empty side is `0.0`, not `1.0`.** Every set vacuously contains the
+    empty set, so the conventional answer is 1.0; here that would let a name
+    that normalizes to nothing score a perfect match against everything. The
+    same call this module's docstring makes for `graph_similarity`: no
+    evidence is not perfect agreement.
+    """
+    left_set, right_set = set(left), set(right)
+    if not left_set or not right_set:
+        return 0.0
+    return len(left_set & right_set) / min(len(left_set), len(right_set))
+
+
 def graph_similarity(left: Collection[Hashable], right: Collection[Hashable]) -> float:
     """Jaccard overlap of two entities' neighbour sets, on `0..1`.
 
