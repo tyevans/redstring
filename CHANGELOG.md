@@ -61,6 +61,29 @@ one number for every qualified form, whatever its length.
   merge are the next pass's work. `concurrency` bounds phase 1's wavefronts;
   see the how-to for what it does and does not bound in phase 2.
 
+- **`weights` on `Consolidator`.** What each similarity feature is worth to
+  its default candidate finder. `use_graph_signal` already decided whether the
+  graph feature is *computed*; this decides what it counts for once it is, and
+  the two are not the same knob — **a computed `0.0` is not a missing
+  feature**. `combined_score` renormalises over the features that are present,
+  so a graph score of `0.0` stays in the denominator and drags the mean, while
+  an absent one drops out.
+
+  This is what a cross-document corpus needs. Two documents can name the same
+  entity while describing different neighbourhoods, and the graph feature then
+  honestly reports `0.0` — a true statement about neighbourhoods, being used
+  as evidence about identity. Under the default weights that caps the pair:
+  a name at `CONTAINMENT_CEILING` and a *perfect* embedding reach
+  `0.5(0.85) + 0.3(1.0) + 0.2(0.0) = 0.725`, below `LOW_SIMILARITY`, so the
+  pair is rejected without ever being adjudicated and no embedding can rescue
+  it. Passing weights that discount the graph feature is the supported answer,
+  and it stays a caller's decision because whether neighbourhood disagreement
+  is evidence depends on whether the corpus is one document or many.
+
+  Previously this meant constructing a `CandidateFinder` by hand and passing
+  it to every call, which left `Consolidator`'s own default finder
+  unreachable.
+
 ### Documentation
 
 - **`docs/how-to/run-a-corpus-consolidation-pass.md`** — when to run a pass,
