@@ -261,6 +261,43 @@ class TestResolve:
         assert await store.resolve_entity_ids([twin.id], tenant_id) == {twin.id: twin.id}
 
 
+class TestResolveMany:
+    async def test_resolve_many_returns_a_report_per_merge_and_folds_each_into_the_store(
+        self, store, tenant_id
+    ):
+        """The composed guarantee: events emitted *and* the graph updated.
+
+        Assert the store, not just the reports -- `Consolidator`'s whole
+        reason to exist over `ConsolidationService` is that it runs the
+        projection, and a report list is identical whether or not it did.
+        """
+        ada = entity(tenant_id, "Ada Lovelace")
+        ada_twin = entity(tenant_id, "Ada Lovelace")
+        babbage = entity(tenant_id, "Charles Babbage")
+        babbage_twin = entity(tenant_id, "Charles Babbage")
+        await store.upsert_entities([ada, ada_twin, babbage, babbage_twin])
+
+        reports = await Consolidator(store).resolve_many([ada, babbage])
+
+        assert len(reports) == 2
+        assert await store.resolve_entity_ids([ada_twin.id], tenant_id) == {ada_twin.id: ada.id}
+        assert await store.resolve_entity_ids([babbage_twin.id], tenant_id) == {
+            babbage_twin.id: babbage.id
+        }
+
+    async def test_resolve_many_with_one_subject_matches_resolve(self, store, tenant_id):
+        """The composed path agrees with the single-subject one it generalises."""
+        ada = entity(tenant_id, "Ada Lovelace")
+        twin = entity(tenant_id, "Ada Lovelace")
+        await store.upsert_entities([ada, twin])
+
+        reports = await Consolidator(store).resolve_many([ada])
+
+        assert len(reports) == 1
+        assert reports[0].affected_entity_ids == (twin.id,)
+        assert await store.resolve_entity_ids([twin.id], tenant_id) == {twin.id: ada.id}
+
+
 class TestTheStoresTheCallerSupplies:
     """A store passed to `Consolidator` must be the one it uses.
 

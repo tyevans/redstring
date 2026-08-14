@@ -876,6 +876,45 @@ class Consolidator:
             return None
         return await self._project_merge(event)
 
+    async def resolve_many(
+        self,
+        subjects: Sequence[Entity],
+        *,
+        finder: CandidateSource | None = None,
+        adjudicator: MergeAdjudicator | None = None,
+        concurrency: int = 1,
+        limiter: CallLimiter | None = None,
+        high: float = HIGH_SIMILARITY,
+        low: float = LOW_SIMILARITY,
+    ) -> list[ConsolidationReport]:
+        """`resolve` over a whole corpus, in one decide-then-emit pass.
+
+        One report per merge actually emitted, in emit order -- shorter than
+        `subjects` whenever a subject decided nothing, which is the common
+        case.
+
+        Each report's graph effects are already applied: this folds every
+        event through the projection as it goes, exactly as `resolve` does for
+        one.
+
+        See `ConsolidationService.resolve_many` for the phase structure and
+        for why a subject merged away mid-pass is skipped rather than retried.
+        Two knobs are worth knowing before raising them: `concurrency` bounds
+        both how many subjects are scored at once and how many adjudication
+        batches are in flight, and `limiter` is the endpoint ceiling -- pass a
+        shared one to bound a backend serving more than this pass.
+        """
+        events = await self._service.resolve_many(
+            subjects,
+            finder=finder if finder is not None else self._default_finder,
+            adjudicator=adjudicator,
+            concurrency=concurrency,
+            limiter=limiter,
+            high=high,
+            low=low,
+        )
+        return [await self._project_merge(event) for event in events]
+
     async def undo(self, *, tenant_id: TenantId, merge_event_id: UUID) -> ConsolidationReport:
         """Reverse the merge that `merge_event_id` recorded.
 
