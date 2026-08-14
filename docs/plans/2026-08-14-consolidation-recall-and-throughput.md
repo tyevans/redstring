@@ -172,11 +172,25 @@ emit half (serialized per tenant).
 
 A two-phase pass:
 
-**Phase 1 — decide, concurrently.** For each subject, block, score, and band.
-Bounded by a `CallLimiter`, so model calls respect the same endpoint ceiling
-extraction does. Produces a decision per subject and touches no store.
+**Phase 1 — score and band, concurrently.** For each subject, block, score, and
+band. This makes **no model calls at all** — `CandidateFinder.candidates` is
+store reads only — so the resource being bounded here is the graph and vector
+adapters' connection pools, not the inference endpoint. It is bounded by
+`concurrency` directly, in wavefronts, the way `ExtractionPipeline` batches
+chunks.
 
-**Phase 2 — emit, serially.** Walk the decisions in a deterministic order and
+**Phase 2 — adjudicate, in cross-subject batches.** A barrier between phases 1
+and 3: every subject's ambiguous pairs are known before any batch is filled,
+which is what allows a batch to span subjects. This is the only phase that
+talks to the model, so this is where the `CallLimiter` goes, admitting at most
+`concurrency` batches at once.
+
+The barrier is a real cost — no subject's emit starts until every subject has
+been scored — and it is accepted rather than engineered around, because
+without it a batch can only be filled from subjects that happen to have
+finished, which is the per-subject batching this phase exists to replace.
+
+**Phase 3 — emit, serially.** Walk the decisions in a deterministic order and
 emit each. Before emitting, re-resolve the subject and its absorbed entities
 through `resolve_entity_ids`: an earlier emit in this same pass may have made
 one of them an alias. A subject that has been merged away is skipped, not
@@ -200,6 +214,13 @@ the tail, and ids stay out of the prompt. Coalescing across subjects means the
 mapping from batch position back to `(subject, candidate)` is now
 non-trivial — that mapping is where this feature will break, and it is what to
 test hardest.
+
+**Two subjects can confirm the same candidate**, and one can confirm the other.
+Both fall out of phase 3's re-resolution rather than needing their own
+mechanism: the first emit wins, and the second finds its candidate — or its own
+subject — is now an alias and drops it. Both need a test, and neither is
+exotic: a symmetric scorer makes the mutual case the *normal* outcome for a
+genuine duplicate pair when both entities are in the subject list.
 
 ### The `CallLimiter` layering question
 
