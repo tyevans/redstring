@@ -1,8 +1,8 @@
 # Tune ingestion throughput
 
 `build_graph` takes two knobs that decide how long a document takes to
-ingest — `chunk_size` on the chunker and `concurrency` on the call itself.
-They interact, so tuning either alone gives the wrong answer.
+ingest — `default_chunk_size` on the chunker and `concurrency` on the call
+itself. They interact, so tuning either alone gives the wrong answer.
 
 This page gives you the arithmetic (which holds everywhere), the shape of the
 trade (which holds for any model), and one worked measurement (which holds for
@@ -25,13 +25,12 @@ and the results fold back in chunk order before the next batch starts. So:
 
 ```text
 calls in flight = min(concurrency, chunks remaining in the batch)
-chunks          ≈ len(document.text) / chunk_size
 ```
 
-A 33,000-character document at `chunk_size=12000` is **4 chunks**. Setting
-`concurrency=8` issues one batch of 4 — exactly what `concurrency=4` does. The
-two are the same run, and measuring them will show you a difference that is
-entirely noise.
+A 33,000-character document at `default_chunk_size=12000` is **4 chunks**.
+Setting `concurrency=8` issues one batch of 4 — exactly what `concurrency=4`
+does. The two are the same run, and measuring them will show you a difference
+that is entirely noise.
 
 **If raising `concurrency` did nothing, you are probably out of chunks.** Get
 more concurrency by making chunks *smaller*, not by raising the ceiling.
@@ -39,56 +38,69 @@ more concurrency by making chunks *smaller*, not by raising the ceiling.
 ```python
 from redstring import SlidingWindowChunker, build_graph
 
+chunker = SlidingWindowChunker(default_chunk_size=2000)
+
 report = await build_graph(
     document,
     provider=provider,
     store=store,
     tenant_id=tenant_id,
-    chunker=SlidingWindowChunker(chunk_size=2000),
+    chunker=chunker,
     concurrency=8,
 )
 ```
 
-Set `concurrency` to **your inference server's concurrent-request capacity**,
-not to an arbitrary number. Asking for more than the server serves does not
-fail — it queues, and a queue looks exactly like a slow GPU from the client
-side. The next section is how to tell those apart.
+### Ask the chunker for the chunk count; do not estimate it
 
-## Is it your server or your settings? Measure overlap
+It is tempting to estimate chunks as `len(text) / chunk_size`. **That is wrong
+by 28–47% in the ordinary case**, because the chunker advances by
+`chunk_size - overlap` and backs each break up to a paragraph, sentence or
+word boundary. On a 32,791-character document the formula gives 2.7 chunks at
+`default_chunk_size=12000`; the chunker produces 4.
 
-The one diagnostic worth computing is **overlap**: total time spent inside
-provider calls, divided by wall clock. It says how many calls were genuinely
-in flight on average.
-
-```text
-overlap = (sum of per-call durations) / wall clock
-```
-
-- **overlap ≈ 1.0** with `concurrency > 1` — nothing is running in parallel.
-  Either your server is configured for one request at a time, or you are out
-  of chunks (see the arithmetic above).
-- **overlap ≈ concurrency** — ideal, and you will not see it.
-- **overlap between 60% and 75% of `concurrency`** — normal. The calls do
-  overlap, but they share one GPU, so each one slows down as siblings join it.
-
-This is worth computing because the first case is *common* and is invisible in
-wall clock alone. A run against a single-slot server and a run against a
-saturated GPU both look like "concurrency didn't help".
-
-Today you have to time the calls yourself, by wrapping your `LlmProvider`:
+The error runs in the harmful direction: estimating low caps `concurrency`
+below what the document could actually use. Ask instead — it is exact and
+costs nothing:
 
 ```python
-class TimingProvider:
-    def __init__(self, inner):
-        self._inner, self.total_s = inner, 0.0
-
-    async def extract(self, text, schema, *, system_prompt=None):
-        start = time.monotonic()
-        try:
-            return await self._inner.extract(text, schema, system_prompt=system_prompt)
-        finally:
-            self.total_s += time.monotonic() - start
+chunks = chunker.chunk(document.text).total_chunks
+report = await build_graph(..., chunker=chunker, concurrency=min(slots, chunks))
 ```
+
+Set `concurrency` to **your inference server's concurrent-request capacity**,
+not to an arbitrary number. Asking for more than the server serves does not
+fail — it queues, and a queue is hard to tell from a slow GPU from the client
+side. The next section is what does and does not distinguish them.
+
+## Diagnosing "concurrency didn't help"
+
+Two different causes produce the same symptom, and one client-side measurement
+separates them from the third:
+
+1. **You are out of chunks** — see the arithmetic above. Check
+   `chunker.chunk(text).total_chunks` against your `concurrency`. This is the
+   most common cause and the easiest to rule out.
+2. **Your server serves fewer concurrent requests than you asked for.** Your
+   calls are queueing. Check the server's configuration directly — for
+   llama.cpp, the parallel-slots setting.
+3. **The GPU is genuinely saturated.** Nothing to do in the library.
+
+**A word of warning about a metric that looks like it separates these and does
+not.** It is natural to compute *overlap* — summed per-call duration divided
+by wall clock — and read it as "how many calls were really in flight". It is
+not that. Per-call duration measured client-side around the `await` includes
+time the request spent **queued** on the server, so a single-slot server
+serving eight queued requests still reports high overlap. In the measurements
+below, a server known to be serving one request at a time scored 1.61× and
+2.07×, and raising its slot count moved that figure by 0.09.
+
+What overlap *is* good for is confirming the wavefront is issuing concurrent
+calls at all: overlap pinned at ~1.0 with `concurrency > 1` means the batching
+is not happening, which points at cause 1.
+
+The signal that actually caught a misconfigured server was **per-call latency
+rising in proportion to `concurrency`** — 38.4s serial becoming 80.4s at K=4,
+i.e. four calls each taking four times as long, for no wall-clock gain.
 
 ## The trade: smaller chunks find more, until they start inventing
 
@@ -120,31 +132,40 @@ found 10% of the relationships that 21 calls over the same text did.
 
 ## One worked example
 
-`muse-glimmer-30b` behind llama-swap, 8 concurrent slots, one 32,819-character
+`muse-glimmer-30b` behind llama-swap, 8 concurrent slots, one 32,791-character
 Wikipedia article. Full detail, including what could not be measured, is in
 `bench/CONCURRENCY.md`; the baseline it is read against is `bench/BASELINE.md`.
 
-| `chunk_size` | `concurrency` | chunks | wall clock | entities | relationships |
+| `default_chunk_size` | `concurrency` | chunks | wall clock | entities | relationships |
 |---|---|---|---|---|---|
 | 3,000 | 1 | 14 | 332.7s | 209 | 276 |
 | 3,000 | 8 | 14 | 173.6s | 236 | 288 |
 | **2,000** | **8** | 21 | **166.4s** | **329** | **384** |
 | 1,500 | 8 | 28 | 260.6s | 504 | 497 |
-| 40,000 | 8 | 1 | 53.8s | 103 | 39 |
+| 40,000 | n/a (1 chunk) | 1 | 53.8s | 103 | 39 |
 
-Reading it:
+Reading it, against a **±12%** run-to-run noise floor measured from three
+repeats of the baseline:
 
 - **Concurrency was worth about 2×** (332.7s → 173.6s at the same chunk size).
-- **2,000 was the best configuration**: fastest measured, and richer than the
-  larger sizes.
-- **1,500 was past the floor.** Naming variants per entity rose from 0.38 to
-  0.50 — roughly half its "entities" were variants of another — and it was
-  *slower*, since per-call latency had stopped falling while the extra chunks
-  added another batch and twice the consolidation work.
+  A serial run needs one slot, so that comparison survives the server's slot
+  count changing between the two rows; a comparison between two *concurrent*
+  rows would not.
+- **2,000 was the best configuration**: tied with 3,000 on speed within noise,
+  and richer.
+- **1,500 was past the floor.** Naming variant pairs per entity rose from 0.38
+  to 0.50, and it was *slower* — per-call latency had stopped falling while
+  the extra chunks added another batch and half again as much consolidation
+  work.
 - **40,000 (one call, whole document) was the fastest and by far the worst.**
   103 entities joined by 39 relationships is a mostly disconnected graph.
   Entity count alone would have called this "a bit thinner" and been wrong,
   which is why relationship count is the number to watch.
+
+**No accuracy figure on this page is attributable to a chunk size.** The
+harness scores its graded corpus once per run at the default chunker, so
+precision and recall cannot be compared across the rows above. The quality
+column here is relationship count and variant pairs, both ungraded.
 
 ## Measuring your own
 
@@ -156,7 +177,8 @@ read as a good one.
 
 The method is short:
 
-1. Fix `concurrency` at your server's slot count.
+1. Fix `concurrency` at your server's slot count, capped by
+   `chunker.chunk(text).total_chunks`.
 2. Time a full ingest at two or three chunk sizes — start at 2,000 and 4,000.
 3. For each, record wall clock, entity count, **and relationship count**.
 4. Take the smallest chunk size whose relationship-per-entity ratio has not
@@ -166,9 +188,9 @@ The method is short:
 Two things to be careful about, both of which produce confident wrong answers:
 
 - **Run each configuration more than once.** Extraction against a real model
-  is not deterministic even at temperature 0; run-to-run variation of ±10% in
-  wall clock and ±15% in entity count is normal. A single run per arm cannot
-  distinguish a 10% improvement from weather.
+  is not deterministic even at temperature 0; run-to-run variation of ±12% in
+  wall clock and ±15% in entity count is normal on the rig above. A single run
+  per arm cannot distinguish a 10% improvement from weather.
 - **Change one thing at a time, including on the server.** Restarting your
   inference server with a different slot count midway through invalidates
   every comparison across that point. This is not hypothetical — it happened

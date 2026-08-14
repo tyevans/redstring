@@ -105,11 +105,12 @@ move.
 and the measurement says the trade is not the one that binds.** Widening the
 wavefront shortens the run at the cost of more chunks being mutually blind to
 each other's carryover within a batch. `bench/CONCURRENCY.md` now records the
-sweep: naming drift did not track `concurrency` in any readable way, and the
-drift that *is* measurable tracks **chunk size** instead — variant pairs per
-entity rise 0.29 → 0.38 → 0.50 as chunks shrink 3,000 → 2,000 → 1,500,
-because a smaller chunk means more boundaries for a name to drift across, not
-because a wider batch does.
+sweep, and it does not show that: naming drift did not track `concurrency` in
+any readable way. The drift that *is* measurable tracks **chunk size**
+instead, rising as chunks shrink — because a smaller chunk means more
+boundaries for a name to drift across, not because a wider batch does. The
+measurements are in that file rather than here, per
+`.claude/rules/recurring-defects.md` §5.
 
 The consequence that replaced it is arithmetic, and callers hit it first:
 **effective concurrency is `min(K, chunks in the batch)`**, so raising `K`

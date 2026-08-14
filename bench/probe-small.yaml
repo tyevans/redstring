@@ -2,10 +2,19 @@
 # original sweep config and has been treated as a floor ever since; nothing
 # measured says it is one.
 #
-# Two reasons to look down rather than up. Every graded and ungraded number so
-# far moves the same way -- 3000 beat 8000 beat 12000 on precision (0.71 vs
-# 0.46 at the ends) and on entity count (209 vs 166) -- so the quality trend
-# points here. And smaller chunks help the *speed* axis too, which is unusual
+# Two reasons to look down rather than up. Entity and relationship counts both
+# fall as chunks grow -- 209 -> 166 entities and 276 -> 141 relationships from
+# 3000 to 12000 -- so the (ungraded) quality trend points here.
+#
+# **This comment previously cited precision "0.71 vs 0.46 at the ends" as the
+# trend, and that was a misreading**: those are the entity and relationship
+# precision of a *single* graded run at the default chunker, not two chunk
+# sizes compared. The harness scores its graded corpus once per invocation and
+# does not vary it by chunk size, so no accuracy number here is attributable
+# to one. See BACKLOG B-BENCH-9. The counts above are real and are what this
+# probe is actually reasoning from.
+#
+# And smaller chunks help the *speed* axis too, which is unusual
 # for a quality knob: 1500 gives roughly 28 chunks against 14, which is more
 # work to spread across the server's slots, at a per-call latency that should
 # fall with the input size. What made 3000 x K=8 the best configuration

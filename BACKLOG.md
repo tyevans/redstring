@@ -1413,29 +1413,41 @@ count in the results file this time — the harness does not capture it, which
 is the deeper gap and is why an hour of runs produced numbers that cannot be
 placed beside each other.
 
-### B-BENCH-9. Nothing below 3,000 characters has ever been graded for accuracy
+### B-BENCH-9. No accuracy measurement has ever been attributable to a chunk size
 
-`bench/CONCURRENCY.md` recommends **2,000** characters, and the graded corpus
-(`tests/accuracy/corpus.yaml`, five hand-graded documents) has only ever run
-at 3,000, 8,000 and 12,000 — the three sizes in the original sweep config.
-2,000's quality claim therefore rests on two *ungraded* proxies: relationship
-count (384 against 3,000's 288) and variant pairs per entity (0.38 against
-0.29). Neither is a precision or recall measurement.
+`bench/CONCURRENCY.md` recommends **2,000** characters, and no graded run in
+this repository can support or refute that, because the harness does not vary
+the graded corpus by chunk size at all. `scripts/benchmark.py`'s
+`run_accuracy(provider)` takes no chunk size, is called **once** after the
+whole sweep, and scores `tests/accuracy/corpus.yaml` at `build_graph`'s
+default chunker; `bench/report.py` writes one top-level `accuracy` object per
+report. So `BASELINE.md`'s precision figures — 0.71 and 0.46 — are the
+**entity** and **relationship** precision of a single run. They are not 3,000
+against 12,000.
 
-This matters more than the usual "more data would be nice", because the two
-proxies disagree about direction. Relationship count says 2,000 extracts more;
-variant pairs per entity says it also manufactures more duplicate identities.
-Both can be true, and which one dominates is exactly what a graded run would
-settle. `BASELINE.md` measured precision falling from 0.71 to 0.46 between
-3,000 and 12,000 — the trend that made looking *below* 3,000 worth doing —
-but a trend with no point below its own floor cannot say where it turns.
+**This entry previously said the opposite, and that misreading spread.** Four
+documents on this branch cited "precision falling from 0.71 to 0.46 between
+3,000 and 12,000" as a measured trend, and one of them used it as a stated
+reason to reject 12,000. It is not a trend; it is two different metrics from
+one run, which look like one when placed side by side. All five sites are
+corrected, and the shape is worth remembering: the page that spells out what
+the numbers are (`BASELINE.md`) is the page every other page cites, so a
+misreading at the citation propagated without ever contradicting its source.
 
-**What closing it takes.** Run `scripts/benchmark.py` with `graded: true` and
-`chunk_size: [1500, 2000, 3000]`. Note the graded corpus documents are short,
-so at 2,000 characters several become single-chunk runs — which measures a
-different thing than the long document does, and is the reason this is not a
-five-minute job. `tests/accuracy/corpus.py` says at the top why a change in
-those figures is noise until it is large.
+So 2,000's quality claim rests entirely on two *ungraded* proxies, and they
+disagree in direction: relationship count says it extracts more (384 against
+3,000's 288), while variant pairs per entity say it also manufactures more
+duplicate identities (0.38 against 0.29). Which dominates is exactly what a
+graded run would settle and nothing here can.
+
+**What closing it takes.** Two pieces, and the first is the real work:
+`run_accuracy` has to accept a chunk size and be called per sweep point, with
+`bench/report.py` carrying accuracy per point rather than once per report.
+Then run `chunk_size: [1500, 2000, 3000]` with `graded: true`. Note the graded
+corpus documents are short, so at 2,000 characters several become single-chunk
+runs — which measures a different thing than the long document does, and is
+why this is not a five-minute job. `tests/accuracy/corpus.py` says at the top
+why a change in those figures is noise until it is large.
 
 ---
 

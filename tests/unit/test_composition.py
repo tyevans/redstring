@@ -269,6 +269,12 @@ class TestTheClassifierCallSharesTheCeiling:
         )
         explicit_enters = built[-1].enters
 
+        # The difference alone is invariant to the *pipeline's* limiter use: a
+        # `build_graph` whose `ExtractionPipeline` had stopped passing calls
+        # through the shared limiter would count 1 and 0, and the difference
+        # would still be exactly one. Pinning the explicit arm above zero is
+        # what stops this test passing for that second, unrelated defect.
+        assert explicit_enters >= 1
         assert auto_enters == explicit_enters + 1
 
 

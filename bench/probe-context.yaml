@@ -1,15 +1,20 @@
-# What a 131k-token context buys, if anything. The corpus document is 32,819
+# What a 131k-token context buys, if anything. The corpus document is 32,791
 # characters -- roughly 8,200 tokens -- so the model's context was never the
 # binding constraint at any chunk size this harness has run. Two points:
 #
-#   24000 -> 2 chunks, one batch at K=2
+#   24000 -> 3 chunks (not 2 -- chunks overlap and breaks snap back to
+#            sentence boundaries, so len/chunk_size always understates)
 #   40000 -> 1 chunk, the whole document in a single call, no chunking, no
 #            carryover between chunks, and therefore no wavefront at all
 #
 # **The measurement to distrust here is the fast one.** Every step up in chunk
-# size so far has cost extraction quality in the same direction: 3000 scored
-# precision 0.71 on the graded corpus against 12000's 0.46, and entity counts
-# fell 209 -> 166 across the same move. A single-call run should be the
+# size so far has cost extraction quality in the same direction: entity counts
+# fell 209 -> 166 and relationships 276 -> 141 from 3000 to 12000. (An earlier
+# version of this comment also cited precision "0.71 against 0.46" as a
+# per-chunk-size result. It is not one -- those are the entity and
+# relationship precision of a single graded run at the default chunker, and
+# the harness never varies the graded corpus by chunk size. See BACKLOG
+# B-BENCH-9.) A single-call run should be the
 # fastest number this harness has produced and, if that trend holds, the
 # thinnest. Wall clock alone cannot recommend it.
 #

@@ -316,16 +316,24 @@ async def build_graph(
             parameter, which this both configures and bounds jointly with.
 
             **Raising this past the document's chunk count does nothing.**
-            What runs at once is `min(concurrency, chunks in the batch)`, and
-            the chunk count is roughly `len(document.text) / chunk_size`, so a
+            What runs at once is `min(concurrency, chunks in the batch)`, so a
             document that splits into four chunks issues four calls whether
             this is `4` or `40`. The two knobs therefore cannot be tuned
             independently: getting more concurrency out of a fixed document
-            means smaller chunks, not a larger ceiling. There is a floor on
-            that -- smaller chunks manufacture more naming variants, since
-            identity is derived from the name and every boundary is a chance
-            to drift -- and `docs/how-to/tune-ingestion-throughput.md` carries
-            the measurements and how to take your own.
+            means smaller chunks, not a larger ceiling.
+
+            Get that chunk count from `chunker.chunk(text).total_chunks`
+            rather than estimating it as `len(text) / chunk_size` -- the
+            chunker advances by `chunk_size - overlap` and backs each break up
+            to a paragraph, sentence or word boundary, so the estimate ran
+            28-47% low at every size the benchmark measured, which caps
+            `concurrency` below what the document could have used.
+
+            There is a floor on shrinking chunks -- smaller ones manufacture
+            more naming variants, since identity is derived from the name and
+            every boundary is a chance to drift -- and
+            `docs/how-to/tune-ingestion-throughput.md` carries the
+            measurements and how to take your own.
 
     Returns:
         A `GraphBuildReport`. `report.event is None` means this document was
