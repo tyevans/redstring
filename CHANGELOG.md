@@ -12,6 +12,49 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [0.9.1] - 2026-08-14
+
+One parameter, and the reason it could not wait for 0.10.0: 0.9.0's recall
+improvement does not reach a cross-document corpus without it.
+
+`string_similarity` gained token containment in 0.9.0, so a title-qualified
+name scores `CONTAINMENT_CEILING` instead of collapsing. But `combined_score`
+renormalises over the features that are **present**, and a graph score of
+`0.0` is present — two documents can name the same entity while describing
+different neighbourhoods, and the graph feature then honestly reports no
+overlap. That zero stays in the denominator, so the pair reaches
+`0.5(0.85) + 0.3(1.0) + 0.2(0.0) = 0.725` against a floor of `0.75`: rejected,
+never adjudicated, and no embedding can rescue it — the embedding would have
+to exceed `1.0`.
+
+`use_graph_signal` was the only lever and it is the wrong one; it decides
+whether the feature is *computed*, not what a computed zero counts for.
+
+### Added
+
+- **`weights` on `Consolidator`.** What each similarity feature is worth to
+  its default candidate finder. `use_graph_signal` already decided whether the
+  graph feature is *computed*; this decides what it counts for once it is, and
+  the two are not the same knob — **a computed `0.0` is not a missing
+  feature**. `combined_score` renormalises over the features that are present,
+  so a graph score of `0.0` stays in the denominator and drags the mean, while
+  an absent one drops out.
+
+  This is what a cross-document corpus needs. Two documents can name the same
+  entity while describing different neighbourhoods, and the graph feature then
+  honestly reports `0.0` — a true statement about neighbourhoods, being used
+  as evidence about identity. Under the default weights that caps the pair:
+  a name at `CONTAINMENT_CEILING` and a *perfect* embedding reach
+  `0.5(0.85) + 0.3(1.0) + 0.2(0.0) = 0.725`, below `LOW_SIMILARITY`, so the
+  pair is rejected without ever being adjudicated and no embedding can rescue
+  it. Passing weights that discount the graph feature is the supported answer,
+  and it stays a caller's decision because whether neighbourhood disagreement
+  is evidence depends on whether the corpus is one document or many.
+
+  Previously this meant constructing a `CandidateFinder` by hand and passing
+  it to every call, which left `Consolidator`'s own default finder
+  unreachable.
+
 ## [0.9.0] - 2026-08-14
 
 Consolidation gets two things: a name scorer that stops throwing away the most
@@ -806,6 +849,7 @@ First release.
   accurate are different properties (`BACKLOG.md` B12).
 
 [Unreleased]: https://github.com/tyevans/redstring/compare/v0.8.0...HEAD
+[0.9.1]: https://github.com/tyevans/redstring/releases/tag/v0.9.1
 [0.9.0]: https://github.com/tyevans/redstring/releases/tag/v0.9.0
 [0.8.0]: https://github.com/tyevans/redstring/releases/tag/v0.8.0
 [0.7.0]: https://github.com/tyevans/redstring/releases/tag/v0.7.0
