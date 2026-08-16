@@ -1,89 +1,25 @@
-## Session: 2026-08-09T20-36-45Z
+## Session: 2026-08-15T00-17-49Z
 
 ### Commits
-7fe718f Merge remote-tracking branch 'origin/main' into ddd-review-2
-4cfa0a3 Retract the constrained-decoding verdict, and decline gleaning on evidence
-148c7dc Stop extraction thinking, and get precision back as well as time
-ba21d61 Make the four id names distinct to a type checker
-cf97e4a Finish the capability sweep, give every port a lifetime, and gate both (#34)
-3f1ac69 Finish the capability sweep, give every port a lifetime, and gate both (#35)
-993a1c5 Measure constrained decoding, and record that it lost
-9377c7b Enforce the grading rule that constrained decoding made load-bearing
-666fd0d Record what the carryover measurement showed, and what it does not
-10b3caa Let a domain schema constrain the decode, when the caller asks
+de1b08a Merge pull request #59 from tyevans/chore/version-0.9.1
+bb9070f Release 0.9.1: the knob 0.9.0's recall fix needs to reach a real corpus
+c146ee8 Let a caller say what the graph feature is worth, not only whether to compute it
+b3a6fc7 Merge pull request #58 from tyevans/chore/version-0.9.0
+89a12ea Open 0.9.0, and move the consolidation release notes out of 0.8.0
+7b8a261 Merge pull request #57 from tyevans/chore/version-0.8.0
+70b8098 Say what concurrency actually bounds, and file what nothing measures
+cf0832d Record the decide-then-emit pass and amend the two ADRs it touches
+c98d690 Rename resolve_many single-subject test to describe its actual assertion
+760ff3f Rename a resolve_many test to match what it actually pins
 
 ### Working Tree
- M .claude/rules/definition-of-done.md
- M .claude/rules/recurring-defects.md
- M .claude/rules/testing.md
- M .claude/skills/migrating-modules-to-rings/SKILL.md
- M .claude/skills/migrating-modules-to-rings/sweep.sh
- D .claude/tackline/memory/sessions/2026-08-04T23-42-03Z.md
- D .claude/tackline/memory/sessions/2026-08-05T22-24-50Z.md
- D .claude/tackline/memory/sessions/2026-08-05T22-24-55Z.md
+ D .claude/tackline/memory/sessions/2026-08-09T20-01-30Z.md
+ D .claude/tackline/memory/sessions/2026-08-09T20-36-44Z.md
+ D .claude/tackline/memory/sessions/2026-08-09T20-36-45Z.md
  M .claude/tackline/memory/sessions/last.md
- M .claude/tackline/memory/sessions/pre-compact.md
- M CLAUDE.md
- M docs/contributing.md
- M docs/how-to/harden-model-calls.md
- M docs/how-to/implement-a-store-adapter.md
- M docs/how-to/index-documents.md
- M docs/how-to/run-integration-and-mutation-suites.md
- M docs/how-to/use-the-pgvector-store.md
- M docs/index.md
- M docs/plans/ring-migration.md
- M docs/reference/neo4j-graph-store.md
- M docs/reference/quality-gates.md
- M docs/superpowers/plans/2026-08-07-chunk-lexical-channel.md
- M docs/superpowers/plans/2026-08-07-chunk-store.md
- M memory/sessions/pre-compact.md
- M pyproject.toml
- M src/redstring/__init__.py
- M src/redstring/chunks/adapters/__init__.py
- M src/redstring/graph/adapters/__init__.py
- M src/redstring/llm/cache/__init__.py
- M src/redstring/ports/cache.py
- M src/redstring/ports/chunk_store.py
- M src/redstring/ports/vector_store.py
-RM tests/compliance/__init__.py -> src/redstring/testing/__init__.py
-R  tests/compliance/cache.py -> src/redstring/testing/cache.py
-RM tests/compliance/chunk_store.py -> src/redstring/testing/chunk_store.py
-RM tests/compliance/embedding_provider.py -> src/redstring/testing/embedding_provider.py
-RM tests/compliance/graph_store.py -> src/redstring/testing/graph_store.py
-RM tests/compliance/lifetime.py -> src/redstring/testing/lifetime.py
-RM tests/compliance/strategies.py -> src/redstring/testing/strategies.py
-RM tests/compliance/vector_store.py -> src/redstring/testing/vector_store.py
- M src/redstring/vector/adapters/__init__.py
- M src/redstring/vector/adapters/pgvector.py
- M tests/conftest.py
- M tests/integration/chunks/test_postgres_store.py
- M tests/integration/graph/test_neo4j_store.py
- M tests/integration/llm/test_live_embeddings.py
- M tests/integration/llm/test_redis_cache.py
- M tests/integration/test_wheel_contents.py
- M tests/integration/vector/test_pgvector_store.py
- M tests/unit/chunks/test_capability_segregation.py
- M tests/unit/chunks/test_compliance_coverage.py
- M tests/unit/chunks/test_memory_store.py
- M tests/unit/consolidation/test_graph_capability_segregation.py
- M tests/unit/graph/test_compliance_coverage.py
- M tests/unit/graph/test_memory_store.py
- M tests/unit/llm/test_cache_capabilities.py
- M tests/unit/llm/test_fake_embedding_provider.py
- M tests/unit/llm/test_langchain_embedding_provider.py
- M tests/unit/llm/test_memory_cache.py
- M tests/unit/llm/test_redis_cache_decoding.py
- M tests/unit/test_dependencies_stay_confined.py
- M tests/unit/test_hypothesis_deadline_policy.py
- M tests/unit/test_library_reads_no_environment.py
- M tests/unit/test_nosec_markers_are_live.py
- M tests/unit/test_temporal_surface.py
- M tests/unit/test_the_adapter_guide_names_every_compliance_suite.py
- M tests/unit/vector/test_capability_segregation.py
- M tests/unit/vector/test_compliance_coverage.py
- M tests/unit/vector/test_memory_store.py
-?? .claude/tackline/memory/sessions/2026-08-09T20-00-22Z.md
-?? .claude/tackline/memory/sessions/2026-08-09T20-01-30Z.md
-?? .claude/tackline/memory/sessions/2026-08-09T20-36-44Z.md
-?? .claude/tackline/memory/sessions/2026-08-09T20-36-45Z.md
-?? tests/unit/test_the_testing_surface_is_gated.py
+ D memory/sessions/pre-compact.md
+?? .claude/tackline/memory/sessions/2026-08-13T01-18-27Z.md
+?? .claude/tackline/memory/sessions/2026-08-13T01-44-28Z.md
+?? .claude/tackline/memory/sessions/2026-08-13T04-54-48Z.md
+?? .claude/tackline/memory/sessions/2026-08-15T00-17-49Z.md
+?? .superpowers/

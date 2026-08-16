@@ -12,6 +12,30 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **`Chunk.metadata` now reaches `StoredChunk.metadata`.**
+  `redstring.extraction.corpus.stored_chunks` built every passage without
+  passing it through, and that function is the only way anything reaches the
+  chunk corpus — `index_documents` builds every passage there, and the
+  extraction pipeline builds the rest. `StoredChunk` documents the field as
+  the extension point, so a caller could set it on the type and could not get
+  a chunker's value into it.
+
+  What that cost is specific: a chunker prepending a synthetic header to each
+  passage had nowhere to record how many characters of the stored text were
+  header, so a reader could not subtract them back off. The workaround left is
+  to not chunk that way, or to store the header with no way to account for it.
+
+  The fold over repeated passages keeps its existing rule: a document
+  repeating a passage verbatim yields one record, and the **first**
+  occurrence's metadata wins, as its offsets already do. Merging the two dicts
+  would give one record metadata describing an occurrence whose offsets were
+  discarded. The value is deep-copied out of the `ChunkingResult`, which is
+  still live while the remaining passages are built.
+
 ## [0.9.1] - 2026-08-14
 
 One parameter, and the reason it could not wait for 0.10.0: 0.9.0's recall

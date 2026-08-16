@@ -28,6 +28,7 @@ do anyway.
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
 from redstring.domain.chunk import StoredChunk, chunk_id
@@ -87,8 +88,27 @@ def stored_chunks(
     content-addressed id, and `ChunkStore.upsert_many` keys on `(tenant_id,
     id)` -- so passing both would silently drop one, and which one depends on
     the adapter's write order. They are folded here instead: the first
-    occurrence's offsets win, and the entity links are the union, because an
-    entity found in either occurrence was found in that text.
+    occurrence's offsets and metadata win, and the entity links are the union,
+    because an entity found in either occurrence was found in that text.
+    Merging the two metadata dicts was the alternative, and it is wrong for
+    the reason the offsets already settle: it would produce one record whose
+    metadata described an occurrence whose offsets were discarded.
+
+    ## `Chunk.metadata` is carried through to `StoredChunk.metadata`
+
+    `StoredChunk` documents that field as the extension point, and this
+    function is the only way anything reaches it -- `index_documents` builds
+    every passage in the corpus here, and the extraction pipeline builds the
+    rest. Dropping it left a caller whose chunker records something about a
+    passage (which characters of it are a synthetic header, say, so retrieval
+    can subtract them back off) with no way to store what it had computed.
+
+    It is **deep-copied**, not passed by reference. Pydantic rebuilds the
+    outer dict while validating the field, so a top-level edit does not cross
+    over on its own -- but the values are `Any` and it does not descend into
+    them, and structured metadata is the case the extension point invites.
+    The `ChunkingResult` is still live while the remaining passages are built,
+    so a shared nested value is a stored record that a later step can edit.
     """
     links = entity_ids_by_index if entity_ids_by_index is not None else {}
     #: The chunk each id was first seen at, and the union of its links. Both
@@ -118,6 +138,7 @@ def stored_chunks(
             start_char=chunk.start_char,
             end_char=chunk.end_char,
             entity_ids=found[ident],
+            metadata=deepcopy(chunk.metadata),
         )
         for ident, chunk in first.items()
     ]
