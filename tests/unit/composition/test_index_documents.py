@@ -21,6 +21,7 @@ from redstring import FakeLlmProvider, InMemoryGraphStore, SourceDocument, build
 from redstring.chunks.adapters.memory import InMemoryChunkStore  # exported in Task 10
 from redstring.composition import IndexReport, index_documents
 from redstring.extraction.chunkers import SlidingWindowChunker
+from redstring.extraction.chunking import Chunk, ChunkingResult
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
 
 TENANT_ID = uuid4()
@@ -550,3 +551,73 @@ class TestTenants:
         assert [c.id for c in mine] == [c.id for c in theirs]
         assert {c.tenant_id for c in mine} == {TENANT_ID}
         assert {c.tenant_id for c in theirs} == {other}
+
+
+class _AnnotatingChunker:
+    """A chunker that records something about each passage it cuts.
+
+    The shape a caller reaches for when a chunk's stored text is not the whole
+    story: here, how many leading characters are a synthetic header the
+    chunker prepended, so a reader can subtract them back off. Nothing in
+    redstring interprets the key -- that is what makes it the extension point.
+    """
+
+    @property
+    def chunker_type(self) -> str:
+        return "annotating"
+
+    def chunk(
+        self,
+        text: str,
+        max_chunk_size: int | None = None,
+        overlap_size: int | None = None,
+    ) -> ChunkingResult:
+        sentences = [part.strip() + "." for part in text.split(".") if part.strip()]
+        chunks = []
+        offset = 0
+        for index, sentence in enumerate(sentences):
+            # Deliberately a different width per chunk: one metadata dict
+            # shared by every passage would still read as plausible.
+            header = "[" + "#" * (index + 1) + "] "
+            chunks.append(
+                Chunk(
+                    text=header + sentence,
+                    chunk_index=index,
+                    start_char=offset,
+                    end_char=offset + len(sentence),
+                    metadata={"synthetic_prefix_chars": len(header)},
+                )
+            )
+            offset += len(sentence)
+        return ChunkingResult(
+            chunks=chunks,
+            total_chunks=len(chunks),
+            original_length=len(text),
+            chunking_method="annotating",
+        )
+
+
+class TestChunkMetadataReachesTheCorpus:
+    async def test_what_the_chunker_recorded_is_stored_with_the_passage(self) -> None:
+        """The one path into the chunk corpus has to carry it.
+
+        `index_documents` makes no model call and so has nowhere else to put
+        this: a caller that cannot store what its chunker computed has to
+        recompute it at read time from text that no longer says how it was
+        assembled.
+        """
+        corpus = InMemoryChunkStore(dimension=4)
+
+        await index_documents(
+            [document("Ada was first. Grace was second.")],
+            store=corpus,
+            tenant_id=TENANT_ID,
+            chunker=_AnnotatingChunker(),
+        )
+
+        stored = sorted(await corpus.get_by_source("doc-1", TENANT_ID), key=lambda c: c.chunk_index)
+        assert [chunk.text for chunk in stored] == [
+            "[#] Ada was first.",
+            "[##] Grace was second.",
+        ]
+        assert [chunk.metadata["synthetic_prefix_chars"] for chunk in stored] == [4, 5]
