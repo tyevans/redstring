@@ -4,19 +4,29 @@
 
 Accepted.
 
-Amends [ADR 0017](0017-the-embedding-provider-port.md), which settles that
-embedding is a port declaring its own dimension — that decision **stands**, and
-this widens the port by one method. It also **extends 0017's identity
-argument**: 0017 records that changing embedding model means a new store,
-because two models' vectors are not comparable even at equal dimensions. The
-task prefix belongs to that identity, and the section below says so in the
-terms a caller will meet it.
+**Amends [`0017` the embedding provider port](0017-the-embedding-provider-port.md).**
+`EmbeddingProvider` gains `embed_query`, and both adapters gain a document and
+a query task prefix. 0017's decisions stand — the port is still separate from
+`LlmProvider`, still narrow, still declares its dimension on both sides, and
+`embed_query` carries the same batch and positional contract `embed` does.
 
-Relates to [ADR 0002](0002-two-store-ports.md) and
-[ADR 0012](0012-no-ann-index-in-a-multi-tenant-vector-store.md), which
-**stand**. Relates to [ADR 0038](0038-the-chunks-vector-lives-on-the-chunk.md),
-whose chunk vectors are corpus vectors and are unaffected in shape; what
+**It also extends 0017's identity argument**, which is the half a reader is
+most likely to need: 0017 records that changing embedding model means a new
+store, because two models' vectors are not comparable even at equal
+dimensions. The *task prefix belongs to that identity*, so changing a document
+prefix has the same consequence as changing the model. "A prefixed corpus and
+an unprefixed one are not comparable" below states it in the terms a caller
+will meet it.
+
+[`0012` no ANN index in a multi-tenant vector store](0012-no-ann-index-in-a-multi-tenant-vector-store.md)
+**stands**. [`0038` the chunk's vector lives on the chunk](0038-the-chunks-vector-lives-on-the-chunk.md)
+**stands**: chunk vectors are corpus vectors and are unaffected in shape; what
 changes is which text is sent to produce them.
+
+**[`0002` two store ports](0002-two-store-ports.md) stands, and is not
+amended** — deliberately, because it is the ADR a reader is sent to for this
+rule and it does not contain it. See "Where the new-store rule actually lives"
+below.
 
 ## Context
 
@@ -144,6 +154,30 @@ side, so changing `query_prefix` invalidates nothing and takes effect on the
 next query. It is still not free: a query prefix that does not match the
 document prefix the corpus was built with is the original defect, arriving from
 the other direction.
+
+### Where the new-store rule actually lives
+
+**The rule this ADR extends is not in ADR 0002, and following the citation
+chain is how anyone finds that out.** 0017 writes "ADR 0002 already records
+that changing embedding model means a new store, not an in-place change", and
+0002 records no such thing: it is about the two store ports, the absent
+`delete_entity`, and the compliance gates over both. The sentence's real home
+is `src/redstring/ports/vector_store.py`, restated in
+`src/redstring/domain/exceptions.py` and in 0017 itself.
+
+**So 0002 is not amended here**, and the temptation to amend it was real —
+this ADR extends a rule, a reader plainly needs to meet that rule, and 0002 is
+where a reader is pointed. Amending it would have written a decision about
+embedding comparability into the Status of an ADR that never made one, which is
+worse than the navigation problem it fixes: the ADRs are a historical record,
+and a page acquiring an amendment for a decision it does not contain makes the
+record wrong in a way no later reader can unpick.
+
+What is done instead: **0017's Status carries the amendment**, because 0017 is
+where the rule is actually argued; and 0002 gets a pointer saying the rule is
+not there and where it is, which is a correction to an inbound citation rather
+than a change to anything 0002 decided. The port docstring that repeated the
+mis-citation now names 0017.
 
 ### Provenance: the prefixes stay out of `model`
 
