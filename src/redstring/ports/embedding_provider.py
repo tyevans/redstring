@@ -70,8 +70,10 @@ is embedded, rather than after the API call has been paid for and pgvector has
 rejected the insert.
 
 The store is not the place to adapt: its dimension is fixed at DDL time, and
-ADR 0002 records that changing embedding model means a **new store**, because
-two models' vectors are not comparable even at equal dimensions.
+ADR 0017 records that changing embedding model means a **new store**, because
+two models' vectors are not comparable even at equal dimensions. ADR 0043
+extends that to the task prefix, which is part of a model's identity for this
+purpose.
 """
 
 from __future__ import annotations
