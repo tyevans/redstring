@@ -1091,8 +1091,12 @@ rowid and none is needed. Note it is not `read_category`, which selects the
 same events and orders them by storage time.
 
 One thing neither does. Scoping by *stream* is still not a thing `replay`
-offers — `GlobalEventFeed` has no `read_category`, and see `BACKLOG.md` B68
-for why that is deliberately still open. And `last_position` is then the last
+offers — `GlobalEventFeed` has no `read_category`. Taking it would mean `replay`
+accepting a narrower port than the one it documents, or accepting both and
+branching, and nobody has asked for it — a caller wanting one stream can pass
+`from_position`, a tenant and an aggregate type. It is upstream's call to make
+rather than this project's, which is why `BACKLOG.md` no longer carries it as
+an entry. And `last_position` is then the last
 position the *filtered* read reached, which is the one to checkpoint for a subsequent
 scoped run and **not** interchangeable with a whole-feed cursor.
 

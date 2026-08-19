@@ -315,7 +315,7 @@ decision record of its own, and the parsing one had nowhere else to go.
 
 - Inference cost is O(n²) in dated entities, bounded by `max_pairs`.
 - `Entity.temporal` round-trips through `InMemoryGraphStore` but has **not**
-  been verified against Neo4j (`BACKLOG` B53). If that adapter drops the field,
+  been verified against Neo4j (`BACKLOG` B48, which absorbed B53). If that adapter drops the field,
   every temporal query answers `[]` in production while every unit test passes.
   Check this first when temporal work resumes.
 - The deleted parser's `confidence`, `parse_method` and named eras were dropped

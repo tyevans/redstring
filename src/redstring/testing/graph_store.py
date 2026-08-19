@@ -191,7 +191,7 @@ class GraphStoreCompliance:
         draws one about half the time -- but only when the sampler happens to,
         and `max_examples` here is environment-tunable and lowered to 5 by
         mutation runs. So an adapter that dropped the field could pass a whole
-        run, which is what BACKLOG B53 is about: the Neo4j adapter stores it as
+        run, which is what BACKLOG B48 is about (as B53, folded in): the Neo4j adapter stores it as
         `temporal_json` and is correct by accident of implementation rather
         than by contract.
 
