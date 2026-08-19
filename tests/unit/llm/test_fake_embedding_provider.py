@@ -123,3 +123,92 @@ class TestFakeEmbeddingProviderSpecifics:
 
         assert caught.value.model == "fake/named"
         assert "fake/named" in str(caught.value)
+
+
+class TestPrefixedFakeEmbeddingProvider(EmbeddingProviderCompliance):
+    """The contract again with both prefixes set and different. See the
+    equivalent class in `test_langchain_embedding_provider.py` for why an
+    unprefixed fixture cannot stand in for this one."""
+
+    @pytest.fixture
+    def provider(self) -> EmbeddingProvider:
+        return FakeEmbeddingProvider(
+            document_prefix="search_document: ",
+            query_prefix="search_query: ",
+        )
+
+
+class TestFakeTaskPrefixes:
+    """A fake that accepted the prefixes and ignored them would be worse than
+    one that refused them: a caller's test of their own pipeline would pass
+    against wiring that never applies a prefix, which is exactly the silent
+    failure the port method exists to prevent.
+
+    Both prefixes are non-empty *and different* in every case below, for the
+    reason CLAUDE.md's failure-shape table gives: with them equal, an
+    implementation that swapped them is the same function.
+    """
+
+    async def test_the_two_sides_give_different_vectors_for_one_text(self):
+        provider = FakeEmbeddingProvider(
+            dimension=64,
+            document_prefix="search_document: ",
+            query_prefix="search_query: ",
+        )
+
+        [document] = await provider.embed(["Ada Lovelace"])
+        [query] = await provider.embed_query(["Ada Lovelace"])
+
+        assert document != query
+
+    async def test_a_prefix_actually_prefixes_rather_than_merely_varying(self):
+        """Pinned against the *unprefixed* provider, which is an oracle
+        independent of the code under test.
+
+        Asserting only that the two sides differ would pass for a fake that
+        salted each side with its method name and dropped the caller's prefix
+        entirely — the input on which a correct implementation and a useless
+        one agree. Embedding the already-concatenated string through a plain
+        provider is the only thing that says the prefix is the *text* it was
+        given.
+        """
+        plain = FakeEmbeddingProvider(dimension=64)
+        prefixed = FakeEmbeddingProvider(dimension=64, query_prefix="search_query: ")
+
+        [expected] = await plain.embed(["search_query: Ada Lovelace"])
+        [actual] = await prefixed.embed_query(["Ada Lovelace"])
+
+        assert actual == expected
+
+    async def test_the_document_prefix_is_the_one_embed_uses(self):
+        """The swap case. Fails if `embed` reaches for `query_prefix`."""
+        plain = FakeEmbeddingProvider(dimension=64)
+        prefixed = FakeEmbeddingProvider(
+            dimension=64,
+            document_prefix="search_document: ",
+            query_prefix="search_query: ",
+        )
+
+        [expected] = await plain.embed(["search_document: Ada Lovelace"])
+        [actual] = await prefixed.embed(["Ada Lovelace"])
+
+        assert actual == expected
+
+    async def test_the_prefixes_default_to_empty(self):
+        """No behaviour change for the many existing callers of this fake: the
+        two sides are one function until a prefix is asked for."""
+        provider = FakeEmbeddingProvider(dimension=64)
+
+        assert await provider.embed(["Ada"]) == await provider.embed_query(["Ada"])
+
+    async def test_fail_on_matches_the_callers_text_not_the_prefixed_one(self):
+        """A caller asking to fail on `"boom"` should not have to know what
+        this provider prepends -- and a `fail_on` matched against the prefixed
+        string would also fire on every text once someone set
+        `fail_on="search"`."""
+        provider = FakeEmbeddingProvider(fail_on="boom", query_prefix="search_query: ")
+
+        with pytest.raises(EmbeddingProviderError, match="boom"):
+            await provider.embed_query(["this one goes boom"])
+
+        assert len(await provider.embed_query(["harmless"])) == 1

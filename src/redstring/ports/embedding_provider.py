@@ -23,6 +23,31 @@ and forgetting to re-expand. The compliance suite checks it with inputs that
 differ from each other, because a suite that embeds `["a", "a", "a"]` cannot
 see a reordering.
 
+## Documents and queries are two sides, because modern models are asymmetric
+
+`embed` is the *corpus* side and `embed_query` is the *query* side, and the
+split is here rather than in a caller because the model asks for it.
+`nomic-embed-text-v1.5` wants `search_document: ` on stored text and
+`search_query: ` on a query; the BGE family wants an instruction on the query
+and nothing on the document. A port with one method cannot express that at
+all, so every call site has to remember to prepend a string — and a rule that
+holds only because nobody has broken it is `recurring-defects.md` §3.
+
+The two methods have the identical contract otherwise: batch, positional,
+one vector per input in order, empty input makes no request.
+
+**Getting it wrong is silent.** A corpus embedded without its prefix produces
+well-formed vectors that cluster sensibly and score plausibly; the only symptom
+is retrieval quality below what the model can do, which reads as "this model is
+mediocre". Nothing raises. That is the whole reason this is a port method a
+compliance suite can enforce rather than a wrapper a caller composes twice.
+
+See `docs/adr/0043-a-query-is-embedded-differently-from-a-document.md`, which
+also records the consequence for storage: **a corpus embedded with a prefix and
+the same corpus embedded without it are not comparable vectors**, so the prefix
+is part of the model's identity in ADR 0017's sense and changing it means a new
+store.
+
 ## Vectors are reproducible in direction, not bit-for-bit
 
 The same text embedded twice gives the *same* vector in the sense that matters
@@ -101,5 +126,27 @@ class EmbeddingProvider(Protocol):
                 texts. The second is worth its own mention because it is
                 silent otherwise: a caller zipping results onto entities would
                 attach the wrong vector to the wrong entity rather than fail.
+        """
+        ...
+
+    async def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+        """Embed each text as a *query*, in order.
+
+        Same contract as `embed` in every respect — batch, positional, empty
+        input makes no request, `len(result) == len(texts)`, each of length
+        `dimension` — and a different side of an asymmetric model. See the
+        module docstring for why the port carries both rather than leaving the
+        distinction to the caller.
+
+        Batch, and not single-string, even though a query is usually one text:
+        a caller expanding a question into several paraphrases, or scoring a
+        batch of evaluation queries, pays per *request*. Keeping the two
+        signatures identical also means a decorator over this port — a cache, a
+        retry budget, a call limiter — wraps both the same way.
+
+        For a symmetric model, or one used without prefixes, this is `embed`.
+
+        Raises:
+            EmbeddingProviderError: As `embed`.
         """
         ...

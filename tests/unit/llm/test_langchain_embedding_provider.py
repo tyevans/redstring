@@ -168,3 +168,165 @@ class TestLangChainEmbeddingProviderSpecifics:
         await provider.embed(("Ada", "Babbage"))
 
         assert client.calls == [["Ada", "Babbage"]]
+
+
+class TestPrefixedLangChainEmbeddingProvider(EmbeddingProviderCompliance):
+    """The whole contract again, with *both* prefixes set and different.
+
+    The unprefixed fixture above cannot see a prefix bug that breaks the port's
+    other promises — a prefix applied to an empty batch, or applied to the
+    batch rather than to each text — because with `""` on both sides those
+    mistakes are invisible. Running the same bodies against a configured
+    adapter is what makes the prefixing subject to the contract rather than
+    beside it.
+    """
+
+    @pytest.fixture
+    def provider(self) -> EmbeddingProvider:
+        return LangChainEmbeddingProvider(
+            StubEmbeddings(),  # type: ignore[arg-type]
+            model="stub/embed-v1",
+            dimension=DIMENSION,
+            document_prefix="search_document: ",
+            query_prefix="search_query: ",
+        )
+
+
+class TestTaskPrefixes:
+    """`nomic-embed-text-v1.5`'s asymmetry, and the shapes of getting it wrong.
+
+    Every case here needs the two prefixes to be **different, and both
+    non-empty**. That is CLAUDE.md's failure-shape table applied before the
+    fact: with `document_prefix == query_prefix` — `""` and `""` above all —
+    an implementation that swapped them, or that used the document prefix for
+    both, is the same function as the correct one and no assertion can tell
+    them apart.
+    """
+
+    @staticmethod
+    def _provider(client: StubEmbeddings) -> LangChainEmbeddingProvider:
+        return LangChainEmbeddingProvider(
+            client,  # type: ignore[arg-type]
+            model="stub/embed-v1",
+            dimension=DIMENSION,
+            document_prefix="search_document: ",
+            query_prefix="search_query: ",
+        )
+
+    async def test_the_document_prefix_reaches_the_client_verbatim(self):
+        """Asserted on what the client *received*, not on the vector.
+
+        A vector cannot distinguish a prefix from a typo in one: both give a
+        well-formed, plausible, wrong answer, which is the entire reason this
+        defect is silent in production. The text on the wire is the only
+        observable that can be wrong in a visible way.
+        """
+        client = StubEmbeddings()
+
+        await self._provider(client).embed(["Ada Lovelace", "Geneva"])
+
+        assert client.calls == [["search_document: Ada Lovelace", "search_document: Geneva"]]
+
+    async def test_the_query_prefix_reaches_the_client_verbatim(self):
+        client = StubEmbeddings()
+
+        await self._provider(client).embed_query(["Ada Lovelace", "Geneva"])
+
+        assert client.calls == [["search_query: Ada Lovelace", "search_query: Geneva"]]
+
+    async def test_the_two_sides_do_not_share_a_prefix(self):
+        """The case that fails if the prefixes are swapped, or if one is used
+        for both. Stated as a single assertion over both calls so that a
+        half-fix — correct documents, queries still on the document prefix —
+        cannot pass."""
+        client = StubEmbeddings()
+        provider = self._provider(client)
+
+        await provider.embed(["Ada Lovelace"])
+        await provider.embed_query(["Ada Lovelace"])
+
+        assert client.calls == [
+            ["search_document: Ada Lovelace"],
+            ["search_query: Ada Lovelace"],
+        ]
+
+    async def test_the_same_text_embeds_differently_on_the_two_sides(self):
+        """The consequence a caller actually feels, one level up from the wire.
+
+        This is also the comparability rule in miniature: the two vectors are
+        the same text, the same model and the same width, and they are not the
+        same point. A corpus written with one and searched with the other is
+        the defect ADR 0043 is about.
+        """
+        provider = self._provider(StubEmbeddings())
+
+        [document] = await provider.embed(["Ada Lovelace"])
+        [query] = await provider.embed_query(["Ada Lovelace"])
+
+        assert document != query
+
+    async def test_no_prefix_is_sent_for_an_empty_batch(self):
+        """A prefix applied to the batch rather than to each text would send
+        `["search_query: "]` for an empty input: one request, for nothing, that
+        most servers answer and some charge for."""
+        client = StubEmbeddings()
+        provider = self._provider(client)
+
+        assert await provider.embed([]) == []
+        assert await provider.embed_query([]) == []
+        assert client.calls == []
+
+    async def test_a_prefix_is_applied_once(self):
+        """Two calls with the same text must not accumulate.
+
+        An implementation prefixing a cached or retained list in place — or
+        prefixing in `embed` and again in the shared body — passes a single-call
+        test and doubles on the second.
+        """
+        client = StubEmbeddings()
+        provider = self._provider(client)
+
+        await provider.embed_query(["Ada Lovelace"])
+        await provider.embed_query(["Ada Lovelace"])
+
+        assert client.calls == [["search_query: Ada Lovelace"]] * 2
+
+    async def test_the_prefixes_default_to_empty(self):
+        """Not a behaviour change for an existing caller: an adapter built the
+        way every caller built one before this feature sends the text it was
+        given."""
+        client = StubEmbeddings()
+        provider = LangChainEmbeddingProvider(
+            client,  # type: ignore[arg-type]
+            model="stub/embed-v1",
+            dimension=DIMENSION,
+        )
+
+        await provider.embed(["Ada"])
+        await provider.embed_query(["Babbage"])
+
+        assert client.calls == [["Ada"], ["Babbage"]]
+
+    async def test_a_dimension_mismatch_is_still_caught_on_the_query_side(self):
+        """The checks after the call are shared, and this is the case that
+        proves it rather than assuming it from reading the body."""
+        provider = LangChainEmbeddingProvider(
+            StubEmbeddings(dimension=1536),  # type: ignore[arg-type]
+            model="stub/embed-v1",
+            dimension=768,
+            query_prefix="search_query: ",
+        )
+
+        with pytest.raises(EmbeddingProviderError, match="declared dimension 768"):
+            await provider.embed_query(["Ada"])
+
+    async def test_a_short_result_is_still_caught_on_the_query_side(self):
+        provider = LangChainEmbeddingProvider(
+            StubEmbeddings(count=1),  # type: ignore[arg-type]
+            model="stub/embed-v1",
+            dimension=DIMENSION,
+            query_prefix="search_query: ",
+        )
+
+        with pytest.raises(EmbeddingProviderError, match="asked for 2 embeddings and got 1"):
+            await provider.embed_query(["Ada", "Babbage"])

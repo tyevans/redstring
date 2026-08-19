@@ -17,6 +17,17 @@ Same division as `LangChainLlmProvider`, for the same reasons:
   import `langchain*`, enforced by `tests/unit/test_dependencies_stay_confined.py`
   rather than by the import contract, which sees first-party imports only.
 
+## Both sides go through `aembed_documents`
+
+`embed_query` does **not** call LangChain's `aembed_query`, and that is
+deliberate rather than an oversight. `aembed_query` takes a single string and
+returns a single vector; routing this port's batch method through it would mean
+one HTTP request per query text, which is precisely the optimisation
+`EmbeddingProvider` exists to keep reachable. `aembed_documents` is the batch
+entry point on the same client and hits the same endpoint. The asymmetry a
+modern embedding model wants lives in the *prefix*, not in which LangChain
+method is called.
+
 ## `dimension` is declared, not probed
 
 The constructor takes it. The alternative — embed a throwaway string at
@@ -46,7 +57,15 @@ if TYPE_CHECKING:
 class LangChainEmbeddingProvider:
     """Embeddings through any LangChain `Embeddings` client."""
 
-    def __init__(self, embeddings: Embeddings, *, model: str, dimension: int) -> None:
+    def __init__(
+        self,
+        embeddings: Embeddings,
+        *,
+        model: str,
+        dimension: int,
+        document_prefix: str = "",
+        query_prefix: str = "",
+    ) -> None:
         """Wrap an already-configured embeddings client.
 
         Args:
@@ -55,12 +74,23 @@ class LangChainEmbeddingProvider:
             dimension: The width this model produces. Declared rather than
                 probed -- see the module docstring -- and checked against
                 reality on the first `embed`.
+            document_prefix: Prepended to every text passed to `embed`.
+                `"search_document: "` for `nomic-embed-text-v1.5`; empty for
+                BGE, which asks for nothing on the corpus side.
+            query_prefix: Prepended to every text passed to `embed_query`.
+                `"search_query: "` for nomic; an instruction line for BGE.
+
+        Both prefixes default to empty, so an existing caller's behaviour is
+        unchanged. They are *not* folded into `model`: see
+        `docs/adr/0043-a-query-is-embedded-differently-from-a-document.md`.
         """
         if dimension <= 0:
             raise ValueError(f"dimension must be positive, got {dimension}")
         self._embeddings = embeddings
         self._model = model
         self._dimension = dimension
+        self._document_prefix = document_prefix
+        self._query_prefix = query_prefix
 
     @classmethod
     def openai_compatible(
@@ -71,12 +101,19 @@ class LangChainEmbeddingProvider:
         dimension: int,
         api_key: str = "not-needed",
         provider: str = "openai-compatible",
+        document_prefix: str = "",
+        query_prefix: str = "",
     ) -> LangChainEmbeddingProvider:
         """Build a provider against any OpenAI-compatible embeddings endpoint.
 
         Covers Ollama, llama.cpp, vLLM, LM Studio and OpenAI itself. The
         `api_key` default exists because most local servers require the field
         and ignore its value.
+
+        `document_prefix` and `query_prefix` are the asymmetric-model task
+        prefixes, threaded through unchanged -- most callers reach a model
+        through this factory rather than through `__init__`, so a prefix
+        available only on the constructor would be available to nobody.
 
         Raises:
             ImportError: `langchain-openai` is not installed; install
@@ -108,7 +145,13 @@ class LangChainEmbeddingProvider:
             api_key=api_key,
             check_embedding_ctx_length=False,
         )
-        return cls(client, model=f"{provider}/{model}", dimension=dimension)
+        return cls(
+            client,
+            model=f"{provider}/{model}",
+            dimension=dimension,
+            document_prefix=document_prefix,
+            query_prefix=query_prefix,
+        )
 
     @property
     def model(self) -> str:
@@ -119,18 +162,37 @@ class LangChainEmbeddingProvider:
         return self._dimension
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        """Embed each text, in order.
+        """Embed each text as a document, in order.
 
         The empty case short-circuits before touching the client. That is the
         port's contract and it is also self-defence: OpenAI-compatible servers
         reject an empty `input` array, so a caller who filtered a batch down to
         nothing would otherwise get a 400 from someone else's server.
         """
+        return await self._embed_all(texts, self._document_prefix)
+
+    async def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+        """Embed each text as a query, in order.
+
+        Routed through `aembed_documents`, not LangChain's `aembed_query`, and
+        the next reader will wonder: `aembed_query` takes one string and would
+        turn a batch into one request per text, breaking this port's batch
+        contract. Same client, same endpoint, different prefix -- see the
+        module docstring.
+        """
+        return await self._embed_all(texts, self._query_prefix)
+
+    async def _embed_all(self, texts: Sequence[str], prefix: str) -> list[list[float]]:
+        """The shared body of both sides.
+
+        One place applies a prefix, so it cannot be applied twice, and the
+        empty short-circuit is above it, so it is never applied to nothing.
+        """
         if not texts:
             return []
 
         try:
-            vectors = await self._embeddings.aembed_documents(list(texts))
+            vectors = await self._embeddings.aembed_documents([prefix + text for text in texts])
         except Exception as error:
             raise EmbeddingProviderError(
                 f"the embeddings client raised {type(error).__name__}: {error}",
