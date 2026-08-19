@@ -1557,8 +1557,11 @@ boundary entity is described two or three times, each time from a different
 sentence, and the fold keeps one of them.
 
 Microsoft GraphRAG does the opposite: it concatenates every mention's
-description and runs an LLM summarisation pass over the accumulation. That is
-the shape to copy, and it is **not** a change to `merging.py` — an
+description and runs an LLM summarisation pass over the accumulation --
+a `summarize_descriptions` workflow step, run *after* extraction and separate
+from it. (Its NLP indexing pipeline drops that step entirely, because
+mechanically-derived nodes have no descriptions to merge; see **B146**.) That
+is the shape to copy, and it is **not** a change to `merging.py` — an
 LLM call inside the fold would put a model call somewhere this library has
 deliberately kept model-free, and would make an order-independent pure
 function neither. The route back is a second projection or a consolidation-time
@@ -1569,6 +1572,222 @@ Not urgent: `description` is not read by anything that ranks or resolves
 today, so what is lost is text a caller might display. It becomes urgent the
 moment a description reaches an embedding or a lexical channel, because at
 that point the fold is silently choosing what the corpus can be searched by.
+
+### B142. There is no thematic layer: nothing aggregates above the entity
+
+`Retriever.retrieve` fuses a semantic and a lexical channel with RRF and
+returns `k` scored *entities*. That is the whole read surface. A caller asking
+"what are the main themes in this corpus" has nothing to call, and no
+composition of the existing ports answers it — `neighbors` walks from a known
+entity, and both retrieval channels rank individual entities against a query
+string.
+
+This is the capability Microsoft GraphRAG is actually known for, and it is two
+steps, not one:
+
+1. **Leiden clustering over the graph.** Pure algorithm over a `GraphStore`
+   read; no model call. GraphRAG runs the *identical* clustering step in both
+   its indexing pipelines — only the edge weights differ.
+2. **A community report per cluster**, which is a model call.
+
+The second step is where ADR 0023 changed the answer. GraphRAG's fast pipeline
+uses `create_community_reports_text`, which summarises a community **from its
+source text units** rather than from entity and relationship descriptions —
+because in that pipeline the descriptions are empty strings. We store passages
+now, so that variant is available to us and the description-quality problem in
+**B117** does not block it.
+
+The cost shape is the argument for building it at all: LLM calls are
+proportional to the number of *communities*, not the number of chunks. It is
+the one place in GraphRAG's design where a model call buys something that
+scales with the corpus's structure instead of its length.
+
+**Do not start with code.** This needs an ADR first, and it has to answer at
+least: which layer holds it (a new sibling in the band, or a projection —
+a community report is a judgement, so on ADR 0004's reasoning it emits an
+event rather than being computed on read); whether communities are persisted
+or recomputed; what a community *is* in a multi-tenant store; and whether
+clustering is a `GraphStore` capability (ADR 0016 says the port is
+capabilities, and "read the whole tenant's topology" is not one of the five)
+or a caller-side algorithm over `neighbors`. The last one is the sharpest:
+Leiden over a store that only exposes per-entity traversal is a very different
+cost than Leiden over a bulk read.
+
+Related: **B12** on why nothing here is measurable yet, and **B143**, whose
+frequency counter is an input to any weighting scheme this would use.
+
+Source: `graphrag/index/workflows/factory.py`,
+`create_community_reports_text`;
+https://microsoft.github.io/graphrag/index/methods/
+
+### B143. A node carries no mention count, and two open entries want one
+
+`merge_extractions` folds duplicate reports of one entity with
+`max(domain.preference)` and keeps no record of *how many* mentions there
+were. GraphRAG's node table carries `frequency` — in its NLP path, the number
+of text units the phrase appeared in — and uses it for pruning and for edge
+weighting.
+
+Two open entries need this and neither can proceed without it:
+
+- **B116** wants a frequency-weighted carryover bound, to stop a recency-only
+  window evicting the document's protagonist. Its own text says the count is
+  the cheap half ("the dict is already there").
+- **B144**'s local-MI weighting needs `p(x)` per node, which is a mention
+  count normalised over the corpus.
+
+The cheap half really is cheap — the fold already keys by `EntityId` and can
+count as it goes. The part that is not cheap is deciding **where the number
+lives**, and that decision should be made once for both callers rather than
+twice:
+
+- On `Entity` as a field, which makes it part of the domain model, part of
+  every event payload, and something two documents mentioning the same entity
+  have to agree about — i.e. it becomes a thing consolidation must merge.
+- On `PipelineResult` only, per run, which serves B116 (carryover is
+  within-document by construction) and does **not** serve B144 (which is a
+  corpus-level statistic).
+
+Those are different features wearing one name. Pick deliberately; the
+within-document counter is a day's work and the corpus-level one is a
+projection.
+
+### B144. Edges have a confidence but no corpus-level weight
+
+`Relationship` carries the confidence the model asserted for it and nothing
+about how the pair behaves across the corpus. GraphRAG's NLP path scores every
+edge by a local mutual information variant
+(`graphrag/graphs/edge_weights.py`):
+
+```
+p(x,y) = weight(x,y) / sum(weights)
+p(x)   = freq(x) / sum(freqs)
+weight = p(x,y) * log2( p(x,y) / (p(x) * p(y)) )
+```
+
+i.e. PMI damped by the joint probability, to blunt PMI's bias toward rare
+pairs. Weights can be negative for pairs co-occurring *less* than chance.
+
+**The reason this is filed separately from mechanical extraction is that it is
+independent of it.** The score is a function of co-occurrence counts, not of
+how the edges were produced, so it applies just as well to edges an LLM
+asserted. Two plausible uses: a second signal beside `confidence` for ranking,
+and a pruning criterion if edge volume ever becomes a problem (GraphRAG drops
+the bottom 40% by weight, and *must*, because its edges are quadratic in
+phrases per chunk — ours are not, so we have no forcing pressure yet).
+
+**Speculative, and should stay that way until something needs it.** Two things
+to know before building it. GraphRAG's own formula uses different populations
+for its two denominators — `p(x)` sums over the node table while `p(x,y)` sums
+over edge mass — so it is a heuristic score and not a calibrated MI; copying
+it verbatim copies that. And the counts it needs are corpus-level, which is
+**B143**'s expensive half, not its cheap one.
+
+An unwired `calculate_rrf_edge_weights` (reciprocal rank fusion of PMI rank
+and raw-weight rank, k=60) also exists in that file, which is worth knowing
+before anyone reinvents it here — we already use RRF in `Retriever`.
+
+### B145. Nothing cheap ever looks at a chunk, so a low-recall extraction is silent
+
+An extraction that finds three entities in a chunk naming forty distinct
+proper-noun phrases is indistinguishable, downstream, from a chunk that
+genuinely contained three. `PipelineResult` counts what was dropped and what
+failed to resolve; it counts nothing about what was *never proposed*.
+
+Mechanical noun-phrase extraction is the obvious instrument, and the value is
+in using it for **this** rather than for building the graph. GraphRAG's
+`extract_graph_nlp` costs no tokens and its default extractor is not even
+spaCy — TextBlob's `FastNPExtractor`, a regex POS tagger plus a CFG chunker.
+Normalisation is stopword removal, a `^[a-zA-Z0-9\-]+$` token filter, a
+15-character length cap, and `.upper()`; a phrase is kept only if it has a
+proper noun, more than one token, or a hyphenated compound.
+
+Two uses that do not touch the graph:
+
+- **A recall floor.** Report the count, or the ratio, on `PipelineResult`.
+  This is a diagnostic a caller can act on and a signal the accuracy suite
+  could grade against, and it requires agreeing on nothing about semantics.
+- **Consolidation candidates.** Blocking already needs cheap candidates
+  (`consolidation/candidates.py`), and noun phrases are cheap ones.
+
+**What must not happen is these phrases becoming `Relationship`s**, and the
+reasoning is the whole reason B146 says no. See it before extending this one.
+
+Costs to weigh before starting: a new third-party dependency (TextBlob+NLTK,
+or spaCy, neither of which auto-installs its corpora/models) confined to a new
+directory, which per CLAUDE.md means a row in
+`tests/unit/test_dependencies_stay_confined.py` **in the same commit**; and
+the fact that GraphRAG's extractor is English-only by construction, which the
+regex extractor's own source comment states.
+
+Source:
+`graphrag/index/operations/build_noun_graph/np_extractors/regex_extractor.py`
+
+### B146. Mechanical co-occurrence extraction was considered as a fast path and rejected
+
+Recorded because it will be proposed again — the cost numbers are compelling
+and the reason it does not apply here is not visible from them.
+
+GraphRAG's `--method fast` replaces the per-chunk LLM call with noun-phrase
+extraction plus co-occurrence. LazyGraphRAG, the same front end, reports
+indexing at **0.1%** of standard GraphRAG's cost. That is the pitch.
+
+What an edge means there is exactly this, from `_extract_edges`:
+
+```python
+for tu_id, titles in text_unit_to_titles.items():
+    if len(titles) < 2:
+        continue
+    for pair in combinations(sorted(set(titles)), 2):
+        edge_map[pair].append(tu_id)
+```
+
+**Undirected, untyped, unlabelled co-occurrence within one text unit.** No
+window narrower than the chunk, no sentence boundary, no dependency path, no
+predicate. `description` is written as the empty string.
+
+**This is tolerable there and not here, and the difference is not quality — it
+is what reads the graph.** In GraphRAG nothing consumes an individual edge:
+Leiden reads the topology and the report model reads the *source text*, so an
+edge's entire job is to put two phrases in one cluster. That is also why
+`.upper()` suffices as entity resolution — "Federal Reserve" and "Federal
+Reserve's" are distinct nodes and the clustering absorbs it.
+
+Here the graph is the product. An adapter satisfying `LlmProvider` would have
+to invent `ExtractedRelationship.relationship_type`, and a fabricated
+`"CO_OCCURS_WITH"` is not a local wart: it enters the event log permanently,
+and it is queryable through `get_relationships(relationship_type=...)` and
+`neighbors(relationship_types=...)` by every consumer. Our identity scheme
+makes the node side worse rather than better — `entity_id_for` hashes the
+normalised name, so GraphRAG's cruder normalisation would manufacture
+duplicate ids that `consolidation` then pays a model call each to resolve
+(`extraction/carryover.py` documents that cost for a much smaller cause).
+
+Two smaller points that also cut against it. Microsoft's own guidance calls
+the fast graph "quite a bit noisier" and "less directly relevant for use
+outside of GraphRAG". And our indexing cost is not currently understood well
+enough to trade graph quality for it: ADR 0031 found the bottleneck was the
+model *thinking*, not extraction, and got 5.7x plus better precision from one
+flag; `concurrency` is a second unmeasured lever defaulting to 1 for endpoint
+reasons rather than correctness ones.
+
+**The route back**, if this is reopened: it is not "plug an NLP extractor into
+`LlmProvider`". It is a decision that a typeless edge is a first-class kind of
+claim — a distinct relationship type with its own provenance
+`ExtractionMethod`, its own storage, and an argument about what consumers do
+when they meet one. That is an ADR, not an adapter.
+
+The parts of that pipeline worth having without this trade are **B142** (the
+clustering and report layer, which is what the cheap graph exists to feed) and
+**B145** (the extractor used as a diagnostic rather than a producer).
+
+Naming trap for whoever researches this next: circlemind's `fast-graphrag` is
+unrelated to Microsoft's `--method fast` despite the collision — it still
+LLM-extracts, and its "fast" is PageRank-based retrieval.
+
+Source: `graphrag/index/operations/build_noun_graph/build_noun_graph.py`;
+https://microsoft.github.io/graphrag/index/methods/ ;
+https://www.microsoft.com/en-us/research/blog/lazygraphrag-setting-a-new-standard-for-quality-and-cost/
 
 ### B92. Corpus statistics are recomputed per query, not maintained incrementally
 
