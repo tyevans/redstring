@@ -46,20 +46,33 @@ chunks" about which mention wins is a difference nobody would go looking for.
 That is not hypothetical: this module and `mapping.py` did disagree about
 relationships until fix round 1, because one used `setdefault` and the other a
 partial order over a field the id had already fixed.
+
+## The fold can also say how many chunks reported each entity
+
+`mention_counts` answers that, over the same `parts`. It is a separate
+function rather than a field on `MappedExtraction`, because on a *single*
+chunk's result the number is `1` for everything and would mean nothing; the
+quantity only exists across the fold.
+
+It is deliberately not a field on `Entity`. See that function's docstring for
+what a mention is and what it is not, and BACKLOG B143 for the corpus-level
+statistic that shares the name and is a projection rather than a counter.
 """
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from redstring.domain.preference import preference, relationship_preference
 from redstring.extraction.mapping import MappedExtraction
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
     from uuid import UUID
 
     from redstring.domain.entity import Entity
+    from redstring.domain.ids import EntityId
     from redstring.domain.relationship import Relationship
 
 
@@ -112,3 +125,46 @@ def merge_extractions(parts: Iterable[MappedExtraction]) -> MappedExtraction:
         self_loops=self_loops,
         undatable_relative=undatable,
     )
+
+
+def mention_counts(parts: Iterable[MappedExtraction]) -> Mapping[EntityId, int]:
+    """How many of `parts` reported each entity, keyed by id.
+
+    **A mention is one chunk's report of the entity, not one occurrence of its
+    name.** `map_extraction` has already deduplicated within a single chunk's
+    answer -- gleaning passes included, since those are folded into one
+    `Extraction` before mapping -- so a chunk contributes at most `1` however
+    many times the model listed the entity or the text spelled it. The number
+    is therefore "in how many chunks did this entity appear", which is the
+    same quantity GraphRAG's node `frequency` carries in its NLP path, and it
+    is **not** a term frequency: an entity named forty times in one chunk and
+    once in another counts `2`.
+
+    It follows that a count is bounded by the number of chunks whose model
+    call succeeded, and that it moves when the chunker's window size moves.
+    The number is per-run and per-document: two documents' counts are not
+    comparable, because the denominators are different documents split
+    different numbers of ways. A corpus-level statistic -- the one a
+    local-mutual-information edge weight would need -- is a different
+    quantity that would have to be summed by a projection over many runs; see
+    BACKLOG B143.
+
+    Entities the domain *refused* are absent rather than zero. A dropped row
+    never becomes an `Entity` and so never has an `EntityId` to key on;
+    `MappedExtraction.dropped_entities` is where it is counted.
+
+    Args:
+        parts: The same `MappedExtraction`s given to `merge_extractions`, in
+            any order -- addition is commutative, so the counts are too.
+
+    Returns:
+        A read-only mapping. Its key set is exactly the id set of
+        `merge_extractions(parts).entities`, and every value is `>= 1`: both
+        functions read `part.entities`, so an id reaches one iff it reaches
+        the other.
+    """
+    counts: dict[EntityId, int] = {}
+    for part in parts:
+        for entity in part.entities:
+            counts[entity.id] = counts.get(entity.id, 0) + 1
+    return MappingProxyType(counts)

@@ -58,6 +58,11 @@ could not be caught without a dotted import.
   returning `ChunkRetrievalResult`/`ScoredChunk` rather than
   `RetrievalResult`/`ScoredEntity`. `SemanticCandidate` is what
   `ChunkStore.semantic_candidates` hands back before fusion.
+- **Themes.** `summarize_themes` reads a whole tenant's graph, clusters it,
+  and asks the model for one report per cluster -- returning a `ThemeReport`
+  of `Theme`s and writing nothing anywhere. The cost scales with the corpus's
+  structure rather than its length, and ADR 0042 argues why a community is
+  recomputed on every call instead of stored.
 - **What you put in.** `SourceDocument`.
 - **What comes out.** `Entity` (whose `provenance` is a `Provenance`:
   where the claim came from, when, how and how sure),
@@ -201,8 +206,11 @@ from redstring.composition import (
     GraphBuildReport,
     IndexReport,
     Retriever,
+    Theme,
+    ThemeReport,
     build_graph,
     index_documents,
+    summarize_themes,
 )
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
@@ -446,6 +454,8 @@ __all__ = [
     "TemporalRelation",
     "TenantId",
     "TenantPurge",
+    "Theme",
+    "ThemeReport",
     "UncertaintyMarker",
     "UnknownDomainError",
     "UnknownMergeError",
@@ -467,5 +477,6 @@ __all__ = [
     "load_schema_from_file",
     "load_schema_from_string",
     "rank_chunks",
+    "summarize_themes",
     "tokenize",
 ]
