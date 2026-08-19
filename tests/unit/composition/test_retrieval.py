@@ -427,6 +427,14 @@ async def test_a_lexical_only_mode_makes_no_embedding_call() -> None:
             self.calls += 1
             return await super().embed(texts)
 
+        # Both sides, or the count answers a narrower question than the test
+        # asks. Counting `embed` alone stopped observing anything the moment
+        # the semantic channel moved to `embed_query`: the assertion below
+        # would then read zero however much this mode embedded.
+        async def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+            self.calls += 1
+            return await super().embed_query(texts)
+
     tenant = uuid4()
     graph = InMemoryGraphStore()
     await graph.upsert_entity(_entity("Ada Lovelace", tenant))
@@ -657,3 +665,91 @@ def test_rank_fusion_promotes_a_consistent_runner_up() -> None:
 
     assert fused[0][0] == b
     assert {entity_id for entity_id, _ in fused[1:]} == {a, c}
+
+
+# ----------------------------------------------------------------------
+# The query goes through the query side of the port
+# ----------------------------------------------------------------------
+
+#: Both non-empty and different from each other, which is the whole point.
+#: With `document_prefix == query_prefix` -- `""` and `""` most of all -- a
+#: retriever calling `embed` and one calling `embed_query` are the same
+#: function, and neither test below could fail.
+DOCUMENT_PREFIX = "search_document: "
+QUERY_PREFIX = "search_query: "
+
+
+def _asymmetric() -> FakeEmbeddingProvider:
+    return FakeEmbeddingProvider(
+        dimension=DIMENSION,
+        document_prefix=DOCUMENT_PREFIX,
+        query_prefix=QUERY_PREFIX,
+    )
+
+
+async def test_the_semantic_channel_embeds_the_query_as_a_query() -> None:
+    """An asymmetric model's query prefix has to reach the query, not the
+    corpus prefix.
+
+    Nothing raises when this is wrong. The vectors are well-formed, they
+    cluster, they score; retrieval is merely worse than the model can do, which
+    reads as "this model is mediocre" rather than as a defect. So the test is
+    built to make the two implementations *disagree on which entity comes
+    back*: `wanted` is stored at the vector a correctly-embedded query
+    produces, and `decoy` at the vector the document side would produce for the
+    same string. `k=1` forces a choice.
+    """
+    tenant = uuid4()
+    graph = InMemoryGraphStore()
+    vectors = InMemoryVectorStore(dimension=DIMENSION)
+    embeddings = _asymmetric()
+
+    wanted = _entity("Ada Lovelace", tenant, entity_id=UUID(int=1))
+    decoy = _entity("Charles Babbage", tenant, entity_id=UUID(int=2))
+    await graph.upsert_entity(wanted)
+    await graph.upsert_entity(decoy)
+
+    [as_query] = await embeddings.embed_query(["Ada Lovelace"])
+    [as_document] = await embeddings.embed(["Ada Lovelace"])
+    assert as_query != as_document, "the two prefixes must produce different vectors"
+    await vectors.upsert(wanted.id, as_query, tenant)
+    await vectors.upsert(decoy.id, as_document, tenant)
+
+    result = await _retriever(graph, vectors, embeddings).retrieve(
+        "Ada Lovelace", tenant, k=1, mode=RetrievalMode.SEMANTIC
+    )
+
+    assert [match.entity.id for match in result.matches] == [wanted.id]
+
+
+async def test_the_query_reaches_the_provider_unprefixed_by_the_caller() -> None:
+    """The composition point passes the raw query and lets the adapter prefix.
+
+    Asserted on what the provider *received*, because a retriever that
+    prepended a prefix itself and then called `embed_query` would produce
+    `"search_query: search_query: Ada Lovelace"` on the wire and pass every
+    assertion about which entity came back.
+    """
+
+    class RecordingProvider(FakeEmbeddingProvider):
+        def __init__(self) -> None:
+            super().__init__(dimension=DIMENSION)
+            self.seen: list[tuple[str, list[str]]] = []
+
+        async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+            self.seen.append(("embed", list(texts)))
+            return await super().embed(texts)
+
+        async def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+            self.seen.append(("embed_query", list(texts)))
+            return await super().embed_query(texts)
+
+    tenant = uuid4()
+    graph = InMemoryGraphStore()
+    embeddings = RecordingProvider()
+
+    await _retriever(graph, embeddings=embeddings).retrieve(
+        "Ada Lovelace", tenant, mode=RetrievalMode.SEMANTIC
+    )
+
+    assert embeddings.seen == [("embed_query", ["Ada Lovelace"])]

@@ -189,7 +189,7 @@ class Retriever:
         its insertion order *and* the score per id, and the two cannot fall
         out of step because there is only one of them.
         """
-        [vector] = await self._embeddings.embed([query])
+        [vector] = await self._embeddings.embed_query([query])
         matches = await self._vectors.search(vector, tenant_id, k=k, entity_types=entity_types)
         return {match.entity_id: match.score for match in matches}
 
@@ -365,7 +365,7 @@ class ChunkRetriever:
         A corpus with no embedded chunks answers with an empty result here,
         never a raise -- see the class docstring.
         """
-        [vector] = await self._embeddings.embed([query])
+        [vector] = await self._embeddings.embed_query([query])
         matches = await self._chunks.semantic_candidates(vector, tenant_id, k)
         return (
             {match.chunk.id: match.score for match in matches},
