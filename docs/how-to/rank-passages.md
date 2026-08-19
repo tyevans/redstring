@@ -35,7 +35,7 @@ from redstring import (
 
 async def main() -> None:
     tenant_id = uuid4()
-    chunks = InMemoryChunkStore()
+    chunks = InMemoryChunkStore(dimension=768)
 
     await index_documents(
         [
