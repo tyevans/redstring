@@ -2952,6 +2952,77 @@ someone who thinks to open a config file.
 
 ---
 
+### B159. `ChunkReader` cannot answer "which of these chunks do I already have?"
+
+Every read on `ChunkReader` is keyed on one thing: `get` takes a chunk id,
+`get_by_source` a source, `get_by_entity` an entity. There is no way to ask
+about a *set* of chunk ids at once, and that is the question a resumable
+ingest asks on every batch.
+
+A caller with 129,375 documents to load, wanting to skip the ones already
+stored, has three options today and all of them are bad:
+
+- **`get` per candidate** — ~129k round trips, and it transfers whole
+  `StoredChunk`s (text plus a 2048-dimension vector each) to answer a
+  yes/no question.
+- **`get_by_source` per node** — same round-trip count, and it cannot
+  answer the question a content-addressed id actually poses, which is
+  whether *this text* is stored rather than whether *this source* is.
+- **Go around the port with SQL.** This is what happened. `stark-bench`
+  issued `SELECT id FROM <table> WHERE tenant_id = $1` directly against the
+  chunk table, from its CLI, interpolating a table name it derived itself.
+
+The third is the one to look at, because it is what a missing port looks
+like from outside: not a caller doing something lazy, but a caller with a
+legitimate need and no legitimate way to express it. It also drags the
+`asyncpg` import and the DSN into a layer that had no other reason to know
+Postgres exists, and it re-derives the table name — so a change to the
+naming scheme silently desynchronises two places instead of one.
+
+**The shape to add, on `ChunkReader`:**
+
+```python
+async def existing_ids(self, chunk_ids: Sequence[ChunkId], tenant_id: TenantId) -> set[ChunkId]:
+    """Which of `chunk_ids` this tenant already holds."""
+```
+
+Bounded by the caller's input, not by the corpus. The obvious alternative —
+`ids_for_tenant(tenant_id) -> set[ChunkId]` — is what `stark-bench` built
+for itself and is the wrong port for a library: it is fine at 129k chunks
+and ruinous at 50M, and a port should not have a corpus size past which it
+becomes unusable. `existing_ids` composes with any batch size and the
+caller decides how much to hold.
+
+It is also an index seek on the primary key rather than a scan, which
+matters here for a reason this file has already recorded: "results only,
+never the query plan" is in the failure-shape table in `CLAUDE.md`, because
+a full scan and an index seek return the same answers and differ only in
+cost. A test for this method must assert the plan, not just the ids.
+
+**Adding it is not free, and the cost is the point.**
+`tests/unit/chunks/test_compliance_coverage.py` derives the read-method
+list from the Protocol by introspection and fails if any method lacks a
+registered mutation-isolation test and a tenant-isolation test. So this
+method cannot land half-tested, and both of those tests are ones it
+genuinely needs:
+
+- **Mutation isolation**: it returns a `set`, and returning the adapter's
+  own object is correct on every read and wrong only afterwards. That exact
+  defect has been found four times in this repository by mutation testing
+  and zero times by review.
+- **Tenant isolation**: the whole method is a filtered membership test, so
+  a body that forgets the tenant predicate returns *more* ids and the
+  caller skips work it should have done — silently producing a corpus with
+  another tenant's chunks treated as its own. Force the collision: same
+  chunk id, two tenants. Ids built from `uuid4()` never collide, which is
+  the fifth row of the failure-shape table.
+
+**Why it is deferred rather than done:** it needs both adapters, a
+compliance case, and a Postgres integration test that asserts the query
+plan — and the caller that motivated it (`stark-bench`) is mid-benchmark
+against an editable install of this library, so a change here lands in a
+running experiment. Pick it up when that finishes.
+
 ## 6. Tooling, packaging and hygiene
 
 ### B158. The task prefixes are absent from every how-to that configures a model
