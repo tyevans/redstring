@@ -1723,6 +1723,64 @@ regex extractor's own source comment states.
 Source:
 `graphrag/index/operations/build_noun_graph/np_extractors/regex_extractor.py`
 
+### B147. Themes have no identity across calls
+
+`summarize_themes` recomputes the partition every time and returns reports
+with no stable id, which ADR 0042 decided deliberately: a community is a
+function of the whole graph at one instant, and one new edge joining two
+regions re-partitions both, including nodes the new document never mentioned.
+So there is no invalidation smaller than "recompute everything", and a stored
+community is stale as soon as the next document lands.
+
+What is therefore unserved: a caller diffing themes between two runs, a UI
+pinning "the supply-chain theme" across a session, or incremental reporting
+that only re-summarises what moved.
+
+**The route back is not persistence.** It is a decision about what makes two
+communities of two different partitions *the same* community — Jaccard over
+membership above some threshold, or a designated set of high-degree members,
+or a name the model assigned and something that matches names. Until that is
+answered, storing what we compute stores an id nobody can re-derive. Answer it
+first, in an ADR, then the storage question is easy.
+
+### B148. Reading the topology pages the entity cursor, one edge batch per page
+
+`summarize_themes` reads the whole tenant's graph through `find_entities`
+paging plus `get_relationships_for` on each page, because ADR 0016 says the
+port is capabilities and a bulk topology read is not one of them. That costs
+two round trips per page, and the page size is a caller's guess.
+
+A `TopologyReader` capability — an edge cursor over `(source, target)` pairs
+with no entity payload — would be one round trip per page over strictly less
+data, and it is exactly the read Leiden and every other clustering algorithm
+wants.
+
+Not built because nothing has measured the paged read as a cost centre, and
+this port has two adapters plus a published compliance suite (ADR 0033), so
+widening it obliges someone else's code. **What would justify it:** a
+measurement at a corpus size this repository has not exercised showing the
+entity payload — descriptions, properties, provenance, blocking keys, all
+discarded immediately — dominating the read. Note that the in-memory adapter
+will never show this and Neo4j will show it first.
+
+### B149. The clustering is greedy modularity, not Leiden
+
+`domain/community.py` implements one greedy modularity-optimisation pass —
+the first half of Louvain — rather than Leiden via `igraph`/`leidenalg`.
+ADR 0042 argues the dependency cost, and CLAUDE.md's confinement row is part
+of it.
+
+Where they differ is quality at scale: Leiden guarantees well-connected
+communities and Louvain does not, which matters on large graphs with hub
+nodes and is unmeasurable at the sizes tested here. Swapping is signature-
+preserving by construction — `detect_communities` takes nodes and weighted
+edges and returns a partition, and no caller sees the algorithm.
+
+**Before swapping, measure.** The thing to compare is not modularity score
+(Leiden optimises the same objective, so it wins by definition) but whether
+the reports a caller reads are better, which needs the accuracy suite and
+B12's measurability problem solved first.
+
 ### B146. Mechanical co-occurrence extraction was considered as a fast path and rejected
 
 Recorded because it will be proposed again — the cost numbers are compelling
