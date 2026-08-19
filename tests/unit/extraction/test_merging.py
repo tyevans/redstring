@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from itertools import pairwise
 from uuid import UUID
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -29,7 +30,7 @@ from redstring.extraction.mapping import (
     preference,
     relationship_preference,
 )
-from redstring.extraction.merging import merge_extractions
+from redstring.extraction.merging import mention_counts, merge_extractions
 from redstring.extraction.schema import (
     DEFAULT_CONFIDENCE,
     ExtractedEntity,
@@ -547,3 +548,79 @@ def test_the_tie_break_is_reached_at_all_in_the_realistic_case():
         DEFAULT_CONFIDENCE
     }
     assert len(merge_extractions(parts).entities) == 1
+
+
+class TestMentionCounts:
+    """How many chunks reported each entity -- the fold's other tally.
+
+    The fixture below is deliberately not a one-duplicate case: with a single
+    entity reported twice, "count", "count = 1", "len(part.entities)" and "1 if
+    seen else 0" are all the same function. Three counts that differ from each
+    other, and duplicates that are **not adjacent** in the input, are what make
+    the assertions distinguish them.
+    """
+
+    #: Ada in parts 0, 2 and 4; Babbage in 1 and 4; Turing in 3 alone. No two
+    #: reports of one entity are adjacent, so an implementation that only
+    #: notices a repeat of the immediately preceding part gets Ada wrong.
+    PARTS = (
+        (entity("Ada Lovelace"),),
+        (entity("Charles Babbage"),),
+        (entity("Ada Lovelace"),),
+        (entity("Alan Turing"),),
+        (entity("Ada Lovelace"), entity("Charles Babbage")),
+    )
+
+    def parts(self):
+        return [chunk(*names) for names in self.PARTS]
+
+    def test_each_entity_is_counted_once_per_part_that_reported_it(self):
+        counts = mention_counts(self.parts())
+        by_name = {e.name: counts[e.id] for e in merge_extractions(self.parts()).entities}
+
+        assert by_name == {"Ada Lovelace": 3, "Charles Babbage": 2, "Alan Turing": 1}
+
+    def test_the_keys_are_exactly_the_merged_entity_ids(self):
+        """Equality, not containment -- a superset would mean a count for an
+        entity the caller never receives, and a subset a `KeyError` waiting."""
+        counts = mention_counts(self.parts())
+
+        assert set(counts) == {e.id for e in merge_extractions(self.parts()).entities}
+
+    def test_every_count_is_at_least_one(self):
+        assert all(n >= 1 for n in mention_counts(self.parts()).values())
+
+    def test_no_parts_at_all_counts_nothing(self):
+        assert dict(mention_counts([])) == {}
+
+    def test_the_order_of_the_parts_does_not_change_the_counts(self):
+        """Addition is commutative; this asserts the fold does not undo that."""
+        forward = dict(mention_counts(self.parts()))
+        shuffled = self.parts()
+        random.Random(4).shuffle(shuffled)
+
+        assert dict(mention_counts(shuffled)) == forward
+
+    def test_a_name_repeated_within_one_part_counts_once(self):
+        """The definition, asserted rather than left to the docstring.
+
+        A mention is one *chunk's report*, never one occurrence: `map_extraction`
+        has already collapsed the repeats inside a single answer.
+        """
+        counts = mention_counts([chunk(entity("Ada Lovelace"), entity("Ada Lovelace"))])
+
+        assert list(counts.values()) == [1]
+
+    def test_an_entity_the_domain_refused_gets_no_entry(self):
+        """Absent rather than zero -- a dropped row never has an id to key on."""
+        part = chunk(entity("Ada Lovelace"), entity("   "))
+        counts = mention_counts([part])
+
+        assert part.dropped_entities == 1
+        assert len(counts) == 1
+
+    def test_the_mapping_cannot_be_written_through(self):
+        counts = mention_counts(self.parts())
+
+        with pytest.raises(TypeError):
+            counts[next(iter(counts))] = 99  # type: ignore[index]

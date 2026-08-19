@@ -31,6 +31,7 @@ from redstring.extraction.pipeline import (
     DEFAULT_SYSTEM_PROMPT,
     ExtractionPipeline,
     PartialExtractionError,
+    PipelineResult,
 )
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider
 
@@ -956,3 +957,143 @@ class GleaningFails:
         if self._calls > 1:
             raise LlmProviderError("the server said no", model=self.model)
         return await self._inner.extract(text, schema, system_prompt=system_prompt)
+
+
+#: Five segments of identical length, each opening with a marker no other
+#: segment contains, chunked with **no overlap** so that every chunk holds
+#: exactly one marker. `by_substring` answers on the first key it finds, so a
+#: chunk that held two markers would silently make the script positional.
+MENTION_SEGMENTS = tuple(f"Zulu{i}. " + "padding word " * 6 for i in range(1, 6))
+
+#: Ada in segments 1, 3 and 5; Babbage in 2 and 5; Turing in 4 alone. Three
+#: different counts, and no two reports of one entity in adjacent chunks --
+#: with a single duplicate, "count" and "count = 1" are the same function.
+MENTION_SCRIPT = {
+    "Zulu1": payload("Ada Lovelace"),
+    "Zulu2": payload("Charles Babbage"),
+    "Zulu3": payload("Ada Lovelace"),
+    "Zulu4": payload("Alan Turing"),
+    "Zulu5": payload("Ada Lovelace", "Charles Babbage"),
+}
+
+
+class _FailsOneMarkedChunk:
+    """Answers `MENTION_SCRIPT` for every chunk but the one holding `marker`.
+
+    `FailOnSubstring` above takes a single default answer, which cannot serve
+    a test that needs a *different* answer per chunk and one failure among
+    them.
+    """
+
+    def __init__(self, marker: str) -> None:
+        self._marker = marker
+        self._inner = FakeLlmProvider(by_substring=MENTION_SCRIPT)
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
+
+    async def extract(self, text, schema, *, system_prompt=None):
+        if self._marker in text:
+            raise LlmProviderError("the server said no", model=self.model)
+        return await self._inner.extract(text, schema, system_prompt=system_prompt)
+
+
+def mention_pipeline(**kwargs) -> ExtractionPipeline:
+    return ExtractionPipeline(
+        FakeLlmProvider(by_substring=MENTION_SCRIPT),
+        chunker=SlidingWindowChunker(
+            default_chunk_size=len(MENTION_SEGMENTS[0]), default_overlap=0, min_chunk_size=5
+        ),
+        **kwargs,
+    )
+
+
+class TestHowManyChunksReportedEachEntity:
+    """`mention_counts` -- the within-document, within-run tally.
+
+    Deliberately not a count on `Entity`: that number would ride in every
+    event payload and be a fact two documents had to agree about, which makes
+    it consolidation's problem and a projection's job. See BACKLOG B143.
+    """
+
+    async def test_the_document_really_did_split_into_five_marked_chunks(self, tenant_id):
+        """Guards every test below, each of which would pass on one chunk."""
+        chunking = mention_pipeline()._chunker.chunk("".join(MENTION_SEGMENTS))
+
+        assert chunking.total_chunks == 5
+        assert [sum(m in c.text for m in MENTION_SCRIPT) for c in chunking.chunks] == [1] * 5
+
+    async def test_each_entity_carries_the_number_of_chunks_that_reported_it(self, tenant_id):
+        result = await mention_pipeline().extract(
+            document("".join(MENTION_SEGMENTS)), tenant_id, observed_at=OBSERVED
+        )
+
+        by_name = {e.name: result.mention_counts[e.id] for e in result.entities}
+        assert by_name == {"Ada Lovelace": 3, "Charles Babbage": 2, "Alan Turing": 1}
+
+    async def test_the_keys_are_exactly_the_ids_of_the_entities_returned(self, tenant_id):
+        """Equality, not containment. A subset is a `KeyError` for the caller
+        and a superset is a count for an entity they never receive."""
+        result = await mention_pipeline().extract(
+            document("".join(MENTION_SEGMENTS)), tenant_id, observed_at=OBSERVED
+        )
+
+        assert set(result.mention_counts) == {e.id for e in result.entities}
+        assert all(result.mention_counts[e.id] >= 1 for e in result.entities)
+
+    async def test_a_chunk_whose_call_failed_contributes_no_mentions(self, tenant_id):
+        """The count is bounded by the chunks that answered, and says so.
+
+        Ada is reported by chunks 1, 3 and 5; chunk 3's call fails, so the
+        number the caller sees is 2 -- lower than the truth, in a way
+        `failed_chunks` is what makes visible.
+        """
+        pipeline = ExtractionPipeline(
+            _FailsOneMarkedChunk("Zulu3"),
+            chunker=SlidingWindowChunker(
+                default_chunk_size=len(MENTION_SEGMENTS[0]), default_overlap=0, min_chunk_size=5
+            ),
+            skip_failed_chunks=True,
+        )
+
+        result = await pipeline.extract(
+            document("".join(MENTION_SEGMENTS)), tenant_id, observed_at=OBSERVED
+        )
+
+        by_name = {e.name: result.mention_counts[e.id] for e in result.entities}
+        assert result.failed_chunks == 1
+        assert by_name == {"Ada Lovelace": 2, "Charles Babbage": 2, "Alan Turing": 1}
+
+    async def test_a_document_that_yields_nothing_yields_no_counts(self, tenant_id):
+        pipeline = ExtractionPipeline(FakeLlmProvider(script=[payload()]))
+
+        result = await pipeline.extract(document("Nothing here."), tenant_id, observed_at=OBSERVED)
+
+        assert result.entities == []
+        assert dict(result.mention_counts) == {}
+
+    async def test_the_counts_do_not_change_when_chunks_are_extracted_concurrently(self, tenant_id):
+        """`concurrency` batches the calls; it must not batch the tally."""
+        serial = await mention_pipeline().extract(
+            document("".join(MENTION_SEGMENTS)), tenant_id, observed_at=OBSERVED
+        )
+        batched = await mention_pipeline(concurrency=3).extract(
+            document("".join(MENTION_SEGMENTS)), tenant_id, observed_at=OBSERVED
+        )
+
+        assert dict(batched.mention_counts) == dict(serial.mention_counts)
+
+    def test_a_result_built_without_counts_has_an_empty_unwritable_default(self):
+        """Constructed directly, not through a helper that passes every field.
+
+        A `NamedTuple`'s default is shared by every instance that takes it, so
+        a `dict` here would be a default any caller could write into and every
+        later caller would then receive.
+        """
+        result = PipelineResult(entities=[], relationships=[])
+
+        assert dict(result.mention_counts) == {}
+        with pytest.raises(TypeError):
+            result.mention_counts[uuid4()] = 1  # type: ignore[index]
+        assert dict(PipelineResult(entities=[], relationships=[]).mention_counts) == {}

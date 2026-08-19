@@ -1620,37 +1620,37 @@ Source: `graphrag/index/workflows/factory.py`,
 `create_community_reports_text`;
 https://microsoft.github.io/graphrag/index/methods/
 
-### B143. A node carries no mention count, and two open entries want one
+### B143. The corpus-level mention count is still missing (the within-document one is built)
 
-`merge_extractions` folds duplicate reports of one entity with
-`max(domain.preference)` and keeps no record of *how many* mentions there
-were. GraphRAG's node table carries `frequency` — in its NLP path, the number
-of text units the phrase appeared in — and uses it for pruning and for edge
-weighting.
+**Half of this is done.** The within-document counter shipped as
+`redstring.extraction.merging.mention_counts`, surfaced on
+`PipelineResult.mention_counts` as a read-only `Mapping[EntityId, int]`. A
+mention there is **one chunk's report of the entity**, not one occurrence of
+its name -- `map_extraction` deduplicates within a single answer, so a chunk
+contributes at most `1` -- which makes it "in how many chunks did this appear",
+per-run and per-document, and not comparable across documents.
 
-Two open entries need this and neither can proceed without it:
+The decision the entry asked to be made deliberately was made: the number does
+**not** live on `Entity`. A field there would ride in every event payload and
+would be a fact two documents mentioning one entity had to agree about, i.e.
+something `consolidation` must merge, with a merge strategy and a tie-break of
+its own. That is a corpus-level statistic wearing the same name.
 
-- **B116** wants a frequency-weighted carryover bound, to stop a recency-only
-  window evicting the document's protagonist. Its own text says the count is
-  the cheap half ("the dict is already there").
-- **B144**'s local-MI weighting needs `p(x)` per node, which is a mention
-  count normalised over the corpus.
+**What is still open is that corpus-level statistic**, and it is a projection
+rather than a counter: a per-tenant, per-entity total summed over runs, written
+by something that observes `DocumentExtracted` (or the consolidation log after
+merges), and re-derivable by replay. Two things to settle when it is built:
 
-The cheap half really is cheap — the fold already keys by `EntityId` and can
-count as it goes. The part that is not cheap is deciding **where the number
-lives**, and that decision should be made once for both callers rather than
-twice:
+- Merges. When two entities are consolidated, the surviving node's count is
+  presumably the sum -- but that is a decision, because a mention counted
+  under both spellings of one name is arguably one mention.
+- Re-extraction. A document extracted twice under two model versions must not
+  count twice; the projection needs the same per-`(source_id, model_version)`
+  idempotency `Document.record_extraction` has.
 
-- On `Entity` as a field, which makes it part of the domain model, part of
-  every event payload, and something two documents mentioning the same entity
-  have to agree about — i.e. it becomes a thing consolidation must merge.
-- On `PipelineResult` only, per run, which serves B116 (carryover is
-  within-document by construction) and does **not** serve B144 (which is a
-  corpus-level statistic).
-
-Those are different features wearing one name. Pick deliberately; the
-within-document counter is a day's work and the corpus-level one is a
-projection.
+B116 (frequency-weighted carryover) is unblocked by the half that shipped --
+carryover is within-document by construction. **B144's local-MI weighting
+needs `p(x)`, which is the half that did not.**
 
 ### B144. Edges have a confidence but no corpus-level weight
 
@@ -3649,3 +3649,68 @@ Fix: measure. Run a corpus pass over a graded corpus with a counting
 adjudicator, before and after the `CONTAINMENT_CEILING` change, and record
 calls-per-thousand-entities in `bench/`. Until then the cost of this release's
 recall improvement is unknown in the only unit anyone pays it in.
+
+
+### B147. `mention_counts` reaches no caller of `build_graph`
+
+`PipelineResult.mention_counts` (see **B143**) is produced by
+`ExtractionPipeline.extract` and read by nobody. `build_graph` in
+`src/redstring/composition/build_graph.py` holds the `PipelineResult` and
+returns a `GraphBuildReport` that does not carry the counts, so the only way
+to see them is to call `extract` directly rather than the composed entry
+point — which is not the path the library steers callers onto.
+
+Deliberately deferred rather than forgotten: composition and
+`src/redstring/__init__.py` were being edited concurrently when the counter
+landed, and a field on `GraphBuildReport` is a change to the *public* surface
+(the report is exported) rather than to an internal one. Adding it means
+deciding what B143's caveats look like on a report the caller keeps: the
+number is per-run and per-document, so a `GraphBuildReport` from a
+multi-document loop must not invite summing them.
+
+Fix: one field on `GraphBuildReport`, passed through from the result, with the
+"not comparable across documents" caveat restated at the field rather than
+only at `PipelineResult`. Note that a caller who wants a corpus-level number
+still cannot get one this way — that is B143's open half.
+
+
+### B150. `detect_communities` can return a partition it never converged on
+
+`MAX_PASSES` in `src/redstring/domain/community.py` bounds the local-moving
+loop at 100 full passes and, if it runs out, **returns whatever partition it
+has** rather than raising or reporting. Nothing in the return value tells a
+caller which happened.
+
+Why the bound exists rather than a `while` on the "did anything move" flag:
+every accepted move strictly increases modularity, so in exact arithmetic the
+loop cannot cycle — but the gain is a float, and CLAUDE.md is explicit that an
+invariant resting on an argument about arithmetic is inferred rather than
+enforced. A clustering that hangs is worse than one that stops early, because
+in CI a hang reads as infrastructure trouble and gets retried.
+
+Why it was not fixed now: no input is known that reaches the bound, so there
+is nothing to test the escape hatch against, and a `raise` on an unreachable
+branch would be an untested error path on a hot loop. Real graphs converge in
+a handful of passes.
+
+Fix, when someone has a reason to care: either find an input that cycles (a
+weighted graph with gains equal to within float error is the shape to look
+for) and then decide between raising and returning, or prove the bound
+unreachable and delete it. Do not simply raise the constant — that moves the
+symptom without answering the question. A second option worth weighing is
+returning the pass count alongside the partition so a caller can see it, but
+that widens the return type for a case nobody has observed.
+
+### B151. Two different backlog entries are numbered B147
+
+`### B147. Themes have no identity across calls` (the one ADR 0042 cites) and
+`### B147. mention_counts reaches no caller of build_graph` are both in this
+file. ADR 0042's "filed as B147" therefore resolves to two entries, one of
+which is unrelated to it.
+
+Noticed while implementing `domain/community.py` and deliberately not fixed in
+that commit: renumbering an entry is not a local edit — the number is cited
+from `docs/adr/0042-themes-are-recomputed-never-stored.md` and possibly from
+commit messages, which are immutable. Whoever fixes it should renumber the
+`mention_counts` entry (the later, uncited one) and grep `docs/` and
+`.claude/` for references before doing so.

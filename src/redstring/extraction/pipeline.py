@@ -117,6 +117,20 @@ split of the document -- a hole in it is a passage that can never be
 retrieved -- and the alternative reading of an empty `entity_ids` is the one
 `StoredChunk` explicitly refuses to support.
 
+## An entity carries how many chunks reported it, and only within this run
+
+`PipelineResult.mention_counts` is a within-document, within-run tally: for
+each surviving entity, in how many chunks' answers it appeared. It is
+deliberately **not** a field on `Entity`. A count on the domain object would
+travel in every event payload and would be a fact two documents mentioning
+one entity had to agree about -- i.e. something `consolidation` must merge,
+with a merge strategy and a tie-break of its own. That corpus-level statistic
+is a different feature wearing the same name, and it is a projection rather
+than a counter; see BACKLOG B143 and B144.
+
+`redstring.extraction.merging.mention_counts` defines exactly what a mention
+is, and what it is not.
+
 The signature is `f"{chunker_type}:{digest}:{model_version}"`. The trailing
 model version is what keeps this path's key space distinct from
 `index_documents`'s; see `redstring.aggregates.document`.
@@ -125,6 +139,7 @@ model version is what keeps this path's key space distinct from
 from __future__ import annotations
 
 import asyncio
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from redstring.domain.exceptions import LlmProviderError, RedstringError
@@ -134,11 +149,11 @@ from redstring.extraction.chunkers import SlidingWindowChunker
 from redstring.extraction.corpus import chunking_digest, stored_chunks
 from redstring.extraction.gleaning import combine, found_nothing, gleaning_prompt
 from redstring.extraction.mapping import MappedExtraction, map_extraction
-from redstring.extraction.merging import merge_extractions
+from redstring.extraction.merging import mention_counts, merge_extractions
 from redstring.extraction.schema import Extraction
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterator, Mapping, Sequence
     from datetime import datetime
 
     from redstring.aggregates.document import Document
@@ -244,6 +259,27 @@ class PipelineResult(NamedTuple):
     #: the output, since the output simply has fewer entities. Never raises;
     #: see `ExtractionPipeline.extract`.
     failed_gleanings: int = 0
+    #: How many chunks reported each entity in `entities`, keyed by id.
+    #:
+    #: **A mention is one chunk's report, not one occurrence of the name.**
+    #: A chunk contributes at most `1` however many times the model listed the
+    #: entity, because `map_extraction` deduplicates within one answer -- so
+    #: this is "in how many chunks did it appear" and never a term frequency.
+    #: See `redstring.extraction.merging.mention_counts`, which defines it.
+    #:
+    #: Per-run and per-document, and meaningless to compare across documents:
+    #: the denominator is how many chunks *that* document was split into. It
+    #: is deliberately not a field on `Entity` -- see BACKLOG B143.
+    #:
+    #: Every entity in `entities` has an entry and every entry is `>= 1`.
+    #: Entities the domain refused are absent rather than zero; they never
+    #: became an `Entity`, and `dropped_entities` counts them.
+    #:
+    #: A read-only mapping rather than a `dict`, for the reason `chunks` is a
+    #: tuple: a `NamedTuple` field's default is shared by every instance that
+    #: takes it, and a mutable one would be a default every caller could
+    #: write into.
+    mention_counts: Mapping[EntityId, int] = MappingProxyType({})
 
 
 def _batches(chunks: Sequence[Chunk], size: int) -> Iterator[Sequence[Chunk]]:
@@ -394,6 +430,8 @@ class ExtractionPipeline:
             did not survive. `chunks` carries the passages, each with the ids
             of the entities it produced, and `chunking_signature` is the key
             `Document.record_chunking` refuses a repeat under.
+            `mention_counts` says how many chunks reported each surviving
+            entity.
 
         Raises:
             LlmProviderError: A chunk's model call failed and
@@ -486,6 +524,7 @@ class ExtractionPipeline:
             ),
             gleaning_passes=gleaned,
             failed_gleanings=failed_gleanings,
+            mention_counts=mention_counts(parts),
         )
 
     async def _extract_one(
