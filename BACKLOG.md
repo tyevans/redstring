@@ -6,8 +6,13 @@ with enough detail that picking it up does not require rediscovering it.
 ## How to read this file
 
 **Sections group entries by what a reader would search for**, not by when they
-were filed. Ordering within a section is roughly by priority; ordering between
-sections is not meaningful.
+were filed. Ordering *between* sections is meaningful — section 1 costs a
+caller a wrong answer and section 6 costs nobody anything. Ordering *within* a
+section is deliberate as of the 2026-08-18 pass, and each section's opening
+paragraph says what its order means, because "roughly by priority" was
+indistinguishable from "in the order they were appended" and had become the
+latter: fourteen entries filed by drive-by commits had accumulated at the end
+of section 6 regardless of kind.
 
 **The `B` numbers are opaque identifiers, not a taxonomy.** The `B10*` family
 in particular is fifteen entries whose only shared property is that they were
@@ -25,6 +30,29 @@ in `.claude/rules/recurring-defects.md` under "Local instances", which is
 where a future author will actually meet them; a file about open work is not
 a place anyone reads for them.
 
+**Deleted in the curation pass of 2026-08-18**, so a citation elsewhere in the
+tree resolves to something rather than to nothing:
+
+| Id | Was | Where it went |
+|---|---|---|
+| B10 | what each store is exercised against | the table under "State of the tree" — it was a map, not a gap |
+| B53 | `Entity.temporal`'s storage shape | round-trip test shipped; the indexing half is now stated inside **B48**, which it was always joint with |
+| B65 | `reference/domain-value-types.md` and its outline | closed for both pages; the gate is `tests/unit/test_reference_map_tables_are_honest.py` |
+| B68 | `replay()` scopes by tenant, not category | closed upstream (eventsource-py 0.12.0, ADR 0020); category scoping is upstream's call and was declined here |
+| B71 | confining a fifth library | closed by `test_every_third_party_import_is_accounted_for` |
+| B73 | `ReplayReport.failures` unbounded | closed upstream — `max_failures` + `failures_truncated` + `on_failure` |
+| B122 | the ratchet measures a moving number | duplicate of **B125**, written a slice earlier and quoting a `TOLERANCE` that has since changed; its one unique item (the diagnostic nobody ran) is folded in |
+| B142 | there is no thematic layer | built; the entry had become an index of B144/B147/B148/B149/B153/B155, which are the open parts |
+| B154 | passages ranked by degree | folded into **B153**, which said in its own body that the two were one decision |
+| B96 | ADR files, index and nav never compared | closed by `tests/unit/test_adr_declaration_sites_agree.py`, which found 0040 and 0041 missing from the index and 0042 missing from the nav |
+| B-ADR-TABLE | `definition-of-done.md`'s ADR table stopped at 0019 | closed: 23 rows written from `docs/adr/index.md`'s own summaries, gated by the same module |
+
+Two of those — B122 against B125, and the two copies each of B140 and B141 —
+were the same finding filed twice under different numbers or the same one. That
+is what a file appended to by many small commits does, and it is the reason to
+re-read the neighbouring section before filing rather than only the end of the
+file.
+
 **A "— closed" heading is a deferral, not a closure.** Five entries carried
 one, several for two slices, and the effect was a file whose length overstated
 what was outstanding. When you close an entry: move any lesson to its home,
@@ -34,28 +62,51 @@ module that exists), and delete the entry in the same commit.
 
 ## State of the tree
 
-The default gate collects **2209 tests**, plus **250 `integration` tests** and
-**4 `accuracy` tests** — against a real Neo4j (slices 4, 7), real pgvector
-(slice 5), a live `qwen3.6-27b-mtp` (slice 6, `KG_LLM_BASE_URL`), and a built
-wheel (slice 10). The first two need `docker-compose.test.yml`. Both extra
-suites are deselected by default (B10a); a run prints what it deselected and
-how to run it. What the accuracy suite can and cannot tell you is B12.
+The default gate collects **3484 tests**, plus **328 `integration` tests** (of
+which **21** are `live`) and **4 `accuracy` tests** — against a real Neo4j
+(slices 4, 7), real pgvector (slice 5), a live `qwen3.6-27b-mtp` (slice 6,
+`KG_LLM_BASE_URL`), and a built wheel (slice 10). The first two need
+`docker-compose.test.yml`. Both extra suites are deselected by default (B10a);
+a run prints what it deselected and how to run it. What the accuracy suite can
+and cannot tell you is B12.
 
-**The gate is green.** Verified under its own conditions
+**Those counts are the only numbers here re-measured during this pass**
+(`uv run pytest -q --collect-only`). The three they replaced — 2209 default
+and 250 integration tests, and a coverage figure of 94.05% — had drifted, and
+the coverage one was wrong in the direction that matters: `.coverage-baseline`
+reads **96.22**, which is nearly two points *above* what this file claimed. A
+paragraph restating a number that lives in a file is the same two-declaration-
+site shape `recurring-defects.md` §2 is about, so read the baseline rather than
+this sentence, and see B14 for why the number moves for reasons that are not
+test quality.
+
+**The gate was green when last run under its own conditions**
 (`uv run python scripts/coverage_ratchet.py`, which is `pytest -q -n auto
---cov`): **2209 passed**, no failures. The hypothesis deadline flake that made
-this paragraph say otherwise was fixed at the class level rather than the
-instance — `tests/conftest.py` now registers a suite-wide `deadline=None`
+--cov`). That has not been re-run here, so treat it as a record of the last
+run and not as a claim about the working tree. The hypothesis deadline flake
+that made this paragraph say otherwise was fixed at the class level rather than
+the instance — `tests/conftest.py` now registers a suite-wide `deadline=None`
 profile, and `tests/unit/test_hypothesis_deadline_policy.py` fails if a
 `deadline=` reappears in a `settings()` decorator and makes the profile inert
 for that test.
 
-Coverage is **94.05%** (`.coverage-baseline`), held exactly by the run above.
-Do not read the movement from 93.69% as a quality trend; see B14 for why the
-number moves for reasons that are not test quality.
-
 **Note that the two compliance suites must be run in separate pytest
 invocations** — see B10m.
+
+**Every port has both an in-memory and a real-backend tier.** This table was
+its own entry (B10) until it stopped describing a gap; it is kept because it is
+the map, and nothing else in the repo states it in one place:
+
+| Port | In-memory | Real backend |
+|---|---|---|
+| `GraphStore` | `graph/adapters/memory.py`, default gate | Neo4j, `-m integration` (slices 4, 7) |
+| `VectorStore` | `vector/adapters/memory.py`, default gate | pgvector, `-m integration` (slice 5) |
+| `ChunkStore` | `chunks/adapters/memory.py`, default gate | Postgres, `-m integration` |
+| `Cache` | `MemoryCache`, default gate | Redis, `-m integration` (slice 11) |
+| `LlmProvider` | `FakeLlmProvider`, default gate | live model, `-m integration` (slice 6) |
+
+What remains open about the integration tiers is structural — *how* they run,
+not whether they exist: B10a, B10f, B10m.
 
 As of slice 9 there is no ORM, no session, no SQLAlchemy and no schema this
 library expects a caller to have migrated. Persistence is `GraphStore` and
@@ -70,6 +121,10 @@ layer.
 
 Entries here can produce an incorrect result for a caller. They are first
 because nothing else in this file costs a user anything.
+
+Ordered by whether a caller doing an ordinary thing meets it: B43 needs only a
+merge and a re-extraction, B32 needs a second extraction run, B97 needs a
+caller who declines the content-addressed id scheme, and B35 fails loudly.
 
 ### B43. A merge plans against a graph read outside its concurrency window
 
@@ -180,6 +235,47 @@ problem is currently worth:
 slice 6, when extraction actually emits." Slice 6 happened and did not take it
 up. It is open on its own merits now, not scheduled.
 
+### B97. Same chunk id, changed text diverges between the adapters
+
+`chunks/adapters/postgres.py`'s `_TERMS_ON_CONFLICT` is `DO NOTHING` and
+`_ON_CONFLICT` deliberately omits `doc_length` from its `SET` clause, both
+justified by content addressing: a chunk id fixes its text (via
+`chunk_id(source_id, text)`), so a write reusing an existing id is assumed to
+be writing the same text, and the term index and length can never need
+updating. That argument is correct only for callers who build ids with
+`chunk_id`; nothing enforces that they do. `StoredChunk.id` is a
+caller-supplied `str`, and `ports/chunk_store.py`'s `upsert_many` promises
+unqualified last-write-wins on `(tenant_id, id)`.
+
+A caller using self-assigned (non-content-addressed) ids that re-writes one
+id with different text gets, from `InMemoryChunkStore`, ranking over the
+*new* text (it tokenizes at query time), and from `PostgresChunkStore`,
+ranking over the *old* text and the *old* `doc_length` — the `text` column
+updates on conflict while the term rows and `doc_length` do not, because
+`_TERMS_ON_CONFLICT`/`_ON_CONFLICT` assume it can't happen. That is
+`.claude/rules/recurring-defects.md` §1, silently, and the compliance suite
+cannot see it because its `_chunk` helper always builds ids the real
+content-addressed way. Cheap fix: state the constraint as prose on
+`ChunkStore.upsert_many` in the port ("a chunk id is content-addressed over
+`(source_id, text)`; re-using an id for different text is outside the
+contract"). Thorough fix: make it executable, either a compliance case that
+asserts the adapters agree after such a write (would currently fail on
+Postgres) or `chunk_id`-derived validation on `StoredChunk` construction.
+
+**Update:** the cheap half landed — the prose is now on
+`ChunkWriter.upsert_many` in `src/redstring/ports/chunk_store.py`, as part of
+the chunk-semantic-channel work (see
+`docs/adr/0038-the-chunks-vector-lives-on-the-chunk.md`), because the new
+`embedding` column inherits the same assumption `doc_length` and the term
+index already made. The executable half is still open, and closing it needs
+a decision this entry hasn't made: whether the port promises last-write-wins
+on *derived* state (`doc_length`, the term index, and now `embedding`) for a
+same-id-different-text write, or whether that write is simply outside the
+contract and the compliance suite should assert the adapters both leave the
+old derived state in place. Those are different contracts, and picking one is
+what a test would pin — not something to infer from what's convenient to
+implement.
+
 ### B35. `GraphProjection.reset()` raises instead of truncating
 
 `projections/graph.py` and `projections/vector.py` --
@@ -195,9 +291,9 @@ nothing will ever remove -- a worse failure than a loud one. Callers wipe with
 
 The real fix is a `rebuild(tenant_id)` entry point on the projection that
 wipes and replays one tenant. **The read half of that now exists** —
-`project(..., tenant_id=...)` (B68) — so what is left is the wipe: a caller
-still has to call `delete_by_tenant` on both stores itself, which is what the
-replay tests do. Composing the two is what `rebuild` would be, and it belongs
+`project(..., tenant_id=...)`, upstream since eventsource-py 0.12.0 — so what
+is left is the wipe: a caller still has to call `delete_by_tenant` on both
+stores itself, which is what the replay tests do. Composing the two is what `rebuild` would be, and it belongs
 with whatever slice first needs it in anger.
 
 ---
@@ -206,6 +302,14 @@ with whatever slice first needs it in anger.
 
 Code that may well be correct, with nothing that would tell us if it were not.
 These are the entries most likely to become section 1 without warning.
+
+Ordered by how much shipped code is unwatched. The first six are places where
+a *test exists and cannot fail* — the Cypher bodies outside the gate, the
+mutation regions never run, the plan assertions that pin no negative — and
+they come first: a check that cannot fail is worse than a missing one. Then
+the two adapter divergences nothing can observe, then the measurements nobody
+has taken (B150 through B-BENCH-1), then the seams whose tests pass on someone
+else's guarantee (B101 through B86).
 
 ### B156. Nothing detects a corpus embedded under two different task prefixes
 
@@ -266,73 +370,6 @@ so none runs in the commit gate; and `src/redstring/testing/lifetime.py`
 holds only `NoOpLifetime`, a double mixin, with no lifetime *contract* suite
 at all — so the natural fix is one shared case in the shipped suite, which is
 also the shape eventsource landed.
-
-### B12. The accuracy suite — built, and what it still cannot tell you
-
-**Closed by building it rather than by deleting the marker**, which was the
-choice the entry framed. `tests/accuracy/` now holds a scorer, a graded corpus
-and a live-model test module, and `-m accuracy` collects four tests where it
-collected zero.
-
-The design decision worth keeping is the split. "Measure extraction accuracy"
-reads as one job needing a model, a corpus and a metric at once, and that
-reading is why the entry stayed open for eleven slices. It is two jobs:
-deciding whether a predicted entity *is* an expected one, which needs nothing
-and is where a wrong answer is silent, and getting predictions, which needs
-everything. The scorer and corpus are pure and run in the commit gate through
-`tests/unit/accuracy/`; only `test_extraction_accuracy.py` needs an endpoint.
-
-That split is also what makes a live number believable. An accuracy suite fails
-silently in two directions and both look like results — measuring nothing gives
-F1 = 0.0 and reads as a bad model, comparing the corpus against itself gives
-1.0 and reads as a good one. `test_harness.py` pins an exactly-right answer, an
-empty answer and a *wrong* answer against `FakeLlmProvider`. The third is the
-load-bearing one: a self-comparison cannot produce a false positive whatever
-the model says.
-
-**What it still cannot do**, which is the part to carry forward:
-
-- **Five documents is not a benchmark.** It catches a regression; it cannot
-  rank two models, and an F1 quoted from it is not a figure anyone should
-  publish. Growing the corpus is the obvious next step and needs a second
-  grader more than it needs more documents — the grading rule that a second
-  person gets wrong is stated at the top of `corpus.yaml`.
-- **The floors are regression floors.** Set where a real fall trips them, not
-  where the current endpoint sits. Raising them to track a good model turns
-  the suite into a test of that model.
-- **One negative document carries the whole hallucination check.**
-  `empty-negative` grades nothing, so recall is vacuous and precision is the
-  only movable metric. Every other document rewards finding things. If that
-  document ever acquires a graded entity, the only test of its kind is retired
-  silently — `test_the_negative_document_grades_nothing` exists to stop that.
-- **It does not settle ADR 0011.** It can show that off-schema extraction got
-  worse; it cannot show that constraining to the schema would be better.
-
-### B53. `Entity.temporal`'s storage shape is settled with B48, not before
-
-**The missing test is written.** `tests/compliance/graph_store.py` now asserts
-that a fully-populated `TemporalExtent` round-trips field for field, and that
-an entity with no extent comes back with `None` rather than an empty one --
-both by example rather than by sampler, since `entities()` draws a temporal
-only about half the time and `max_examples` is environment-tunable and lowered
-to 5 by mutation runs. Proved able to fail by making the in-memory adapter drop
-the field. Every adapter is now held to it, which was the point of putting it
-in the shared suite.
-
-The original entry's storage claim was **false** and was corrected in slice 11:
-the Neo4j adapter does encode `temporal` as `temporal_json`, and
-`TemporalQuery.entities_in_interval` returns the entity, including the
-precision-widening case. *That claim survived two slices because it was
-plausible and nobody ran it. It took ninety seconds to check.*
-
-**What remains open is the indexing half, and it is a joint decision with
-B48.** `temporal` is a JSON blob, so it cannot serve an indexed range
-prefilter. Flattening `TemporalExtent` into node properties would make B48's
-prefilter possible; the blob makes it impossible. Do not change the storage
-shape without settling B48 at the same time -- and note that the round-trip
-test above is now what would catch a flattening that loses `precision`, which
-is the field `domain/interval.py` needs and the one a timestamp column would
-silently drop.
 
 ### B10a. The Cypher-executing half of the Neo4j adapter is not in the gate
 
@@ -465,93 +502,13 @@ listed. It was invisible because the bands were written from the module's
 section headings rather than from the measurement, so a region between two
 headings had nowhere to appear.
 
-**The range run: 268 mutants, 22 survivors, all classified.**
-
-- **16 equivalent by construction** -- `_Parsed | None` in two return
-  annotations, rewritten as `+`, `%`, `^`, `**` and so on. PEP 563 makes
-  annotations strings that are never evaluated; unkillable here and anywhere.
-- **1 equivalent** -- `name != "September"` as `is not`, over month names that
-  are module-level literals and therefore interned. It is CLAUDE.md's row-one
-  trap sitting in the tree, equivalent only because every operand is a
-  literal, and it would stop being equivalent the moment a spelling arrived
-  from anywhere else.
-- **4 test gaps, now closed** -- a year range and a month range with *equal*
-  endpoints (`end < start` widened to `<=` returned `None` and nothing
-  noticed), and a quarter range *starting* at Q3 or Q4. The last is the
-  instructive one: `(first - 1) * 3 + 1` and `(first >> 1) * 3 + 1` agree for
-  Q1 and Q2 and differ for Q3 and Q4, and the existing cases were `Q1-Q2` and
-  `Q2-Q4` -- so the range's *end* was covered at Q4 while its *start* was
-  blind, which reading the parameters does not reveal.
-- **1 real defect, fixed** -- see below.
-
-**The defect: `_MONTH_NUMBERS` carried a spelling `_MONTH` could not produce.**
-The spelling table has exactly one conditional, whose entire purpose is to add
-"Sept" for September. The `_MONTH` pattern accepted `Sep(?:tember)?` and not
-"Sept", so that entry was **unreachable** -- "Sept 2024" fell through every
-pattern to `dateparser`, resolved differently against the two probe dates, and
-raised `AmbiguousReferenceDateError` instead of parsing. Two declarations of
-one fact with nothing failing while they disagreed, and it could only have
-been found this way: mutating the branch changed nothing observable, because
-no input reached it.
-
-Fixed in the pattern rather than by deleting the entry -- "Sept" is ordinary
-text and the table's intent was plainly to accept it -- with
-`test_every_spelling_the_table_maps_is_one_the_pattern_accepts` as the gate,
-proved red by reverting the pattern.
-
-**The period/century run: 176 mutants, 28 survivors, all classified.**
-
-- **11 equivalent by construction** -- the `_Parsed | None` return annotation
-  again.
-- **2 equivalent, and worth understanding rather than pattern-matching** --
-  `base + 1` rewritten as `base | 1` and `base ^ 1`. `base` is
-  `(century - 1) * 100`, always a multiple of 100 and therefore always even,
-  so bit 0 is clear and all three spellings agree for *every* century. Not
-  "equivalent on the inputs we test": equivalent, full stop.
-- **15 test gaps, now closed.** Four on the `century < 1` guard and eleven on
-  the portion arithmetic.
-
-**The century arithmetic could not be tested at the 19th century at all**, and
-that is the finding worth carrying. `(19 - 1) * 100` is 1800, which shares no
-set bit with 1, 33, 34, 66, 67 or 100 -- so `base + k`, `base | k` and
-`base ^ k` are *the same number* for every constant in the table. And
-`century - 1` equals `century ^ 1` for any odd century. Every existing case
-used the 19th century, which is the natural example for a library that reads
-historical text, and it made eleven mutants unkillable. The 20th century
-(base 1900) breaks every one of those coincidences.
-
-The guard needed its own boundary: `century < 1` widened to `< 2` rejects
-"early 1st century", and the first version of that test used plain
-"1st century" -- which `_CENTURY` matches and which never reaches the guard at
-all, so it passed against the mutant. **A boundary test has to reach the
-branch the boundary is in.**
-
-**The render run: 159 mutants, 7 survivors, all classified.** The smallest
-survivor count of the four, and the classification is most of the value.
-
-- **4 equivalent by construction** -- the `str | None` return annotation on
-  `render_temporal`, the PEP 563 shape again.
-- **1 equivalent, and provably so** -- `start != datetime(start.year,
-  start.month, start.day, ...)` rewritten as `>`. The two differ only where
-  `start` is *below* the midnight of its own date, which no datetime is.
-- **1 equivalent for the declared type** -- `precision is DatePrecision.YEAR`
-  as `==`. Enum identity and equality agree; the two would part only for an
-  argument the annotation forbids.
-- **1 test gap, now closed** -- and it is CLAUDE.md's row about intervals
-  whose bounds never coincide, second instance, in a different module.
-
-**The gap: `end.year <= start.year` survived being rewritten as `is`.**
-`TestRenderDeclines` *does* carry a year-range case, `2023-01-01` to
-`2023-06-01` -- but June 1 is not the first of its year, so the *first* clause
-of the `or` answers and the comparison is never what decides. Identity is
-false for every distinct `int` object, so under the mutant `"2023-2023"`
-rendered as a range the parser then refuses to read back. Closed with a
-coincident-endpoint case, proved by hand-applying the mutant under
-`PYTHONDONTWRITEBYTECODE=1`.
-
-Note what is *not* testable there: `TemporalExtent` rejects `end < start` at
-construction, so the `<` half of `<=` is unreachable and a coincident case is
-the whole of what an assertion can reach.
+**The four sessions' survivor classifications are in**
+[`docs/history/2026-08-mutation-and-measurement.md`](docs/history/2026-08-mutation-and-measurement.md)
+-- 268 mutants / 22 survivors on ranges, 176 / 28 on
+periods and centuries, 159 / 7 on render, and the `widen` third. Every
+survivor is classified there and four real test gaps came out of them, one
+of which was a live defect (`_MONTH_NUMBERS` carried a spelling `_MONTH`
+could not produce, so "Sept 2024" raised instead of parsing).
 
 **212 of the mutants counted as "run" above were timeouts, and are not.**
 The `render` session recorded 152 kills of which **132 were timeouts**, and
@@ -666,34 +623,167 @@ case with `min_score` set before touching it, and make the assertion count
 occurrences of the operator so a rewrite that claims to evaluate it once has
 to prove it.
 
-### B80. `PROPERTY_WEIGHT = 0.6` is a judgement, and nothing in the repo can settle it
+### B98. `PostgresChunkStore.lexical_candidates` is three unsynchronised reads
 
-`src/redstring/domain/lexical.py` scores a query against an entity's name, its
-`normalized_name`, and each string value in `properties` — the last multiplied
-by `PROPERTY_WEIGHT = 0.6`. The *shape* is defensible and tested: a name is
-what an entity is, a property is something recorded about it, so a property
-match is weaker evidence and must score below the same match on the name.
-`test_a_property_can_match_but_scores_below_the_same_match_on_the_name` pins
-that ordering.
+It acquires one connection and issues the corpus-statistics query, the
+document-frequency query, and the candidate query as three separate
+statements with no wrapping transaction. Under concurrent writes, the
+`n_docs` and `avg_doc_length` returned can describe a corpus that never
+coexisted with the returned `doc_frequencies` — a write landing between the
+first and third statement changes what "the corpus" means mid-read.
+`InMemoryChunkStore` is atomic by construction (no interleaving possible
+within one event loop turn), so this is a real adapter divergence, but it is
+in something `ports/chunk_store.py` does not pin: the port says nothing
+about snapshot consistency across the three parts of `lexical_candidates`'s
+answer. Nothing in the suite can observe it (single-threaded tests). Fix is
+either a `REPEATABLE READ` transaction around the three statements, or a
+sentence in the port stating plainly that the three are not guaranteed to be
+a consistent snapshot — so a caller relying on it knows not to.
 
-**The number is not tested and cannot be, here.** Any value in `(0, 1)` passes
-every test in `tests/unit/domain/test_lexical.py`, because the tests assert the
-ordering and the bound, which is all that is knowable without graded data.
-0.6 was chosen, not measured.
+### B99. `avg_doc_length` is computed by two different arithmetics
 
-Why it was not settled now rather than deferred: the only graded corpus in the
-repo is `tests/accuracy/`, and it grades **extraction** over five hand-graded
-documents. Fitting a retrieval weight against it would be worse than leaving
-the guess visible — five documents cannot separate 0.5 from 0.7, and a number
-carrying a fitted provenance invites the next author to trust it in a way the
-bare guess does not.
+`InMemoryChunkStore` computes `sum(lengths) / n` in Python float.
+`PostgresChunkStore` computes `avg(doc_length)` in SQL `numeric` and the
+adapter rounds the result to float. The compliance suite requires adapter
+scores to be **exactly** equal (not `pytest.approx`), and `avg_doc_length`
+feeds every BM25 score through the length-normalisation term. For the
+fixtures currently in the suite (13/4 = 3.25) both arithmetics are exact, and
+in general both are *correctly rounded*, so a disagreement needs a
+double-rounding case, which is rare — but the failure mode when it happens
+is an intermittently red cross-adapter test with nothing in the source
+changed, a shape this project has already been bitten by once (the
+`k=0`-sampler note in `CLAUDE.md`'s Testing notes section, about
+`InMemoryVectorStore.search`). Fix: `avg(doc_length::float8)` on the
+Postgres side makes both adapters do the same float arithmetic instead of
+routing one of them through `numeric`.
 
-What would settle it: a graded *retrieval* corpus — queries paired with the
-entities that should come back, ranked — of a size where nDCG@10 separates
-candidate weights beyond noise. That is the same corpus B81 needs, so the two
-should be picked up together; building it once answers both. Until then, treat
-0.6 as a placeholder with a test-pinned ordering around it, and do not tune it
-against anything smaller.
+### B150. `detect_communities` can return a partition it never converged on
+
+`MAX_PASSES` in `src/redstring/domain/community.py` bounds the local-moving
+loop at 100 full passes and, if it runs out, **returns whatever partition it
+has** rather than raising or reporting. Nothing in the return value tells a
+caller which happened.
+
+Why the bound exists rather than a `while` on the "did anything move" flag:
+every accepted move strictly increases modularity, so in exact arithmetic the
+loop cannot cycle — but the gain is a float, and CLAUDE.md is explicit that an
+invariant resting on an argument about arithmetic is inferred rather than
+enforced. A clustering that hangs is worse than one that stops early, because
+in CI a hang reads as infrastructure trouble and gets retried.
+
+Why it was not fixed now: no input is known that reaches the bound, so there
+is nothing to test the escape hatch against, and a `raise` on an unreachable
+branch would be an untested error path on a hot loop. Real graphs converge in
+a handful of passes.
+
+Fix, when someone has a reason to care: either find an input that cycles (a
+weighted graph with gains equal to within float error is the shape to look
+for) and then decide between raising and returning, or prove the bound
+unreachable and delete it. Do not simply raise the constant — that moves the
+symptom without answering the question. A second option worth weighing is
+returning the pass count alongside the partition so a caller can see it, but
+that widens the return type for a case nobody has observed.
+
+### B141. Nothing measures adjudication volume, and this release raises it
+
+Two changes in 0.8.0 multiply. `string_similarity` now lifts every
+strict-token-subset pair that clears a blocking key into the adjudication band
+(`{smith}` in `{john, smith}` is the archetype, and a real corpus has many of
+them), and `resolve_many` makes a pass run over a whole corpus rather than one
+subject. More pairs per subject, over more subjects, and each one that lands in
+the band costs part of a model call.
+
+**The bound the spec claimed does not exist.** `docs/plans/2026-08-14-consolidation-recall-and-throughput.md`
+said the banding corpus's `REJECT` half checks "that containment has not turned
+a type-key block into a stream of model calls". It cannot: those pairs share no
+whole token, so the overlap coefficient is `0.0` by construction and the list
+is structurally incapable of observing containment firing at all. The comment
+in `tests/unit/consolidation/test_banding_corpus.py` has been corrected; the
+missing measurement is this entry.
+
+**What does help, and is not credited anywhere:** cross-subject batching drops
+the call count from `sum(ceil(band_i / batch))` to `ceil(sum(band_i) / batch)`.
+Per-subject batches are nearly always short -- the band is a small fraction of a
+block by design -- so this is a real reduction and may well exceed the increase
+above. It is an argument, not a measurement.
+
+Fix: measure. Run a corpus pass over a graded corpus with a counting
+adjudicator, before and after the `CONTAINMENT_CEILING` change, and record
+calls-per-thousand-entities in `bench/`. Until then the cost of this release's
+recall improvement is unknown in the only unit anyone pays it in.
+
+
+### B155. Nothing measures whether a theme is any good
+
+`tests/unit/composition/test_themes.py` asserts the partition, the prompt
+contents, the counters and the ordering. None of that is a claim about the
+summary: a report reading "these entities are related" would pass every test
+in the file, and so would one describing the wrong cluster, because the fake
+provider's title is derived from the prompt rather than from understanding it.
+
+This is B12's measurability problem arriving at a new surface, and it is worse
+here than for extraction: `tests/accuracy/` grades extracted entities against a
+hand-graded corpus, and there is no equivalent notion of a *correct* theme.
+The cheapest honest thing is probably a graded corpus of a dozen documents with
+hand-written expected cluster descriptions and a judge model scoring overlap —
+which introduces an LLM-as-judge and everything wrong with it.
+
+Until then, treat `summarize_themes`'s output quality as unmeasured. In
+particular do not read B149's Leiden swap or B153's passage ranking as
+improvements without it — both would change what the model is shown, and
+nothing here would notice either way.
+
+**This is the entry that decides whether the thematic layer was worth
+building**, which is why it outlived B142 (the entry that asked for the layer,
+now deleted because the layer exists). The reason the capability was worth
+building is a cost shape rather than a quality claim: LLM calls are
+proportional to the number of *communities*, not the number of chunks — the one
+place in GraphRAG's design where a model call buys something that scales with
+the corpus's structure instead of its length. Nothing here shows what those
+calls buy. The open parts of the layer are B144 (no corpus-level edge weight),
+B147 (no identity across calls), B148 (the paged topology read), B149
+(clustering), B153 (passages) and this.
+
+### B12. The accuracy suite — built, and what it still cannot tell you
+
+**Closed by building it rather than by deleting the marker**, which was the
+choice the entry framed. `tests/accuracy/` now holds a scorer, a graded corpus
+and a live-model test module, and `-m accuracy` collects four tests where it
+collected zero.
+
+The design decision worth keeping is the split. "Measure extraction accuracy"
+reads as one job needing a model, a corpus and a metric at once, and that
+reading is why the entry stayed open for eleven slices. It is two jobs:
+deciding whether a predicted entity *is* an expected one, which needs nothing
+and is where a wrong answer is silent, and getting predictions, which needs
+everything. The scorer and corpus are pure and run in the commit gate through
+`tests/unit/accuracy/`; only `test_extraction_accuracy.py` needs an endpoint.
+
+That split is also what makes a live number believable. An accuracy suite fails
+silently in two directions and both look like results — measuring nothing gives
+F1 = 0.0 and reads as a bad model, comparing the corpus against itself gives
+1.0 and reads as a good one. `test_harness.py` pins an exactly-right answer, an
+empty answer and a *wrong* answer against `FakeLlmProvider`. The third is the
+load-bearing one: a self-comparison cannot produce a false positive whatever
+the model says.
+
+**What it still cannot do**, which is the part to carry forward:
+
+- **Five documents is not a benchmark.** It catches a regression; it cannot
+  rank two models, and an F1 quoted from it is not a figure anyone should
+  publish. Growing the corpus is the obvious next step and needs a second
+  grader more than it needs more documents — the grading rule that a second
+  person gets wrong is stated at the top of `corpus.yaml`.
+- **The floors are regression floors.** Set where a real fall trips them, not
+  where the current endpoint sits. Raising them to track a good model turns
+  the suite into a test of that model.
+- **One negative document carries the whole hallucination check.**
+  `empty-negative` grades nothing, so recall is vacuous and precision is the
+  only movable metric. Every other document rewards finding things. If that
+  document ever acquires a graded entity, the only test of its kind is retired
+  silently — `test_the_negative_document_grades_nothing` exists to stop that.
+- **It does not settle ADR 0011.** It can show that off-schema extraction got
+  worse; it cannot show that constraining to the schema would be better.
 
 ### B81. No retrieval accuracy suite exists, so "hybrid beats semantic" is an argument
 
@@ -737,12 +827,249 @@ structural coverage this entry already describes as not evidence about
 ranking quality. The graded corpus this entry calls for, once built, should
 be asked both questions rather than only the entity one.
 
+### B80. `PROPERTY_WEIGHT = 0.6` is a judgement, and nothing in the repo can settle it
+
+`src/redstring/domain/lexical.py` scores a query against an entity's name, its
+`normalized_name`, and each string value in `properties` — the last multiplied
+by `PROPERTY_WEIGHT = 0.6`. The *shape* is defensible and tested: a name is
+what an entity is, a property is something recorded about it, so a property
+match is weaker evidence and must score below the same match on the name.
+`test_a_property_can_match_but_scores_below_the_same_match_on_the_name` pins
+that ordering.
+
+**The number is not tested and cannot be, here.** Any value in `(0, 1)` passes
+every test in `tests/unit/domain/test_lexical.py`, because the tests assert the
+ordering and the bound, which is all that is knowable without graded data.
+0.6 was chosen, not measured.
+
+Why it was not settled now rather than deferred: the only graded corpus in the
+repo is `tests/accuracy/`, and it grades **extraction** over five hand-graded
+documents. Fitting a retrieval weight against it would be worse than leaving
+the guess visible — five documents cannot separate 0.5 from 0.7, and a number
+carrying a fitted provenance invites the next author to trust it in a way the
+bare guess does not.
+
+What would settle it: a graded *retrieval* corpus — queries paired with the
+entities that should come back, ranked — of a size where nDCG@10 separates
+candidate weights beyond noise. That is the same corpus B81 needs, so the two
+should be picked up together; building it once answers both. Until then, treat
+0.6 as a placeholder with a test-pinned ordering around it, and do not tune it
+against anything smaller.
+
+### B-BENCH-1. The long benchmark documents are ungraded, so nothing scored against them is accuracy
+
+`bench/corpus/*.txt` produce timings and a stability score (`bench/stability.py`),
+never an accuracy score. Stability is Jaccard agreement between repeats, and
+both sides of that comparison come from the code under test: a pipeline that
+deterministically drops half of every document scores 1.0. It detects variance
+— which is the live risk in deliverable C, where concurrency may cause naming
+drift at chunk boundaries — and nothing else.
+
+Deferred rather than skipped, and what was learned deciding it:
+
+- Hand-grading a 100k-character document is hours of work, and CLAUDE.md's
+  grading convention makes a *partial* grading actively misleading: "omission
+  is a claim", so every ungraded entity the model correctly finds is scored as
+  a false positive. A half-graded long document reports a precision failure
+  belonging to the grader.
+- The grading convention that makes the short corpus trustworthy — grade what
+  the text states, not what is true — is hardest exactly where a model knows
+  the subject. A Harry Potter article is the worst case: an extractor that
+  supplies Hermione's house from its own training rather than from the text
+  is wrong, and a grader who knows the books will not notice.
+
+Options, cheapest first: grade a *bounded excerpt* (the first 5k characters)
+and score only entities whose mentions fall inside it; or grade a long
+document in an unfamiliar domain where the grader has no prior knowledge to
+leak. Neither is free, and both are better than the third option of quietly
+renaming stability to accuracy.
+
+Until then: `bench/report.py` writes `stability` and `accuracy` as separate
+keys, and `accuracy` is `null` whenever the graded corpus did not run.
+
+### B101. `CandidateSource` and `MergeAdjudicator` have no compliance suite
+
+ADR 0025 declared both protocols and stated two obligations a substitute can
+violate without erroring:
+
+- `candidates` returns results best first **under a total order**. The default
+  breaks score ties by ascending entity id as a string so two runs over one
+  graph agree. A substitute sorting on score alone leaves a cutoff falling
+  inside a tie to be decided by whatever order its backend returned, which
+  surfaces as an intermittently different merge rather than as a failure.
+- `adjudicate` returns **exactly one verdict per candidate, positionally
+  aligned**, `None` where it has no answer. A short list silently records an
+  answer about one pair against another; `False` in place of `None` turns a
+  provider outage into a corpus that appears to hold no duplicates.
+
+Both are prose in a protocol docstring. Every other multi-implementation
+contract here is a shared body under `tests/compliance/` subclassed per
+adapter, and `.claude/rules/recurring-defects.md` §1 is precisely about what
+happens without one — two implementations diverge and nothing fails, because
+each one's tests assert its own behaviour.
+
+**Not built now, deliberately, and the reason is the part worth keeping:**
+there is exactly one implementation of each protocol. A compliance suite
+written against a single implementation gets tuned until that implementation
+passes, which is the failure this project has recorded twice (the tier-2
+banner in `tests/compliance/vector_store.py` says the same thing about a tier
+that has never run against an adapter that could fail it). The suite is worth
+writing when the *second* implementation appears, and its two cases are the
+two bullets above — a tie forced to occur, and an adjudicator returning a
+short list.
+
+`tests/unit/consolidation/test_substitution.py` covers the seam for the
+defaults' sake and says in its own docstring what it does not prove.
+
+### B102. `Retriever`'s overfetch default of 3 is reasoned, not measured
+
+`Retriever.__init__` takes `overfetch=3`, multiplying what each channel is
+asked for before RRF truncates to `k`. The *direction* is not in doubt: an
+entity neither channel returned cannot be promoted by fusion, and RRF
+demonstrably ranks a consistent runner-up above two channel-leaders
+(`test_rank_fusion_promotes_a_consistent_runner_up` asserts that arithmetic).
+Asking each channel for exactly `k`, as the code did, therefore dropped
+candidates the fusion rule says should win.
+
+**The number 3 is a guess.** Nothing here measures recall@k against a ground
+truth at 1, 2, 3 or 5, because there is no retrieval evaluation corpus --
+`tests/accuracy/` grades extraction, not retrieval. So the tests assert the
+*request* (`k * overfetch` per channel) and the fusion arithmetic, and neither
+can tell you whether 3 buys materially more than 2 or leaves recall on the
+table at 5.
+
+What a fix needs: a small graded query set in the shape of
+`tests/accuracy/corpus.yaml` -- queries with known-relevant entity ids -- and
+a measurement of recall@k across overfetch values, on a corpus large enough
+that the channels disagree. Related: **B10k** (no ANN adapter exists, so
+nothing here has ever run against a store that can miss a neighbour) and
+**B86** (two retrieval tests already pass on the adapter's guarantee rather
+than the `Retriever`'s).
+
+Until then the cost is stated in the docstring -- a wider `VectorStore.search`
+and a wider blocking-key scan per query -- and `overfetch=1` restores the
+previous behaviour exactly.
+
+### B84. `_resolve`'s round-trip saving is an untested optimisation
+
+`src/redstring/composition/retrieval.py:209`. `_resolve` seeds `resolved`
+from the entities the lexical channel already holds, so only the ids it did
+not supply are fetched. The docstring makes that an explicit cost claim ("in
+one round trip for the unknown", "only the ids it did not supply are
+fetched") and no test holds it: replacing that line with `resolved = {}` --
+so every `HYBRID` retrieve issues a `get_entities` round trip it does not
+need -- leaves the retrieval suite **green**, measured. Correct output,
+unverified cost, which is `recurring-defects.md` §3 in its mildest form.
+
+The template is in the same file:
+`test_a_lexical_only_mode_makes_no_embedding_call` wraps the provider in a
+counting subclass, and the file already builds a duck-typed store wrapper
+(`RebuildingGraphStore`) that a `get_entities` counter can copy. Roughly
+eight lines. Left out of the I1--I4 fix wave only because the review scored
+it Minor and the wave was scoped to the four Important findings.
+
+### B85. `entity_types` means two different things on the two retrieval channels
+
+`retrieve`'s docstring says "`entity_types` restricts both channels" without
+qualification. It restricts them differently:
+
+- the **lexical** channel compares `entity.entity_type` from the graph
+  (`src/redstring/composition/retrieval.py:181`);
+- the **semantic** channel filters on the *vector record's*
+  `metadata["entity_type"]`, via `entity_type_of`.
+
+Two consequences, neither documented nor tested. A vector upserted without
+`entity_type` metadata has `entity_type_of(...) is None`, so any non-`None`
+`entity_types` excludes it from the semantic channel even when the graph
+entity carries the wanted type -- and in `HYBRID` the entity still arrives
+lexically, so it *looks* like it works while the semantic contribution is
+silently missing and the rank changes. And the comparison is case-sensitive
+on both sides while `domain/blocking.py`'s `entity_type_key` normalizes, so
+`entity_types=["Person"]` matches nothing here while blocking treats
+`"Person"` and `"person"` as one type.
+
+Both follow from the ports rather than being bugs in the `Retriever`, which
+is why this is a docs-or-semantics decision rather than a fix: either
+qualify the docstring (cheapest, and honest), or normalize the comparison and
+say in `ports/vector_store.py` what a record missing the key means. Do not
+"fix" it by having the semantic channel consult the graph -- that is a second
+round trip per query on the path the vector filter exists to avoid.
+
+### B86. Two retrieval tests pass on the adapter's guarantee rather than the `Retriever`'s
+
+`tests/unit/composition/test_retrieval.py`. Both were asked for by the spec
+and both are worth keeping; what is worth recording is that neither is
+load-bearing as written, so nobody re-derives that later.
+
+- `test_entities_are_compared_by_equality_not_identity` builds a
+  `RebuildingGraphStore` returning equal-but-distinct entities, which is the
+  right construction -- but there is no `is` comparison on an `Entity`
+  anywhere in `Retriever` for it to catch, and it runs in `HYBRID` against an
+  *empty* vector store, so only `find_by_blocking_keys` is rebuilt and
+  `get_entities`'s rebuild path is never exercised. Pointing it at
+  `RetrievalMode.SEMANTIC` (where `_resolve` fetches) would make it mean
+  something, and is a one-line change.
+- `test_mutating_a_result_cannot_change_what_a_later_retrieve_returns` is
+  green because `InMemoryGraphStore` returns deep copies, which
+  `GraphStoreCompliance` already enforces. There is no implementation of
+  `Retriever` that fails it without also failing the compliance suite.
+
+Neither is a defect to fix under time pressure; the entry exists so the next
+reader does not mistake either for evidence about the `Retriever`.
+
 ---
 
 ## 3. Performance and scale
 
 Nothing here is slow at any size this project has measured. Each entry records
 the shape of the cost and what would have to be true before paying to fix it.
+
+Ordered by how close each is to a caller who would notice. B140 is the only one
+with a *reported* symptom shape (a shared limiter starving extraction); B123
+and B124 corrupt a similarity score rather than a timing; the rest are growth
+curves nobody has climbed.
+
+### B140. The endpoint ceiling is per pass, not per model call
+
+`ConsolidationService.resolve_many` acquires its `CallLimiter` once, around
+the whole `adjudicate_many` call:
+
+```python
+async with limiter:
+    verdict_lists = await adjudicator.adjudicate_many(work)
+```
+
+The shipped `Adjudicator.adjudicate_many` awaits its batches serially, so this
+is conservative -- it can never exceed `limit` requests in flight -- but it is
+far coarser than a ceiling on calls, and two consequences follow that a caller
+will notice before they read the code.
+
+**The internally-built limiter is inert.** With no `limiter` argument,
+`resolve_many` constructs `CallLimiter(concurrency)` and is its only acquirer,
+so it never waits. Deleting that construction would change no behaviour on the
+default path -- `recurring-defects.md` section 3's shape, surviving only
+because the caller-supplied path is real.
+
+**A shared limiter starves the pipeline.** `docs/how-to/run-a-corpus-consolidation-pass.md`
+recommends sharing one `CallLimiter` between `build_graph` and `resolve_many`,
+which is the right advice for the ceiling it describes -- but a consolidation
+pass then holds a slot for its *entire* adjudication phase, which is N
+sequential model calls and can be minutes. Extraction blocks that whole time
+for one slot's worth of work.
+
+**A foreign adjudicator can escape the bound entirely.** Because the limiter
+wraps the call rather than each request, an `adjudicate_many` that fans its
+batches out concurrently is unbounded past the first request. The protocol
+docstring now warns about this, which is a stopgap: a bound that depends on an
+implementer reading a docstring is a convention, not a ceiling.
+
+Fix: make the bound per model call -- either thread the limiter into the
+adjudicator so `_one_mixed_batch` acquires it, or have `resolve_many` drive the
+batching itself and acquire per batch. The first keeps batching where it is and
+widens the `MergeAdjudicator` contract again (see the B139 break already taken
+this release); the second moves batching out of the adjudicator, which is a
+bigger change to who owns what. Decide deliberately rather than by whichever is
+easier to type.
 
 ### B123. The graph feature's neighbour key is a name, so two distinct neighbours sharing one inflate it
 
@@ -830,11 +1157,34 @@ the semantics stay in one place. That method needs the compliance gate's
 mutation-isolation and tenant-isolation tests, and an `EXPLAIN` assertion in the
 Neo4j adapter after `CALL db.awaitIndexes()` (see B10i).
 
-**This is blocked on a storage decision, not just on effort.** `temporal` is
-stored as a JSON blob today (B53), and a JSON blob cannot serve the indexed
-range bound above. Flattening `TemporalExtent` into node properties is the
-enabling change, and it is the reason slice 8 did not add the field's storage
-shape in passing.
+**This is blocked on a storage decision, not just on effort, and that decision
+is the whole of what used to be B53.** `temporal` is stored as a JSON blob
+today, and a JSON blob cannot serve the indexed range bound above. Flattening
+`TemporalExtent` into node properties is the enabling change, and it is the
+reason slice 8 did not add the field's storage shape in passing. **Do not
+change the storage shape without settling this entry at the same time**, and
+vice versa — they are one decision, which is why B53 is now folded in here
+rather than kept beside it.
+
+Three facts about that shape, carried over so they are not rediscovered:
+
+- The round-trip is now pinned. `tests/compliance/graph_store.py` asserts a
+  fully-populated `TemporalExtent` survives field for field, and that an entity
+  with no extent comes back with `None` rather than an empty one — both by
+  example rather than by sampler, since `entities()` draws a temporal only
+  about half the time and `max_examples` is lowered to 5 by mutation runs.
+  Proved able to fail by making the in-memory adapter drop the field. That test
+  is what would catch a flattening that loses `precision`, which is the field
+  `domain/interval.py` needs and the one a timestamp column would silently
+  drop.
+- The Neo4j adapter *does* encode `temporal`, as `temporal_json`, and
+  `TemporalQuery.entities_in_interval` returns the entity including the
+  precision-widening case. B53 claimed otherwise for two slices. *That claim
+  survived because it was plausible and nobody ran it; it took ninety seconds
+  to check.*
+- Two citations point at the old number and should be read as pointing here:
+  `src/redstring/testing/graph_store.py` and
+  `docs/adr/0005-temporal-inference-on-read.md`.
 
 ### B10k. The pgvector adapter has no ANN index, so search is linear in a tenant
 
@@ -922,6 +1272,71 @@ silently. That is the argument for actually measuring and fixing the call
 cost rather than continuing to drop deadlines: the third occurrence will be in
 a file whose author has no idea `dateparser` is involved.
 
+### B133. `backfill_lexical_index` reads the whole table into Python, unscoped and unbatched
+
+`PostgresChunkStore.backfill_lexical_index()`
+(`src/redstring/chunks/adapters/postgres.py`) runs
+`SELECT id, tenant_id, text FROM {table}` with no `WHERE`, no `LIMIT`, and no
+paging, then builds the whole `doc_lengths`/`term_rows` JSON payload in
+memory before sending it back in one statement. It works for the corpus
+sizes the integration suite and any repo-scale deployment exercise today,
+but it does two things a real corpus will not tolerate: it re-touches every
+row in the table on every call, including rows already correct (there is no
+way to backfill only the rows a migration actually left behind, because
+nothing marks which rows predate the term index), and it holds the entire
+table's `text` in Python at once, which is a straightforward OOM on a corpus
+sized in the hundreds of thousands of chunks or more.
+
+Deferred rather than fixed here because scoping it correctly is its own
+design question, not a one-line change: tenant-scoping alone helps only a
+multi-tenant deployment with many small tenants, and batching needs a cursor
+or a keyset-paginated loop plus a decision about whether a batch failure
+partway through leaves some rows backfilled and others not (this method is
+currently one statement, and the whole point of that shape elsewhere in this
+adapter is that a crash mid-write cannot leave the corpus in a state that
+never existed -- a batched backfill gives that property up on purpose and
+should say so explicitly if it does). Whoever picks this up should decide
+batch size, whether it takes an optional `tenant_id` filter, and whether a
+partial run is idempotent to resume (it should be, given `ON CONFLICT DO
+NOTHING` on the term rows and an unconditional `UPDATE` on `doc_length`, but
+that needs a test once batching exists, not an assumption).
+
+### B92. Corpus statistics are recomputed per query, not maintained incrementally
+
+`lexical_candidates` counts `n_docs`, `avg_doc_length` and per-term document
+frequencies at query time — `count(*)`, `avg()`, and a per-term count scoped
+to the requested terms — rather than reading from counters kept in step with
+writes (`docs/adr/0024-bm25-over-the-chunk-corpus.md`).
+
+Deliberately not built speculatively: maintaining counters correctly across
+`upsert_many`, `replace_source` and both delete paths is real code with its
+own failure modes (a counter that drifts from the rows it describes is worse
+than no counter), and nothing has measured `count(*)`/`avg()` per query as a
+cost centre at any scale this repository has exercised. If it becomes one,
+the fix is counters updated by the same writes that touch `<table>_terms`,
+not a cache invalidated by a schedule.
+
+### B136. `StoredChunk` now carries a vector on every read, wanted or not
+
+ADR 0038 put `embedding` on `StoredChunk` rather than in a second store, and
+every `ChunkReader` method -- `get`, `get_by_source`, `get_by_entity` -- hands
+the whole row back, vector included, whether the caller asked
+`semantic_candidates` a question or not. A caller reading `get_by_source` over
+a large document to display its text, or to feed the lexical channel alone,
+now pays to carry one `dimension`-length float vector per chunk across the
+port for every chunk it reads, with no way to ask for the row without it.
+
+Not fixed here: a projection that selects columns is a port change --
+`ChunkReader`'s methods would need either a second return shape or a
+column-selection argument, and either is a real widening of the contract, not
+a drive-by fix alongside the capability that created the cost. More to the
+point, nothing has measured the width as a cost. `InMemoryChunkStore` pays
+nothing extra (Python already holds the object); `PostgresChunkStore` pays a
+`real[]` column read on every row, and whether that shows up at any corpus
+size this repository has exercised is unmeasured. Whoever picks this up
+should measure `get_by_source` over a document with hundreds of chunks before
+deciding whether a column-selecting variant is worth the port change.
+
 ### B10c. `neighbors` at a large `depth` is unbounded work
 
 `graph/adapters/neo4j.py` — traversal is one `-[rels:RELATES_TO*1..N]-`
@@ -994,6 +1409,17 @@ it.
   the *measurement*, but the distinction needs stating in the script or the
   next reader will correctly object.
 
+**Before any of that, run the diagnostic nobody has run.** This was the one
+thing the duplicate entry (B122, now deleted) had that this one did not, and it
+is cheaper than every fix above: snapshot `Coverage.get_data()`'s missing-line
+set, re-run, and diff per file. That *names* the wobbling lines instead of
+inferring them, and every candidate cause worth checking — `-n auto` with
+`parallel = true` combining over a worker set that varies with
+`pytest-randomly`'s seed, a varying skip condition, a stale `.coverage.*`
+combining in — is confirmed or eliminated by the same diff. A tolerance alone
+hides the variance; finding the lines without a tolerance leaves the next lucky
+run to write another unreachable baseline. Do both.
+
 **Do not close this by raising the baseline back.** The number is not the
 problem; ratcheting an unstable quantity is.
 
@@ -1030,40 +1456,15 @@ the text states, and a 4000-character document has enough marginal entities
 that a second grader would disagree with the first on a dozen of them. Budget
 the grading, not the writing.
 
-### What an off-corpus measurement showed, and exactly how far it goes
-
-Worth keeping, because whoever writes the graded document should know what to
-expect and what the trap is. A 2831-character Lovelace/Babbage passage,
-chunked at 900/100 into three chunks, `qwen3.6-27b-mtp`, each arm run twice:
-
-| | entities | relationships | fragment pairs | one name under two types |
-|---|---|---|---|---|
-| `carryover_entities=0` | 53 | 54 | 8 | 4 |
-| `carryover_entities=32` | 51 | 58 | 7 | 0 |
-
-Both repeats of each arm were **byte-identical**. That is not a suspicious
-result here — `LangChainLlmProvider.openai_compatible` defaults to
-`temperature=0.0`, so identical prompts give identical completions — and it
-settles something useful: the run-to-run noise floor on this rig is *zero*, so
-the whole of the difference above is attributable to the carryover and none of
-it to sampling.
-
-**It does not follow that this generalises.** Zero variance means repeating
-the run tells you nothing new; it does not turn one document into a sample.
-The direction matches what the mechanism predicts, and that is all it is.
-
-The clearest signal is the last column, not the first. The off arm produced
-the *same name under two different entity types* four times — `Analytical
-Engine`, `Engine`, `1871` and `funding` each appearing twice with different
-types, which is two ids for one thing — and the on arm produced none. That is
-the defect a `(name, entity_type)` carryover is shaped to fix, and it is worth
-grading for explicitly: **a graded document should contain at least one entity
-whose type a later chunk would plausibly assign differently.**
-
-The off arm also emitted `ine`, a truncated fragment, and
-`article on the Analytical Engine` as an entity in its own right. Neither is
-about the carryover; both are worth remembering when grading, because a corpus
-that never sees them cannot measure whether anything fixed them.
+**The off-corpus measurement that showed what to expect is in**
+[`docs/history/2026-08-mutation-and-measurement.md`](docs/history/2026-08-mutation-and-measurement.md).
+Two things from it bear on writing the graded document:
+the run-to-run noise floor on this rig is *zero* (`temperature=0.0`, and both
+repeats of each arm were byte-identical), so a difference between arms is
+attributable to the carryover and none of it to sampling; and the clearest
+signal was **the same name under two different entity types** four times in
+the off arm and none in the on arm. So a graded document should contain at
+least one entity whose type a later chunk would plausibly assign differently.
 
 **A second ceiling, found by running B57's measurement: entity recall is
 1.000 on every document in both arms.** There is no headroom, so this corpus
@@ -1236,10 +1637,15 @@ find src tests -type d -name __pycache__ -printf '%h\n' | sort -u |
 
 ### B14. The coverage number moves for reasons that are not test quality
 
-Coverage is **93.69%**, up from the 60.79% this entry was filed at. Almost
-none of that rise came from writing tests. It came from slices 6-10 deleting
-tens of thousands of lines of legacy source, and the ratchet raising the
-baseline behind each deletion. Slice 10 alone added 4.16 points by deleting
+Coverage is whatever `.coverage-baseline` says — **96.22** at the time of
+writing, up from the 60.79% this entry was filed at. The figure is deliberately
+not restated here beyond that: this entry carried 93.69% and the file's header
+carried 94.05% while the baseline read 96.22, three declaration sites of one
+number and no two agreeing.
+
+Almost none of the rise came from writing tests. It came from slices 6-10
+deleting tens of thousands of lines of legacy source, and the ratchet raising
+the baseline behind each deletion. Slice 10 alone added 4.16 points by deleting
 `encryption.py` (B58) — 127 statements at 0% coverage.
 
 **That is worth stating because it cuts both ways, and slice 9 saw both.**
@@ -1256,9 +1662,9 @@ should not be read as a quality trend, and a movement of either sign during a
 deletion slice needs the argument in the commit message rather than a reflex
 to add tests or lower the bar.
 
-**A 93.69% baseline is now high enough to be its own hazard.** It is close
-enough to 100 that a genuinely useful deletion can be blocked by a ratchet
-that has nowhere left to go, and small enough movements are now within the
+**A baseline in the mid-nineties is now high enough to be its own hazard.**
+It is close enough to 100 that a genuinely useful deletion can be blocked by a
+ratchet that has nowhere left to go, and small enough movements are now within the
 noise of which branches an xdist run happens to take. Expect to argue a drop
 in the commit message rather than to satisfy the number.
 
@@ -1284,6 +1690,59 @@ Deferred rather than fixed because it surfaced during an unrelated review pass
 and the fix touches the oracle two suites share
 (`test_replay_equivalence.py`-style tests and anything else building a
 `BuiltLog`) -- worth doing deliberately rather than as a drive-by.
+
+### B93. The truncation tie-break plan test EXPLAINs a hand-reconstructed proxy query, not the adapter's own SQL
+
+`tests/integration/chunks/test_postgres_store.py::test_lexical_candidates_truncation_tie_break_is_unfalsifiable_by_plan_alone`
+proves the `matched` CTE's `, chunk_id ASC` is load-bearing by forcing a
+`HashAggregate` (`enable_sort = off`) and EXPLAINing a query built by hand to
+resemble `_candidates_sql()`, rather than EXPLAINing the string that method
+actually returns. It exists because dropping the tie-break stayed green even
+with `enable_indexscan`/`enable_bitmapscan` off — a `GroupAggregate`'s
+incidental sort was supplying the order the assertion wanted, which is
+exactly the kind of accidental-pass this table's rows warn about.
+
+A hand-reconstructed proxy can drift from the statement it stands for: an
+edit to `_candidates_sql()` (an added predicate, a rewritten join) is not
+guaranteed to be mirrored into the test's copy, and when the two diverge the
+test keeps asserting a plan shape the adapter no longer produces while
+reading as green. Minor rather than a correctness hole, because real
+candidate correctness is asserted immediately after by a separate,
+non-EXPLAIN test — this only weakens the *plan* assertion, not the *result*
+one. Fix is to `EXPLAIN` the literal string `_candidates_sql()` returns
+(with parameter placeholders bound the same way the adapter binds them)
+rather than a restated query.
+
+**That fix is now cheap, and the pattern is already in the same file.**
+`test_get_by_entity_uses_the_gin_index` needed the identical guarantee and
+solved it with a `_RecordingPool` that intercepts `.fetch()`, so the statement
+EXPLAINed is by construction the one the adapter issued — no restatement to
+drift. Reuse it here. This was noticed while re-reviewing that test and not
+folded in, because doing so changes what a passing integration test proves
+and deserves its own commit rather than riding along in a fix round for
+unrelated findings.
+
+### B135. `test_semantic_candidates_query_applies_min_score_before_limit` only checks presence, not direction
+
+`tests/unit/chunks/test_postgres_schema.py::test_semantic_candidates_query_applies_min_score_before_limit`
+asserts `"$3" in where_clause`, which passes whether the adapter actually
+tests `>= $3`, `<= $3`, or even `$3 IS NOT NULL` with no comparison at all --
+any wiring of the `min_score` parameter into the `WHERE` clause satisfies it,
+including a wrong one. The port's contract (`min_score` is an inclusive
+lower bound: a candidate scoring exactly `min_score` survives) is pinned
+only by the shared integration case,
+`ChunkStoreCompliance.test_semantic_candidates_applies_min_score_before_limit`
+in `src/redstring/testing/chunk_store.py`, which does assert the boundary is
+inclusive against a real Postgres. The unit test's job was meant to be
+catching a regression before the server-requiring suite runs; as written it
+cannot.
+
+Not fixed here because tightening it needs either a stronger string
+assertion (`"score >= $3" in sql`, or similar, which is brittle to
+reformatting the SQL) or executing the statement's `WHERE` clause against a
+small fixture with a fake connection, which is more machinery than this
+adapter's other unit-level SQL-shape tests use. Whoever picks this up should
+decide which tradeoff is worth it before touching the assertion.
 
 ### B78. The embeddings probe is unbounded, and only its *count* was fixed
 
@@ -1483,45 +1942,13 @@ Nothing here is a defect. Each is a decision to *not* have something, recorded
 with what it would cost to change the answer — because the expensive part of
 each is the argument, not the code.
 
-### B122. The coverage ratchet measures a moving number, and cannot be lowered
-
-Two findings, and the second is the one that will waste someone's afternoon.
-
-**The measurement moves between runs.** The #39 gate run measured 96.32 and
-wrote it as the baseline. Two runs over a tree differing only in a version
-string and a CHANGELOG then measured **96.2968** — twice, identically — and
-`TOLERANCE` in `scripts/coverage_ratchet.py` is `0.01`, so a commit changing
-no code could not pass its own gate. The number moves by roughly one unit of
-~7100 (6009 statements + 1120 branches), and a baseline written from the high
-end of that spread rejects everything after it.
-
-**The cause was not established.** Candidates in the order worth checking: the
-suite runs `-n auto` with `parallel = true`, so worker assignment varies with
-`pytest-randomly`'s seed and coverage is combined over a worker set that is
-not fixed; two tests skip, and a varying skip condition would move the number;
-and a stale `.coverage.*` combining in would inflate rather than deflate,
-which fits 96.32 being the outlier. The diagnostic that settles it is cheap
-and was **not run**: snapshot `Coverage.get_data()`'s missing-line set,
-re-run, diff per file. That names the wobbling lines instead of inferring
-them.
-
-**Lowering the baseline by hand does not work, and fails silently.** The
-script auto-raises — `if total > baseline + TOLERANCE: write_baseline(total)`
-— and `write_baseline` runs `git add`. So editing `.coverage-baseline` down
-and committing produces a commit containing the *measured* value, not the
-edited one, with the hook reporting `Passed` either way. This was tried while
-cutting 0.4.0: 95.00 was written, and 96.30 is what landed. CLAUDE.md and
-`.claude/rules/testing.md` both say "to accept a deliberate drop, edit
-`.coverage-baseline` in the same commit" — **that instruction cannot be
-followed as written** while the auto-raise exists, and both files should say
-so once this is resolved.
-
-Widening `TOLERANCE` to cover the measured spread (0.05 would) fixes the
-lock-out but not the drop. A deliberate drop needs the auto-raise to be
-skippable — an environment variable the script reads, or raising only when
-the gain exceeds a margin larger than the noise. Do both, and find the lines
-first: a tolerance alone hides the variance, and finding the lines without a
-tolerance leaves the next lucky run to write another unreachable baseline.
+Ordered so that entries that block each other sit together: the extraction and
+thematic-layer cluster first (B121 through B153, where B143's corpus-level
+count gates B144, and B155 gates B149 and B153), then provenance and
+consolidation (B76 through B10c1), then the design questions each needing one
+decision and no research (B28 through B107b), then the deletions kept as a
+route back (B58 through B18b), which are the entries nobody needs to read until
+someone asks for the capability by name.
 
 ### B121. Should `BoundaryPreferenceChunker` become the default split?
 
@@ -1598,36 +2025,6 @@ Not urgent: `description` is not read by anything that ranks or resolves
 today, so what is lost is text a caller might display. It becomes urgent the
 moment a description reaches an embedding or a lexical channel, because at
 that point the fold is silently choosing what the corpus can be searched by.
-
-### B142. There is no thematic layer: nothing aggregates above the entity
-
-**Mostly closed.** ADR 0042 answered the four questions this entry refused to
-let anyone start in code without, and `summarize_themes` in
-`src/redstring/composition/themes.py` is step 2 over
-`domain/community.py`'s step 1: page the tenant's topology through the
-existing capabilities, partition it, and pay for one model call per community
-above `min_size`. Nothing is written — no event, no store, no `CommunityId`.
-`ThemeReport`/`Theme`/`summarize_themes` are on the public surface.
-
-**What remains open, and where:** the clustering is greedy modularity rather
-than Leiden (**B149**); the edge weight is 1.0 per relationship because there
-is no corpus-level weight to use (**B144**); the topology read is paged rather
-than bulk (**B148**); themes have no identity across calls (**B147**); the
-passage selection is a degree proxy (**B154**); and nothing measures whether
-any of it produces a good report (**B155**). None of those block the
-capability — they are the reasons not to claim more for it than it does.
-
-The cost shape is why it was worth building: LLM calls are proportional to the
-number of *communities*, not the number of chunks. It is the one place in
-GraphRAG's design where a model call buys something that scales with the
-corpus's structure instead of its length.
-
-Related: **B12** on why nothing here is measurable yet, and **B143**, whose
-frequency counter is an input to any weighting scheme this would use.
-
-Source: `graphrag/index/workflows/factory.py`,
-`create_community_reports_text`;
-https://microsoft.github.io/graphrag/index/methods/
 
 ### B143. The corpus-level mention count is still missing (the within-document one is built)
 
@@ -1732,6 +2129,74 @@ regex extractor's own source comment states.
 Source:
 `graphrag/index/operations/build_noun_graph/np_extractors/regex_extractor.py`
 
+### B146. Mechanical co-occurrence extraction was considered as a fast path and rejected
+
+Recorded because it will be proposed again — the cost numbers are compelling
+and the reason it does not apply here is not visible from them.
+
+GraphRAG's `--method fast` replaces the per-chunk LLM call with noun-phrase
+extraction plus co-occurrence. LazyGraphRAG, the same front end, reports
+indexing at **0.1%** of standard GraphRAG's cost. That is the pitch.
+
+What an edge means there is exactly this, from `_extract_edges`:
+
+```python
+for tu_id, titles in text_unit_to_titles.items():
+    if len(titles) < 2:
+        continue
+    for pair in combinations(sorted(set(titles)), 2):
+        edge_map[pair].append(tu_id)
+```
+
+**Undirected, untyped, unlabelled co-occurrence within one text unit.** No
+window narrower than the chunk, no sentence boundary, no dependency path, no
+predicate. `description` is written as the empty string.
+
+**This is tolerable there and not here, and the difference is not quality — it
+is what reads the graph.** In GraphRAG nothing consumes an individual edge:
+Leiden reads the topology and the report model reads the *source text*, so an
+edge's entire job is to put two phrases in one cluster. That is also why
+`.upper()` suffices as entity resolution — "Federal Reserve" and "Federal
+Reserve's" are distinct nodes and the clustering absorbs it.
+
+Here the graph is the product. An adapter satisfying `LlmProvider` would have
+to invent `ExtractedRelationship.relationship_type`, and a fabricated
+`"CO_OCCURS_WITH"` is not a local wart: it enters the event log permanently,
+and it is queryable through `get_relationships(relationship_type=...)` and
+`neighbors(relationship_types=...)` by every consumer. Our identity scheme
+makes the node side worse rather than better — `entity_id_for` hashes the
+normalised name, so GraphRAG's cruder normalisation would manufacture
+duplicate ids that `consolidation` then pays a model call each to resolve
+(`extraction/carryover.py` documents that cost for a much smaller cause).
+
+Two smaller points that also cut against it. Microsoft's own guidance calls
+the fast graph "quite a bit noisier" and "less directly relevant for use
+outside of GraphRAG". And our indexing cost is not currently understood well
+enough to trade graph quality for it: ADR 0031 found the bottleneck was the
+model *thinking*, not extraction, and got 5.7x plus better precision from one
+flag; `concurrency` is a second unmeasured lever defaulting to 1 for endpoint
+reasons rather than correctness ones.
+
+**The route back**, if this is reopened: it is not "plug an NLP extractor into
+`LlmProvider`". It is a decision that a typeless edge is a first-class kind of
+claim — a distinct relationship type with its own provenance
+`ExtractionMethod`, its own storage, and an argument about what consumers do
+when they meet one. That is an ADR, not an adapter.
+
+The parts of that pipeline worth having without this trade are the clustering
+and report layer, which is what the cheap graph exists to feed and which is now
+built (`summarize_themes`; its open parts are **B144**, **B147**, **B148**,
+**B149**, **B153** and **B155**), and **B145** (the extractor used as a
+diagnostic rather than a producer).
+
+Naming trap for whoever researches this next: circlemind's `fast-graphrag` is
+unrelated to Microsoft's `--method fast` despite the collision — it still
+LLM-extracts, and its "fast" is PageRank-based retrieval.
+
+Source: `graphrag/index/operations/build_noun_graph/build_noun_graph.py`;
+https://microsoft.github.io/graphrag/index/methods/ ;
+https://www.microsoft.com/en-us/research/blog/lazygraphrag-setting-a-new-standard-for-quality-and-cost/
+
 ### B147. Themes have no identity across calls
 
 `summarize_themes` recomputes the partition every time and returns reports
@@ -1790,133 +2255,80 @@ edges and returns a partition, and no caller sees the algorithm.
 the reports a caller reads are better, which needs the accuracy suite and
 B12's measurability problem solved first.
 
-### B146. Mechanical co-occurrence extraction was considered as a fast path and rejected
+### B152. `mention_counts` reaches no caller of `build_graph`
 
-Recorded because it will be proposed again — the cost numbers are compelling
-and the reason it does not apply here is not visible from them.
+`PipelineResult.mention_counts` (see **B143**) is produced by
+`ExtractionPipeline.extract` and read by nobody. `build_graph` in
+`src/redstring/composition/build_graph.py` holds the `PipelineResult` and
+returns a `GraphBuildReport` that does not carry the counts, so the only way
+to see them is to call `extract` directly rather than the composed entry
+point — which is not the path the library steers callers onto.
 
-GraphRAG's `--method fast` replaces the per-chunk LLM call with noun-phrase
-extraction plus co-occurrence. LazyGraphRAG, the same front end, reports
-indexing at **0.1%** of standard GraphRAG's cost. That is the pitch.
+Deliberately deferred rather than forgotten: composition and
+`src/redstring/__init__.py` were being edited concurrently when the counter
+landed, and a field on `GraphBuildReport` is a change to the *public* surface
+(the report is exported) rather than to an internal one. Adding it means
+deciding what B143's caveats look like on a report the caller keeps: the
+number is per-run and per-document, so a `GraphBuildReport` from a
+multi-document loop must not invite summing them.
 
-What an edge means there is exactly this, from `_extract_edges`:
+Fix: one field on `GraphBuildReport`, passed through from the result, with the
+"not comparable across documents" caveat restated at the field rather than
+only at `PipelineResult`. Note that a caller who wants a corpus-level number
+still cannot get one this way — that is B143's open half.
 
-```python
-for tu_id, titles in text_unit_to_titles.items():
-    if len(titles) < 2:
-        continue
-    for pair in combinations(sorted(set(titles)), 2):
-        edge_map[pair].append(tu_id)
-```
 
-**Undirected, untyped, unlabelled co-occurrence within one text unit.** No
-window narrower than the chunk, no sentence boundary, no dependency path, no
-predicate. `description` is written as the empty string.
+### B153. How a community's passages are read, and how they are chosen, are one decision
 
-**This is tolerable there and not here, and the difference is not quality — it
-is what reads the graph.** In GraphRAG nothing consumes an individual edge:
-Leiden reads the topology and the report model reads the *source text*, so an
-edge's entire job is to put two phrases in one cluster. That is also why
-`.upper()` suffices as entity resolution — "Federal Reserve" and "Federal
-Reserve's" are distinct nodes and the clustering absorbs it.
+Filed as two entries (B153 and B154) that each said the other was the reason it
+could not be taken alone. They are combined here because the choice is a single
+trade, and taking either half on its own is what would go wrong.
 
-Here the graph is the product. An adapter satisfying `LlmProvider` would have
-to invent `ExtractedRelationship.relationship_type`, and a fabricated
-`"CO_OCCURS_WITH"` is not a local wart: it enters the event log permanently,
-and it is queryable through `get_relationships(relationship_type=...)` and
-`neighbors(relationship_types=...)` by every consumer. Our identity scheme
-makes the node side worse rather than better — `entity_id_for` hashes the
-normalised name, so GraphRAG's cruder normalisation would manufacture
-duplicate ids that `consolidation` then pays a model call each to resolve
-(`extraction/carryover.py` documents that cost for a much smaller cause).
+**The read: one round trip per shown member, sequential and unbounded.**
 
-Two smaller points that also cut against it. Microsoft's own guidance calls
-the fast graph "quite a bit noisier" and "less directly relevant for use
-outside of GraphRAG". And our indexing cost is not currently understood well
-enough to trade graph quality for it: ADR 0031 found the bottleneck was the
-model *thinking*, not extraction, and got 5.7x plus better precision from one
-flag; `concurrency` is a second unmeasured lever defaulting to 1 for endpoint
-reasons rather than correctness ones.
+`_passages` in `src/redstring/composition/themes.py` calls
+`ChunkReader.get_by_entity` once per shown member, in order, stopping when
+`max_passages_shown` is reached. With the defaults that is up to 25 sequential
+round trips per community, and `CallLimiter` does not bound them — the limiter
+is the *inference endpoint's* ceiling, and a chunk store is a different
+backend with a different constraint.
 
-**The route back**, if this is reopened: it is not "plug an NLP extractor into
-`LlmProvider`". It is a decision that a typeless edge is a first-class kind of
-claim — a distinct relationship type with its own provenance
-`ExtractionMethod`, its own storage, and an argument about what consumers do
-when they meet one. That is an ADR, not an adapter.
+Why it was left: the port has no batch form (`get_by_entity` takes one id) and
+inventing one is a port widening, which is an ADR and obliges two adapters
+plus the published compliance suite — the same argument B148 makes about
+`GraphStore`. And the early exit means the common case is far fewer calls than
+25: the first member with passages usually supplies most of them.
 
-The parts of that pipeline worth having without this trade are **B142** (the
-clustering and report layer, which is what the cheap graph exists to feed) and
-**B145** (the extractor used as a diagnostic rather than a producer).
+Fix, when someone measures it as a cost: either a `get_by_entities` batch on
+`ChunkReader` (weigh against B148, which wants the analogous thing on
+`GraphStore` — one ADR arguing both beats two arguing one each), or
+`asyncio.gather` over the shown members, which is cheap but throws away the
+early exit and so reads every member's chunks whether or not the cap was
+already reached.
 
-Naming trap for whoever researches this next: circlemind's `fast-graphrag` is
-unrelated to Microsoft's `--method fast` despite the collision — it still
-LLM-extracts, and its "fast" is PageRank-based retrieval.
+**The choice: passages are selected by their entity's degree, not by how well
+they describe the community.**
 
-Source: `graphrag/index/operations/build_noun_graph/build_noun_graph.py`;
-https://microsoft.github.io/graphrag/index/methods/ ;
-https://www.microsoft.com/en-us/research/blog/lazygraphrag-setting-a-new-standard-for-quality-and-cost/
+`_passages` takes the first chunks of the most-connected members, in member
+order, until `max_passages_shown` is full. That is a proxy: a passage
+mentioning one central entity in passing outranks one mentioning four of the
+community's members, because the second is only ever reached through whichever
+of those members happens to sort first.
 
-### B92. Corpus statistics are recomputed per query, not maintained incrementally
+GraphRAG ranks text units for a community report by how many of the community's
+entities each one mentions, which is the obvious better rule and is *computable
+here* — `StoredChunk.entity_ids` carries exactly that, so the score is
+`len(set(chunk.entity_ids) & members)`.
 
-`lexical_candidates` counts `n_docs`, `avg_doc_length` and per-term document
-frequencies at query time — `count(*)`, `avg()`, and a per-term count scoped
-to the requested terms — rather than reading from counters kept in step with
-writes (`docs/adr/0024-bm25-over-the-chunk-corpus.md`).
+**Why the two halves are one entry.** Ranking needs every candidate chunk
+before it can choose, which is the opposite of the early exit above: you cannot
+stop at ten passages if you have to see them all to know which ten. So taking
+the ranking costs the cheap case that makes the sequential read tolerable, and
+a batch or `gather` fix aimed only at the read would be sized against a call
+pattern the ranking then replaces. Decide both at once or neither.
 
-Deliberately not built speculatively: maintaining counters correctly across
-`upsert_many`, `replace_source` and both delete paths is real code with its
-own failure modes (a counter that drifts from the rows it describes is worse
-than no counter), and nothing has measured `count(*)`/`avg()` per query as a
-cost centre at any scale this repository has exercised. If it becomes one,
-the fix is counters updated by the same writes that touch `<table>_terms`,
-not a cache invalidated by a schedule.
-
-### B93. The truncation tie-break plan test EXPLAINs a hand-reconstructed proxy query, not the adapter's own SQL
-
-`tests/integration/chunks/test_postgres_store.py::test_lexical_candidates_truncation_tie_break_is_unfalsifiable_by_plan_alone`
-proves the `matched` CTE's `, chunk_id ASC` is load-bearing by forcing a
-`HashAggregate` (`enable_sort = off`) and EXPLAINing a query built by hand to
-resemble `_candidates_sql()`, rather than EXPLAINing the string that method
-actually returns. It exists because dropping the tie-break stayed green even
-with `enable_indexscan`/`enable_bitmapscan` off — a `GroupAggregate`'s
-incidental sort was supplying the order the assertion wanted, which is
-exactly the kind of accidental-pass this table's rows warn about.
-
-A hand-reconstructed proxy can drift from the statement it stands for: an
-edit to `_candidates_sql()` (an added predicate, a rewritten join) is not
-guaranteed to be mirrored into the test's copy, and when the two diverge the
-test keeps asserting a plan shape the adapter no longer produces while
-reading as green. Minor rather than a correctness hole, because real
-candidate correctness is asserted immediately after by a separate,
-non-EXPLAIN test — this only weakens the *plan* assertion, not the *result*
-one. Fix is to `EXPLAIN` the literal string `_candidates_sql()` returns
-(with parameter placeholders bound the same way the adapter binds them)
-rather than a restated query.
-
-**That fix is now cheap, and the pattern is already in the same file.**
-`test_get_by_entity_uses_the_gin_index` needed the identical guarantee and
-solved it with a `_RecordingPool` that intercepts `.fetch()`, so the statement
-EXPLAINed is by construction the one the adapter issued — no restatement to
-drift. Reuse it here. This was noticed while re-reviewing that test and not
-folded in, because doing so changes what a passing integration test proves
-and deserves its own commit rather than riding along in a fix round for
-unrelated findings.
-
-### B94. Generated Postgres index names can exceed the 63-byte NAMEDATALEN, and truncation is silent
-
-`chunks/adapters/postgres.py`'s DDL builds index names by interpolating the
-configured table name — `{table}_terms_term_idx` and its siblings — and the
-table name is validated only as a bare identifier up to 62 characters. A
-long but legal table name pushes the generated index name past Postgres's
-63-byte `NAMEDATALEN`, and Postgres truncates silently rather than erroring,
-so two differently-named tables with a shared long prefix could collide on
-the same truncated index name.
-
-**Pre-existing, not introduced by this branch** — the naming scheme predates
-the chunk-lexical work and is unchanged by it; filed now because Task 6/7
-review is what noticed it. Fix, if picked up, is either shortening the
-generated suffixes or hashing the table name into the index name so length
-is bounded regardless of what the caller configures.
+Neither is worth doing until something measures whether the passages shown are
+the reason a report is good or bad — which is **B155**.
 
 ### B76. A relationship says which document stated it, not which sentence
 
@@ -1983,6 +2395,355 @@ holds the token stream — `LlmProvider.extract` returns a parsed object — so
 promising anything finer would be a promise the port cannot keep. Chunks
 completed out of chunks total, plus the phase (extracting / merging /
 projecting), is what is actually knowable here.
+
+### B128. `Relationship` has no `Provenance`, and should not share `Entity`'s
+
+`Entity.provenance` exists; `Relationship` still carries a bare `confidence`
+and `source_id` on the type itself. **This asymmetry is deliberate and is not
+the thing to fix.** A relationship has no `extraction_method` and no `model` —
+nothing asks the model *how* an edge was derived — so forcing it into
+`Provenance` would mean either fields that are always `None` on one of the two
+users of the type, or a base class earning its keep across two subclasses.
+Neither is better than the asymmetry.
+
+What is genuinely missing is `observed_at`. An edge cannot answer "when was
+this observed", so the ordering `MOST_RECENTLY_OBSERVED` performs over
+properties has no counterpart for relationships, and a future merge that had to
+choose between two contradictory edges would be back where `resolve` started.
+The cheapest honest shape is probably a second, smaller value object rather
+than a shared one — decide that when a caller needs the ordering, and record
+which way it went.
+
+Relates to **B76**, which is the other half of the same gap from the other
+side: B76 is about *which sentence* stated an edge, this is about *when* the
+library was told. Neither subsumes the other, and B76's warning applies here
+too — it is the sharper form of an entry that was once deleted rather than
+fixed.
+
+### B44. Rejected merge candidates are discarded, not recorded
+
+`consolidation/service.py::resolve` drops every candidate the policy or the
+model rejected. Nothing records that the pair was considered, what it scored,
+or what the model said about it.
+
+That is the data needed to tune `HIGH_SIMILARITY` and `LOW_SIMILARITY`, which
+are currently inherited numbers with no measurement behind them on this
+corpus. Without the rejections there is no way to answer "how many real
+duplicates fall below the low threshold" except by re-running the whole
+pipeline with a wider band -- and the model calls that band costs are exactly
+what the thresholds exist to avoid spending twice.
+
+**Not simply "emit an event for it".** A `MergeRejected` on the consolidation
+stream would put one event per considered pair into a permanent, replayed log
+that already grows with a tenant's merge history, to record something with no
+effect on the graph. The right home is probably a projection or a metrics
+sink, which is a decision about a piece of infrastructure this project does
+not have yet.
+
+Interim: `ScoredCandidate` already carries the per-signal features, so a
+caller wanting this today can call `CandidateFinder.candidates` itself and log
+what it sees before handing the survivors to `resolve`.
+
+### B67. No way to find entities that were never consolidated
+
+Reported downstream. `Entity` carries no consolidation state, so "resolve
+whatever has not been resolved yet" is a scan of every entity in the tenant.
+Consolidation is a problem this library claims to own, and the incremental case
+— documents arriving continuously, consolidation running periodically — is the
+normal one rather than an exotic one.
+
+Do not solve it by adding a mutable `consolidated: bool` to `Entity`. The write
+model is event-sourced and `Entity` is a value handed to a projection; a flag on
+it would be state the log does not own, and the first replay would have to
+reconstruct it anyway. The candidates worth weighing are a projection that
+maintains an unresolved set from `DocumentExtracted` and `EntitiesMerged`, or a
+store-level query over "entities with no alias and no merge event". Both are
+real designs; neither is a field.
+
+### B83. The lexical retrieval channel does not consult aliases
+
+`Retriever`'s lexical channel generates candidates with
+`GraphStore.find_by_blocking_keys` and scores them against
+`Entity.name`, `Entity.normalized_name` and the string values in
+`Entity.properties`. **An `Alias` is none of those.** Alias-ness is an edge,
+not a field on `Entity` (see
+`docs/adr/0002-two-store-ports.md`), so a query matching an alias name
+retrieves nothing today even though the store knows the alias exists.
+
+The surface to build on is already there and is exercised:
+`GraphStore.find_aliases(canonical_entity_id, tenant_id)` and
+`resolve_entity_ids(entity_ids, tenant_id)`, both on the `AliasStore`
+capability, both covered by `GraphStoreCompliance`.
+
+**Why it was deferred rather than added.** The blocking side is easy — alias
+names could carry blocking keys and enter the candidate set. What is *not*
+decided is what a match on an alias should **return**, and the answer is not
+obvious:
+
+- Returning the **alias entity** is literally what matched, and it is
+  usually not what the caller wants — they searched for a name and want the
+  thing it names.
+- Returning the **canonical** entity is what they want, and it makes the
+  result inconsistent with the query in a way the caller cannot see: the
+  returned `Entity.name` is not the string that matched, so a UI highlighting
+  the match has nothing to highlight, and two aliases of one canonical
+  collapse into a single result whose `lexical` score belongs to neither name.
+- Returning **both** doubles some results and needs a rule for ranking a
+  canonical against its own alias.
+
+That is `domain.preference`'s territory —
+`docs/adr/0010-one-total-order-for-preference.md` settles which mapping of a
+thing survives, and this is the same question asked at read time rather than
+at merge time. Deciding it inside the retrieval work would have meant either
+extending that total order or growing a second one beside it, which is exactly
+the "second entity-id scheme gets born" shape the layer contract is arranged
+to prevent.
+
+So: settle the return semantics first, ideally as an amendment to 0010,
+*then* wire the candidates. Whichever way it goes, `ScoredEntity` probably
+needs a field naming the string that actually matched — without it the caller
+cannot tell an alias hit from a name hit, and that is the distinction the
+whole question turns on.
+
+### B91. `domain/tokenize.py` does no stemming
+
+`tokenize` splits on non-alphanumerics and casefolds, but "running" and "run"
+are different terms to it, and that recall cost is real for the BM25 channel
+built on top of it (see
+`docs/superpowers/plans/2026-08-07-chunk-lexical-channel.md`).
+
+Deferred rather than added because a stemmer is a language model — English-only,
+and a new dependency — and two implementations of "the Porter stemmer" differ
+at the edges, which is exactly the adapter-divergence shape
+`domain/tokenize.py`'s own docstring exists to prevent, reintroduced one level
+up. Postgres's `english` text search configuration stems, and using it instead
+of this module was rejected for the same reason: the in-memory adapter has no
+equivalent, and the two stores would then disagree about what a term is.
+
+If this is picked up, it is a single domain-owned implementation added to
+`tokenize.py` (or a sibling module both adapters call), never a per-adapter
+one — a Postgres-side stemmer and an in-memory approximation of it is the same
+divergence with different code.
+
+### B-ALIAS-1 — a name-only feature cannot link a name to its titled alias when the tokens only partly overlap
+
+`domain/similarity.string_similarity` now scores a strict token subset at
+`CONTAINMENT_CEILING` ("Dr. Grant" against "Grant", "Lord Voldemort" against
+"Voldemort"). It does nothing for a *partial* overlap, and the gap is
+arithmetic rather than an oversight:
+
+```
+"Ada Lovelace"  / "Countess of Lovelace"   1 shared token of 2  ->  0.585  reject
+"John Smith"    / "Jane Smith"             1 shared token of 2  ->  0.880  adjudicate
+```
+
+The first pair is one person and the second is two, and **the two cases are
+indistinguishable from the strings alone** -- the overlap coefficient is 0.5
+for both. (They land in different bands only because Jaro-Winkler happens to
+score the second higher, which is luck, not signal.) So lowering the overlap
+term to catch the first would pull in every pair of strangers sharing a
+surname, at a type-key block's scale.
+
+What actually separates them is evidence outside the name: an embedding that
+has seen both in context, a graph neighbourhood they share, or an explicit
+alias supplied by the caller. Two of those three already exist as features and
+are simply absent for freshly extracted entities with no vector and no edges --
+which is exactly the case this whole change was aimed at.
+
+Not fixed because every name-only fix is a precision loss with no matching
+recall gain. Fix, if it is worth it: an explicit caller-supplied alias table
+consulted during blocking, which is a different mechanism from scoring and
+would need its own ADR (it puts caller assertions into merge decisions, which
+`ConsolidationLog`'s audit story has opinions about).
+
+### B10c1. Hop distance from `neighbors` — deliberately not added
+
+`ports/graph_store.py::neighbors` returns entities without how far away they
+are. **This is a decided deferral, not an oversight**, taken with the trade-off
+explicit: the need was speculative, the port had just been through review, and
+widening a contract that three adapters must implement on speculation is worse
+than retrofitting later. It knowingly cuts against "change the port before the
+second adapter exists", because the retrofit here is mechanical rather than
+structural.
+
+Both adapters can supply it cheaply, which is what makes the deferral safe:
+
+- **In-memory** (`graph/adapters/memory.py`) already carries the hop count —
+  its BFS frontier is `deque[tuple[EntityId, int]]` and `hops` is in hand at
+  the moment a neighbour is appended. It is thrown away, not computed.
+- **Neo4j** needs `min(length(p))`. It is *not* free in the current shape:
+  the query is `RETURN DISTINCT e ORDER BY e.id`, and `DISTINCT` collapses
+  exactly the paths that carry the length. The form is
+
+  ```cypher
+  MATCH p = (origin)-[rels:RELATES_TO*1..N]-(e:Entity)
+  WHERE ...
+  RETURN e, min(length(p)) AS hops
+  ORDER BY e.id
+  ```
+
+  — an aggregation grouped by `e`, replacing the `DISTINCT`. Cheap, but a
+  different query rather than an extra return column.
+
+Whoever adds it must also extend `tests/compliance/graph_store.py`: shortest
+distance, not first-found, is the contract worth pinning, and a **diamond**-shaped
+graph (two paths of different length to the same node) is the case that
+separates them. On a chain they are the same function, which is why a chain
+would pass while shipping first-found semantics.
+
+### B28. `DEEP_MERGE`
+
+**Shrunk further.** `PREFER_MERGED` and `MOST_RECENTLY_OBSERVED` (which this
+entry called `LATEST`) are implemented — see
+[ADR 0035](docs/adr/0035-provenance-is-a-value-object.md). The reason they
+could not be implemented before was never the missing timestamp this entry
+named: `resolve` took bare *values*, so any strategy needing more than the
+value was unanswerable by construction. It now takes `PropertyClaim`s, each
+carrying the `Provenance` of the entity that made it.
+
+All four implemented strategies, including these two, are now reached through
+`consolidation/planning.py`'s `plan_properties`, called from
+`ConsolidationService.merge` — see
+[ADR 0036](docs/adr/0036-a-merge-resolves-the-canonical-entitys-fields.md).
+
+**`DEEP_MERGE` remains deferred for its original reason, which none of that
+touches.** Nested-dict semantics for `properties` and `external_ids` are easy
+to get subtly wrong, and a wrong deep merge is effectively unrecoverable
+because the pre-merge shape is not derivable from the result. It raises
+`NotImplementedError` naming this entry rather than falling back to
+`PREFER_CANONICAL`, which would write the canonical value while the caller
+believed it asked for something else. Implement when a caller needs it, with an
+undo path in hand — not before.
+
+### B103. The only production adapters live on paths the package calls unsupported
+
+`redstring/__init__.py` states the contract plainly: anything reached through
+a dotted path "is internal and may change without notice, including in a patch
+release." The adapters a caller actually deploys are all reached that way --
+`redstring.llm.adapters.langchain.LangChainLlmProvider`,
+`LangChainEmbeddingProvider`, `Neo4jGraphStore`, `PgVectorStore` -- while the
+two *exported* providers are `FakeLlmProvider` and `FakeEmbeddingProvider`.
+
+So the README's primary quickstart imports from an explicitly unsupported
+path, and the supported surface is the one nobody ships. The reason for not
+exporting them is good and should not be reversed: exporting
+`LangChainLlmProvider` makes `import redstring` pull LangChain in, and the
+extras exist so a caller pays only for the backends they use.
+
+**The obvious fix is blocked by the architecture contract, which is why this
+is filed rather than done.** A `redstring.adapters` namespace re-exporting the
+extra-gated adapters would import `llm`, `graph` and `vector` -- three
+siblings forbidden from importing each other -- so it could only sit on
+`composition`. And `pyproject.toml`'s contract says exactly what to do with
+such a candidate: "ask what it composes; a candidate that cannot name such a
+pair is a piece of one half placed above it for convenience." A re-export
+shim composes nothing. CLAUDE.md separately records that `context`, a
+re-export shim, was deleted in slice 10.
+
+Three routes, none free:
+
+1. **A module-level `__getattr__` on `redstring`** raising a helpful
+   `ImportError` naming the extra, with the names declared under
+   `TYPE_CHECKING` so checkers still resolve them. Smallest, adds no module to
+   the contract, and keeps `import redstring` lazy. The cost is that
+   `__all__` stops being the literal list of what a caller may use, which the
+   three public-surface gates are built around -- so those gates need to
+   learn about it, and ADR 0006 needs amending rather than merely citing.
+2. **A stability promise attached to the existing dotted paths**, stated in
+   `__init__.py` and enforced by a test that those four import paths still
+   resolve. No new module, no contract change; the promise becomes prose plus
+   one gate rather than membership of `__all__`.
+3. **Accept it and say so in the README**, which is the status quo made
+   honest rather than a fix.
+
+Route 2 is the cheapest thing that removes the contradiction, and route 1 is
+the one that gives a caller what they actually want. Either needs an ADR,
+because "the public surface is `__all__` and nothing else" is ADR 0006's
+decision and both routes qualify it.
+
+### B114. `index_documents` takes a whole `ChunkStore` and drives a `ChunkWriter`
+
+`src/redstring/composition/index_documents.py:114` declares `store: ChunkStore`
+and does one thing with it: `ChunkProjection(store)`, which ADR 0026 narrowed
+to `ChunkWriter`. So the composition entry point is the wider of the two, and
+the narrowing stops one line short of the front door.
+
+It is exempt in `tests/unit/test_collaborators_declare_their_capability.py`
+rather than narrowed, because the argument is genuinely two-sided and the gate
+landed in a test-only wave that did not own `src/`. For narrowing: the function
+uses one capability, and `build_graph`'s `chunks: ChunkStore | None` is in the
+same position for the same reason. Against: this is the public surface a caller
+hands their corpus to, the docstring says "The corpus. Any `ChunkStore`", and a
+caller who then wants to *read* the corpus holds the whole port anyway -- so
+narrowing here buys a smaller signature and no removed authority, unlike
+`CandidateFinder`, where the point was declining `TenantPurge`.
+
+Decide it deliberately: either narrow both entry points to `ChunkWriter` and
+delete the exemption, or record in the exemption's reason that the whole port
+is the intended front-door contract. Do not leave it as neither. Note that
+narrowing changes a signature in `redstring.__all__`'s closure, so check
+`tests/unit/test_public_surface_is_self_contained.py` in the same edit.
+
+### B131. `Consolidator.merge` and `Consolidator.resolve` cannot override `merge_policy` per call
+
+`ConsolidationService.merge` takes a per-call `policy:` argument (Task 4 of
+`2026-08-13-merged-properties`), but `Consolidator.merge` and
+`Consolidator.resolve` in `src/redstring/composition/build_graph.py` do not
+forward one -- only `Consolidator.__init__`'s `merge_policy` is wired through,
+per that task's brief. A caller using the composed entry point therefore gets
+one property-merge policy for the consolidator's whole lifetime, with no way
+to widen or narrow it for a single call the way the service itself allows.
+Deferred rather than added speculatively: the brief scoped Task 4 to the
+`__init__` pass-through, and adding a `policy:` parameter to both `merge` and
+`resolve` (and to `ConsolidationReport`, if the resolution should be visible
+there too) is its own decision about the composed surface, not a mechanical
+extension of this task.
+
+### B132. `StoredChunk` accepts a zero-norm `embedding` at construction; only the store rejects it
+
+`ChunkStore.upsert_many`/`replace_source` now reject a zero-norm `embedding`
+at the write seam (`src/redstring/chunks/adapters/memory.py`, mirroring
+`InMemoryVectorStore.upsert_many`), and `semantic_candidates` rejects a
+zero-norm query vector -- both per `src/redstring/ports/chunk_store.py` and
+pinned in `src/redstring/testing/chunk_store.py`. But `StoredChunk`
+(`src/redstring/domain/chunk.py`) itself has no such validator, so
+`StoredChunk(embedding=[0.0, 0.0, 0.0, 0.0], ...)` constructs cleanly and the
+zero vector is only ever caught later, at whichever store the chunk is handed
+to -- a caller building one for a test, a queue, or any path that never
+reaches a store sees no error at all. `VectorRecord` has the identical
+question and the same answer (validated only at `VectorStore.upsert`, not at
+construction); this is one open question, not two.
+
+Deferred rather than decided in Task 6: moving the guard onto the domain type
+is a wider change than the store contract this task was scoped to -- it
+would make `StoredChunk`/`VectorRecord` construction itself capable of
+raising over a field whose only present consumer is the store adapters, and
+touches both `domain/chunk.py` and `domain/vector.py` with their own
+compliance-suite implications (a pydantic `field_validator` needs its own
+test, and every existing test constructing a `StoredChunk`/`VectorRecord`
+with a real embedding would need auditing for whether it ever passes a
+plausible-looking zero by accident, e.g. an uninitialised `[0.0] * dimension`
+placeholder). Whether that duplication of the check is worth paying for the
+earlier, cheaper failure is a call for whoever owns `domain/`.
+
+### B107b. `LlmProvider` and `EmbeddingProvider` have no declared lifetime
+
+ADR 0028 deliberately stopped at the four store-shaped ports.
+`tests/unit/test_ports_declare_the_block_form.py::TestOnlyTheStoreShapedPortsAreClaimed`
+asserts the two provider ports are *not* `AsyncClosable`, so the exclusion is a
+decision rather than an omission -- but it is an open one.
+
+What makes them different, and why copying the decision across would be wrong
+rather than merely premature: `LangChainProvider` and the embedding adapters
+hold an HTTP client, so `close()` there is not the honest no-op it is on
+`InMemoryGraphStore`. It is a real release with a real ownership question --
+did the adapter build the client, or was it handed one? -- and that is the
+question `RedisCache.owns_client` answers and that B108 had to answer for
+`CircuitBreaker` and `RateLimiter`. Grant the pair before answering it and the
+adapter ships four methods that look like a lifetime and are not one.
+
+So the order is: decide ownership on the provider adapters, then extend 0028
+and delete the exclusion test in the same commit.
 
 ### B58. If this library ever encrypts, it needs a port -- not the file that was deleted
 
@@ -2136,40 +2897,11 @@ reason, and stays *available* for the unchanged reason: a caller with a coarse
 schema and a model that wanders may still want it, and nobody here can measure
 that for them.
 
-**What follows is the first measurement, kept because being wrong this way is
-the lesson.** It ran with the model thinking, and read a confounder as a
-mechanism.
-
-Graded corpus, `qwen3.6-27b-mtp`, `temperature=0.0`, **thinking on**:
-
-| | entity tp | entity fp | entity fn | rel tp | rel fp | rel fn |
-|---|---|---|---|---|---|---|
-| unconstrained | 12 | **8** | 0 | 5 | **6** | 1 |
-| constrained | 12 | **13** | 0 | 5 | **7** | 1 |
-
-Recall is identical and perfect in both arms. Precision is worse constrained.
-
-**The mechanism is the part worth keeping, because it is the opposite of the
-intuition.** An enum does not only forbid the types outside it -- it *advertises*
-the types inside it, and the model treats the list as a checklist. On
-`newsroom-event`, an 81-character sentence about a summit, the unconstrained
-run emitted four entity types and the constrained run emitted **all nine the
-`news_journalism` schema declares** -- inventing a `claim`, a `date`, a
-`quote`, a `source` and a `statistic` the text does not contain. The entire
-5-point rise in false positives is that one document.
-
-So the trade is not "coverage for consistency" as ADR 0030 and 0011 both
-describe it. It is that, *plus* a hallucination pressure proportional to how
-many types the schema declares and how few of them the document contains.
-A nine-type schema against a one-sentence document is the worst case, and it
-is not a rare one.
-
-**And that mechanism explains nothing, which is the correction.** The false
-positives it was invented to account for were the *reasoning trace* inventing
-entities; they vanished when thinking was turned off, not when the constraint
-was removed. The "checklist" story was persuasive enough to reach an ADR, this
-entry and a documentation warning before the confounder surfaced a day later.
-
+**The first measurement, and the mechanism it inferred, are in**
+[`docs/history/2026-08-mutation-and-measurement.md`](docs/history/2026-08-mutation-and-measurement.md)
+-- it ran with the model thinking, read a confounder as a
+mechanism, and the story was persuasive enough to reach an ADR, this entry
+and a documentation warning before the confounder surfaced a day later.
 **A mechanism inferred from one measurement is a hypothesis, however well the
 story fits.** When a result comes with a satisfying explanation, the
 explanation is the part to distrust -- it is what stops you looking for the
@@ -2188,30 +2920,6 @@ variable you did not control.
    naming a plant closure arguably states a `claim` and an `event` nobody
    graded. Before quoting these precision numbers as a baseline, read the
    eight and decide which are the corpus's fault.
-
-### B44. Rejected merge candidates are discarded, not recorded
-
-`consolidation/service.py::resolve` drops every candidate the policy or the
-model rejected. Nothing records that the pair was considered, what it scored,
-or what the model said about it.
-
-That is the data needed to tune `HIGH_SIMILARITY` and `LOW_SIMILARITY`, which
-are currently inherited numbers with no measurement behind them on this
-corpus. Without the rejections there is no way to answer "how many real
-duplicates fall below the low threshold" except by re-running the whole
-pipeline with a wider band -- and the model calls that band costs are exactly
-what the thresholds exist to avoid spending twice.
-
-**Not simply "emit an event for it".** A `MergeRejected` on the consolidation
-stream would put one event per considered pair into a permanent, replayed log
-that already grows with a tenant's merge history, to record something with no
-effect on the graph. The right home is probably a projection or a metrics
-sink, which is a decision about a piece of infrastructure this project does
-not have yet.
-
-Interim: `ScoredCandidate` already carries the per-signal features, so a
-caller wanting this today can call `CandidateFinder.candidates` itself and log
-what it sees before handing the survivors to `resolve`.
 
 ### B18b. `architecture.md` not imported from `eventsource-py`
 
@@ -2242,204 +2950,9 @@ extraction can reach only the port, `consolidation` and `temporal` beside it
 so neither can reach `mapping.py` — which is currently readable only by
 someone who thinks to open a config file.
 
-### B28. `DEEP_MERGE`
-
-**Shrunk further.** `PREFER_MERGED` and `MOST_RECENTLY_OBSERVED` (which this
-entry called `LATEST`) are implemented — see
-[ADR 0035](docs/adr/0035-provenance-is-a-value-object.md). The reason they
-could not be implemented before was never the missing timestamp this entry
-named: `resolve` took bare *values*, so any strategy needing more than the
-value was unanswerable by construction. It now takes `PropertyClaim`s, each
-carrying the `Provenance` of the entity that made it.
-
-All four implemented strategies, including these two, are now reached through
-`consolidation/planning.py`'s `plan_properties`, called from
-`ConsolidationService.merge` — see
-[ADR 0036](docs/adr/0036-a-merge-resolves-the-canonical-entitys-fields.md).
-
-**`DEEP_MERGE` remains deferred for its original reason, which none of that
-touches.** Nested-dict semantics for `properties` and `external_ids` are easy
-to get subtly wrong, and a wrong deep merge is effectively unrecoverable
-because the pre-merge shape is not derivable from the result. It raises
-`NotImplementedError` naming this entry rather than falling back to
-`PREFER_CANONICAL`, which would write the canonical value while the caller
-believed it asked for something else. Implement when a caller needs it, with an
-undo path in hand — not before.
-
-### B128. `Relationship` has no `Provenance`, and should not share `Entity`'s
-
-`Entity.provenance` exists; `Relationship` still carries a bare `confidence`
-and `source_id` on the type itself. **This asymmetry is deliberate and is not
-the thing to fix.** A relationship has no `extraction_method` and no `model` —
-nothing asks the model *how* an edge was derived — so forcing it into
-`Provenance` would mean either fields that are always `None` on one of the two
-users of the type, or a base class earning its keep across two subclasses.
-Neither is better than the asymmetry.
-
-What is genuinely missing is `observed_at`. An edge cannot answer "when was
-this observed", so the ordering `MOST_RECENTLY_OBSERVED` performs over
-properties has no counterpart for relationships, and a future merge that had to
-choose between two contradictory edges would be back where `resolve` started.
-The cheapest honest shape is probably a second, smaller value object rather
-than a shared one — decide that when a caller needs the ordering, and record
-which way it went.
-
-Relates to **B76**, which is the other half of the same gap from the other
-side: B76 is about *which sentence* stated an edge, this is about *when* the
-library was told. Neither subsumes the other, and B76's warning applies here
-too — it is the sharper form of an entry that was once deleted rather than
-fixed.
-
-### B10c1. Hop distance from `neighbors` — deliberately not added
-
-`ports/graph_store.py::neighbors` returns entities without how far away they
-are. **This is a decided deferral, not an oversight**, taken with the trade-off
-explicit: the need was speculative, the port had just been through review, and
-widening a contract that three adapters must implement on speculation is worse
-than retrofitting later. It knowingly cuts against "change the port before the
-second adapter exists", because the retrofit here is mechanical rather than
-structural.
-
-Both adapters can supply it cheaply, which is what makes the deferral safe:
-
-- **In-memory** (`graph/adapters/memory.py`) already carries the hop count —
-  its BFS frontier is `deque[tuple[EntityId, int]]` and `hops` is in hand at
-  the moment a neighbour is appended. It is thrown away, not computed.
-- **Neo4j** needs `min(length(p))`. It is *not* free in the current shape:
-  the query is `RETURN DISTINCT e ORDER BY e.id`, and `DISTINCT` collapses
-  exactly the paths that carry the length. The form is
-
-  ```cypher
-  MATCH p = (origin)-[rels:RELATES_TO*1..N]-(e:Entity)
-  WHERE ...
-  RETURN e, min(length(p)) AS hops
-  ORDER BY e.id
-  ```
-
-  — an aggregation grouped by `e`, replacing the `DISTINCT`. Cheap, but a
-  different query rather than an extra return column.
-
-Whoever adds it must also extend `tests/compliance/graph_store.py`: shortest
-distance, not first-found, is the contract worth pinning, and a **diamond**-shaped
-graph (two paths of different length to the same node) is the case that
-separates them. On a chain they are the same function, which is why a chain
-would pass while shipping first-found semantics.
-
-### B10. What each store is exercised against — the map, not a gap
-
-**This entry no longer describes a gap in the suite; it describes the map.**
-Its original claim -- "there is no sqlite, no `create_async_engine`, no
-`sessionmaker`, and no integration fixture" -- was resolved in the only way
-that was ever going to work: slice 9 deleted the SQL. There is no ORM, no
-session and no schema left to exercise, so "no database in the test suite" has
-no subject.
-
-The six modules it named as having unexercised SQL -- `vector_ops`,
-`blocking`, `merge_service`, `timeline_query`, `project_timeline_query`,
-`sync_status` -- are all deleted. Their capabilities were rebuilt on the ports
-and are covered by the compliance suites: blocking in `domain/blocking.py` and
-`GraphStore.find_by_blocking_keys`, similarity in `VectorStore.search`,
-merging in `consolidation/`, timelines in `temporal/`.
-
-| Port | In-memory | Real backend |
-|---|---|---|
-| `GraphStore` | `graph/adapters/memory.py`, default gate | Neo4j, `-m integration` (slices 4, 7) |
-| `VectorStore` | `vector/adapters/memory.py`, default gate | pgvector, `-m integration` (slice 5) |
-| `Cache` | `MemoryCache`, default gate | Redis, `-m integration` (slice 11) |
-| `LlmProvider` | `FakeLlmProvider`, default gate | live model, `-m integration` (slice 6) |
-
-Every port now has both tiers; the `Cache` row was the last gap, closed in
-slice 11 by running `CacheCompliance` against a real Redis -- which promptly
-found a bug (`recurring-defects.md` (g)). What remains is structural — about *how* the integration suites
-run rather than whether they exist: B10a, B10f, B10m.
-
-### B83. The lexical retrieval channel does not consult aliases
-
-`Retriever`'s lexical channel generates candidates with
-`GraphStore.find_by_blocking_keys` and scores them against
-`Entity.name`, `Entity.normalized_name` and the string values in
-`Entity.properties`. **An `Alias` is none of those.** Alias-ness is an edge,
-not a field on `Entity` (see
-`docs/adr/0002-two-store-ports.md`), so a query matching an alias name
-retrieves nothing today even though the store knows the alias exists.
-
-The surface to build on is already there and is exercised:
-`GraphStore.find_aliases(canonical_entity_id, tenant_id)` and
-`resolve_entity_ids(entity_ids, tenant_id)`, both on the `AliasStore`
-capability, both covered by `GraphStoreCompliance`.
-
-**Why it was deferred rather than added.** The blocking side is easy — alias
-names could carry blocking keys and enter the candidate set. What is *not*
-decided is what a match on an alias should **return**, and the answer is not
-obvious:
-
-- Returning the **alias entity** is literally what matched, and it is
-  usually not what the caller wants — they searched for a name and want the
-  thing it names.
-- Returning the **canonical** entity is what they want, and it makes the
-  result inconsistent with the query in a way the caller cannot see: the
-  returned `Entity.name` is not the string that matched, so a UI highlighting
-  the match has nothing to highlight, and two aliases of one canonical
-  collapse into a single result whose `lexical` score belongs to neither name.
-- Returning **both** doubles some results and needs a rule for ranking a
-  canonical against its own alias.
-
-That is `domain.preference`'s territory —
-`docs/adr/0010-one-total-order-for-preference.md` settles which mapping of a
-thing survives, and this is the same question asked at read time rather than
-at merge time. Deciding it inside the retrieval work would have meant either
-extending that total order or growing a second one beside it, which is exactly
-the "second entity-id scheme gets born" shape the layer contract is arranged
-to prevent.
-
-So: settle the return semantics first, ideally as an amendment to 0010,
-*then* wire the candidates. Whichever way it goes, `ScoredEntity` probably
-needs a field naming the string that actually matched — without it the caller
-cannot tell an alias hit from a name hit, and that is the distinction the
-whole question turns on.
-
-### B91. `domain/tokenize.py` does no stemming
-
-`tokenize` splits on non-alphanumerics and casefolds, but "running" and "run"
-are different terms to it, and that recall cost is real for the BM25 channel
-built on top of it (see
-`docs/superpowers/plans/2026-08-07-chunk-lexical-channel.md`).
-
-Deferred rather than added because a stemmer is a language model — English-only,
-and a new dependency — and two implementations of "the Porter stemmer" differ
-at the edges, which is exactly the adapter-divergence shape
-`domain/tokenize.py`'s own docstring exists to prevent, reintroduced one level
-up. Postgres's `english` text search configuration stems, and using it instead
-of this module was rejected for the same reason: the in-memory adapter has no
-equivalent, and the two stores would then disagree about what a term is.
-
-If this is picked up, it is a single domain-owned implementation added to
-`tokenize.py` (or a sibling module both adapters call), never a per-adapter
-one — a Postgres-side stemmer and an in-memory approximation of it is the same
-divergence with different code.
-
 ---
 
 ## 6. Tooling, packaging and hygiene
-
-### B157. The ADR index and the mkdocs nav are hand-kept, and both have gaps
-
-`docs/adr/index.md` has no row for **0040** or **0041**, and `mkdocs.yml`'s
-`nav` has no entry for **0042**. Each was added to one list and not the other,
-in three consecutive ADRs by three different authors, which is the signature of
-a hand-kept list rather than three mistakes.
-
-Not fixed here because the three missing rows belong to other people's recent
-commits and would read as unrelated churn on a branch about embedding
-prefixes — `0043` was added to both lists.
-
-**The fix is a test, not three rows.** The same shape already exists in
-`tests/unit/test_the_adapter_guide_names_every_compliance_suite.py`: derive the
-subject set from the tree (`docs/adr/0*.md`), assert every file has a row in
-`index.md` *and* an entry in `mkdocs.yml`'s nav, and assert both directions, so
-a row naming a deleted ADR fails too. `mkdocs --strict` does not catch this:
-a missing nav entry is not a broken link, and an ADR absent from `index.md` is
-simply unreachable from the page a reader starts on.
 
 ### B158. The task prefixes are absent from every how-to that configures a model
 
@@ -2460,6 +2973,11 @@ model this project benchmarks against, wrong to copy for any other) or show
 empty defaults with a callout. The `syncing-diataxis-docs` skill is the tool
 for the sweep. Do not leave it long: the benchmark how-to in particular
 describes the exact workload that lost a corpus run to this.
+Nothing here changes an answer the library gives. What each one costs is a
+release, a gate, or the next reader's time — which is why the section is last
+and why an entry that turned out to be about a *cost* (B92, B133, B136) or a
+*weak test* (B93, B135) was moved out of it in the 2026-08-18 pass. This
+section had become where drive-by deferrals landed regardless of kind.
 
 ### B-RATCHET-1. The coverage baseline no longer raises itself
 
@@ -2652,112 +3170,6 @@ delete statement) adds a third statement to every batch upsert, whose write
 cost ADR 0003 measured carefully. Measure the leak before paying for it, and
 correct the ADR either way.
 
-### B65. `reference/domain-value-types.md` and the outline it was written against
-
-**Closed for both pages.** Every section the two module-map tables promise now
-exists, written against the code rather than against the outline -- which the
-original entry warned was three slices stale and wrong at least once.
-
-Kept, reduced, because the *finding* outlives the work and will recur. The
-broken anchors these pages carried were not renamed headings: most pointed at
-sections that existed nowhere, because both pages were written from an outline
-whose content was never filled in. The links were the only surviving trace of
-it, and repairing them made the gap invisible again -- which is why this
-entry existed at all.
-
-**Two claims in those dead links were wrong rather than missing**, and that is
-the transferable half:
-
-- the anchor for `VectorMatch.score` encoded the mapping as `(1 - cosine) / 2`,
-  a *distance*, where `domain/vector.py` says `(1 + cosine) / 2`. The two
-  differ on every input.
-- writing the temporal section produced a fresh one -- that a widened one-day
-  extent has coincident endpoints. `widen` returns the first instant *after*
-  the unit, half-open on purpose, so it does not.
-
-The first survived because a link nobody can follow is a claim nobody
-re-checks. The second was caught only by running the code while writing the
-paragraph. **Write a reference section against the source, then execute the
-examples**; a plausible paragraph about arithmetic nobody re-derived is how
-both of these got in.
-
-**Both halves now have a gate, and the second one is new.**
-`mkdocs build --strict` fails on an anchor that resolves nowhere, and caught
-two of mine while this was being written.
-`tests/unit/test_reference_map_tables_are_honest.py` fails when the map table
-names a section the page does not have, or when the two orders disagree --
-which is the check whose absence let fourteen rows stand over five sections
-for several slices. Proved by adding a row for a section that does not exist
-and watching it fail.
-
-Nothing gates the *wrong claim* except running the code while you write the
-paragraph, which is the habit to keep.
-
-### B67. No way to find entities that were never consolidated
-
-Reported downstream. `Entity` carries no consolidation state, so "resolve
-whatever has not been resolved yet" is a scan of every entity in the tenant.
-Consolidation is a problem this library claims to own, and the incremental case
-— documents arriving continuously, consolidation running periodically — is the
-normal one rather than an exotic one.
-
-Do not solve it by adding a mutable `consolidated: bool` to `Entity`. The write
-model is event-sourced and `Entity` is a value handed to a projection; a flag on
-it would be state the log does not own, and the first replay would have to
-reconstruct it anyway. The candidates worth weighing are a projection that
-maintains an unresolved set from `DocumentExtracted` and `EntitiesMerged`, or a
-store-level query over "entities with no alias and no merge event". Both are
-real designs; neither is a field.
-
-### B68. `replay()` scopes by tenant and aggregate type, not by stream or category
-
-**Closed, upstream.** `eventsource-py` 0.12.0 added
-`FeedReadOptions.aggregate_type` (its ADR 0052) and its `replay` pushes both
-`tenant_id=` and `aggregate_type=` into the adapter's query. This project
-writes two aggregate types — `Document` and `ConsolidationLog` — so a rebuild
-of the read models can now ask for the first and skip the second, which is the
-half of this entry that was open. The local driver this entry was written
-against is deleted; see ADR 0020.
-
-**Category scoping is still open and is a different question.**
-`GlobalEventFeed` has no `read_category`; `EventStore` does, and taking it
-would mean `replay` accepting a narrower port than the one it documents, or
-accepting both and branching. Neither is obviously right, and nobody has asked
-for it — a caller wanting one stream can pass `from_position`, a tenant and an
-aggregate type. Do not add it speculatively; the reason to wait is that the
-branch would be untestable against the in-memory feed without also deciding
-what happens when both `tenant_id` and `categories` are given. It is now
-upstream's call to make, not this project's, and the argument above is what to
-send them if it comes up.
-
-The remaining cost is unchanged and is upstream's too: `tenant_id` is a *read*
-filter only. A projection constructed with `tenant_filter` still applies its
-own filter after delivery, so a caller who sets both pays for one and gets no
-benefit from the other. That is harmless and slightly confusing;
-`docs/how-to/drive-projections-from-an-event-store.md` says which to reach for.
-
-### B73. `ReplayReport.failures` is unbounded, and holds live tracebacks
-
-**Closed, upstream, and it is worth reading how.** This entry declined to cap
-the list, and said why: a cap that silently truncated would reproduce the exact
-defect the field was added to fix — an operator told "3 failed" who cannot
-reach the third. It named the two honest shapes instead, a cap that *reports*
-what it dropped (`failures_truncated: int`) or a callback that streams
-failures rather than accumulating them, and deferred choosing between them
-until someone had a replay failing at that scale.
-
-`eventsource-py` 0.12.0 took **both** — `max_failures` with
-`failures_truncated`, and `on_failure=` firing for every failure whether
-retained or not — which is the right answer to a two-good-options question
-when neither costs the other. The local driver is deleted; see ADR 0020.
-
-Recorded rather than deleted because of what it demonstrates. The entry was
-written as "here is what is wrong, here is what I learned that made deferring
-right, here are the shapes a fix would take", per this file's own rule, and
-that is what an upstream implementer could act on. An entry reading "cap the
-failures list" would have thrown the expensive part away and got a silent
-truncation back.
-
 ### B70. `eventsource-py` floor was too low, and the library was published with it
 
 **Fixed, and recorded here because the shipped `0.1.0` carries the wrong
@@ -2809,33 +3221,6 @@ found eight of eleven declared floors wrong. That is the shape to copy here
 when the general case gets picked up: a resolver flag beats a hand-written
 test per dependency.
 
-### B71. Confining a *fifth* library — closed by the cheap 80%, and what is left
-
-**Closed as the entry proposed.**
-`tests/unit/test_dependencies_stay_confined.py::test_every_third_party_import_is_accounted_for`
-walks `src/`, collects every top-level import that is neither stdlib nor
-first-party, and fails on any not covered by a `CONFINEMENTS` row or by the
-new `ALLOWED_EVERYWHERE` set. Adding an unlisted client is now a red test
-naming it, rather than a green suite. Proved by importing `httpx` from
-`composition.py` and watching it fail.
-
-`ALLOWED_EVERYWHERE` is the complement of the confinements: dependencies with
-no single home because the library is built on them everywhere. It is
-deliberately *not* a `Confinement` with `directory="."` — a confinement to the
-whole tree confines nothing, and would make that row's two direction-guards
-pass vacuously.
-
-**What is still not derived, and why that is the right trade.** The set of
-optional distributions in `pyproject.toml` is not checked against the table.
-Doing so means mapping distribution names (`langchain-openai`) to import names
-(`langchain_openai`), which is only discoverable from installed metadata —
-needing the extra installed, the exact condition a `--extra dev` sync silently
-breaks, and therefore a check that would fail for environmental reasons in the
-one situation it most needs to be believed. The new test needs nothing
-installed. It answers "is there an import here that no rule covers", which is
-the half that matters; the other half is "is there a declared extra nobody
-imports", which is a packaging tidiness question rather than a leak.
-
 ### B72. A failed `verify` is unrecoverable, because the tag is spent
 
 `verify` runs after `publish-pypi`, and v0.2.0 showed what happens when it
@@ -2872,8 +3257,6 @@ The first is probably right, and the reason to write it down rather than do it
 now is that it is a change to the release pipeline made immediately after a
 release, which is the worst time to touch one.
 
----
-
 ### B79. No workflow job declares `timeout-minutes`, so the ceiling is six hours
 
 Not one job across `ci.yml`, `release.yml` and `docs.yml` sets
@@ -2904,208 +3287,104 @@ Note this interacts with `release.yml`, which calls `ci.yml` via
 pipeline too, which is the case where an unbounded hang is most expensive
 (B72 — a failed release consumes the version number).
 
-### B84. `_resolve`'s round-trip saving is an untested optimisation
+### B94. Generated Postgres index names can exceed the 63-byte NAMEDATALEN, and truncation is silent
 
-`src/redstring/composition/retrieval.py:209`. `_resolve` seeds `resolved`
-from the entities the lexical channel already holds, so only the ids it did
-not supply are fetched. The docstring makes that an explicit cost claim ("in
-one round trip for the unknown", "only the ids it did not supply are
-fetched") and no test holds it: replacing that line with `resolved = {}` --
-so every `HYBRID` retrieve issues a `get_entities` round trip it does not
-need -- leaves the retrieval suite **green**, measured. Correct output,
-unverified cost, which is `recurring-defects.md` §3 in its mildest form.
+`chunks/adapters/postgres.py`'s DDL builds index names by interpolating the
+configured table name — `{table}_terms_term_idx` and its siblings — and the
+table name is validated only as a bare identifier up to 62 characters. A
+long but legal table name pushes the generated index name past Postgres's
+63-byte `NAMEDATALEN`, and Postgres truncates silently rather than erroring,
+so two differently-named tables with a shared long prefix could collide on
+the same truncated index name.
 
-The template is in the same file:
-`test_a_lexical_only_mode_makes_no_embedding_call` wraps the provider in a
-counting subclass, and the file already builds a duck-typed store wrapper
-(`RebuildingGraphStore`) that a `get_entities` counter can copy. Roughly
-eight lines. Left out of the I1--I4 fix wave only because the review scored
-it Minor and the wave was scoped to the four Important findings.
+**Pre-existing, not introduced by this branch** — the naming scheme predates
+the chunk-lexical work and is unchanged by it; filed now because Task 6/7
+review is what noticed it. Fix, if picked up, is either shortening the
+generated suffixes or hashing the table name into the index name so length
+is bounded regardless of what the caller configures.
 
-### B85. `entity_types` means two different things on the two retrieval channels
+### B95. The docs' code blocks are signature-checked, not executed
 
-`retrieve`'s docstring says "`entity_types` restricts both channels" without
-qualification. It restricts them differently:
+`tests/unit/test_documented_code_calls_the_real_api.py` now checks, for every
+fenced Python block in `README.md` and `docs/` outside `adr/`, `plans/`,
+`history/` and `superpowers/`: that each name imported from `redstring` is
+exported, and that each call to such a name binds against its real signature.
+That is the class both of this entry's original defects belonged to -- a
+parameter actually named `store`, and a missing keyword-only `model=` -- and
+it found four more on its first run, in three pages a reader copies from.
 
-- the **lexical** channel compares `entity.entity_type` from the graph
-  (`src/redstring/composition/retrieval.py:181`);
-- the **semantic** channel filters on the *vector record's*
-  `metadata["entity_type"]`, via `entity_type_of`.
+**What is still not checked, and it is not a small remainder.** The gate is
+static, so it cannot see:
 
-Two consequences, neither documented nor tested. A vector upserted without
-`entity_type` metadata has `entity_type_of(...) is None`, so any non-`None`
-`entity_types` excludes it from the semantic channel even when the graph
-entity carries the wanted type -- and in `HYBRID` the entity still arrives
-lexically, so it *looks* like it works while the semantic contribution is
-silently missing and the rank changes. And the comparison is case-sensitive
-on both sides while `domain/blocking.py`'s `entity_type_key` normalizes, so
-`entity_types=["Person"]` matches nothing here while blocking treats
-`"Person"` and `"person"` as one type.
+- **a name used but never imported.** The full worked example in
+  `docs/how-to/drive-projections-from-an-event-store.md` called `replay`
+  without importing it.
+- **a local shadowing the function it calls.** The same block wrote
+  `replay = await replay(event_store, projections)`, which raises
+  `UnboundLocalError` before it reaches the call the gate would have bound.
+- **a wrong argument value**, and anything else that fails only when the
+  statement runs.
 
-Both follow from the ports rather than being bugs in the `Retriever`, which
-is why this is a docs-or-semantics decision rather than a fix: either
-qualify the docstring (cheapest, and honest), or normalize the comparison and
-say in `ports/vector_store.py` what a record missing the key means. Do not
-"fix" it by having the semantic channel consult the graph -- that is a second
-round trip per query on the path the vector filter exists to avoid.
+Both of those shipped in the same block, and both were found by *reading* it
+after the gate flagged the block for an unrelated reason. So the static check
+buys the cheap 80% and the residue is exactly what B95 originally asked for:
+executing the blocks.
 
-### B86. Two retrieval tests pass on the adapter's guarantee rather than the `Retriever`'s
+**Why that was not built, which is the part to weigh before building it.**
+There are 387 fenced Python blocks. Most are fragments that assume a name from
+an earlier block on the page, so they cannot be executed in isolation without
+a per-page context the pages do not declare. The ones that are whole need a
+Neo4j, a Postgres or a model endpoint. An executor is therefore a second
+integration suite -- deselected by `addopts`, not in the commit gate -- which
+is the one place the defects this entry was filed for needed catching.
 
-`tests/unit/composition/test_retrieval.py`. Both were asked for by the spec
-and both are worth keeping; what is worth recording is that neither is
-load-bearing as written, so nobody re-derives that later.
+Routes, cheapest first. Run **ruff over each block** with a narrow rule set
+(F821 undefined-name would have caught the missing `replay` import) and accept
+that fragments referencing an earlier block's names need marking somehow --
+the marking is the design question, and a fence attribute the renderer ignores
+is probably it. Or **declare which blocks are whole** and execute only those,
+which needs the same marking and additionally a backend. Do not start by
+executing everything; measure how many blocks are self-contained first, since
+that number decides whether either route is worth it.
 
-- `test_entities_are_compared_by_equality_not_identity` builds a
-  `RebuildingGraphStore` returning equal-but-distinct entities, which is the
-  right construction -- but there is no `is` comparison on an `Entity`
-  anywhere in `Retriever` for it to catch, and it runs in `HYBRID` against an
-  *empty* vector store, so only `find_by_blocking_keys` is rebuilt and
-  `get_entities`'s rebuild path is never exercised. Pointing it at
-  `RetrievalMode.SEMANTIC` (where `_resolve` fetches) would make it mean
-  something, and is a one-line change.
-- `test_mutating_a_result_cannot_change_what_a_later_retrieve_returns` is
-  green because `InMemoryGraphStore` returns deep copies, which
-  `GraphStoreCompliance` already enforces. There is no implementation of
-  `Retriever` that fails it without also failing the compliance suite.
+### B100. ADR 0007 cites `redstring.projections.project`, which does not exist
 
-Neither is a defect to fix under time pressure; the entry exists so the next
-reader does not mistake either for evidence about the `Retriever`.
+`docs/adr/0007-composition-is-the-only-top-layer.md:86,362,446` name
+`redstring.projections.project` as the caller's escape hatch for driving a
+projection over their own event feed. There is no such callable:
+`src/redstring/projections/__init__.py` exports the three projection classes
+and nothing else, and `redstring/__init__.py`'s own docstring records that
+`project`/`replay` left this surface in the 0.12.0 upstreaming — a caller
+writes `from eventsource import replay`.
 
-### B95. Nothing executes the code blocks in `docs/how-to/*`
+The live copies of this claim (`README.md`, `composition/build_graph.py`'s
+module docstring) were fixed in the commit that filed this. The ADR was not,
+because ADR bodies are immutable records of a decision as taken —
+`.claude/rules/definition-of-done.md` item 2. What is deferred is the
+*mechanism* question, not a text edit: an ADR whose prose names a symbol that
+has since been deleted is indistinguishable from one that is current, and
+`mkdocs --strict` checks links rather than identifiers. The two options are
+an "Amended by" note on 0007 pointing at the rename, or a gate that greps ADR
+bodies for `redstring.`-prefixed dotted paths and fails when one does not
+resolve against the installed package. The second would also have caught this
+one in the slice that caused it, and would cover every future ADR for free.
+Prefer it.
 
-`tests/unit/test_end_to_end_example.py` executes `docs/examples/build_a_graph.py`
-and is the mechanism behind the repo's public-surface gate ("the end-to-end
-example imports nothing but `redstring`"). Nothing equivalent runs the
-fenced Python in `docs/how-to/*.md`. This is how
-`docs/how-to/rank-passages.md`'s only example called
-`index_documents(..., chunks=chunks, ...)` against a parameter actually named
-`store` and shipped anyway — `mkdocs --strict` checks links, not Python, and
-the how-to's imports were all in `__all__`, so the public-surface gate gave
-it zero protection despite the how-to satisfying every condition that gate
-checks for. Fixed for this one instance in the final review pass; the
-mechanism gap that let it ship is what this entry tracks. A fix extracts
-each how-to's fenced block(s) the way `test_end_to_end_example.py` extracts
-`build_a_graph.py`'s, and executes them in the commit gate.
+**A second live copy survived, and was found by a gate rather than by a
+reader.** This entry says the live copies were fixed in the commit that filed
+it. `docs/how-to/drive-projections-from-an-event-store.md`'s full worked
+example still imported `project` from `redstring`, in a page a caller copies
+from -- so the sweep that fixed `README.md` and `build_graph.py` missed a
+how-to, which is `recurring-defects.md` §5's "a sweep that fixes the pages it
+thought of". `tests/unit/test_documented_code_calls_the_real_api.py` now fails
+on any documented import of a name `redstring` does not export, which closes
+that half for every future removal.
 
-**Widen it past `docs/how-to/`.** A review found the same shape in the three
-most-read pages in the repo: `README.md`, `docs/getting-started.md` and
-`docs/installation.md` each constructed `LangChainLlmProvider(chat_model)`,
-missing the required keyword-only `model=`, so all three raised `TypeError`
-on the first line a real-provider user copies. Three sites drifted *together*
-— `docs/how-to/consolidate-duplicate-entities.md` had it right — which is the
-tell that no mechanism was watching any of them. Fixed in the same commit as
-this note; the executor this entry describes has to cover `README.md` and
-`docs/*.md`, not just the how-to directory, or it would have caught none of
-the three.
-
-### B101. `CandidateSource` and `MergeAdjudicator` have no compliance suite
-
-ADR 0025 declared both protocols and stated two obligations a substitute can
-violate without erroring:
-
-- `candidates` returns results best first **under a total order**. The default
-  breaks score ties by ascending entity id as a string so two runs over one
-  graph agree. A substitute sorting on score alone leaves a cutoff falling
-  inside a tie to be decided by whatever order its backend returned, which
-  surfaces as an intermittently different merge rather than as a failure.
-- `adjudicate` returns **exactly one verdict per candidate, positionally
-  aligned**, `None` where it has no answer. A short list silently records an
-  answer about one pair against another; `False` in place of `None` turns a
-  provider outage into a corpus that appears to hold no duplicates.
-
-Both are prose in a protocol docstring. Every other multi-implementation
-contract here is a shared body under `tests/compliance/` subclassed per
-adapter, and `.claude/rules/recurring-defects.md` §1 is precisely about what
-happens without one — two implementations diverge and nothing fails, because
-each one's tests assert its own behaviour.
-
-**Not built now, deliberately, and the reason is the part worth keeping:**
-there is exactly one implementation of each protocol. A compliance suite
-written against a single implementation gets tuned until that implementation
-passes, which is the failure this project has recorded twice (the tier-2
-banner in `tests/compliance/vector_store.py` says the same thing about a tier
-that has never run against an adapter that could fail it). The suite is worth
-writing when the *second* implementation appears, and its two cases are the
-two bullets above — a tie forced to occur, and an adjudicator returning a
-short list.
-
-`tests/unit/consolidation/test_substitution.py` covers the seam for the
-defaults' sake and says in its own docstring what it does not prove.
-
-### B102. `Retriever`'s overfetch default of 3 is reasoned, not measured
-
-`Retriever.__init__` takes `overfetch=3`, multiplying what each channel is
-asked for before RRF truncates to `k`. The *direction* is not in doubt: an
-entity neither channel returned cannot be promoted by fusion, and RRF
-demonstrably ranks a consistent runner-up above two channel-leaders
-(`test_rank_fusion_promotes_a_consistent_runner_up` asserts that arithmetic).
-Asking each channel for exactly `k`, as the code did, therefore dropped
-candidates the fusion rule says should win.
-
-**The number 3 is a guess.** Nothing here measures recall@k against a ground
-truth at 1, 2, 3 or 5, because there is no retrieval evaluation corpus --
-`tests/accuracy/` grades extraction, not retrieval. So the tests assert the
-*request* (`k * overfetch` per channel) and the fusion arithmetic, and neither
-can tell you whether 3 buys materially more than 2 or leaves recall on the
-table at 5.
-
-What a fix needs: a small graded query set in the shape of
-`tests/accuracy/corpus.yaml` -- queries with known-relevant entity ids -- and
-a measurement of recall@k across overfetch values, on a corpus large enough
-that the channels disagree. Related: **B10k** (no ANN adapter exists, so
-nothing here has ever run against a store that can miss a neighbour) and
-**B86** (two retrieval tests already pass on the adapter's guarantee rather
-than the `Retriever`'s).
-
-Until then the cost is stated in the docstring -- a wider `VectorStore.search`
-and a wider blocking-key scan per query -- and `overfetch=1` restores the
-previous behaviour exactly.
-
-### B103. The only production adapters live on paths the package calls unsupported
-
-`redstring/__init__.py` states the contract plainly: anything reached through
-a dotted path "is internal and may change without notice, including in a patch
-release." The adapters a caller actually deploys are all reached that way --
-`redstring.llm.adapters.langchain.LangChainLlmProvider`,
-`LangChainEmbeddingProvider`, `Neo4jGraphStore`, `PgVectorStore` -- while the
-two *exported* providers are `FakeLlmProvider` and `FakeEmbeddingProvider`.
-
-So the README's primary quickstart imports from an explicitly unsupported
-path, and the supported surface is the one nobody ships. The reason for not
-exporting them is good and should not be reversed: exporting
-`LangChainLlmProvider` makes `import redstring` pull LangChain in, and the
-extras exist so a caller pays only for the backends they use.
-
-**The obvious fix is blocked by the architecture contract, which is why this
-is filed rather than done.** A `redstring.adapters` namespace re-exporting the
-extra-gated adapters would import `llm`, `graph` and `vector` -- three
-siblings forbidden from importing each other -- so it could only sit on
-`composition`. And `pyproject.toml`'s contract says exactly what to do with
-such a candidate: "ask what it composes; a candidate that cannot name such a
-pair is a piece of one half placed above it for convenience." A re-export
-shim composes nothing. CLAUDE.md separately records that `context`, a
-re-export shim, was deleted in slice 10.
-
-Three routes, none free:
-
-1. **A module-level `__getattr__` on `redstring`** raising a helpful
-   `ImportError` naming the extra, with the names declared under
-   `TYPE_CHECKING` so checkers still resolve them. Smallest, adds no module to
-   the contract, and keeps `import redstring` lazy. The cost is that
-   `__all__` stops being the literal list of what a caller may use, which the
-   three public-surface gates are built around -- so those gates need to
-   learn about it, and ADR 0006 needs amending rather than merely citing.
-2. **A stability promise attached to the existing dotted paths**, stated in
-   `__init__.py` and enforced by a test that those four import paths still
-   resolve. No new module, no contract change; the promise becomes prose plus
-   one gate rather than membership of `__all__`.
-3. **Accept it and say so in the README**, which is the status quo made
-   honest rather than a fix.
-
-Route 2 is the cheapest thing that removes the contradiction, and route 1 is
-the one that gives a caller what they actually want. Either needs an ADR,
-because "the public surface is `__all__` and nothing else" is ADR 0006's
-decision and both routes qualify it.
+**What is left here is only the ADR half**, and the gate above deliberately
+excludes `docs/adr/` -- an ADR body is an immutable record and may legitimately
+name a deleted symbol. So the mechanism this entry asks for is still wanted,
+and of the two options stated above the grep over ADR bodies remains the one
+to prefer.
 
 ### B104. `DomainSchemaRegistry` is a process-global singleton with two caches
 
@@ -3151,160 +3430,6 @@ is the part with user-visible value. Sized medium-to-large because
 `hot_reload` and `get_schemas_for_entity_type` need callers found or deleted
 first.
 
-### B100. ADR 0007 cites `redstring.projections.project`, which does not exist
-
-`docs/adr/0007-composition-is-the-only-top-layer.md:86,362,446` name
-`redstring.projections.project` as the caller's escape hatch for driving a
-projection over their own event feed. There is no such callable:
-`src/redstring/projections/__init__.py` exports the three projection classes
-and nothing else, and `redstring/__init__.py`'s own docstring records that
-`project`/`replay` left this surface in the 0.12.0 upstreaming — a caller
-writes `from eventsource import replay`.
-
-The live copies of this claim (`README.md`, `composition/build_graph.py`'s
-module docstring) were fixed in the commit that filed this. The ADR was not,
-because ADR bodies are immutable records of a decision as taken —
-`.claude/rules/definition-of-done.md` item 2. What is deferred is the
-*mechanism* question, not a text edit: an ADR whose prose names a symbol that
-has since been deleted is indistinguishable from one that is current, and
-`mkdocs --strict` checks links rather than identifiers. The two options are
-an "Amended by" note on 0007 pointing at the rename, or a gate that greps ADR
-bodies for `redstring.`-prefixed dotted paths and fails when one does not
-resolve against the installed package. The second would also have caught this
-one in the slice that caused it, and would cover every future ADR for free.
-Prefer it.
-
-### B96. Nothing asserts `docs/adr/*.md` and `docs/adr/index.md` agree
-
-Every ADR file is supposed to have a matching row in `docs/adr/index.md`'s
-table, by convention (`.claude/rules/recurring-defects.md` §6 argues for
-exactly this kind of two-declaration-site risk generally). Nothing checks
-it: ADR 0024 shipped with no index row for it, `mkdocs.yml`'s nav made the
-page reachable so `mkdocs --strict` was silent, and the omission was found
-only by a review reading both files side by side. Fixed for 0024 in the
-final review pass. A fix is a small test — glob `docs/adr/000*.md` and
-`docs/adr/0[1-9]*.md` for ADR numbers, parse the index table's numbers out
-of its first column, and assert the two sets are equal — living in
-`tests/unit/` next to the other doc-consistency checks (e.g. wherever
-`mkdocs --strict`'s invocation lives in the gate, if it does).
-
-### B97. Same chunk id, changed text diverges between the adapters
-
-`chunks/adapters/postgres.py`'s `_TERMS_ON_CONFLICT` is `DO NOTHING` and
-`_ON_CONFLICT` deliberately omits `doc_length` from its `SET` clause, both
-justified by content addressing: a chunk id fixes its text (via
-`chunk_id(source_id, text)`), so a write reusing an existing id is assumed to
-be writing the same text, and the term index and length can never need
-updating. That argument is correct only for callers who build ids with
-`chunk_id`; nothing enforces that they do. `StoredChunk.id` is a
-caller-supplied `str`, and `ports/chunk_store.py`'s `upsert_many` promises
-unqualified last-write-wins on `(tenant_id, id)`.
-
-A caller using self-assigned (non-content-addressed) ids that re-writes one
-id with different text gets, from `InMemoryChunkStore`, ranking over the
-*new* text (it tokenizes at query time), and from `PostgresChunkStore`,
-ranking over the *old* text and the *old* `doc_length` — the `text` column
-updates on conflict while the term rows and `doc_length` do not, because
-`_TERMS_ON_CONFLICT`/`_ON_CONFLICT` assume it can't happen. That is
-`.claude/rules/recurring-defects.md` §1, silently, and the compliance suite
-cannot see it because its `_chunk` helper always builds ids the real
-content-addressed way. Cheap fix: state the constraint as prose on
-`ChunkStore.upsert_many` in the port ("a chunk id is content-addressed over
-`(source_id, text)`; re-using an id for different text is outside the
-contract"). Thorough fix: make it executable, either a compliance case that
-asserts the adapters agree after such a write (would currently fail on
-Postgres) or `chunk_id`-derived validation on `StoredChunk` construction.
-
-**Update:** the cheap half landed — the prose is now on
-`ChunkWriter.upsert_many` in `src/redstring/ports/chunk_store.py`, as part of
-the chunk-semantic-channel work (see
-`docs/adr/0038-the-chunks-vector-lives-on-the-chunk.md`), because the new
-`embedding` column inherits the same assumption `doc_length` and the term
-index already made. The executable half is still open, and closing it needs
-a decision this entry hasn't made: whether the port promises last-write-wins
-on *derived* state (`doc_length`, the term index, and now `embedding`) for a
-same-id-different-text write, or whether that write is simply outside the
-contract and the compliance suite should assert the adapters both leave the
-old derived state in place. Those are different contracts, and picking one is
-what a test would pin — not something to infer from what's convenient to
-implement.
-
-### B98. `PostgresChunkStore.lexical_candidates` is three unsynchronised reads
-
-It acquires one connection and issues the corpus-statistics query, the
-document-frequency query, and the candidate query as three separate
-statements with no wrapping transaction. Under concurrent writes, the
-`n_docs` and `avg_doc_length` returned can describe a corpus that never
-coexisted with the returned `doc_frequencies` — a write landing between the
-first and third statement changes what "the corpus" means mid-read.
-`InMemoryChunkStore` is atomic by construction (no interleaving possible
-within one event loop turn), so this is a real adapter divergence, but it is
-in something `ports/chunk_store.py` does not pin: the port says nothing
-about snapshot consistency across the three parts of `lexical_candidates`'s
-answer. Nothing in the suite can observe it (single-threaded tests). Fix is
-either a `REPEATABLE READ` transaction around the three statements, or a
-sentence in the port stating plainly that the three are not guaranteed to be
-a consistent snapshot — so a caller relying on it knows not to.
-
-### B99. `avg_doc_length` is computed by two different arithmetics
-
-`InMemoryChunkStore` computes `sum(lengths) / n` in Python float.
-`PostgresChunkStore` computes `avg(doc_length)` in SQL `numeric` and the
-adapter rounds the result to float. The compliance suite requires adapter
-scores to be **exactly** equal (not `pytest.approx`), and `avg_doc_length`
-feeds every BM25 score through the length-normalisation term. For the
-fixtures currently in the suite (13/4 = 3.25) both arithmetics are exact, and
-in general both are *correctly rounded*, so a disagreement needs a
-double-rounding case, which is rare — but the failure mode when it happens
-is an intermittently red cross-adapter test with nothing in the source
-changed, a shape this project has already been bitten by once (the
-`k=0`-sampler note in `CLAUDE.md`'s Testing notes section, about
-`InMemoryVectorStore.search`). Fix: `avg(doc_length::float8)` on the
-Postgres side makes both adapters do the same float arithmetic instead of
-routing one of them through `numeric`.
-
-### B107b. `LlmProvider` and `EmbeddingProvider` have no declared lifetime
-
-ADR 0028 deliberately stopped at the four store-shaped ports.
-`tests/unit/test_ports_declare_the_block_form.py::TestOnlyTheStoreShapedPortsAreClaimed`
-asserts the two provider ports are *not* `AsyncClosable`, so the exclusion is a
-decision rather than an omission -- but it is an open one.
-
-What makes them different, and why copying the decision across would be wrong
-rather than merely premature: `LangChainProvider` and the embedding adapters
-hold an HTTP client, so `close()` there is not the honest no-op it is on
-`InMemoryGraphStore`. It is a real release with a real ownership question --
-did the adapter build the client, or was it handed one? -- and that is the
-question `RedisCache.owns_client` answers and that B108 had to answer for
-`CircuitBreaker` and `RateLimiter`. Grant the pair before answering it and the
-adapter ships four methods that look like a lifetime and are not one.
-
-So the order is: decide ownership on the provider adapters, then extend 0028
-and delete the exclusion test in the same commit.
-
-### B114. `index_documents` takes a whole `ChunkStore` and drives a `ChunkWriter`
-
-`src/redstring/composition/index_documents.py:114` declares `store: ChunkStore`
-and does one thing with it: `ChunkProjection(store)`, which ADR 0026 narrowed
-to `ChunkWriter`. So the composition entry point is the wider of the two, and
-the narrowing stops one line short of the front door.
-
-It is exempt in `tests/unit/test_collaborators_declare_their_capability.py`
-rather than narrowed, because the argument is genuinely two-sided and the gate
-landed in a test-only wave that did not own `src/`. For narrowing: the function
-uses one capability, and `build_graph`'s `chunks: ChunkStore | None` is in the
-same position for the same reason. Against: this is the public surface a caller
-hands their corpus to, the docstring says "The corpus. Any `ChunkStore`", and a
-caller who then wants to *read* the corpus holds the whole port anyway -- so
-narrowing here buys a smaller signature and no removed authority, unlike
-`CandidateFinder`, where the point was declining `TenantPurge`.
-
-Decide it deliberately: either narrow both entry points to `ChunkWriter` and
-delete the exemption, or record in the exemption's reason that the whole port
-is the intended front-door contract. Do not leave it as neither. Note that
-narrowing changes a signature in `redstring.__all__`'s closure, so check
-`tests/unit/test_public_surface_is_self_contained.py` in the same edit.
-
 ### B130. `docs/reference/events.md` documents four events; there are five
 
 `DocumentChunked` (`src/redstring/events/document.py:175`) is in
@@ -3322,77 +3447,6 @@ in `tests/unit/events/test_schema.py`. So the fix is two things, and the second
 is the one worth having: write the missing section, *and* add a test that every
 name in `KG_EVENT_TYPES` appears as a heading in that page. Without it the next
 event will be undocumented in the same silent way and nothing will say so.
-
-### B131. `Consolidator.merge` and `Consolidator.resolve` cannot override `merge_policy` per call
-
-`ConsolidationService.merge` takes a per-call `policy:` argument (Task 4 of
-`2026-08-13-merged-properties`), but `Consolidator.merge` and
-`Consolidator.resolve` in `src/redstring/composition/build_graph.py` do not
-forward one -- only `Consolidator.__init__`'s `merge_policy` is wired through,
-per that task's brief. A caller using the composed entry point therefore gets
-one property-merge policy for the consolidator's whole lifetime, with no way
-to widen or narrow it for a single call the way the service itself allows.
-Deferred rather than added speculatively: the brief scoped Task 4 to the
-`__init__` pass-through, and adding a `policy:` parameter to both `merge` and
-`resolve` (and to `ConsolidationReport`, if the resolution should be visible
-there too) is its own decision about the composed surface, not a mechanical
-extension of this task.
-
-### B132. `StoredChunk` accepts a zero-norm `embedding` at construction; only the store rejects it
-
-`ChunkStore.upsert_many`/`replace_source` now reject a zero-norm `embedding`
-at the write seam (`src/redstring/chunks/adapters/memory.py`, mirroring
-`InMemoryVectorStore.upsert_many`), and `semantic_candidates` rejects a
-zero-norm query vector -- both per `src/redstring/ports/chunk_store.py` and
-pinned in `src/redstring/testing/chunk_store.py`. But `StoredChunk`
-(`src/redstring/domain/chunk.py`) itself has no such validator, so
-`StoredChunk(embedding=[0.0, 0.0, 0.0, 0.0], ...)` constructs cleanly and the
-zero vector is only ever caught later, at whichever store the chunk is handed
-to -- a caller building one for a test, a queue, or any path that never
-reaches a store sees no error at all. `VectorRecord` has the identical
-question and the same answer (validated only at `VectorStore.upsert`, not at
-construction); this is one open question, not two.
-
-Deferred rather than decided in Task 6: moving the guard onto the domain type
-is a wider change than the store contract this task was scoped to -- it
-would make `StoredChunk`/`VectorRecord` construction itself capable of
-raising over a field whose only present consumer is the store adapters, and
-touches both `domain/chunk.py` and `domain/vector.py` with their own
-compliance-suite implications (a pydantic `field_validator` needs its own
-test, and every existing test constructing a `StoredChunk`/`VectorRecord`
-with a real embedding would need auditing for whether it ever passes a
-plausible-looking zero by accident, e.g. an uninitialised `[0.0] * dimension`
-placeholder). Whether that duplication of the check is worth paying for the
-earlier, cheaper failure is a call for whoever owns `domain/`.
-
-### B133. `backfill_lexical_index` reads the whole table into Python, unscoped and unbatched
-
-`PostgresChunkStore.backfill_lexical_index()`
-(`src/redstring/chunks/adapters/postgres.py`) runs
-`SELECT id, tenant_id, text FROM {table}` with no `WHERE`, no `LIMIT`, and no
-paging, then builds the whole `doc_lengths`/`term_rows` JSON payload in
-memory before sending it back in one statement. It works for the corpus
-sizes the integration suite and any repo-scale deployment exercise today,
-but it does two things a real corpus will not tolerate: it re-touches every
-row in the table on every call, including rows already correct (there is no
-way to backfill only the rows a migration actually left behind, because
-nothing marks which rows predate the term index), and it holds the entire
-table's `text` in Python at once, which is a straightforward OOM on a corpus
-sized in the hundreds of thousands of chunks or more.
-
-Deferred rather than fixed here because scoping it correctly is its own
-design question, not a one-line change: tenant-scoping alone helps only a
-multi-tenant deployment with many small tenants, and batching needs a cursor
-or a keyset-paginated loop plus a decision about whether a batch failure
-partway through leaves some rows backfilled and others not (this method is
-currently one statement, and the whole point of that shape elsewhere in this
-adapter is that a crash mid-write cannot leave the corpus in a state that
-never existed -- a batched backfill gives that property up on purpose and
-should say so explicitly if it does). Whoever picks this up should decide
-batch size, whether it takes an optional `tenant_id` filter, and whether a
-partial run is idempotent to resume (it should be, given `ON CONFLICT DO
-NOTHING` on the term rows and an unconditional `UPDATE` on `doc_length`, but
-that needs a test once batching exists, not an assumption).
 
 ### B134. `_SELECT_COLUMNS` builds its `real[]` cast with a substring replace
 
@@ -3416,49 +3470,6 @@ there is a second case to design it against, rather than speculatively.
 Whoever adds the next `vector`-typed or otherwise cast-needing column should
 either make that change or, at minimum, add a test asserting `_COLUMNS` does
 not contain `"embedding"` as a substring of any other column name.
-
-### B135. `test_semantic_candidates_query_applies_min_score_before_limit` only checks presence, not direction
-
-`tests/unit/chunks/test_postgres_schema.py::test_semantic_candidates_query_applies_min_score_before_limit`
-asserts `"$3" in where_clause`, which passes whether the adapter actually
-tests `>= $3`, `<= $3`, or even `$3 IS NOT NULL` with no comparison at all --
-any wiring of the `min_score` parameter into the `WHERE` clause satisfies it,
-including a wrong one. The port's contract (`min_score` is an inclusive
-lower bound: a candidate scoring exactly `min_score` survives) is pinned
-only by the shared integration case,
-`ChunkStoreCompliance.test_semantic_candidates_applies_min_score_before_limit`
-in `src/redstring/testing/chunk_store.py`, which does assert the boundary is
-inclusive against a real Postgres. The unit test's job was meant to be
-catching a regression before the server-requiring suite runs; as written it
-cannot.
-
-Not fixed here because tightening it needs either a stronger string
-assertion (`"score >= $3" in sql`, or similar, which is brittle to
-reformatting the SQL) or executing the statement's `WHERE` clause against a
-small fixture with a fake connection, which is more machinery than this
-adapter's other unit-level SQL-shape tests use. Whoever picks this up should
-decide which tradeoff is worth it before touching the assertion.
-
-### B136. `StoredChunk` now carries a vector on every read, wanted or not
-
-ADR 0038 put `embedding` on `StoredChunk` rather than in a second store, and
-every `ChunkReader` method -- `get`, `get_by_source`, `get_by_entity` -- hands
-the whole row back, vector included, whether the caller asked
-`semantic_candidates` a question or not. A caller reading `get_by_source` over
-a large document to display its text, or to feed the lexical channel alone,
-now pays to carry one `dimension`-length float vector per chunk across the
-port for every chunk it reads, with no way to ask for the row without it.
-
-Not fixed here: a projection that selects columns is a port change --
-`ChunkReader`'s methods would need either a second return shape or a
-column-selection argument, and either is a real widening of the contract, not
-a drive-by fix alongside the capability that created the cost. More to the
-point, nothing has measured the width as a cost. `InMemoryChunkStore` pays
-nothing extra (Python already holds the object); `PostgresChunkStore` pays a
-`real[]` column read on every row, and whether that shows up at any corpus
-size this repository has exercised is unmeasured. Whoever picks this up
-should measure `get_by_source` over a document with hundreds of chunks before
-deciding whether a column-selecting variant is worth the port change.
 
 ### B137. `min_score` compares a clamped score in memory, unclamped in Postgres
 
@@ -3496,317 +3507,3 @@ copied from. Fixing one without the other would be inconsistent; fixing both
 is a small, separate, argued change (special-case `-1` and report it as
 "unconstrained" rather than as a mismatched width) that belongs in its own
 commit rather than riding in on the semantic-channel branch.
-
-### B-BENCH-1. The long benchmark documents are ungraded, so nothing scored against them is accuracy
-
-`bench/corpus/*.txt` produce timings and a stability score (`bench/stability.py`),
-never an accuracy score. Stability is Jaccard agreement between repeats, and
-both sides of that comparison come from the code under test: a pipeline that
-deterministically drops half of every document scores 1.0. It detects variance
-— which is the live risk in deliverable C, where concurrency may cause naming
-drift at chunk boundaries — and nothing else.
-
-Deferred rather than skipped, and what was learned deciding it:
-
-- Hand-grading a 100k-character document is hours of work, and CLAUDE.md's
-  grading convention makes a *partial* grading actively misleading: "omission
-  is a claim", so every ungraded entity the model correctly finds is scored as
-  a false positive. A half-graded long document reports a precision failure
-  belonging to the grader.
-- The grading convention that makes the short corpus trustworthy — grade what
-  the text states, not what is true — is hardest exactly where a model knows
-  the subject. A Harry Potter article is the worst case: an extractor that
-  supplies Hermione's house from its own training rather than from the text
-  is wrong, and a grader who knows the books will not notice.
-
-Options, cheapest first: grade a *bounded excerpt* (the first 5k characters)
-and score only entities whose mentions fall inside it; or grade a long
-document in an unfamiliar domain where the grader has no prior knowledge to
-leak. Neither is free, and both are better than the third option of quietly
-renaming stability to accuracy.
-
-Until then: `bench/report.py` writes `stability` and `accuracy` as separate
-keys, and `accuracy` is `null` whenever the graded corpus did not run.
-
-### B-ALIAS-1 — a name-only feature cannot link a name to its titled alias when the tokens only partly overlap
-
-`domain/similarity.string_similarity` now scores a strict token subset at
-`CONTAINMENT_CEILING` ("Dr. Grant" against "Grant", "Lord Voldemort" against
-"Voldemort"). It does nothing for a *partial* overlap, and the gap is
-arithmetic rather than an oversight:
-
-```
-"Ada Lovelace"  / "Countess of Lovelace"   1 shared token of 2  ->  0.585  reject
-"John Smith"    / "Jane Smith"             1 shared token of 2  ->  0.880  adjudicate
-```
-
-The first pair is one person and the second is two, and **the two cases are
-indistinguishable from the strings alone** -- the overlap coefficient is 0.5
-for both. (They land in different bands only because Jaro-Winkler happens to
-score the second higher, which is luck, not signal.) So lowering the overlap
-term to catch the first would pull in every pair of strangers sharing a
-surname, at a type-key block's scale.
-
-What actually separates them is evidence outside the name: an embedding that
-has seen both in context, a graph neighbourhood they share, or an explicit
-alias supplied by the caller. Two of those three already exist as features and
-are simply absent for freshly extracted entities with no vector and no edges --
-which is exactly the case this whole change was aimed at.
-
-Not fixed because every name-only fix is a precision loss with no matching
-recall gain. Fix, if it is worth it: an explicit caller-supplied alias table
-consulted during blocking, which is a different mechanism from scoring and
-would need its own ADR (it puts caller assertions into merge decisions, which
-`ConsolidationLog`'s audit story has opinions about).
-
-### B-ADR-TABLE — `.claude/rules/definition-of-done.md`'s ADR table stops at 0019
-
-`.claude/rules/definition-of-done.md` carries a table of "the ADRs a spec has
-to be run against", listing `0001` through `0019`. The tree is at `0041`.
-
-Twenty-one ADRs are therefore invisible to the rule that exists to make specs
-account for existing decisions, in a file loaded into every session. This is
-`recurring-defects.md` §5 happening to the file that documents §5 -- the same
-way that section's own module map went stale, and the same way its ADR-count
-sentence did.
-
-Not fixed here because the fix is not "append twenty-one rows": the table's
-value is the one-line "settles" summary per ADR, and writing that many
-accurately means reading each ADR in turn. Doing it badly is worse than the
-gap, because a wrong summary is trusted.
-
-Fix: read `docs/adr/0020` through the current highest, add a row each, and add
-a test that the table's row count matches the number of files in `docs/adr/`
-excluding `index.md` -- so the next gap fails rather than accumulating. That
-test is the actual deliverable; the rows go stale again without it.
-
-### B140. The endpoint bound in `resolve_many` is per-pass, not per-model-call
-
-`ConsolidationService.resolve_many`'s `limiter` wraps the single
-`adjudicator.adjudicate_many(work)` call for its whole duration -- one
-acquire, held until every batch inside that call has been adjudicated. With
-the shipped `Adjudicator`, which awaits its own batches serially, this means
-`concurrency` never bounds how many model calls are in flight; it bounds how
-many *passes* may have a call in flight at once, which is a coarser and more
-conservative ceiling than the name suggests.
-
-Today this is conservative rather than wrong -- the endpoint never sees more
-concurrent adjudication requests than `resolve_many` callers, which is never
-more than `limit` allows -- but it is coarse in a way that costs a caller
-sharing one `CallLimiter` between `build_graph` (which bounds each individual
-model call) and `resolve_many` (which bounds the whole pass): that caller's
-pipeline is starved of endpoint slots for the entire duration of a
-consolidation pass, not just for the calls the pass is actually making.
-
-Fix: bound the endpoint per model call rather than per pass, either by
-threading the shared `CallLimiter` into the adjudicator so each batch inside
-`adjudicate_many` acquires and releases it individually, or by having
-`resolve_many` drive the cross-subject batches itself rather than delegating
-the whole list to one `adjudicate_many` call. Either changes the
-`MergeAdjudicator` contract or `resolve_many`'s phase-2 structure, so it wants
-its own ADR amending 0041.
-
-### B141. Adjudication volume against a real corpus is unmeasured
-
-The corpus test suite's `REJECT` half
-(`tests/unit/consolidation/test_banding_corpus.py`) states pairs that must
-cost no model call, and is the closest thing this branch has to a bound on
-adjudication volume -- but it cannot actually bound it: it is a fixed list of
-example pairs, not a claim about call counts against a real corpus at scale.
-Nothing here measures how many `adjudicate_many` calls a real consolidation
-pass makes, or how that scales with corpus size and duplicate density.
-
-The actual mitigation for call volume is cross-subject batching: phase 2
-groups by `Adjudicator._batch_size` over the *flattened* cross-subject
-candidate list, reducing call count from `Σ ceil(band_i / batch_size)` (one
-batching pass per subject) to `ceil(Σ band_i / batch_size)` (one batching pass
-over everyone's undecided candidates together) -- but this is an argument from
-the code, not a measurement.
-
-Fix: run `resolve_many` against a real or realistic corpus with tunable
-duplicate density, and record observed `adjudicate_many` call counts and
-batch fill rates against the `Σ ceil` vs `ceil(Σ)` prediction above, so a
-regression in batching effectiveness has something to trip against.
-
-### B140. The endpoint ceiling is per pass, not per model call
-
-`ConsolidationService.resolve_many` acquires its `CallLimiter` once, around
-the whole `adjudicate_many` call:
-
-```python
-async with limiter:
-    verdict_lists = await adjudicator.adjudicate_many(work)
-```
-
-The shipped `Adjudicator.adjudicate_many` awaits its batches serially, so this
-is conservative -- it can never exceed `limit` requests in flight -- but it is
-far coarser than a ceiling on calls, and two consequences follow that a caller
-will notice before they read the code.
-
-**The internally-built limiter is inert.** With no `limiter` argument,
-`resolve_many` constructs `CallLimiter(concurrency)` and is its only acquirer,
-so it never waits. Deleting that construction would change no behaviour on the
-default path -- `recurring-defects.md` section 3's shape, surviving only
-because the caller-supplied path is real.
-
-**A shared limiter starves the pipeline.** `docs/how-to/run-a-corpus-consolidation-pass.md`
-recommends sharing one `CallLimiter` between `build_graph` and `resolve_many`,
-which is the right advice for the ceiling it describes -- but a consolidation
-pass then holds a slot for its *entire* adjudication phase, which is N
-sequential model calls and can be minutes. Extraction blocks that whole time
-for one slot's worth of work.
-
-**A foreign adjudicator can escape the bound entirely.** Because the limiter
-wraps the call rather than each request, an `adjudicate_many` that fans its
-batches out concurrently is unbounded past the first request. The protocol
-docstring now warns about this, which is a stopgap: a bound that depends on an
-implementer reading a docstring is a convention, not a ceiling.
-
-Fix: make the bound per model call -- either thread the limiter into the
-adjudicator so `_one_mixed_batch` acquires it, or have `resolve_many` drive the
-batching itself and acquire per batch. The first keeps batching where it is and
-widens the `MergeAdjudicator` contract again (see the B139 break already taken
-this release); the second moves batching out of the adjudicator, which is a
-bigger change to who owns what. Decide deliberately rather than by whichever is
-easier to type.
-
-### B141. Nothing measures adjudication volume, and this release raises it
-
-Two changes in 0.8.0 multiply. `string_similarity` now lifts every
-strict-token-subset pair that clears a blocking key into the adjudication band
-(`{smith}` in `{john, smith}` is the archetype, and a real corpus has many of
-them), and `resolve_many` makes a pass run over a whole corpus rather than one
-subject. More pairs per subject, over more subjects, and each one that lands in
-the band costs part of a model call.
-
-**The bound the spec claimed does not exist.** `docs/plans/2026-08-14-consolidation-recall-and-throughput.md`
-said the banding corpus's `REJECT` half checks "that containment has not turned
-a type-key block into a stream of model calls". It cannot: those pairs share no
-whole token, so the overlap coefficient is `0.0` by construction and the list
-is structurally incapable of observing containment firing at all. The comment
-in `tests/unit/consolidation/test_banding_corpus.py` has been corrected; the
-missing measurement is this entry.
-
-**What does help, and is not credited anywhere:** cross-subject batching drops
-the call count from `sum(ceil(band_i / batch))` to `ceil(sum(band_i) / batch)`.
-Per-subject batches are nearly always short -- the band is a small fraction of a
-block by design -- so this is a real reduction and may well exceed the increase
-above. It is an argument, not a measurement.
-
-Fix: measure. Run a corpus pass over a graded corpus with a counting
-adjudicator, before and after the `CONTAINMENT_CEILING` change, and record
-calls-per-thousand-entities in `bench/`. Until then the cost of this release's
-recall improvement is unknown in the only unit anyone pays it in.
-
-
-### B152. `mention_counts` reaches no caller of `build_graph`
-
-`PipelineResult.mention_counts` (see **B143**) is produced by
-`ExtractionPipeline.extract` and read by nobody. `build_graph` in
-`src/redstring/composition/build_graph.py` holds the `PipelineResult` and
-returns a `GraphBuildReport` that does not carry the counts, so the only way
-to see them is to call `extract` directly rather than the composed entry
-point — which is not the path the library steers callers onto.
-
-Deliberately deferred rather than forgotten: composition and
-`src/redstring/__init__.py` were being edited concurrently when the counter
-landed, and a field on `GraphBuildReport` is a change to the *public* surface
-(the report is exported) rather than to an internal one. Adding it means
-deciding what B143's caveats look like on a report the caller keeps: the
-number is per-run and per-document, so a `GraphBuildReport` from a
-multi-document loop must not invite summing them.
-
-Fix: one field on `GraphBuildReport`, passed through from the result, with the
-"not comparable across documents" caveat restated at the field rather than
-only at `PipelineResult`. Note that a caller who wants a corpus-level number
-still cannot get one this way — that is B143's open half.
-
-
-### B150. `detect_communities` can return a partition it never converged on
-
-`MAX_PASSES` in `src/redstring/domain/community.py` bounds the local-moving
-loop at 100 full passes and, if it runs out, **returns whatever partition it
-has** rather than raising or reporting. Nothing in the return value tells a
-caller which happened.
-
-Why the bound exists rather than a `while` on the "did anything move" flag:
-every accepted move strictly increases modularity, so in exact arithmetic the
-loop cannot cycle — but the gain is a float, and CLAUDE.md is explicit that an
-invariant resting on an argument about arithmetic is inferred rather than
-enforced. A clustering that hangs is worse than one that stops early, because
-in CI a hang reads as infrastructure trouble and gets retried.
-
-Why it was not fixed now: no input is known that reaches the bound, so there
-is nothing to test the escape hatch against, and a `raise` on an unreachable
-branch would be an untested error path on a hot loop. Real graphs converge in
-a handful of passes.
-
-Fix, when someone has a reason to care: either find an input that cycles (a
-weighted graph with gains equal to within float error is the shape to look
-for) and then decide between raising and returning, or prove the bound
-unreachable and delete it. Do not simply raise the constant — that moves the
-symptom without answering the question. A second option worth weighing is
-returning the pass count alongside the partition so a caller can see it, but
-that widens the return type for a case nobody has observed.
-
-### B153. A community's passage read is one round trip per shown member, sequential and unbounded
-
-`_passages` in `src/redstring/composition/themes.py` calls
-`ChunkReader.get_by_entity` once per shown member, in order, stopping when
-`max_passages_shown` is reached. With the defaults that is up to 25 sequential
-round trips per community, and `CallLimiter` does not bound them — the limiter
-is the *inference endpoint's* ceiling, and a chunk store is a different
-backend with a different constraint.
-
-Why it was left: the port has no batch form (`get_by_entity` takes one id) and
-inventing one is a port widening, which is an ADR and obliges two adapters
-plus the published compliance suite — the same argument B148 makes about
-`GraphStore`. And the early exit means the common case is far fewer calls than
-25: the first member with passages usually supplies most of them.
-
-Fix, when someone measures it as a cost: either a `get_by_entities` batch on
-`ChunkReader` (weigh against B148, which wants the analogous thing on
-`GraphStore` — one ADR arguing both beats two arguing one each), or
-`asyncio.gather` over the shown members, which is cheap but throws away the
-early exit and so reads every member's chunks whether or not the cap was
-already reached.
-
-### B154. Passages are selected by their entity's degree, not by how well they describe the community
-
-`_passages` takes the first chunks of the most-connected members, in member
-order, until `max_passages_shown` is full. That is a proxy: a passage
-mentioning one central entity in passing outranks one mentioning four of the
-community's members, because the second is only ever reached through whichever
-of those members happens to sort first.
-
-GraphRAG ranks text units for a community report by how many of the
-community's entities each one mentions, which is the obvious better rule and
-is *computable here* — `StoredChunk.entity_ids` carries exactly that, so the
-score is `len(set(chunk.entity_ids) & members)`.
-
-It was not built because ranking needs every candidate chunk before it can
-choose, which is the opposite of the early exit B153 describes: you cannot
-stop at ten passages if you have to see them all to know which ten. So the two
-entries are one decision, and taking B154 probably costs B153's cheap case.
-Neither is worth doing until something measures whether the passages shown are
-the reason a report is good or bad — which is B155.
-
-### B155. Nothing measures whether a theme is any good
-
-`tests/unit/composition/test_themes.py` asserts the partition, the prompt
-contents, the counters and the ordering. None of that is a claim about the
-summary: a report reading "these entities are related" would pass every test
-in the file, and so would one describing the wrong cluster, because the fake
-provider's title is derived from the prompt rather than from understanding it.
-
-This is B12's measurability problem arriving at a new surface, and it is worse
-here than for extraction: `tests/accuracy/` grades extracted entities against a
-hand-graded corpus, and there is no equivalent notion of a *correct* theme.
-The cheapest honest thing is probably a graded corpus of a dozen documents with
-hand-written expected cluster descriptions and a judge model scoring overlap —
-which introduces an LLM-as-judge and everything wrong with it.
-
-Until then, treat `summarize_themes`'s output quality as unmeasured. In
-particular do not read B149's Leiden swap or B154's passage ranking as
-improvements without it — both would change what the model is shown, and
-nothing here would notice either way.

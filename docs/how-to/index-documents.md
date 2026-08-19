@@ -8,7 +8,7 @@ per-token cost.
 ```python
 from redstring import InMemoryChunkStore, SourceDocument, index_documents
 
-corpus = InMemoryChunkStore()
+corpus = InMemoryChunkStore(dimension=768)
 report = await index_documents(
     [SourceDocument(id="engine-memo", text=memo_text)],
     store=corpus,
