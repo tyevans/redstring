@@ -44,6 +44,8 @@ tree resolves to something rather than to nothing:
 | B122 | the ratchet measures a moving number | duplicate of **B125**, written a slice earlier and quoting a `TOLERANCE` that has since changed; its one unique item (the diagnostic nobody ran) is folded in |
 | B142 | there is no thematic layer | built; the entry had become an index of B144/B147/B148/B149/B153/B155, which are the open parts |
 | B154 | passages ranked by degree | folded into **B153**, which said in its own body that the two were one decision |
+| B96 | ADR files, index and nav never compared | closed by `tests/unit/test_adr_declaration_sites_agree.py`, which found 0040 and 0041 missing from the index and 0042 missing from the nav |
+| B-ADR-TABLE | `definition-of-done.md`'s ADR table stopped at 0019 | closed: 23 rows written from `docs/adr/index.md`'s own summaries, gated by the same module |
 
 Two of those — B122 against B125, and the two copies each of B140 and B141 —
 were the same finding filed twice under different numbers or the same one. That
@@ -3256,61 +3258,49 @@ review is what noticed it. Fix, if picked up, is either shortening the
 generated suffixes or hashing the table name into the index name so length
 is bounded regardless of what the caller configures.
 
-### B95. Nothing executes the code blocks in `docs/how-to/*`
+### B95. The docs' code blocks are signature-checked, not executed
 
-`tests/unit/test_end_to_end_example.py` executes `docs/examples/build_a_graph.py`
-and is the mechanism behind the repo's public-surface gate ("the end-to-end
-example imports nothing but `redstring`"). Nothing equivalent runs the
-fenced Python in `docs/how-to/*.md`. This is how
-`docs/how-to/rank-passages.md`'s only example called
-`index_documents(..., chunks=chunks, ...)` against a parameter actually named
-`store` and shipped anyway — `mkdocs --strict` checks links, not Python, and
-the how-to's imports were all in `__all__`, so the public-surface gate gave
-it zero protection despite the how-to satisfying every condition that gate
-checks for. Fixed for this one instance in the final review pass; the
-mechanism gap that let it ship is what this entry tracks. A fix extracts
-each how-to's fenced block(s) the way `test_end_to_end_example.py` extracts
-`build_a_graph.py`'s, and executes them in the commit gate.
+`tests/unit/test_documented_code_calls_the_real_api.py` now checks, for every
+fenced Python block in `README.md` and `docs/` outside `adr/`, `plans/`,
+`history/` and `superpowers/`: that each name imported from `redstring` is
+exported, and that each call to such a name binds against its real signature.
+That is the class both of this entry's original defects belonged to -- a
+parameter actually named `store`, and a missing keyword-only `model=` -- and
+it found four more on its first run, in three pages a reader copies from.
 
-**Widen it past `docs/how-to/`.** A review found the same shape in the three
-most-read pages in the repo: `README.md`, `docs/getting-started.md` and
-`docs/installation.md` each constructed `LangChainLlmProvider(chat_model)`,
-missing the required keyword-only `model=`, so all three raised `TypeError`
-on the first line a real-provider user copies. Three sites drifted *together*
-— `docs/how-to/consolidate-duplicate-entities.md` had it right — which is the
-tell that no mechanism was watching any of them. Fixed in the same commit as
-this note; the executor this entry describes has to cover `README.md` and
-`docs/*.md`, not just the how-to directory, or it would have caught none of
-the three.
+**What is still not checked, and it is not a small remainder.** The gate is
+static, so it cannot see:
 
-### B96. Nothing asserts `docs/adr/*.md` and `docs/adr/index.md` agree
+- **a name used but never imported.** The full worked example in
+  `docs/how-to/drive-projections-from-an-event-store.md` called `replay`
+  without importing it.
+- **a local shadowing the function it calls.** The same block wrote
+  `replay = await replay(event_store, projections)`, which raises
+  `UnboundLocalError` before it reaches the call the gate would have bound.
+- **a wrong argument value**, and anything else that fails only when the
+  statement runs.
 
-Every ADR file is supposed to have a matching row in `docs/adr/index.md`'s
-table, by convention (`.claude/rules/recurring-defects.md` §6 argues for
-exactly this kind of two-declaration-site risk generally). Nothing checks
-it: ADR 0024 shipped with no index row for it, `mkdocs.yml`'s nav made the
-page reachable so `mkdocs --strict` was silent, and the omission was found
-only by a review reading both files side by side. Fixed for 0024 in the
-final review pass. A fix is a small test — glob `docs/adr/000*.md` and
-`docs/adr/0[1-9]*.md` for ADR numbers, parse the index table's numbers out
-of its first column, and assert the two sets are equal — living in
-`tests/unit/` next to the other doc-consistency checks (e.g. wherever
-`mkdocs --strict`'s invocation lives in the gate, if it does).
+Both of those shipped in the same block, and both were found by *reading* it
+after the gate flagged the block for an unrelated reason. So the static check
+buys the cheap 80% and the residue is exactly what B95 originally asked for:
+executing the blocks.
 
-**A second declaration site, found while verifying this pass: `mkdocs.yml`'s
-nav.** `docs/adr/0042-themes-are-recomputed-never-stored.md` is not in it, so
-`mkdocs build` prints it under "pages exist in the docs directory, but are not
-included in the nav" — an `INFO` line, which `--strict` does not fail on, in a
-list already seven entries long for the `superpowers/specs/` pages nobody
-intends to publish. So the one line that means something is camouflaged by
-seven that do not.
+**Why that was not built, which is the part to weigh before building it.**
+There are 387 fenced Python blocks. Most are fragments that assume a name from
+an earlier block on the page, so they cannot be executed in isolation without
+a per-page context the pages do not declare. The ones that are whole need a
+Neo4j, a Postgres or a model endpoint. An executor is therefore a second
+integration suite -- deselected by `addopts`, not in the commit gate -- which
+is the one place the defects this entry was filed for needed catching.
 
-That makes three places an ADR has to be listed (the file, `index.md`, the
-nav), and the ADR-0024 omission this entry was filed for went the *other* way:
-0024 was in the nav and not the index, which is why `--strict` was silent then
-too. The test proposed above should therefore compare three sets, not two —
-and note that fixing the nav for 0042 alone would leave the next one to the
-same silence, since the signal is an `INFO` line either way.
+Routes, cheapest first. Run **ruff over each block** with a narrow rule set
+(F821 undefined-name would have caught the missing `replay` import) and accept
+that fragments referencing an earlier block's names need marking somehow --
+the marking is the design question, and a fence attribute the renderer ignores
+is probably it. Or **declare which blocks are whole** and execute only those,
+which needs the same marking and additionally a backend. Do not start by
+executing everything; measure how many blocks are self-contained first, since
+that number decides whether either route is worth it.
 
 ### B100. ADR 0007 cites `redstring.projections.project`, which does not exist
 
@@ -3334,6 +3324,22 @@ bodies for `redstring.`-prefixed dotted paths and fails when one does not
 resolve against the installed package. The second would also have caught this
 one in the slice that caused it, and would cover every future ADR for free.
 Prefer it.
+
+**A second live copy survived, and was found by a gate rather than by a
+reader.** This entry says the live copies were fixed in the commit that filed
+it. `docs/how-to/drive-projections-from-an-event-store.md`'s full worked
+example still imported `project` from `redstring`, in a page a caller copies
+from -- so the sweep that fixed `README.md` and `build_graph.py` missed a
+how-to, which is `recurring-defects.md` §5's "a sweep that fixes the pages it
+thought of". `tests/unit/test_documented_code_calls_the_real_api.py` now fails
+on any documented import of a name `redstring` does not export, which closes
+that half for every future removal.
+
+**What is left here is only the ADR half**, and the gate above deliberately
+excludes `docs/adr/` -- an ADR body is an immutable record and may legitimately
+name a deleted symbol. So the mechanism this entry asks for is still wanted,
+and of the two options stated above the grep over ADR bodies remains the one
+to prefer.
 
 ### B104. `DomainSchemaRegistry` is a process-global singleton with two caches
 
@@ -3456,24 +3462,3 @@ copied from. Fixing one without the other would be inconsistent; fixing both
 is a small, separate, argued change (special-case `-1` and report it as
 "unconstrained" rather than as a mismatched width) that belongs in its own
 commit rather than riding in on the semantic-channel branch.
-
-### B-ADR-TABLE — `.claude/rules/definition-of-done.md`'s ADR table stops at 0019
-
-`.claude/rules/definition-of-done.md` carries a table of "the ADRs a spec has
-to be run against", listing `0001` through `0019`. The tree is at `0041`.
-
-Twenty-one ADRs are therefore invisible to the rule that exists to make specs
-account for existing decisions, in a file loaded into every session. This is
-`recurring-defects.md` §5 happening to the file that documents §5 -- the same
-way that section's own module map went stale, and the same way its ADR-count
-sentence did.
-
-Not fixed here because the fix is not "append twenty-one rows": the table's
-value is the one-line "settles" summary per ADR, and writing that many
-accurately means reading each ADR in turn. Doing it badly is worse than the
-gap, because a wrong summary is trusted.
-
-Fix: read `docs/adr/0020` through the current highest, add a row each, and add
-a test that the table's row count matches the number of files in `docs/adr/`
-excluding `index.md` -- so the next gap fails rather than accumulating. That
-test is the actual deliverable; the rows go stale again without it.
