@@ -13,6 +13,10 @@ composes. There are three:
   `ChunkRetriever` joins a second forbidden pair in the same module: `llm`
   and `chunks` are likewise siblings forbidden from importing each other, so
   no sibling can hold both of its two.
+- `themes` composes `EntityReader` + `RelationshipStore` + `LlmProvider` +
+  optionally `ChunkReader` in `summarize_themes`. `graph`, `llm` and `chunks`
+  are three siblings forbidden from importing each other, so no sibling can
+  hold them; ADR 0042 records the decision the module implements.
 - `index_documents` composes `Chunker` + `ChunkStore` -- the same
   `extraction` + `projections` pair `build_graph` names, so it is admitted by
   the argument already recorded rather than by a new one.
@@ -49,6 +53,7 @@ from redstring.composition.build_graph import (
 )
 from redstring.composition.index_documents import IndexReport, index_documents
 from redstring.composition.retrieval import ChunkRetriever, Retriever
+from redstring.composition.themes import Theme, ThemeReport, summarize_themes
 
 __all__ = [
     "AUTO",
@@ -59,6 +64,9 @@ __all__ = [
     "GraphBuildReport",
     "IndexReport",
     "Retriever",
+    "Theme",
+    "ThemeReport",
     "build_graph",
     "index_documents",
+    "summarize_themes",
 ]

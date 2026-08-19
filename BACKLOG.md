@@ -1575,43 +1575,26 @@ that point the fold is silently choosing what the corpus can be searched by.
 
 ### B142. There is no thematic layer: nothing aggregates above the entity
 
-`Retriever.retrieve` fuses a semantic and a lexical channel with RRF and
-returns `k` scored *entities*. That is the whole read surface. A caller asking
-"what are the main themes in this corpus" has nothing to call, and no
-composition of the existing ports answers it — `neighbors` walks from a known
-entity, and both retrieval channels rank individual entities against a query
-string.
+**Mostly closed.** ADR 0042 answered the four questions this entry refused to
+let anyone start in code without, and `summarize_themes` in
+`src/redstring/composition/themes.py` is step 2 over
+`domain/community.py`'s step 1: page the tenant's topology through the
+existing capabilities, partition it, and pay for one model call per community
+above `min_size`. Nothing is written — no event, no store, no `CommunityId`.
+`ThemeReport`/`Theme`/`summarize_themes` are on the public surface.
 
-This is the capability Microsoft GraphRAG is actually known for, and it is two
-steps, not one:
+**What remains open, and where:** the clustering is greedy modularity rather
+than Leiden (**B149**); the edge weight is 1.0 per relationship because there
+is no corpus-level weight to use (**B144**); the topology read is paged rather
+than bulk (**B148**); themes have no identity across calls (**B147**); the
+passage selection is a degree proxy (**B154**); and nothing measures whether
+any of it produces a good report (**B155**). None of those block the
+capability — they are the reasons not to claim more for it than it does.
 
-1. **Leiden clustering over the graph.** Pure algorithm over a `GraphStore`
-   read; no model call. GraphRAG runs the *identical* clustering step in both
-   its indexing pipelines — only the edge weights differ.
-2. **A community report per cluster**, which is a model call.
-
-The second step is where ADR 0023 changed the answer. GraphRAG's fast pipeline
-uses `create_community_reports_text`, which summarises a community **from its
-source text units** rather than from entity and relationship descriptions —
-because in that pipeline the descriptions are empty strings. We store passages
-now, so that variant is available to us and the description-quality problem in
-**B117** does not block it.
-
-The cost shape is the argument for building it at all: LLM calls are
-proportional to the number of *communities*, not the number of chunks. It is
-the one place in GraphRAG's design where a model call buys something that
-scales with the corpus's structure instead of its length.
-
-**Do not start with code.** This needs an ADR first, and it has to answer at
-least: which layer holds it (a new sibling in the band, or a projection —
-a community report is a judgement, so on ADR 0004's reasoning it emits an
-event rather than being computed on read); whether communities are persisted
-or recomputed; what a community *is* in a multi-tenant store; and whether
-clustering is a `GraphStore` capability (ADR 0016 says the port is
-capabilities, and "read the whole tenant's topology" is not one of the five)
-or a caller-side algorithm over `neighbors`. The last one is the sharpest:
-Leiden over a store that only exposes per-entity traversal is a very different
-cost than Leiden over a bulk read.
+The cost shape is why it was worth building: LLM calls are proportional to the
+number of *communities*, not the number of chunks. It is the one place in
+GraphRAG's design where a model call buys something that scales with the
+corpus's structure instead of its length.
 
 Related: **B12** on why nothing here is measurable yet, and **B143**, whose
 frequency counter is an input to any weighting scheme this would use.
@@ -3700,3 +3683,65 @@ unreachable and delete it. Do not simply raise the constant — that moves the
 symptom without answering the question. A second option worth weighing is
 returning the pass count alongside the partition so a caller can see it, but
 that widens the return type for a case nobody has observed.
+
+### B153. A community's passage read is one round trip per shown member, sequential and unbounded
+
+`_passages` in `src/redstring/composition/themes.py` calls
+`ChunkReader.get_by_entity` once per shown member, in order, stopping when
+`max_passages_shown` is reached. With the defaults that is up to 25 sequential
+round trips per community, and `CallLimiter` does not bound them — the limiter
+is the *inference endpoint's* ceiling, and a chunk store is a different
+backend with a different constraint.
+
+Why it was left: the port has no batch form (`get_by_entity` takes one id) and
+inventing one is a port widening, which is an ADR and obliges two adapters
+plus the published compliance suite — the same argument B148 makes about
+`GraphStore`. And the early exit means the common case is far fewer calls than
+25: the first member with passages usually supplies most of them.
+
+Fix, when someone measures it as a cost: either a `get_by_entities` batch on
+`ChunkReader` (weigh against B148, which wants the analogous thing on
+`GraphStore` — one ADR arguing both beats two arguing one each), or
+`asyncio.gather` over the shown members, which is cheap but throws away the
+early exit and so reads every member's chunks whether or not the cap was
+already reached.
+
+### B154. Passages are selected by their entity's degree, not by how well they describe the community
+
+`_passages` takes the first chunks of the most-connected members, in member
+order, until `max_passages_shown` is full. That is a proxy: a passage
+mentioning one central entity in passing outranks one mentioning four of the
+community's members, because the second is only ever reached through whichever
+of those members happens to sort first.
+
+GraphRAG ranks text units for a community report by how many of the
+community's entities each one mentions, which is the obvious better rule and
+is *computable here* — `StoredChunk.entity_ids` carries exactly that, so the
+score is `len(set(chunk.entity_ids) & members)`.
+
+It was not built because ranking needs every candidate chunk before it can
+choose, which is the opposite of the early exit B153 describes: you cannot
+stop at ten passages if you have to see them all to know which ten. So the two
+entries are one decision, and taking B154 probably costs B153's cheap case.
+Neither is worth doing until something measures whether the passages shown are
+the reason a report is good or bad — which is B155.
+
+### B155. Nothing measures whether a theme is any good
+
+`tests/unit/composition/test_themes.py` asserts the partition, the prompt
+contents, the counters and the ordering. None of that is a claim about the
+summary: a report reading "these entities are related" would pass every test
+in the file, and so would one describing the wrong cluster, because the fake
+provider's title is derived from the prompt rather than from understanding it.
+
+This is B12's measurability problem arriving at a new surface, and it is worse
+here than for extraction: `tests/accuracy/` grades extracted entities against a
+hand-graded corpus, and there is no equivalent notion of a *correct* theme.
+The cheapest honest thing is probably a graded corpus of a dozen documents with
+hand-written expected cluster descriptions and a judge model scoring overlap —
+which introduces an LLM-as-judge and everything wrong with it.
+
+Until then, treat `summarize_themes`'s output quality as unmeasured. In
+particular do not read B149's Leiden swap or B154's passage ranking as
+improvements without it — both would change what the model is shown, and
+nothing here would notice either way.
