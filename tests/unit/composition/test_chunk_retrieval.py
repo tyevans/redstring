@@ -140,6 +140,13 @@ class _CountingEmbeddingProvider:
         self.calls += 1
         return await self._inner.embed(texts)
 
+    # Counting both sides is what keeps the assertion honest. A double
+    # counting only `embed` reads zero for a mode that embeds every query,
+    # once the semantic channel calls `embed_query` instead.
+    async def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+        self.calls += 1
+        return await self._inner.embed_query(texts)
+
 
 async def test_a_lexical_only_mode_makes_no_embedding_call() -> None:
     tenant = uuid4()
@@ -294,3 +301,74 @@ async def test_a_chunk_ranked_second_in_both_channels_beats_a_channel_leader() -
 
     [winner] = result.matches
     assert winner.chunk.id == "chunk-b"
+
+
+# ----------------------------------------------------------------------
+# The query goes through the query side of the port
+# ----------------------------------------------------------------------
+
+#: Non-empty and different from each other. Equal prefixes would make a
+#: retriever calling `embed` indistinguishable from one calling `embed_query`,
+#: which is the defect these two tests exist to catch.
+DOCUMENT_PREFIX = "search_document: "
+QUERY_PREFIX = "search_query: "
+
+
+async def test_the_semantic_channel_embeds_the_query_as_a_query() -> None:
+    """`chunk-wanted` sits at the vector a correctly-embedded query produces
+    and `chunk-decoy` at the one the document side would produce for the same
+    string, so the two implementations return different chunks rather than the
+    same chunk with a worse score."""
+    tenant = uuid4()
+    chunks = InMemoryChunkStore(dimension=DIMENSION)
+    embeddings = FakeEmbeddingProvider(
+        dimension=DIMENSION,
+        document_prefix=DOCUMENT_PREFIX,
+        query_prefix=QUERY_PREFIX,
+    )
+    query = "Ada Lovelace"
+
+    [as_query] = await embeddings.embed_query([query])
+    [as_document] = await embeddings.embed([query])
+    assert as_query != as_document, "the two prefixes must produce different vectors"
+    await chunks.upsert_many(
+        [
+            _chunk("chunk-wanted", tenant, text="unrelated passage one", embedding=as_query),
+            _chunk("chunk-decoy", tenant, text="unrelated passage two", embedding=as_document),
+        ]
+    )
+
+    result = await _retriever(chunks, embeddings).retrieve_chunks(
+        query, tenant, k=1, mode=RetrievalMode.SEMANTIC
+    )
+
+    assert [match.chunk.id for match in result.matches] == ["chunk-wanted"]
+
+
+async def test_the_query_reaches_the_provider_unprefixed_by_the_caller() -> None:
+    """A retriever prefixing the query itself and then calling `embed_query`
+    would double the prefix on the wire and pass every assertion about which
+    chunk came back."""
+
+    class RecordingProvider(FakeEmbeddingProvider):
+        def __init__(self) -> None:
+            super().__init__(dimension=DIMENSION)
+            self.seen: list[tuple[str, list[str]]] = []
+
+        async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+            self.seen.append(("embed", list(texts)))
+            return await super().embed(texts)
+
+        async def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+            self.seen.append(("embed_query", list(texts)))
+            return await super().embed_query(texts)
+
+    tenant = uuid4()
+    chunks = InMemoryChunkStore(dimension=DIMENSION)
+    embeddings = RecordingProvider()
+
+    await _retriever(chunks, embeddings).retrieve_chunks(
+        "Ada Lovelace", tenant, mode=RetrievalMode.SEMANTIC
+    )
+
+    assert embeddings.seen == [("embed_query", ["Ada Lovelace"])]

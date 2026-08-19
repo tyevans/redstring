@@ -311,6 +311,32 @@ the two adapter divergences nothing can observe, then the measurements nobody
 has taken (B150 through B-BENCH-1), then the seams whose tests pass on someone
 else's guarantee (B101 through B86).
 
+### B156. Nothing detects a corpus embedded under two different task prefixes
+
+`document_prefix` on `LangChainEmbeddingProvider` and `FakeEmbeddingProvider`
+(both in `src/redstring/llm/adapters/`) changes which vector space a stored
+vector lives in. ADR 0043 argues the prefix is part of the embedding model's
+identity in ADR 0017's sense, so changing it means a **new store** — and then
+declines to enforce that, deliberately: the prefixes are not folded into
+`EmbeddingProvider.model`, because provenance strings are compared, grouped by
+and written into events, and BGE's query prefix is an entire English sentence.
+The reasoning is in ADR 0043 under "Provenance: the prefixes stay out of
+`model`".
+
+**What is therefore unguarded.** Set `document_prefix` for the first time on a
+populated pgvector store, or change it, and every vector written before the
+change is silently incomparable with every vector written after. Search still
+returns results. Scores still look plausible. The `model` column says the same
+thing on both sides.
+
+What was learned while deferring it: the check cannot live in this library as
+written, because nothing here sees a store's *history* — `VectorStore` has no
+"what was this populated with" question, and adding one to carry a prefix
+would be a store-schema change in service of a rule the caller could enforce
+in its own deployment metadata. The plausible route back is a store-side
+provenance row (model + document prefix + dimension, written at DDL time and
+checked on connect), which is a `VectorStore` capability and an ADR of its own.
+
 ### B119. The caller-owned resource checks are written in the form upstream refuted
 
 Three tests assert that an adapter handed a driver or pool leaves it alone,
@@ -2928,6 +2954,25 @@ someone who thinks to open a config file.
 
 ## 6. Tooling, packaging and hygiene
 
+### B158. The task prefixes are absent from every how-to that configures a model
+
+ADR 0043 added `document_prefix` and `query_prefix` to both embedding adapters,
+and the only prose that mentions them is the ADR, the port docstring, the
+adapter constructors and `docs/how-to/implement-a-store-adapter.md` — which is
+written for someone *implementing* a port, not for someone *using* one.
+
+The four how-tos a caller configuring `nomic-embed-text` actually reads say
+nothing: `docs/how-to/retrieve-entities.md`, `docs/how-to/retrieve-chunks.md`,
+`docs/how-to/use-the-pgvector-store.md` and `docs/how-to/run-the-benchmark.md`.
+Their `openai_compatible(...)` examples are all correct and all unprefixed, so
+a reader who copies one gets exactly the silent quality loss the ADR is about.
+
+Deferred rather than done because it is a documentation sweep with a decision
+in it — whether the examples should *show* nomic's prefixes (accurate for the
+model this project benchmarks against, wrong to copy for any other) or show
+empty defaults with a callout. The `syncing-diataxis-docs` skill is the tool
+for the sweep. Do not leave it long: the benchmark how-to in particular
+describes the exact workload that lost a corpus run to this.
 Nothing here changes an answer the library gives. What each one costs is a
 release, a gate, or the next reader's time — which is why the section is last
 and why an entry that turned out to be about a *cost* (B92, B133, B136) or a

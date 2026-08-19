@@ -491,7 +491,7 @@ vectors. See
 [ADR 0017](../adr/0017-the-embedding-provider-port.md).
 
 Take the number from your model's documentation, or measure it once —
-`len(await embedder.embed("probe"))` — and pass that. A non-positive value is
+`len((await embedder.embed(["probe"]))[0])` — and pass that. A non-positive value is
 rejected at construction with `ValueError` (`dimension must be positive, not
 0`); every other integer is accepted, because the store has no way to know
 which model you are about to use.

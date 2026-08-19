@@ -143,8 +143,18 @@ is `domain/chunk_ranking.py`, so that two adapters cannot disagree about
 relevance. Because `chunk_index` is not unique, `get_by_source` orders by
 `(chunk_index, id)`.
 
-**`EmbeddingProvider`** is two properties and one method: `model`,
-`dimension`, and `embed(texts)`. The contract its suite exists to hold is
+**`EmbeddingProvider`** is two properties and two methods: `model`,
+`dimension`, `embed(texts)` and `embed_query(texts)`. The two methods have the
+**same** contract and differ only in which side of an asymmetric model they
+address — `embed` is the corpus, `embed_query` is the query — so a symmetric
+model implements one body and calls it twice. See [ADR
+0043](../adr/0043-a-query-is-embedded-differently-from-a-document.md), and note
+its storage consequence before you ship an adapter that prefixes: a corpus
+embedded with a document prefix and the same corpus embedded without it are
+not comparable vectors, so the prefix is part of the model's identity and
+changing it means a new store.
+
+The contract its suite exists to hold is
 **positional** — one vector per input, in input order — because an adapter
 that batches, retries a partial failure, or deduplicates identical texts can
 return the right vectors in the wrong order and a caller zipping them onto
@@ -194,8 +204,9 @@ is five ([ADR 0016](../adr/0016-graph-store-is-five-capabilities.md)),
 0026](../adr/0026-chunk-store-and-cache-are-capabilities-too.md)),
 `VectorStore` three ([ADR
 0027](../adr/0027-vector-store-is-three-capabilities-and-so-is-every-collaborator.md)),
-while `LlmProvider` and `EmbeddingProvider` are one method and a property
-apiece with nothing to slice. The decomposition changes nothing for an adapter
+while `LlmProvider` and `EmbeddingProvider` have nothing to slice — one
+method and a property, and two methods and two properties, respectively, all
+of which any caller of either uses. The decomposition changes nothing for an adapter
 implementing a whole port — you write every method either way — and it lets a
 caller depend on only the slice it uses.
 
@@ -769,7 +780,17 @@ looks like it works and yields `NotImplementedError` from the base class.
 `tests/integration/llm/test_live_embeddings.py::TestLiveEmbeddings` records
 that, and runs the whole suite unchanged against a real server.
 
-Two things about the suite are worth knowing before you write the adapter.
+Three things about the suite are worth knowing before you write the adapter.
+
+**Every case runs against both `embed` and `embed_query`**, parametrised
+rather than duplicated, so the subclass above covers the query side with no
+extra edit — and fails until the method exists. What the shared suite does
+*not* assert is that the two sides differ, because a symmetric adapter is
+legitimate; if yours applies task prefixes, test that they are distinguishable
+and reach your client verbatim in your own module, with two prefixes that are
+non-empty **and different from each other**. Equal prefixes make a correct
+implementation and one that swaps them the same function.
+
 **Every multi-text case uses inputs that differ from each other**, because a
 suite embedding `["a", "a", "a"]` cannot observe a reordering — three
 identical inputs give three identical vectors and every permutation passes.

@@ -26,6 +26,18 @@ exporting `AliasCycleError` commits us to, and
 `docs/how-to/implement-a-store-adapter.md` for what an adapter must now
 implement.
 
+**Not amended by, but cited from,
+[`0043` a query is embedded differently from a document](0043-a-query-is-embedded-differently-from-a-document.md).**
+Readers arrive here looking for the rule that *changing embedding model means a
+new store, not an in-place change*, because
+[`0017`](0017-the-embedding-provider-port.md) attributes it to this page. **It
+is not here.** That rule's home is `src/redstring/ports/vector_store.py` and
+0017's own Decision; 0043 extends it to cover an embedding model's task prefix,
+so changing a `document_prefix` on a populated store has the same consequence
+as changing the model. Nothing this ADR decided is affected — the note exists
+so the citation resolves to something rather than to eight hundred lines about
+`delete_entity`.
+
 **Why this is an ADR:** a port is the one interface that is expensive to
 change, because every adapter and the compliance suite move with it. Three
 adapters implement `GraphStore` today. The absent method in particular keeps

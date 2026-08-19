@@ -4,6 +4,15 @@
 
 Accepted.
 
+**Amended by [`0043`](0043-a-query-is-embedded-differently-from-a-document.md)**:
+the port gains `embed_query`, with this ADR's batch and positional contract
+unchanged, and the identity argument in "(2) is tempting and wrong here" below
+extends to the task prefix -- read "changing embedding model means a new store"
+as "changing embedding model **or its document prefix** means a new store",
+because one model at one dimension, with and without `search_document: `,
+produces vectors that are not comparable. No decision this ADR made is
+reversed.
+
 Relates to [ADR 0002](0002-two-store-ports.md), which settles that `GraphStore`
 and `VectorStore` are the store ports — it **stands**; this adds a non-store
 port, not a third store. Relates to

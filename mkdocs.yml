@@ -184,4 +184,5 @@ nav:
       - "0040 · Overlap-aware name similarity": adr/0040-overlap-aware-name-similarity.md
       - "0041 · The consolidation pass is decide-then-emit": adr/0041-the-consolidation-pass-is-decide-then-emit.md
       - "0042 · Themes are recomputed, never stored": adr/0042-themes-are-recomputed-never-stored.md
+      - "0043 · A query is embedded differently from a document": adr/0043-a-query-is-embedded-differently-from-a-document.md
   - Contributing: contributing.md

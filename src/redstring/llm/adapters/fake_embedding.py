@@ -23,6 +23,14 @@ That distinction is the same one `tests/accuracy/` draws between correct and
 accurate, and it is worth keeping in view: a green suite over this provider
 says the plumbing works, never that the search is good.
 
+## The prefixes are real, not ignored
+
+`document_prefix` and `query_prefix` are prepended before hashing, so the fake
+returns *different vectors* for the two sides exactly as an asymmetric model
+does. A fake that accepted the arguments and dropped them would let a caller's
+test pass against a pipeline that never applied a prefix, which is the one
+thing this fake is being asked about here.
+
 ## Determinism is per-text, not per-call
 
 The same text always gives the same vector, in this process and the next. That
@@ -58,6 +66,8 @@ class FakeEmbeddingProvider:
         model: str = "fake/hash-v1",
         dimension: int = DEFAULT_DIMENSION,
         fail_on: str | None = None,
+        document_prefix: str = "",
+        query_prefix: str = "",
     ) -> None:
         """Build a provider.
 
@@ -69,12 +79,17 @@ class FakeEmbeddingProvider:
                 path — the resilience wrappers over this port are the whole
                 reason a provider needs to be able to fail on demand, and the
                 alternative is a caller monkeypatching the adapter.
+            document_prefix: Prepended to every text passed to `embed`.
+            query_prefix: Prepended to every text passed to `embed_query`.
+                Both default to empty, which is a symmetric model.
         """
         if dimension <= 0:
             raise ValueError(f"dimension must be positive, got {dimension}")
         self._model = model
         self._dimension = dimension
         self._fail_on = fail_on
+        self._document_prefix = document_prefix
+        self._query_prefix = query_prefix
 
     @property
     def model(self) -> str:
@@ -92,9 +107,23 @@ class FakeEmbeddingProvider:
         that filtered a batch down to nothing must not be charged for it by a
         real adapter, so the fake must not hide the case.
         """
+        return self._embed_all(texts, self._document_prefix)
+
+    async def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+        """One unit vector per query text, in order.
+
+        Differs from `embed` only in which prefix is applied, which is the
+        whole of the asymmetry a real model has.
+        """
+        return self._embed_all(texts, self._query_prefix)
+
+    def _embed_all(self, texts: Sequence[str], prefix: str) -> list[list[float]]:
+        """The shared body. `fail_on` matches the caller's text, not the
+        prefixed one -- a caller asking to fail on `"boom"` should not have to
+        know what this provider prepends."""
         if self._fail_on is not None and any(self._fail_on in t for t in texts):
             raise EmbeddingProviderError(f"asked to fail on {self._fail_on!r}", model=self._model)
-        return [self._vector(text) for text in texts]
+        return [self._vector(prefix + text) for text in texts]
 
     def _vector(self, text: str) -> list[float]:
         """A unit vector determined entirely by `text`.
