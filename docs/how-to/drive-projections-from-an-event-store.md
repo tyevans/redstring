@@ -1091,8 +1091,12 @@ rowid and none is needed. Note it is not `read_category`, which selects the
 same events and orders them by storage time.
 
 One thing neither does. Scoping by *stream* is still not a thing `replay`
-offers — `GlobalEventFeed` has no `read_category`, and see `BACKLOG.md` B68
-for why that is deliberately still open. And `last_position` is then the last
+offers — `GlobalEventFeed` has no `read_category`. Taking it would mean `replay`
+accepting a narrower port than the one it documents, or accepting both and
+branching, and nobody has asked for it — a caller wanting one stream can pass
+`from_position`, a tenant and an aggregate type. It is upstream's call to make
+rather than this project's, which is why `BACKLOG.md` no longer carries it as
+an entry. And `last_position` is then the last
 position the *filtered* read reached, which is the one to checkpoint for a subsequent
 scoped run and **not** interchangeable with a whole-feed cursor.
 
@@ -1104,7 +1108,7 @@ test, or on a first deployment, that is exactly backwards — a silent partial
 rebuild is most costly when it is least visible.
 
 ```python
-from redstring import ReplayFailedError
+from eventsource import ReplayFailedError
 
 try:
     report = await replay(event_store, projections, strict=True)
@@ -2188,6 +2192,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
+from eventsource import replay
 from eventsource.adapters.memory import (
     InMemoryCheckpointRepository,
     InMemoryDLQRepository,
@@ -2206,7 +2211,6 @@ from redstring import (
     VectorProjection,
     build_graph,
     document_stream,
-    project,
 )
 
 #: What the model "finds" in the text below. A real provider reads the text.
@@ -2273,15 +2277,15 @@ async def main() -> tuple[int, int, list[str]]:
     ]
 
     # Step 4: fold the log. `from_position` defaults to None — the beginning.
-    replay = await replay(event_store, projections)
+    report = await replay(event_store, projections)
 
-    if replay.failed:
+    if report.failed:
         for entry in await dlq.get_failed_events():
             print(entry.event_id, entry.projection_name, entry.error_message)
 
     # Verify by reading the store, not by trusting the counts.
     people = await graph_store.find_entities(tenant_id, entity_type="Person")
-    return (replay.applied, replay.failed, sorted(entity.name for entity in people))
+    return (report.applied, report.failed, sorted(entity.name for entity in people))
 
 
 if __name__ == "__main__":
@@ -2290,8 +2294,8 @@ if __name__ == "__main__":
 
 ### What the script does and does not prove
 
-`replay.applied` comes back `1` — one `DocumentExtracted` — and
-`replay.failed` `0`. The names come back from the graph store, and that last
+`report.applied` comes back `1` — one `DocumentExtracted` — and
+`report.failed` `0`. The names come back from the graph store, and that last
 read is the part that matters: `applied` counts *delivery*, so it would read
 `1` just as happily over a fold that wrote nothing, and `VectorProjection` is
 in the list contributing exactly that. It subscribes to `EntitiesEmbedded`,

@@ -183,4 +183,5 @@ nav:
       - "0039 · Bounded concurrency over chunks": adr/0039-bounded-concurrency-over-chunks.md
       - "0040 · Overlap-aware name similarity": adr/0040-overlap-aware-name-similarity.md
       - "0041 · The consolidation pass is decide-then-emit": adr/0041-the-consolidation-pass-is-decide-then-emit.md
+      - "0042 · Themes are recomputed, never stored": adr/0042-themes-are-recomputed-never-stored.md
   - Contributing: contributing.md
