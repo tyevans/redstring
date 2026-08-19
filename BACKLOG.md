@@ -3651,7 +3651,7 @@ calls-per-thousand-entities in `bench/`. Until then the cost of this release's
 recall improvement is unknown in the only unit anyone pays it in.
 
 
-### B147. `mention_counts` reaches no caller of `build_graph`
+### B152. `mention_counts` reaches no caller of `build_graph`
 
 `PipelineResult.mention_counts` (see **B143**) is produced by
 `ExtractionPipeline.extract` and read by nobody. `build_graph` in
@@ -3700,17 +3700,3 @@ unreachable and delete it. Do not simply raise the constant — that moves the
 symptom without answering the question. A second option worth weighing is
 returning the pass count alongside the partition so a caller can see it, but
 that widens the return type for a case nobody has observed.
-
-### B151. Two different backlog entries are numbered B147
-
-`### B147. Themes have no identity across calls` (the one ADR 0042 cites) and
-`### B147. mention_counts reaches no caller of build_graph` are both in this
-file. ADR 0042's "filed as B147" therefore resolves to two entries, one of
-which is unrelated to it.
-
-Noticed while implementing `domain/community.py` and deliberately not fixed in
-that commit: renumbering an entry is not a local edit — the number is cited
-from `docs/adr/0042-themes-are-recomputed-never-stored.md` and possibly from
-commit messages, which are immutable. Whoever fixes it should renumber the
-`mention_counts` entry (the later, uncited one) and grep `docs/` and
-`.claude/` for references before doing so.
