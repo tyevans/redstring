@@ -181,6 +181,55 @@ class TestBoundaryQuality:
         assert "".join(produced.text for produced in result.chunks) == text
 
 
+class TestDegenerateAdvance:
+    """A boundary near the start followed by a long boundary-free stretch.
+
+    Both of `TestBoundaryQuality`'s shapes -- regular boundaries and no
+    boundaries at all -- already work; CLAUDE.md names this exact gap. The
+    contributed implementation re-finds the *same* early boundary on every
+    iteration once `start` has rewound past it (the boundary is still ahead
+    of the new `start`, so the search returns it again), so `end` never
+    advances even though `start` creeps forward one character at a time. That
+    yields hundreds of near-empty chunks instead of a hard split at the
+    ceiling.
+    """
+
+    def test_a_boundary_near_the_start_does_not_stall_the_rest_of_the_document(self):
+        text = "y" * 1800 + "\n" + "z" * 6000
+
+        result = BoundaryPreferenceChunker(default_chunk_size=3000, default_overlap=200).chunk(text)
+
+        assert result.total_chunks <= 5
+        assert all(produced.length >= 100 for produced in result.chunks)
+
+    def test_the_window_end_always_advances_past_the_previous_chunks_end(self):
+        """The invariant that was actually violated.
+
+        A chunk-count assertion alone is satisfiable by an implementation
+        that still produces some short chunks; this pins the mechanism the
+        bug broke -- every `end_char` must strictly exceed the previous
+        chunk's, so a boundary already spent cannot be reused.
+        """
+        text = "y" * 1800 + "\n" + "z" * 6000
+
+        result = BoundaryPreferenceChunker(default_chunk_size=3000, default_overlap=200).chunk(text)
+
+        for earlier, later in pairwise(result.chunks):
+            assert later.end_char > earlier.end_char
+
+    def test_dense_structured_text_with_an_early_boundary_chunks_sanely(self):
+        """Shaped like the STaRK document that triggered this: long lines,
+        one boundary near the start, then ~45k characters of dense text with
+        no further whitespace runs long enough to register as a boundary.
+        """
+        text = "field: value, " * 100 + "\n\n" + "x" * 45000
+
+        result = BoundaryPreferenceChunker(default_chunk_size=3000, default_overlap=200).chunk(text)
+
+        assert result.total_chunks < 30
+        assert all(produced.length >= 100 for produced in result.chunks)
+
+
 class TestSplitting:
     def test_a_chunk_is_exactly_the_span_it_claims(self):
         text = "sentence one. sentence two. sentence three. " * 20

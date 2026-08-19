@@ -176,12 +176,25 @@ class BoundaryPreferenceChunker:
             if limit >= len(text):
                 end = len(text)
             else:
+                # A boundary must lie strictly after the *previous* chunk's
+                # end, not merely after `start`. Overlap can rewind `start`
+                # to before a boundary that was already used to end the
+                # previous chunk; searching from `start` alone finds that
+                # same boundary again, so `end` stalls at a fixed position
+                # while `start` creeps toward it one character at a time --
+                # hundreds of near-empty chunks on a document with one early
+                # boundary and no others. Requiring progress in `end`, not
+                # just in `start`, makes progress a loop invariant instead of
+                # a property that happens to hold when boundaries are evenly
+                # spread.
+                after = max(start, previous_end) if chunks else start
                 end = (
-                    _last_within(paragraphs, start, limit)
-                    or _last_within(sentences, start, limit)
-                    or _last_within(words, start, limit)
-                    # No boundary in reach: cut at the ceiling. Inside a long
-                    # run of whitespace this is the right answer, not a
+                    _last_within(paragraphs, after, limit)
+                    or _last_within(sentences, after, limit)
+                    or _last_within(words, after, limit)
+                    # No usable boundary in reach: cut at the ceiling. Inside
+                    # a long run of whitespace, or a long stretch with no
+                    # boundary at all, this is the right answer, not a
                     # fallback.
                     or limit
                 )
