@@ -3008,6 +3008,73 @@ plan — and the caller that motivated it (`stark-bench`) is mid-benchmark
 against an editable install of this library, so a change here lands in a
 running experiment. Pick it up when that finishes.
 
+### B161. A chunk write that collides with an existing id is invisible to the caller
+
+`ChunkWriter.upsert_many` returns `None`. A caller handing it 5,000 chunks
+cannot learn that 4,900 rows exist afterwards, and there is no other read
+that answers it either (**B159** is the missing read; this is the missing
+half of the write).
+
+That matters because chunk identity is content-addressed over
+`(source_id, text)` and, since **ADR 0044**, is derived rather than
+supplied — so a chunker emitting the same text twice for one source is not
+a caller error that could be caught upstream, it is a normal outcome of a
+sliding window over repetitive text. The two writes are one row, correctly.
+`ChunkWriter.upsert_many`'s docstring already states that rule, so the
+behaviour is documented; what is missing is any way to learn that it
+*happened* on a given call.
+
+**Measured, not hypothesised.** `stark-bench`'s `qwen-rel-sliding1k` arm
+reported 549,886 chunks written and its tenant holds 549,697 — **189**
+short. Re-chunking that corpus offline reproduces the figure to the unit:
+38,964 documents over 1,000 characters produce 459,475 chunks, of which 189
+collapse across 78 documents. A second arm was 10 short by the same
+mechanism. It was found by a standalone verification script comparing
+reports against `count(*)`, not by anything failing.
+
+**The dedup is right and must stay.** Two byte-identical chunk texts embed
+to the same vector, so the second row buys no retrieval and costs storage;
+adding `start_char` to the id would "fix" the count by storing redundant
+duplicates, which is worse, and it is the positional identity
+`domain/chunk.py` records as rejected. The defect is not the merge — it is
+that the merge is unobservable.
+
+**Why the caller cannot paper over it.** Deduplicating its own batch before
+the write catches collisions *within* one call and misses collisions
+against rows already stored, which is the resume path and the case that
+actually bites. Only the store knows.
+
+**The shape to add**, on `ChunkWriter`:
+
+```python
+async def upsert_many(self, chunks: Sequence[StoredChunk]) -> int:
+    """The number of rows written -- fewer than `len(chunks)` when ids collide."""
+```
+
+Postgres can answer it without a second statement (`RETURNING` on the
+upsert, or the driver's affected-row count); `InMemoryChunkStore` counts
+keys new to the dict. So the cost is not the implementation.
+
+**The cost is that it is a signature change on a port**, so it lands with a
+compliance case both adapters must satisfy — and that case has to force a
+collision to have any teeth, which means one source id and two chunks whose
+text is byte-identical. A fixture building distinct text per chunk makes
+every candidate implementation agree by returning `len(chunks)`, which is
+the failure shape `CLAUDE.md`'s table calls out. The complementary case is
+that a re-`upsert_many` of an already-stored batch returns 0, not
+`len(chunks)`.
+
+Whether it returns a count or the set of ids actually written is open. The
+count is enough for the reporting defect that motivated it; the set is
+enough to tell a caller *which* passages it lost, which is what someone
+debugging a chunker would want. The set is strictly more useful and
+strictly more expensive to return at 50M chunks — decide it against
+`existing_ids`' framing in B159, which chose bounded-by-the-caller's-input
+for the same reason.
+
+Deferred with B159 and for the same reason: the caller that motivated it is
+mid-benchmark against an editable install of this library.
+
 ## 6. Tooling, packaging and hygiene
 
 ### B158. The task prefixes are absent from every how-to that configures a model
