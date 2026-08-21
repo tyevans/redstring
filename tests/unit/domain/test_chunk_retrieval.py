@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from redstring.domain.chunk import StoredChunk
+from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.chunk_retrieval import (
     ChunkRetrievalResult,
     ScoredChunk,
@@ -17,11 +17,13 @@ from redstring.domain.ids import SourceId, TenantId
 
 
 def _chunk(**overrides: object) -> StoredChunk:
+    source_id = overrides.get("source_id", SourceId("doc-1"))
+    text = overrides.get("text", "Ada Lovelace wrote the first algorithm.")
     fields: dict[str, object] = {
-        "id": "a" * 64,
+        "id": chunk_id(source_id, text),
         "tenant_id": TenantId(uuid4()),
-        "source_id": SourceId("doc-1"),
-        "text": "Ada Lovelace wrote the first algorithm.",
+        "source_id": source_id,
+        "text": text,
         "chunk_index": 0,
         "start_char": 0,
         "end_char": 39,
@@ -47,9 +49,10 @@ def test_component_scores_default_to_none() -> None:
 
 
 def test_a_semantic_candidate_pairs_a_chunk_with_its_score() -> None:
-    candidate = SemanticCandidate(chunk=_chunk(), score=0.75)
+    chunk = _chunk()
+    candidate = SemanticCandidate(chunk=chunk, score=0.75)
     assert candidate.score == 0.75
-    assert candidate.chunk.id == "a" * 64
+    assert candidate.chunk.id == chunk.id
 
 
 def test_a_result_keeps_the_query_it_answered() -> None:

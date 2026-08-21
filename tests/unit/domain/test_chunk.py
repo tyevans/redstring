@@ -60,7 +60,7 @@ def test_two_chunks_do_not_share_a_default_entity_list() -> None:
     """A mutable default shared between instances is the classic pydantic trap."""
     tenant = uuid4()
     first = StoredChunk(
-        id="a",
+        id=chunk_id("d", "t"),
         tenant_id=tenant,
         source_id="d",
         text="t",
@@ -69,7 +69,7 @@ def test_two_chunks_do_not_share_a_default_entity_list() -> None:
         end_char=1,
     )
     second = StoredChunk(
-        id="b",
+        id=chunk_id("d", "t"),
         tenant_id=tenant,
         source_id="d",
         text="t",
@@ -120,7 +120,7 @@ def test_a_stored_chunk_has_no_embedding_by_default() -> None:
     every field never executes them.
     """
     chunk = StoredChunk(
-        id="a" * 64,
+        id=chunk_id(SourceId("doc-1"), "Ada Lovelace wrote the first algorithm."),
         tenant_id=TenantId(UUID(int=1)),
         source_id=SourceId("doc-1"),
         text="Ada Lovelace wrote the first algorithm.",
@@ -134,7 +134,7 @@ def test_a_stored_chunk_has_no_embedding_by_default() -> None:
 def test_entity_ids_survive_a_round_trip_as_uuids() -> None:
     entity = uuid4()
     chunk = StoredChunk(
-        id="a",
+        id=chunk_id("d", "t"),
         tenant_id=uuid4(),
         source_id="d",
         text="t",
@@ -146,3 +146,24 @@ def test_entity_ids_survive_a_round_trip_as_uuids() -> None:
     restored = StoredChunk.model_validate(chunk.model_dump(mode="json"))
     assert restored.entity_ids == [entity]
     assert isinstance(restored.entity_ids[0], UUID)
+
+
+def test_a_stored_chunk_whose_id_is_not_derived_from_its_text_is_rejected() -> None:
+    """The id is what both adapters rest on to skip re-deriving state (B97).
+
+    The wrong id here is a *real other chunk's* id rather than a random
+    string, because a random string could be rejected by any format check
+    the field ever grows, and this test would then pass for a reason that
+    has nothing to do with derivation.
+    """
+    source = SourceId("doc-1")
+    with pytest.raises(ValidationError, match="content-addressed"):
+        StoredChunk(
+            id=chunk_id(source, "some other passage"),
+            tenant_id=TenantId(uuid4()),
+            source_id=source,
+            text="the passage actually being stored",
+            chunk_index=0,
+            start_char=0,
+            end_char=33,
+        )

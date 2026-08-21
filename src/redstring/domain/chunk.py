@@ -27,7 +27,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
@@ -104,3 +104,13 @@ class StoredChunk(BaseModel):
     def _metadata_is_storable(cls, value: dict[str, Any]) -> dict[str, Any]:
         reject_unstorable_text(value, what="metadata")
         return value
+
+    @model_validator(mode="after")
+    def _id_is_derived(self) -> StoredChunk:
+        expected = chunk_id(self.source_id, self.text)
+        if self.id != expected:
+            raise ValueError(
+                f"id must be content-addressed over (source_id, text): "
+                f"expected {expected}, got {self.id}"
+            )
+        return self

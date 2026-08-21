@@ -13,7 +13,7 @@ from uuid import uuid4
 import pytest
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
-from redstring.domain.chunk import StoredChunk
+from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.testing.chunk_store import ChunkStoreCompliance
 
 if TYPE_CHECKING:
@@ -46,10 +46,11 @@ async def test_it_holds_no_state_outside_itself() -> None:
     """Two stores are independent; nothing is class-level or module-level."""
     tenant = uuid4()
     first, second = InMemoryChunkStore(dimension=4), InMemoryChunkStore(dimension=4)
+    ident = chunk_id("doc-1", "t")
     await first.upsert_many(
         [
             StoredChunk(
-                id="a",
+                id=ident,
                 tenant_id=tenant,
                 source_id="doc-1",
                 text="t",
@@ -59,4 +60,4 @@ async def test_it_holds_no_state_outside_itself() -> None:
             )
         ]
     )
-    assert await second.get("a", tenant) is None
+    assert await second.get(ident, tenant) is None

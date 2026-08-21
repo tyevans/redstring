@@ -38,6 +38,7 @@ from redstring.chunks.adapters.postgres import (
 )
 from redstring.chunks.adapters.postgres import encode_vector as chunk_encode_vector
 from redstring.domain.chunk import StoredChunk
+from redstring.domain.chunk import chunk_id as derive_chunk_id
 from redstring.ports.chunk_store import ChunkStore
 
 
@@ -60,16 +61,17 @@ def _store(*, table: str = "kg_chunks", dimension: int = 4) -> PostgresChunkStor
 
 def _chunk(
     *,
-    chunk_id: str = "abc123",
+    chunk_id: str | None = None,
     tenant_id: Any = None,
     source_id: str = "doc-1",
     text: str = "some passage text",
     chunk_index: int = 0,
     entity_ids: list[Any] | None = None,
     embedding: list[float] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> StoredChunk:
     return StoredChunk(
-        id=chunk_id,
+        id=chunk_id if chunk_id is not None else derive_chunk_id(source_id, text),
         tenant_id=tenant_id or uuid4(),
         source_id=source_id,
         text=text,
@@ -77,7 +79,7 @@ def _chunk(
         start_char=0,
         end_char=len(text),
         entity_ids=entity_ids or [],
-        metadata={},
+        metadata=metadata or {},
         embedding=embedding,
     )
 
@@ -384,9 +386,9 @@ class TestEncoding:
 
     def test_encode_terms_scopes_each_row_to_its_chunk_and_tenant(self):
         tenant = uuid4()
-        chunk = _chunk(chunk_id="xyz", tenant_id=tenant, text="only term")
+        chunk = _chunk(tenant_id=tenant, text="only term")
         rows = json.loads(encode_terms([chunk]))
-        assert all(row["chunk_id"] == "xyz" for row in rows)
+        assert all(row["chunk_id"] == chunk.id for row in rows)
         assert all(row["tenant_id"] == str(tenant) for row in rows)
 
     def test_encode_terms_of_an_empty_batch_is_empty(self):
@@ -406,15 +408,21 @@ class TestEncoding:
 
 class TestDeduplicate:
     def test_a_repeated_key_keeps_the_last(self):
+        """Same `(tenant_id, id)` key, distinguished by `metadata` -- which
+        does not affect the content-addressed id, so both rows are genuinely
+        the same key with different payloads, the case the function exists
+        to resolve."""
         tenant = uuid4()
-        first = _chunk(chunk_id="id1", tenant_id=tenant, text="first")
-        second = _chunk(chunk_id="id1", tenant_id=tenant, text="second")
+        first = _chunk(tenant_id=tenant, text="repeated", metadata={"version": "first"})
+        second = _chunk(tenant_id=tenant, text="repeated", metadata={"version": "second"})
         assert deduplicate([first, second]) == [second]
 
     def test_the_key_is_the_pair_not_the_id_alone(self):
-        chunk_id = "shared"
-        one = _chunk(chunk_id=chunk_id, tenant_id=uuid4(), text="a")
-        two = _chunk(chunk_id=chunk_id, tenant_id=uuid4(), text="b")
+        """Same source and text -- hence the same content-addressed id --
+        under two different tenants. The pair is the key, not the id alone."""
+        one = _chunk(tenant_id=uuid4(), text="shared")
+        two = _chunk(tenant_id=uuid4(), text="shared")
+        assert one.id == two.id
         assert deduplicate([one, two]) == [one, two]
 
     def test_an_empty_batch_stays_empty(self):
