@@ -190,9 +190,7 @@ def test_the_serialised_shape_still_carries_the_id() -> None:
     )
     dumped = chunk.model_dump()
     assert dumped["id"] == chunk.id
-    assert StoredChunk.model_validate(
-        {k: v for k, v in dumped.items() if k != "id"}
-    ).id == chunk.id
+    assert StoredChunk.model_validate({k: v for k, v in dumped.items() if k != "id"}).id == chunk.id
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
