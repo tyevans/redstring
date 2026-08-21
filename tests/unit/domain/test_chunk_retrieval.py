@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.domain.chunk_retrieval import (
     ChunkRetrievalResult,
     ScoredChunk,
@@ -20,7 +20,6 @@ def _chunk(**overrides: object) -> StoredChunk:
     source_id = overrides.get("source_id", SourceId("doc-1"))
     text = overrides.get("text", "Ada Lovelace wrote the first algorithm.")
     fields: dict[str, object] = {
-        "id": chunk_id(source_id, text),
         "tenant_id": TenantId(uuid4()),
         "source_id": source_id,
         "text": text,

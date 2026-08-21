@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.domain.consolidation import (
     MergeableFields,
     PropertyResolution,
@@ -118,7 +118,6 @@ def _chunk(tenant_id, **overrides):
     text = overrides.pop("text", "Ada Lovelace wrote the first program.")
     source_id = overrides.pop("source_id", SOURCE_ID)
     fields = {
-        "id": chunk_id(source_id, text),
         "tenant_id": tenant_id,
         "source_id": source_id,
         "text": text,

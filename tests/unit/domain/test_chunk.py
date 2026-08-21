@@ -44,7 +44,6 @@ def test_the_source_and_the_text_cannot_be_confused_for_one_another() -> None:
 def test_a_chunk_defaults_to_no_entities_and_no_metadata() -> None:
     """Built directly, not through a factory, so the defaults actually run."""
     chunk = StoredChunk(
-        id=chunk_id("doc-1", "text"),
         tenant_id=uuid4(),
         source_id="doc-1",
         text="text",
@@ -60,7 +59,6 @@ def test_two_chunks_do_not_share_a_default_entity_list() -> None:
     """A mutable default shared between instances is the classic pydantic trap."""
     tenant = uuid4()
     first = StoredChunk(
-        id=chunk_id("d", "t"),
         tenant_id=tenant,
         source_id="d",
         text="t",
@@ -69,7 +67,6 @@ def test_two_chunks_do_not_share_a_default_entity_list() -> None:
         end_char=1,
     )
     second = StoredChunk(
-        id=chunk_id("d", "t"),
         tenant_id=tenant,
         source_id="d",
         text="t",
@@ -95,7 +92,6 @@ def test_a_nul_byte_in_the_text_is_rejected() -> None:
     text = "bad\x00text"
     with pytest.raises(ValidationError, match="NUL character"):
         StoredChunk(
-            id=chunk_id("d", text),
             tenant_id=uuid4(),
             source_id="d",
             text=text,
@@ -111,7 +107,6 @@ def test_a_nul_byte_in_the_metadata_is_rejected() -> None:
     for why both matter."""
     with pytest.raises(ValidationError, match="NUL character"):
         StoredChunk(
-            id=chunk_id("d", "fine"),
             tenant_id=uuid4(),
             source_id="d",
             text="fine",
@@ -130,7 +125,6 @@ def test_a_stored_chunk_has_no_embedding_by_default() -> None:
     every field never executes them.
     """
     chunk = StoredChunk(
-        id=chunk_id(SourceId("doc-1"), "Ada Lovelace wrote the first algorithm."),
         tenant_id=TenantId(UUID(int=1)),
         source_id=SourceId("doc-1"),
         text="Ada Lovelace wrote the first algorithm.",
@@ -144,7 +138,6 @@ def test_a_stored_chunk_has_no_embedding_by_default() -> None:
 def test_entity_ids_survive_a_round_trip_as_uuids() -> None:
     entity = uuid4()
     chunk = StoredChunk(
-        id=chunk_id("d", "t"),
         tenant_id=uuid4(),
         source_id="d",
         text="t",
@@ -153,27 +146,55 @@ def test_entity_ids_survive_a_round_trip_as_uuids() -> None:
         end_char=1,
         entity_ids=[entity],
     )
-    restored = StoredChunk.model_validate(chunk.model_dump(mode="json"))
+    dumped = chunk.model_dump(mode="json")
+    restored = StoredChunk.model_validate({k: v for k, v in dumped.items() if k != "id"})
     assert restored.entity_ids == [entity]
     assert isinstance(restored.entity_ids[0], UUID)
 
 
-def test_a_stored_chunk_whose_id_is_not_derived_from_its_text_is_rejected() -> None:
-    """The id is what both adapters rest on to skip re-deriving state (B97).
-
-    The wrong id here is a *real other chunk's* id rather than a random
-    string, because a random string could be rejected by any format check
-    the field ever grows, and this test would then pass for a reason that
-    has nothing to do with derivation.
-    """
+def test_id_is_derived_rather_than_supplied() -> None:
     source = SourceId("doc-1")
-    with pytest.raises(ValidationError, match="content-addressed"):
+    chunk = StoredChunk(
+        tenant_id=TenantId(uuid4()),
+        source_id=source,
+        text="the passage actually being stored",
+        chunk_index=0,
+        start_char=0,
+        end_char=33,
+    )
+    assert chunk.id == chunk_id(source, "the passage actually being stored")
+
+
+def test_supplying_an_id_is_rejected_rather_than_ignored() -> None:
+    """`extra="forbid"` is the point: silently ignoring `id=` would leave a
+    caller believing they had chosen the id, which is B97 with a friendlier
+    face. The value passed here is a *correct* derived id, so the rejection
+    cannot be passing because the value was wrong."""
+    source = SourceId("doc-1")
+    with pytest.raises(ValidationError, match="id"):
         StoredChunk(
-            id=chunk_id(source, "some other passage"),
+            id=chunk_id(source, "a passage"),
             tenant_id=TenantId(uuid4()),
             source_id=source,
-            text="the passage actually being stored",
+            text="a passage",
             chunk_index=0,
             start_char=0,
-            end_char=33,
+            end_char=9,
         )
+
+
+def test_the_serialised_shape_still_carries_the_id() -> None:
+    """`DocumentChunked` puts these on the event log. A computed field that
+    stopped serialising would change the log's shape without changing a
+    single call site, and nothing else in this file would notice."""
+    chunk = StoredChunk(
+        tenant_id=TenantId(uuid4()),
+        source_id=SourceId("doc-1"),
+        text="a passage",
+        chunk_index=0,
+        start_char=0,
+        end_char=9,
+    )
+    dumped = chunk.model_dump()
+    assert dumped["id"] == chunk.id
+    assert StoredChunk.model_validate({k: v for k, v in dumped.items() if k != "id"}).id == chunk.id

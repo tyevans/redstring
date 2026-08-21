@@ -38,7 +38,6 @@ from redstring.chunks.adapters.postgres import (
 )
 from redstring.chunks.adapters.postgres import encode_vector as chunk_encode_vector
 from redstring.domain.chunk import StoredChunk
-from redstring.domain.chunk import chunk_id as derive_chunk_id
 from redstring.ports.chunk_store import ChunkStore
 
 
@@ -61,7 +60,6 @@ def _store(*, table: str = "kg_chunks", dimension: int = 4) -> PostgresChunkStor
 
 def _chunk(
     *,
-    chunk_id: str | None = None,
     tenant_id: Any = None,
     source_id: str = "doc-1",
     text: str = "some passage text",
@@ -71,7 +69,6 @@ def _chunk(
     metadata: dict[str, Any] | None = None,
 ) -> StoredChunk:
     return StoredChunk(
-        id=chunk_id if chunk_id is not None else derive_chunk_id(source_id, text),
         tenant_id=tenant_id or uuid4(),
         source_id=source_id,
         text=text,

@@ -922,7 +922,11 @@ def _chunk_from(row: Any) -> StoredChunk:  # noqa: ANN401 - asyncpg.Record, unty
     by equality here.
     """
     return StoredChunk(
-        id=row["id"],
+        # `id` is not passed: it is computed from `(source_id, text)`, which
+        # is the same value the column holds for any row this adapter wrote.
+        # A legacy row whose stored id was not content-addressed therefore
+        # comes back under its derived id -- see the ADR; that row could only
+        # have been written before the id became underivable.
         tenant_id=row["tenant_id"],
         source_id=row["source_id"],
         text=row["text"],

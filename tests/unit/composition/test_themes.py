@@ -21,7 +21,7 @@ from uuid import UUID
 import pytest
 
 from redstring.composition.themes import CommunityReport, summarize_themes
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import EmptyCompletionError
 from redstring.domain.provenance import ExtractionMethod, Provenance
@@ -131,7 +131,6 @@ class OneChunkPerEntity:
             return []
         return [
             StoredChunk(
-                id=chunk_id("doc-1", text),
                 tenant_id=tenant_id,
                 source_id="doc-1",
                 text=text,

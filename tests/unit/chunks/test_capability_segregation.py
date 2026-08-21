@@ -24,7 +24,7 @@ from uuid import uuid4
 from eventsource.adapters.memory import InMemoryCheckpointRepository, InMemoryDLQRepository
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.events.document import DocumentChunked
 from redstring.ports.chunk_store import (
     ChunkPurge,
@@ -63,7 +63,6 @@ class WriteOnlyChunkStore(NoOpLifetime):
 
 def stored(tenant_id, *, source_id: str, index: int, text: str) -> StoredChunk:
     return StoredChunk(
-        id=chunk_id(source_id, text),
         tenant_id=tenant_id,
         source_id=source_id,
         chunk_index=index,

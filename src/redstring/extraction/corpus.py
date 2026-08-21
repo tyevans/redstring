@@ -130,7 +130,6 @@ def stored_chunks(
 
     return [
         StoredChunk(
-            id=ident,
             tenant_id=tenant_id,
             source_id=source_id,
             text=chunk.text,

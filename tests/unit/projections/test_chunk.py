@@ -18,7 +18,7 @@ import pytest
 from eventsource.adapters.memory import InMemoryDLQRepository
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.events import DocumentChunked
 from redstring.projections import ChunkProjection
 
@@ -33,7 +33,6 @@ def _chunk(
     tenant_id: UUID, text: str, *, source_id: str = SOURCE_ID, index: int = 0
 ) -> StoredChunk:
     return StoredChunk(
-        id=chunk_id(source_id, text),
         tenant_id=tenant_id,
         source_id=source_id,
         text=text,

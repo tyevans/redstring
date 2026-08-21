@@ -27,7 +27,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
@@ -75,7 +75,8 @@ class StoredChunk(BaseModel):
     looks reasonable in review.
     """
 
-    id: ChunkId
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: TenantId
     source_id: SourceId
     text: str
@@ -93,6 +94,23 @@ class StoredChunk(BaseModel):
     #: logic; under content addressing it needs none.
     embedding: list[float] | None = None
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def id(self) -> ChunkId:
+        """This passage's identity, derived rather than supplied.
+
+        A field here would let a caller name an id unrelated to the text,
+        and both adapters skip re-deriving `doc_length`, the term index and
+        `embedding` on an id conflict precisely because they assume no
+        caller can (BACKLOG B97). A computed field makes that assumption
+        true instead of merely documented.
+
+        It is `computed_field` rather than a plain `property` because
+        `DocumentChunked` carries these to the event log: a plain property
+        would drop `id` from `model_dump()` and change the log's shape.
+        """
+        return chunk_id(self.source_id, self.text)
+
     @field_validator("text")
     @classmethod
     def _text_is_storable(cls, value: str) -> str:
@@ -104,13 +122,3 @@ class StoredChunk(BaseModel):
     def _metadata_is_storable(cls, value: dict[str, Any]) -> dict[str, Any]:
         reject_unstorable_text(value, what="metadata")
         return value
-
-    @model_validator(mode="after")
-    def _id_is_derived(self) -> StoredChunk:
-        expected = chunk_id(self.source_id, self.text)
-        if self.id != expected:
-            raise ValueError(
-                f"id must be content-addressed over (source_id, text): "
-                f"expected {expected}, got {self.id}"
-            )
-        return self

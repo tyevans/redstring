@@ -50,7 +50,6 @@ async def test_it_holds_no_state_outside_itself() -> None:
     await first.upsert_many(
         [
             StoredChunk(
-                id=ident,
                 tenant_id=tenant,
                 source_id="doc-1",
                 text="t",

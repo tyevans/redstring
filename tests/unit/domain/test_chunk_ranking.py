@@ -7,7 +7,7 @@ import uuid
 import pytest
 
 from redstring.domain.bm25 import CorpusStats
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.domain.chunk_ranking import (
     LexicalCandidate,
     LexicalCandidates,
@@ -20,7 +20,6 @@ SOURCE = "doc-1"
 
 def chunk(text: str, index: int = 0) -> StoredChunk:
     return StoredChunk(
-        id=chunk_id(SOURCE, text),
         tenant_id=TENANT,
         source_id=SOURCE,
         text=text,

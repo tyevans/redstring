@@ -42,7 +42,6 @@ def _chunk(
     embedding: list[float] | None = None,
 ) -> StoredChunk:
     return StoredChunk(
-        id=chunk_id(source_id, text),
         tenant_id=tenant_id,
         source_id=source_id,
         text=text,

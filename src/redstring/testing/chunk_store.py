@@ -137,11 +137,11 @@ class ChunkStoreCompliance:
         metadata: dict[str, Any] | None = None,
         embedding: list[float] | None = None,
     ) -> StoredChunk:
-        """A chunk with its real content-addressed id.
+        """A chunk whose id is derived from `(source_id, text)`.
 
-        The id is `chunk_id(source_id, text)` rather than an arbitrary string,
-        because that is what every caller of this port will store and it is
-        what makes two tenants collide on the same passage.
+        `StoredChunk.id` is a computed field, so it is not passed here --
+        it is always `chunk_id(source_id, text)`, which is what makes two
+        tenants collide on the same passage.
         """
         # `source_id` is taken as `str` and named here, once. Callers below
         # write `"doc-1"` a hundred times over; wrapping at each of them would
@@ -149,7 +149,6 @@ class ChunkStoreCompliance:
         # becomes a domain object -- the same place the adapters name theirs.
         source = SourceId(source_id)
         return StoredChunk(
-            id=chunk_id(source, text),
             tenant_id=tenant_id,
             source_id=source,
             text=text,
@@ -336,7 +335,6 @@ class ChunkStoreCompliance:
         await store.upsert_many(
             [
                 StoredChunk(
-                    id=shared,
                     tenant_id=left,
                     source_id=SourceId("doc-1"),
                     text="shared passage",
@@ -346,7 +344,6 @@ class ChunkStoreCompliance:
                     metadata={"owner": "left"},
                 ),
                 StoredChunk(
-                    id=shared,
                     tenant_id=right,
                     source_id=SourceId("doc-1"),
                     text="shared passage",
