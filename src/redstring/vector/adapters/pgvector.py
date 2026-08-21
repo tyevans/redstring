@@ -386,7 +386,9 @@ class PgVectorStore:
 
         The tie-break is `entity_id::text` ascending, the port's documented
         total order, so `k` cutting through a tie cuts the same way here as
-        in-memory.
+        in-memory. It is a *secondary* key over an indexable leading one, so
+        it does not itself prevent an index scan -- Postgres resolves ties
+        with an Incremental Sort above the index.
         """
         return (
             f"SELECT entity_id, metadata, {_SCORE} AS score "  # nosec B608
@@ -397,7 +399,14 @@ class PgVectorStore:
             # port specifies.
             "  AND ($3 OR entity_type = ANY($4::text[])) "
             f"  AND ($5::float8 IS NULL OR {_SCORE} >= $5) "
-            "ORDER BY score DESC, entity_id::text ASC "
+            # `embedding <=> $2` ASC, not `score` DESC: the same order,
+            # since `score` is `1 - d/2` and monotonically decreasing in
+            # `d`, but only this spelling is one an ANN index could serve.
+            # There is deliberately no such index here (see the module
+            # docstring), so today this changes no plan -- it removes a
+            # second reason the index would be ignored if B10k ever adds
+            # one, which cost a day to find in the chunk store's copy.
+            "ORDER BY embedding <=> $2::vector ASC, entity_id::text ASC "
             "LIMIT $6"
         )
 

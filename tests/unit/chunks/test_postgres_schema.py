@@ -354,8 +354,31 @@ class TestSqlConstruction:
 
     def test_semantic_candidates_query_orders_by_the_ports_tie_break(self):
         sql = _store()._semantic_candidates_sql()
-        assert "score DESC, id ASC" in sql
+        # Distance ascending, not score descending -- the same order, but
+        # the only spelling an ANN index can serve. See the clause comment.
+        assert "ORDER BY embedding <=> $2::vector ASC, id ASC" in sql
+        # The outer projection still presents the port's order to the
+        # caller, so a reader of the results sees score-descending.
         assert "score DESC, m.chunk_id ASC" in sql
+
+    def test_semantic_candidates_does_not_order_by_the_rescaled_score(self):
+        """The regression this guards is invisible in results.
+
+        `ORDER BY 1 - (embedding <=> $2)/2 DESC` returns exactly the same
+        rows in exactly the same order as `ORDER BY embedding <=> $2 ASC`,
+        so no assertion about the returned chunks can tell the two apart.
+        The difference is only in the plan: the rescaled form cannot be
+        served by an `hnsw` or `ivfflat` index, so it forces a sequential
+        scan and a full sort over the tenant however large it gets, and the
+        index sits unread with `idx_scan` at 0.
+
+        Reverting the clause is therefore a silent 3x regression on a
+        550k-row tenant, and this string assertion is the only thing that
+        can see it without a live database and a populated index.
+        """
+        sql = _store()._semantic_candidates_sql()
+        ordering = sql[sql.index("ORDER BY") :]
+        assert "score DESC" not in ordering.split(")")[0]
 
 
 class TestEncoding:

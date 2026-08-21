@@ -679,6 +679,9 @@ class PostgresChunkStore:
         ascending -- and `LIMIT`s there, before the join against `<table>`
         pulls the full row across the wire.
 
+        **The ORDER BY says `embedding <=> $2` ASC, which is that same order
+        spelled so an index can serve it.** See the comment on the clause.
+
         `embedding IS NOT NULL` excludes unembedded chunks from being
         candidates at all, rather than scoring them -- the port's stated
         difference from a missing lexical match. `min_score` is applied in
@@ -696,7 +699,21 @@ class PostgresChunkStore:
             f"    FROM {self._table}"
             "     WHERE tenant_id = $1 AND embedding IS NOT NULL"
             f"       AND ($3::float8 IS NULL OR {_SCORE} >= $3)"
-            "     ORDER BY score DESC, id ASC"
+            # Ordered by the raw distance ascending rather than by `score`
+            # descending, though the two are the same order: `score` is
+            # `1 - d/2`, monotonically decreasing in `d`. The difference is
+            # that `embedding <=> $2` ASC is a form an `hnsw` or `ivfflat`
+            # index can serve and `1 - (embedding <=> $2)/2` DESC is not, so
+            # the rescaled form silently forces a sequential scan and a full
+            # sort even when an index exists. Measured with a partial HNSW
+            # index present on a 549,697-row tenant: the rescaled form left
+            # `idx_scan` at 0 and the index unread.
+            #
+            # The `id` tie-break is kept and costs nothing: Postgres takes
+            # the leading distance key from the index and resolves ties with
+            # an Incremental Sort above it, so the port's total order still
+            # holds.
+            "     ORDER BY embedding <=> $2::vector ASC, id ASC"
             "     LIMIT $4"
             ")"
             f"SELECT c.{_SELECT_COLUMNS}, m.score"
