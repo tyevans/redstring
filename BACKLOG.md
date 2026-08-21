@@ -46,6 +46,7 @@ tree resolves to something rather than to nothing:
 | B154 | passages ranked by degree | folded into **B153**, which said in its own body that the two were one decision |
 | B96 | ADR files, index and nav never compared | closed by `tests/unit/test_adr_declaration_sites_agree.py`, which found 0040 and 0041 missing from the index and 0042 missing from the nav |
 | B-ADR-TABLE | `definition-of-done.md`'s ADR table stopped at 0019 | closed: 23 rows written from `docs/adr/index.md`'s own summaries, gated by the same module |
+| B97 | same chunk id, changed text diverges between the adapters | closed: `StoredChunk.id` is now a `computed_field`, so the divergence can no longer be constructed — see `docs/adr/0044-a-chunk-id-is-derived-not-supplied.md` |
 
 Two of those — B122 against B125, and the two copies each of B140 and B141 —
 were the same finding filed twice under different numbers or the same one. That
@@ -123,8 +124,8 @@ Entries here can produce an incorrect result for a caller. They are first
 because nothing else in this file costs a user anything.
 
 Ordered by whether a caller doing an ordinary thing meets it: B43 needs only a
-merge and a re-extraction, B32 needs a second extraction run, B97 needs a
-caller who declines the content-addressed id scheme, and B35 fails loudly.
+merge and a re-extraction, B32 needs a second extraction run, and B35 fails
+loudly.
 
 ### B43. A merge plans against a graph read outside its concurrency window
 
@@ -234,47 +235,6 @@ problem is currently worth:
 **Slice 11 note:** the previous version of this entry said "take it up in
 slice 6, when extraction actually emits." Slice 6 happened and did not take it
 up. It is open on its own merits now, not scheduled.
-
-### B97. Same chunk id, changed text diverges between the adapters
-
-`chunks/adapters/postgres.py`'s `_TERMS_ON_CONFLICT` is `DO NOTHING` and
-`_ON_CONFLICT` deliberately omits `doc_length` from its `SET` clause, both
-justified by content addressing: a chunk id fixes its text (via
-`chunk_id(source_id, text)`), so a write reusing an existing id is assumed to
-be writing the same text, and the term index and length can never need
-updating. That argument is correct only for callers who build ids with
-`chunk_id`; nothing enforces that they do. `StoredChunk.id` is a
-caller-supplied `str`, and `ports/chunk_store.py`'s `upsert_many` promises
-unqualified last-write-wins on `(tenant_id, id)`.
-
-A caller using self-assigned (non-content-addressed) ids that re-writes one
-id with different text gets, from `InMemoryChunkStore`, ranking over the
-*new* text (it tokenizes at query time), and from `PostgresChunkStore`,
-ranking over the *old* text and the *old* `doc_length` — the `text` column
-updates on conflict while the term rows and `doc_length` do not, because
-`_TERMS_ON_CONFLICT`/`_ON_CONFLICT` assume it can't happen. That is
-`.claude/rules/recurring-defects.md` §1, silently, and the compliance suite
-cannot see it because its `_chunk` helper always builds ids the real
-content-addressed way. Cheap fix: state the constraint as prose on
-`ChunkStore.upsert_many` in the port ("a chunk id is content-addressed over
-`(source_id, text)`; re-using an id for different text is outside the
-contract"). Thorough fix: make it executable, either a compliance case that
-asserts the adapters agree after such a write (would currently fail on
-Postgres) or `chunk_id`-derived validation on `StoredChunk` construction.
-
-**Update:** the cheap half landed — the prose is now on
-`ChunkWriter.upsert_many` in `src/redstring/ports/chunk_store.py`, as part of
-the chunk-semantic-channel work (see
-`docs/adr/0038-the-chunks-vector-lives-on-the-chunk.md`), because the new
-`embedding` column inherits the same assumption `doc_length` and the term
-index already made. The executable half is still open, and closing it needs
-a decision this entry hasn't made: whether the port promises last-write-wins
-on *derived* state (`doc_length`, the term index, and now `embedding`) for a
-same-id-different-text write, or whether that write is simply outside the
-contract and the compliance suite should assert the adapters both leave the
-old derived state in place. Those are different contracts, and picking one is
-what a test would pin — not something to infer from what's convenient to
-implement.
 
 ### B35. `GraphProjection.reset()` raises instead of truncating
 

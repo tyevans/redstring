@@ -183,7 +183,7 @@ def test_a_matching_supplied_id_is_accepted() -> None:
 
 
 def test_a_mismatched_supplied_id_is_rejected() -> None:
-    """The id is what both adapters rest on to skip re-deriving state (B97).
+    """The id is what both adapters rest on to skip re-deriving state (ADR 0044).
 
     The wrong id here is a *real other chunk's* id rather than a random
     string, because a random string could be rejected by any format check

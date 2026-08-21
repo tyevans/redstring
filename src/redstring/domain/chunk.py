@@ -20,6 +20,10 @@ wearing the same id, so its stored entity links and its stored vector would
 silently describe text that no longer says what they claim. The cost of
 content addressing is orphans, and `ChunkStore.replace_source` is where that
 cost is paid.
+
+`StoredChunk` derives its own `id` from these two fields and accepts no
+other value, so this is a property of the type rather than a convention
+callers follow.
 """
 
 from __future__ import annotations
@@ -102,7 +106,7 @@ class StoredChunk(BaseModel):
         A field here would let a caller name an id unrelated to the text,
         and both adapters skip re-deriving `doc_length`, the term index and
         `embedding` on an id conflict precisely because they assume no
-        caller can (BACKLOG B97). A computed field makes that assumption
+        caller can (see ADR 0044). A computed field makes that assumption
         true instead of merely documented.
 
         It is `computed_field` rather than a plain `property` because
@@ -125,8 +129,8 @@ class StoredChunk(BaseModel):
 
         A *mismatched* id is a different thing entirely: it can only mean
         the text or source_id was edited after the id was computed, which is
-        exactly the corruption `chunk_id` exists to catch (BACKLOG B97), so
-        it still raises.
+        exactly the corruption `chunk_id` exists to catch, so it still
+        raises.
 
         Runs before field validation, so `data` may be anything pydantic
         would otherwise reject -- not a dict, or a dict missing/mistyping

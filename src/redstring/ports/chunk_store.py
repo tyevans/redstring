@@ -93,11 +93,12 @@ class ChunkWriter(AsyncClosable, Protocol):
         A document's chunking is thousands of rows, so an adapter over a
         database must send this as one statement, not a loop.
 
-        A chunk id is content-addressed over `(source_id, text)`; re-using
-        an id for different text is outside the contract. Both adapters rely
-        on this to skip re-deriving term statistics and, once written, an
-        embedding on conflict -- a write that violates it can leave the two
-        adapters ranking the same id over different text (B97).
+        A chunk id is content-addressed over `(source_id, text)` and is
+        derived by `StoredChunk` rather than supplied, so a write reusing an
+        id is necessarily writing the same text. Both adapters rely on that
+        to skip re-deriving `doc_length`, the term index and `embedding` on
+        conflict; it is a property of the type, not a rule a caller can
+        break. See `docs/adr/0044-a-chunk-id-is-derived-not-supplied.md`.
 
         A chunk whose `embedding` has zero norm raises `ValueError`. Cosine
         is undefined at zero magnitude, so a stored zero vector would force

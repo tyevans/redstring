@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted. Amended by
+[`0044` a chunk id is derived, not supplied](0044-a-chunk-id-is-derived-not-supplied.md),
+which closes the executable half this ADR left open below.
 
 Amends [`0023` the chunk corpus](0023-the-chunk-corpus.md) in its
 Consequences: the semantic search it deferred is now built, and the port
@@ -148,5 +150,8 @@ Content addressing on `ChunkWriter.upsert_many` is stated as prose here
 because the new column inherits it: `embedding` is derived from a chunk's
 text the same way the lexical term index and `doc_length` are, so a write
 that reuses an id for different text is outside the contract for the same
-reason those two are. The executable half — a compliance case proving the
-adapters agree after such a write — stays open; see `BACKLOG.md` B97.
+reason those two are. The executable half stayed open at the time this ADR
+was written; see
+[`0044`](0044-a-chunk-id-is-derived-not-supplied.md), which closes it by
+making the id a computed field instead of adding a compliance case for a
+state a caller can no longer construct.
