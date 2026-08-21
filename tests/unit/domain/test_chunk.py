@@ -85,13 +85,20 @@ def test_a_nul_byte_in_the_text_is_rejected() -> None:
     """Postgres rejects it at INSERT; the boundary is where it should fail.
 
     Not hypothetical -- it arrives from PDF text extraction.
+
+    `id` is properly derived from `(source_id, text)` -- including the NUL --
+    so this fails only for the reason asserted (`match=`) and not because the
+    id validator would also object. Left un-derived, this test would still
+    raise after the id-derivation validator was deleted, for the wrong
+    reason.
     """
-    with pytest.raises(ValidationError):
+    text = "bad\x00text"
+    with pytest.raises(ValidationError, match="NUL character"):
         StoredChunk(
-            id="a",
+            id=chunk_id("d", text),
             tenant_id=uuid4(),
             source_id="d",
-            text="bad\x00text",
+            text=text,
             chunk_index=0,
             start_char=0,
             end_char=8,
@@ -99,9 +106,12 @@ def test_a_nul_byte_in_the_text_is_rejected() -> None:
 
 
 def test_a_nul_byte_in_the_metadata_is_rejected() -> None:
-    with pytest.raises(ValidationError):
+    """`id` is properly derived so this fails only for the metadata NUL, not
+    also for a mismatched id -- see `test_a_nul_byte_in_the_text_is_rejected`
+    for why both matter."""
+    with pytest.raises(ValidationError, match="NUL character"):
         StoredChunk(
-            id="a",
+            id=chunk_id("d", "fine"),
             tenant_id=uuid4(),
             source_id="d",
             text="fine",
