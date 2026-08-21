@@ -226,7 +226,10 @@ class TestSqlConstruction:
 
     def test_the_search_orders_by_score_then_id(self):
         sql = _store()._search_sql()
-        assert "ORDER BY score DESC, entity_id::text ASC" in sql
+        # Distance ascending is score descending -- `score` is `1 - d/2` --
+        # spelled the way an ANN index could serve, should B10k ever add
+        # one. No index exists here today, so no plan changes.
+        assert "ORDER BY embedding <=> $2::vector ASC, entity_id::text ASC" in sql
 
     def test_the_search_is_tenant_scoped_and_type_filtered_in_sql(self):
         sql = _store()._search_sql()

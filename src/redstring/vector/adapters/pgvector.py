@@ -102,6 +102,29 @@ _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 _SCORE = "1 - (embedding <=> $2::vector) / 2"
 
 
+def _encodable(entity_types: Sequence[str] | None) -> list[str]:
+    """The filter values Postgres can actually be asked about.
+
+    A `text[]` parameter cannot carry a NUL byte -- asyncpg hands it to
+    Postgres verbatim and the server answers
+    `invalid byte sequence for encoding "UTF8": 0x00`, an exception where the
+    port promises a type filter never raises whatever the caller passes. The
+    in-memory adapter simply fails to match such a value, so the two
+    disagreed, which is the divergence the shared suite exists to catch; it
+    was caught by `test_a_type_filter_tolerates_any_stored_metadata` drawing
+    `["\x00"]`.
+
+    Dropping those values changes no result. `metadata` is filtered by
+    `_is_storable` on the way in for the same encoding reason, so no stored
+    `entity_type` can contain a NUL, so a filter value containing one matches
+    nothing whether it reaches the query or not. Dropping every value is
+    therefore still "matches nothing" and not "matches everything" -- the
+    empty list keeps its meaning, and `$3` carries "no filter at all"
+    separately.
+    """
+    return [value for value in entity_types or () if "\x00" not in value]
+
+
 class PgVectorStore:
     """A `VectorStore` backed by Postgres with the `vector` extension."""
 
@@ -357,7 +380,7 @@ class PgVectorStore:
             tenant_id,
             encode_vector(vector),
             entity_types is None,
-            list(entity_types or ()),
+            _encodable(entity_types),
             min_score,
             k,
         )
@@ -386,7 +409,9 @@ class PgVectorStore:
 
         The tie-break is `entity_id::text` ascending, the port's documented
         total order, so `k` cutting through a tie cuts the same way here as
-        in-memory.
+        in-memory. It is a *secondary* key over an indexable leading one, so
+        it does not itself prevent an index scan -- Postgres resolves ties
+        with an Incremental Sort above the index.
         """
         return (
             f"SELECT entity_id, metadata, {_SCORE} AS score "  # nosec B608
@@ -397,7 +422,14 @@ class PgVectorStore:
             # port specifies.
             "  AND ($3 OR entity_type = ANY($4::text[])) "
             f"  AND ($5::float8 IS NULL OR {_SCORE} >= $5) "
-            "ORDER BY score DESC, entity_id::text ASC "
+            # `embedding <=> $2` ASC, not `score` DESC: the same order,
+            # since `score` is `1 - d/2` and monotonically decreasing in
+            # `d`, but only this spelling is one an ANN index could serve.
+            # There is deliberately no such index here (see the module
+            # docstring), so today this changes no plan -- it removes a
+            # second reason the index would be ignored if B10k ever adds
+            # one, which cost a day to find in the chunk store's copy.
+            "ORDER BY embedding <=> $2::vector ASC, entity_id::text ASC "
             "LIMIT $6"
         )
 
