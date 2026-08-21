@@ -188,6 +188,69 @@ class TestProperties:
 
         assert "".join(produced.text for produced in result.chunks) == text
 
+    @given(text=texts(min_size=400))
+    @settings(max_examples=60)
+    def test_no_chunk_is_wholly_contained_in_another(self, text):
+        """A redundant chunk costs a row and an embedding and adds no reach.
+
+        `end` is clamped to `len(text)`, so a chunk can finish at the end of
+        the document -- but the loop's exit test is on `next_start`, which is
+        `end - overlap` and so still `overlap` short. One more window was
+        emitted at `(len(text) - overlap, len(text))`, wholly inside the chunk
+        just yielded.
+
+        It buys nothing: every term in it is already in the containing chunk,
+        so it adds no retrieval reach, while costing a row, an embedding call,
+        and -- for a consumer that aggregates by max -- a second draw for the
+        tail's terms that no mid-document span gets. A consumer deduplicating
+        passages by offset cannot collapse it either, because the two spans
+        differ.
+
+        Property rather than example because the containment is a fact about
+        the loop's exit condition and not about any one length; the pinned
+        example below is the boundary this project's rule says not to leave to
+        a sampler.
+
+        **`min_size=400` is load-bearing.** The first version of this took
+        `texts(min_size=1)` like its neighbours and **passed against the
+        defect**: the loop only emits a redundant window for a text longer
+        than the chunk size, and across 60 samples from a 1-to-4000 range
+        hypothesis produced nothing over 300. A property that cannot reach the
+        case it names is worse than no property, because it reads as coverage.
+        """
+        result = SlidingWindowChunker(default_chunk_size=300, default_overlap=40).chunk(text)
+
+        spans = [(produced.start_char, produced.end_char) for produced in result.chunks]
+        contained = [
+            (inner, outer)
+            for inner in spans
+            for outer in spans
+            if inner != outer and outer[0] <= inner[0] and inner[1] <= outer[1]
+        ]
+
+        assert contained == []
+
+    @pytest.mark.parametrize("length", [1350, 1800, 2700, 4500])
+    def test_a_document_longer_than_the_window_has_no_redundant_tail(self, length):
+        """The boundary, pinned, at the settings the defect was measured on.
+
+        Measured 2026-08-21 at 1000/500 across 450-4500 characters: exactly one
+        redundant chunk, always the last, for every document longer than the
+        window, and none at or under it. The property above samples at 300/40
+        and would find this too -- this is here because the numbers in the
+        measurement are the ones a reader will want to reproduce, and because
+        the two candidate loop exits ("stop when nothing remains" and "stop
+        when a chunk reached the end") agree on every text at or under the
+        window size, which is where a hand-picked example would most likely
+        land.
+        """
+        text = "The quick brown fox jumps over the lazy dog. " * (length // 44)
+        result = SlidingWindowChunker(default_chunk_size=1000, default_overlap=500).chunk(text)
+
+        ends = [produced.end_char for produced in result.chunks]
+
+        assert ends == sorted(set(ends)), f"a chunk ends where an earlier one did: {ends}"
+
     @given(text=texts(min_size=1))
     @settings(max_examples=60)
     def test_chunking_the_same_text_twice_gives_the_same_chunks(self, text):

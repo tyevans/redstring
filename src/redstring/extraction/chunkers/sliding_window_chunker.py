@@ -231,6 +231,29 @@ class SlidingWindowChunker:
                 overlap_with_previous=overlap_with_prev,
             )
 
+            # Nothing is left to cover once a chunk reaches the end of the
+            # text, and the exit test below cannot see that: it is on
+            # `next_start`, which is `end - overlap` and so still `overlap`
+            # short of the end. Without this, every text longer than the
+            # window got one final window at `(text_len - overlap, text_len)`
+            # -- wholly inside the chunk just yielded.
+            #
+            # That chunk bought nothing. Every term in it is already in the
+            # containing chunk, so it adds no retrieval reach, while costing a
+            # row, an embedding call, and -- for a consumer aggregating by max
+            # -- a second draw for the tail's terms that no mid-document span
+            # gets. A consumer deduplicating passages by offset cannot collapse
+            # it either, because the two spans differ.
+            #
+            # **This does not drop a tail**, which is the failure the comment
+            # below records and the one an over-eager fix here would
+            # reintroduce: the chunk just yielded ends at `text_len`, so the
+            # final characters have been emitted. What that comment guards is
+            # stopping before emitting a short *remainder*; this stops after
+            # emitting the remainder-containing chunk.
+            if end >= text_len:
+                break
+
             # Calculate next start position
             next_start = end - overlap
 
