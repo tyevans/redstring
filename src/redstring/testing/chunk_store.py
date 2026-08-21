@@ -187,6 +187,12 @@ class ChunkStoreCompliance:
 
         found = await store.get(written.id, tenant)
         assert found == written
+        # `id` is a computed field, so it is not part of pydantic equality
+        # (it's not in `__dict__`) -- `found == written` alone would pass
+        # for an adapter that round-tripped `text` lossily and derived a
+        # different id from what it actually stored. Name the property
+        # directly so a foreign-id adapter fails here rather than later.
+        assert found.id == written.id
 
     async def test_get_returns_none_for_an_unknown_id(self, store: ChunkStore) -> None:
         assert (

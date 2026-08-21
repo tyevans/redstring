@@ -112,6 +112,14 @@ class StoredChunk(BaseModel):
         It is `computed_field` rather than a plain `property` because
         `DocumentChunked` carries these to the event log: a plain property
         would drop `id` from `model_dump()` and change the log's shape.
+
+        This recomputes the SHA-256 on every access, including the three
+        touches `upsert_many` makes per chunk on Postgres. That cost is
+        deliberate, not overlooked: `functools.cached_property` cannot sit
+        on a pydantic `computed_field`, so caching it would mean a private
+        cached attribute set alongside `source_id`/`text` -- exactly the
+        supplied-and-derived drift this design exists to remove. Leave it
+        recomputing unless a profile shows otherwise.
         """
         return chunk_id(self.source_id, self.text)
 

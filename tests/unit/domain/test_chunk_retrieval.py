@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from redstring.domain.chunk import StoredChunk
+from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.chunk_retrieval import (
     ChunkRetrievalResult,
     ScoredChunk,
@@ -51,7 +51,9 @@ def test_a_semantic_candidate_pairs_a_chunk_with_its_score() -> None:
     chunk = _chunk()
     candidate = SemanticCandidate(chunk=chunk, score=0.75)
     assert candidate.score == 0.75
-    assert candidate.chunk.id == chunk.id
+    assert candidate.chunk.id == chunk_id(
+        SourceId("doc-1"), "Ada Lovelace wrote the first algorithm."
+    )
 
 
 def test_a_result_keeps_the_query_it_answered() -> None:

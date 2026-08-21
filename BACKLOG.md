@@ -271,6 +271,31 @@ the two adapter divergences nothing can observe, then the measurements nobody
 has taken (B150 through B-BENCH-1), then the seams whose tests pass on someone
 else's guarantee (B101 through B86).
 
+### B160. `StoredChunk.text` assignment bypasses `_text_is_storable`, and now silently re-derives `id`
+
+`src/redstring/domain/chunk.py`'s `_text_is_storable` is a `field_validator`
+on construction only. Pydantic does not run field validators on attribute
+assignment unless `ConfigDict(validate_assignment=True)` is set, and
+`StoredChunk` does not set it. `chunk.text = "bad\x00text"` is therefore
+accepted in memory and rejected only later, at the Postgres boundary
+(`recurring-defects.md` §1 — the store as first line of defense).
+
+This predates `chunk_id(source_id, text)` making `id` a `computed_field`, but
+that change raises the stakes rather than causing the bug: `text` is now
+identity-bearing, so an unvalidated assignment to `text` doesn't just admit
+unstorable bytes, it also silently changes `chunk.id` out from under whatever
+already indexed the chunk under its old id — entity links, a vector row, a
+caller's own cache.
+
+Candidate fix: `validate_assignment=True` on `StoredChunk`'s `ConfigDict`.
+This does **not** break the mutation-isolation tests. Those mutate
+`entity_ids` and `metadata` *in place* — `list.append`, `dict.__setitem__` —
+which is container mutation, not attribute assignment, so
+`validate_assignment` has nothing to intercept there; the isolation contract
+(a store must not hand back its own live object) is unaffected either way.
+Out of scope for the chunk-id-derived branch — it wants its own review of
+whatever else assignment currently allows past validation.
+
 ### B156. Nothing detects a corpus embedded under two different task prefixes
 
 `document_prefix` on `LangChainEmbeddingProvider` and `FakeEmbeddingProvider`
