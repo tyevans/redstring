@@ -12,6 +12,138 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [0.10.0] - 2026-08-20
+
+A thematic read surface, an asymmetric embedding port, and a chunk id that
+derives itself. Two of the three change something already exported, which is
+what makes this a minor rather than a patch: pre-1.0, minor versions may break
+the exported surface, and both breaks are the kind a caller finds at import or
+first call rather than in production.
+
+### Added
+
+- **`summarize_themes`, `Theme`, `ThemeReport`.** What a corpus is *about*,
+  one report per cluster of the tenant's graph. `Retriever` ranks entities
+  against a query string; this answers the question no query string asks —
+  "what is in here" — by partitioning the graph and asking the model to
+  describe each part.
+
+  It writes nothing. No event, no store, no `CommunityId`: a community is a
+  fact about a partition that the next `DocumentExtracted` replaces, so a
+  stored one is stale before it is read and there is no invalidation smaller
+  than recomputing everything.
+  [ADR 0042](https://github.com/tyevans/redstring/blob/main/docs/adr/0042-themes-are-recomputed-never-stored.md)
+  argues that at length, and B147 holds the harder question a caller wanting
+  themes stable across calls actually needs answered. The reports come back to
+  the caller, who keeps them for as long as they are useful — the same shape
+  as `PipelineResult`.
+
+  It takes the narrowest ports it uses — `EntityReader`, `RelationshipStore`,
+  and optionally `ChunkReader` — never the composed `GraphStore` or
+  `ChunkStore`. A theme summariser that could wipe a tenant is a fact worth
+  keeping out of a signature.
+
+  Three counts on `ThemeReport` exist so that nothing it skips is silent:
+  `too_small` (singletons below `min_size`, and a sparse graph is mostly
+  singletons), `failed` (only reachable under `skip_failed=True`; the default
+  propagates, because a missing theme looks exactly like a corpus that does
+  not contain it), and `dangling_edges` (an edge naming an entity no page
+  returned — ordinary concurrent writing, not corruption).
+
+- **`EmbeddingProvider.embed_query`.** The query side of an asymmetric model.
+  `nomic-embed-text-v1.5` wants `search_document: ` on stored text and
+  `search_query: ` on a query; the BGE family wants an instruction on the
+  query and nothing on the document. A port with one method cannot express
+  that, so every call site had to remember to prepend a string — a rule that
+  holds only because nobody has broken it.
+
+  **Getting it wrong is silent.** A corpus embedded without its prefix
+  produces well-formed vectors that cluster sensibly and score plausibly; the
+  only symptom is retrieval quality below what the model can do, which reads
+  as "this model is mediocre". Nothing raises. That is why it is a port method
+  a compliance suite enforces rather than a wrapper a caller composes twice.
+  See
+  [ADR 0043](https://github.com/tyevans/redstring/blob/main/docs/adr/0043-a-query-is-embedded-differently-from-a-document.md).
+
+- **`document_prefix` and `query_prefix` on `LangChainEmbeddingProvider`**,
+  on both `__init__` and `openai_compatible` — most callers reach a model
+  through the factory, so a prefix available only on the constructor would be
+  available to nobody. Both default to empty, so an existing caller's
+  behaviour is unchanged.
+
+  They are not folded into `model`, but they are part of the model's identity
+  in [ADR 0017](https://github.com/tyevans/redstring/blob/main/docs/adr/0017-the-embedding-provider-port.md)'s
+  sense: **a corpus embedded with a prefix and the same corpus embedded
+  without it are not comparable vectors**, so changing a prefix means a new
+  store, exactly as changing the model does.
+
+- **`PipelineResult.mention_counts`.** For each surviving entity, in how many
+  chunks' answers it appeared. **A mention is one chunk's report, not one
+  occurrence of the name** — `map_extraction` has already deduplicated within
+  a chunk, gleaning passes included, so an entity named forty times in one
+  chunk and once in another counts `2`.
+
+  It is deliberately not a field on `Entity`. A count on the domain object
+  would travel in every event payload and would become a fact two documents
+  mentioning one entity had to agree about — something `consolidation` would
+  have to merge, with a strategy and a tie-break of its own. The corpus-level
+  statistic wearing the same name is a projection rather than a counter; see
+  B143 and B144.
+
+  The number is per-run and per-document: two documents' counts are not
+  comparable, because the denominators are different documents split different
+  numbers of ways, and a count moves when the chunker's window size moves.
+
+### Changed
+
+- **`StoredChunk.id` is derived, not supplied.** It is now a computed field
+  over `(source_id, text)`, and the model forbids extra fields, so a caller
+  cannot name an id unrelated to the text. Both chunk adapters skip
+  re-deriving `doc_length`, the term index and `embedding` on an id conflict
+  precisely because they assume no caller can — a property of the type now
+  rather than a rule a caller could break. Closes B97;
+  [ADR 0044](https://github.com/tyevans/redstring/blob/main/docs/adr/0044-a-chunk-id-is-derived-not-supplied.md)
+  records it.
+
+  **A round-tripped `id` is still accepted** if it agrees. `DocumentChunked`
+  carries `list[StoredChunk]` to the event log and `model_dump()` includes the
+  computed id, so rejecting it outright would make every stored event
+  un-deserialisable — a projection that can never replay. A *mismatched* id
+  can only mean the text or `source_id` was edited after the id was computed,
+  which is the corruption content addressing exists to catch, and it raises.
+
+  What breaks: constructing a `StoredChunk` with an id you chose. Passing the
+  id `chunk_id(source_id, text)` returns, or omitting it entirely, both still
+  work.
+
+- **`Retriever` embeds a query as a query**, through `embed_query` rather than
+  `embed`. With both prefixes left empty this is the same vector as before.
+
+  What breaks: an `EmbeddingProvider` implemented outside this repository now
+  needs `embed_query`. For a symmetric model, or one used without prefixes, it
+  is `embed` — one line. The compliance suite in `redstring.testing` covers
+  the new method, so an adapter running it will be told.
+
+### Fixed
+
+- **`BoundaryPreferenceChunker` no longer stalls on an early boundary.** A
+  document with a boundary near the start followed by a long boundary-free
+  stretch degenerated to hundreds of near-empty chunks: a 1801-character
+  prefix and 6000 boundary-free characters produced 204 chunks, the shortest 1
+  character.
+
+  The boundary search required a candidate to lie after `start` but not after
+  the previous chunk's end. Once overlap rewound `start` back past a boundary
+  already used to end the previous chunk, the same absolute position was found
+  again — `end` stayed fixed while `start` crept toward it one character at a
+  time. Requiring the boundary to lie strictly after the previous end makes
+  progress in `end` a loop invariant, so a stretch with no further boundary
+  falls through to a hard cut at the ceiling.
+
+  Both shapes the existing tests exercised — no boundaries at all, and
+  boundaries throughout — already worked; only the mixed case failed, which is
+  why nothing caught it.
+
 ## [0.9.2] - 2026-08-15
 
 ### Fixed
@@ -872,7 +1004,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/tyevans/redstring/releases/tag/v0.10.0
 [0.9.2]: https://github.com/tyevans/redstring/releases/tag/v0.9.2
 [0.9.1]: https://github.com/tyevans/redstring/releases/tag/v0.9.1
 [0.9.0]: https://github.com/tyevans/redstring/releases/tag/v0.9.0
