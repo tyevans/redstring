@@ -3630,3 +3630,32 @@ copied from. Fixing one without the other would be inconsistent; fixing both
 is a small, separate, argued change (special-case `-1` and report it as
 "unconstrained" rather than as a mismatched width) that belongs in its own
 commit rather than riding in on the semantic-channel branch.
+
+### B162. The chunker properties are duplicated per implementation rather than shared
+
+`test_no_chunk_is_wholly_contained_in_another` now exists twice, once in
+`tests/unit/extraction/test_chunkers.py` and once in
+`test_boundary_preference_chunker.py`, differing only in which chunker they
+construct. `test_every_character_of_the_input_lands_in_some_chunk` and the
+determinism and ordering properties are in the same position — each file
+asserts the `Chunker` contract against its own implementation.
+
+That is `.claude/rules/recurring-defects.md` §1 in slow motion: the shared
+suite the checklist asks for does not exist for `Chunker`, so every contract
+property has to be remembered twice, and a third chunker would arrive with
+whichever subset its author happened to copy.
+
+The shape: a parametrised module — `tests/unit/extraction/test_chunker_contract.py`
+— fixtured over every `Chunker` implementation, holding the properties that
+are true of *any* chunker (coverage, ordering, determinism, size ceiling, no
+chunk contained in another), leaving each implementation's own file for what
+makes it different. That last part is the reason both files exist and should
+stay: `test_boundary_preference_chunker.py`'s docstring is explicit that its
+weight is on the three places it differs, and a contract suite must not
+dissolve that.
+
+Not done with the redundant-chunk fix because that change had to stay small
+enough to review against the loop it touches, and because the containment
+property was the *first* case to demand the shared suite rather than an
+obvious pre-existing gap — it was found by hypothesis, mid-fix, when the
+sibling was checked for the same defect and turned out clean.

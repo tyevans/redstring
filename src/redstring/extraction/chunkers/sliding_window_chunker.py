@@ -208,6 +208,7 @@ class SlidingWindowChunker:
         start = 0
         chunk_index = 0
         text_len = len(text)
+        last_end: int | None = None
 
         while start < text_len:
             # Calculate tentative end position
@@ -216,6 +217,27 @@ class SlidingWindowChunker:
             # If not at the end of text, find a good break point
             if end < text_len:
                 end = self._find_break_point(text, start, end)
+
+            # A break point can land at or before the previous chunk's end,
+            # and then this chunk is wholly inside that one. It happens when
+            # the same boundary is the best one twice: the previous chunk was
+            # cut back to a paragraph mark, `start` is that mark minus the
+            # overlap, and the search window from `start` finds the very same
+            # mark. What gets emitted is exactly the overlap region -- a chunk
+            # whose every character the previous chunk already carried.
+            #
+            # Measured: text of 137 '?', a paragraph break, then 300 more, at
+            # 300/40, produced (0, 139), (99, 139), (139, 439). The middle one
+            # is 40 characters and buys nothing.
+            #
+            # Falling back to the hard boundary always advances, because
+            # `start` is `last_end - overlap` and `__init__` refuses an
+            # overlap that is not smaller than the chunk size -- so
+            # `start + chunk_size > last_end` is guaranteed rather than
+            # hoped for. Coverage is unaffected: the span this drops was
+            # already inside the previous chunk.
+            if last_end is not None and end <= last_end:
+                end = min(start + chunk_size, text_len)
 
             # Extract chunk text
             chunk_text = text[start:end]
@@ -230,6 +252,8 @@ class SlidingWindowChunker:
                 end_char=end,
                 overlap_with_previous=overlap_with_prev,
             )
+
+            last_end = end
 
             # Nothing is left to cover once a chunk reaches the end of the
             # text, and the exit test below cannot see that: it is on

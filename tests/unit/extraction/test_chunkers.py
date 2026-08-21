@@ -251,6 +251,42 @@ class TestProperties:
 
         assert ends == sorted(set(ends)), f"a chunk ends where an earlier one did: {ends}"
 
+    def test_a_break_point_reached_twice_does_not_emit_the_overlap_alone(self):
+        """The second containment case, pinned at the example that found it.
+
+        When the best break point for two consecutive windows is the *same*
+        mark, the second chunk is exactly the overlap region and every
+        character of it is already in the first. Before the fix this text gave
+        `(0, 139)`, `(99, 139)`, `(139, 439)` -- the middle chunk 40
+        characters long and wholly inside its predecessor.
+
+        The property above finds this, and found it: it is what turned up when
+        the redundant-tail fix alone left the property red. Pinned separately
+        because the two failures share a symptom and have different causes,
+        and a single property going green says nothing about which was fixed.
+        """
+        text = "?" * 137 + "\n\n" + "?" * 300
+        result = SlidingWindowChunker(default_chunk_size=300, default_overlap=40).chunk(text)
+
+        spans = [(produced.start_char, produced.end_char) for produced in result.chunks]
+
+        # The contract, not the observed tuple. An earlier draft asserted
+        # `[(0, 139), (139, 439)]` -- which is what a *different* fix would
+        # produce, one that skips the degenerate window rather than widening
+        # it. Pinning the actual output would have locked in whichever fix
+        # happened to land first and made the other look like a regression,
+        # which is `.claude/rules/recurring-defects.md` §4 exactly.
+        assert not [
+            (inner, outer)
+            for inner in spans
+            for outer in spans
+            if inner != outer and outer[0] <= inner[0] and inner[1] <= outer[1]
+        ]
+        covered: set[int] = set()
+        for produced in result.chunks:
+            covered.update(range(produced.start_char, produced.end_char))
+        assert covered == set(range(len(text)))
+
     @given(text=texts(min_size=1))
     @settings(max_examples=60)
     def test_chunking_the_same_text_twice_gives_the_same_chunks(self, text):

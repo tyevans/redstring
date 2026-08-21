@@ -349,3 +349,32 @@ def test_the_two_chunkers_report_different_types():
 
 def test_a_chunker_satisfies_the_protocol():
     assert isinstance(BoundaryPreferenceChunker(), Chunker)
+
+
+@given(text=texts(min_size=400))
+@settings(max_examples=60)
+def test_no_chunk_is_wholly_contained_in_another(text: str) -> None:
+    """The sibling's copy of `SlidingWindowChunker`'s property.
+
+    `BoundaryPreferenceChunker` passes this today and passed it before the
+    sliding-window fix -- checked over 400 random texts up to 9,000 characters
+    while making that change. It is here anyway, because
+    `.claude/rules/recurring-defects.md` §1 is about exactly this: two
+    implementations of one protocol drifting because each one's tests assert
+    only its own behaviour.
+
+    A redundant chunk is invisible to every other property in both files. It
+    does not break coverage, ordering, determinism or the size ceiling -- it
+    is a chunk whose every character another chunk already carries, and only
+    a comparison across chunks can see it.
+    """
+    result = BoundaryPreferenceChunker().chunk(text)
+
+    spans = [(produced.start_char, produced.end_char) for produced in result.chunks]
+
+    assert not [
+        (inner, outer)
+        for inner in spans
+        for outer in spans
+        if inner != outer and outer[0] <= inner[0] and inner[1] <= outer[1]
+    ]
