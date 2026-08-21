@@ -102,6 +102,29 @@ _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 _SCORE = "1 - (embedding <=> $2::vector) / 2"
 
 
+def _encodable(entity_types: Sequence[str] | None) -> list[str]:
+    """The filter values Postgres can actually be asked about.
+
+    A `text[]` parameter cannot carry a NUL byte -- asyncpg hands it to
+    Postgres verbatim and the server answers
+    `invalid byte sequence for encoding "UTF8": 0x00`, an exception where the
+    port promises a type filter never raises whatever the caller passes. The
+    in-memory adapter simply fails to match such a value, so the two
+    disagreed, which is the divergence the shared suite exists to catch; it
+    was caught by `test_a_type_filter_tolerates_any_stored_metadata` drawing
+    `["\x00"]`.
+
+    Dropping those values changes no result. `metadata` is filtered by
+    `_is_storable` on the way in for the same encoding reason, so no stored
+    `entity_type` can contain a NUL, so a filter value containing one matches
+    nothing whether it reaches the query or not. Dropping every value is
+    therefore still "matches nothing" and not "matches everything" -- the
+    empty list keeps its meaning, and `$3` carries "no filter at all"
+    separately.
+    """
+    return [value for value in entity_types or () if "\x00" not in value]
+
+
 class PgVectorStore:
     """A `VectorStore` backed by Postgres with the `vector` extension."""
 
@@ -357,7 +380,7 @@ class PgVectorStore:
             tenant_id,
             encode_vector(vector),
             entity_types is None,
-            list(entity_types or ()),
+            _encodable(entity_types),
             min_score,
             k,
         )
