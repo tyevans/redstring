@@ -236,6 +236,29 @@ class TestDocumentChunked:
         event = _chunked(tenant_id, chunks=[_chunk(tenant_id)])
         assert event.chunks[0].source_id == event.source_id
 
+    def test_a_dumped_event_survives_being_read_back(self):
+        """The log is the authority: a payload that cannot be read back is a
+        projection that can never replay.
+
+        `StoredChunk.id` is a computed field, so `model_dump()` includes it
+        on every chunk here -- and `StoredChunk` also forbids extra fields,
+        so this is exactly the case a naive `extra="forbid"` would break. A
+        test at the `StoredChunk` level alone would not have caught this: the
+        failure is only obvious once a real event, carrying more than one
+        chunk, is dumped and read back.
+        """
+        tenant_id = uuid4()
+        event = _chunked(
+            tenant_id,
+            chunks=[
+                _chunk(tenant_id, text="the first passage", chunk_index=0),
+                _chunk(tenant_id, text="the second passage", chunk_index=1),
+            ],
+        )
+        dumped = event.model_dump(mode="json")
+        restored = DocumentChunked.model_validate(dumped)
+        assert [chunk.id for chunk in restored.chunks] == [chunk.id for chunk in event.chunks]
+
 
 class TestEntitiesEmbedded:
     @pytest.mark.parametrize("other", OTHER_TENANTS, ids=TENANT_IDS)

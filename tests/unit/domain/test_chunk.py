@@ -146,8 +146,7 @@ def test_entity_ids_survive_a_round_trip_as_uuids() -> None:
         end_char=1,
         entity_ids=[entity],
     )
-    dumped = chunk.model_dump(mode="json")
-    restored = StoredChunk.model_validate({k: v for k, v in dumped.items() if k != "id"})
+    restored = StoredChunk.model_validate(chunk.model_dump(mode="json"))
     assert restored.entity_ids == [entity]
     assert isinstance(restored.entity_ids[0], UUID)
 
@@ -165,21 +164,42 @@ def test_id_is_derived_rather_than_supplied() -> None:
     assert chunk.id == chunk_id(source, "the passage actually being stored")
 
 
-def test_supplying_an_id_is_rejected_rather_than_ignored() -> None:
-    """`extra="forbid"` is the point: silently ignoring `id=` would leave a
-    caller believing they had chosen the id, which is B97 with a friendlier
-    face. The value passed here is a *correct* derived id, so the rejection
-    cannot be passing because the value was wrong."""
+def test_a_matching_supplied_id_is_accepted() -> None:
+    """The replay path: a `DocumentChunked` payload carries its chunks'
+    `id`s, and reading one back must not raise. A correct id here is not
+    ignored -- it is accepted and produces the same `.id` a fresh
+    construction would."""
     source = SourceId("doc-1")
-    with pytest.raises(ValidationError, match="id"):
+    chunk = StoredChunk(
+        id=chunk_id(source, "a passage"),
+        tenant_id=TenantId(uuid4()),
+        source_id=source,
+        text="a passage",
+        chunk_index=0,
+        start_char=0,
+        end_char=9,
+    )
+    assert chunk.id == chunk_id(source, "a passage")
+
+
+def test_a_mismatched_supplied_id_is_rejected() -> None:
+    """The id is what both adapters rest on to skip re-deriving state (B97).
+
+    The wrong id here is a *real other chunk's* id rather than a random
+    string, because a random string could be rejected by any format check
+    the field ever grows, and this test would then pass for a reason that
+    has nothing to do with derivation.
+    """
+    source = SourceId("doc-1")
+    with pytest.raises(ValidationError, match="content-addressed"):
         StoredChunk(
-            id=chunk_id(source, "a passage"),
+            id=chunk_id(source, "some other passage"),
             tenant_id=TenantId(uuid4()),
             source_id=source,
-            text="a passage",
+            text="the passage actually being stored",
             chunk_index=0,
             start_char=0,
-            end_char=9,
+            end_char=33,
         )
 
 
@@ -197,4 +217,4 @@ def test_the_serialised_shape_still_carries_the_id() -> None:
     )
     dumped = chunk.model_dump()
     assert dumped["id"] == chunk.id
-    assert StoredChunk.model_validate({k: v for k, v in dumped.items() if k != "id"}).id == chunk.id
+    assert StoredChunk.model_validate(dumped).id == chunk.id

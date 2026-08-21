@@ -27,7 +27,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
@@ -110,6 +110,46 @@ class StoredChunk(BaseModel):
         would drop `id` from `model_dump()` and change the log's shape.
         """
         return chunk_id(self.source_id, self.text)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_a_matching_id_pop_it_reject_a_mismatch(cls, data: Any) -> Any:  # noqa: ANN401
+        """Let a round-tripped `id` back in, but only if it still agrees.
+
+        `DocumentChunked` carries `list[StoredChunk]` to the event log, and
+        the log is the authority: a payload that cannot be read back is a
+        projection that can never replay. `model_dump()` includes the
+        computed `id`, so `extra="forbid"` alone would make every stored
+        event un-deserialisable -- the id this validator pops here is the
+        same one `id` will recompute a moment later, not a caller's opinion.
+
+        A *mismatched* id is a different thing entirely: it can only mean
+        the text or source_id was edited after the id was computed, which is
+        exactly the corruption `chunk_id` exists to catch (BACKLOG B97), so
+        it still raises.
+
+        Runs before field validation, so `data` may be anything pydantic
+        would otherwise reject -- not a dict, or a dict missing/mistyping
+        `source_id`/`text`. In every such case this leaves the input
+        untouched and lets the normal field validators produce their own,
+        clearer error instead of this one raising `KeyError`/`TypeError`.
+        """
+        if not isinstance(data, dict) or "id" not in data:
+            return data
+        source_id = data.get("source_id")
+        text = data.get("text")
+        if not isinstance(source_id, str) or not isinstance(text, str):
+            return data
+        expected = chunk_id(SourceId(source_id), text)
+        supplied = data["id"]
+        if supplied != expected:
+            raise ValueError(
+                f"id must be content-addressed over (source_id, text): "
+                f"expected {expected}, got {supplied}"
+            )
+        data = dict(data)
+        del data["id"]
+        return data
 
     @field_validator("text")
     @classmethod
