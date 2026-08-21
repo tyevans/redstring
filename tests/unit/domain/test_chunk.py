@@ -203,6 +203,106 @@ def test_a_mismatched_supplied_id_is_rejected() -> None:
         )
 
 
+def test_non_dict_input_falls_through_to_the_ordinary_pydantic_error() -> None:
+    """`_accept_a_matching_id_pop_it_reject_a_mismatch` guards `isinstance(data,
+    dict)` before touching `data["id"]` or `data["source_id"]`; pydantic can
+    call a `mode="before"` validator with the raw input before it has even
+    confirmed that input is a mapping. Asserting the error's `type` (not just
+    that *something* raised) is what tells a clean fallthrough apart from an
+    unguarded `AttributeError`/`TypeError` escaping the validator."""
+    with pytest.raises(ValidationError) as exc_info:
+        StoredChunk.model_validate("not a dict")
+    errors = exc_info.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["type"] == "model_type"
+
+
+def test_an_id_with_no_source_id_falls_through_to_the_missing_field_error() -> None:
+    """The validator's `data.get("source_id")` returns `None` here rather than
+    raising `KeyError`, so field validation gets to report the real problem:
+    `source_id` is a required field pydantic never saw."""
+    with pytest.raises(ValidationError) as exc_info:
+        StoredChunk.model_validate(
+            {
+                "id": "deadbeef",
+                "tenant_id": str(uuid4()),
+                "text": "t",
+                "chunk_index": 0,
+                "start_char": 0,
+                "end_char": 1,
+            }
+        )
+    errors = exc_info.value.errors()
+    assert {"type": "missing", "loc": ("source_id",)} in [
+        {"type": e["type"], "loc": e["loc"]} for e in errors
+    ]
+    assert not any("content-addressed" in e["msg"] for e in errors)
+
+
+def test_an_id_with_no_text_falls_through_to_the_missing_field_error() -> None:
+    """Same fallthrough, the other required field the comparison needs."""
+    with pytest.raises(ValidationError) as exc_info:
+        StoredChunk.model_validate(
+            {
+                "id": "deadbeef",
+                "tenant_id": str(uuid4()),
+                "source_id": "doc-1",
+                "chunk_index": 0,
+                "start_char": 0,
+                "end_char": 1,
+            }
+        )
+    errors = exc_info.value.errors()
+    assert {"type": "missing", "loc": ("text",)} in [
+        {"type": e["type"], "loc": e["loc"]} for e in errors
+    ]
+    assert not any("content-addressed" in e["msg"] for e in errors)
+
+
+def test_an_id_with_a_non_string_source_id_falls_through_to_the_type_error() -> None:
+    """`isinstance(source_id, str)` is the second guard; a `source_id` of the
+    wrong type must not reach `chunk_id`, which would raise `AttributeError`
+    calling `.encode()` on it."""
+    with pytest.raises(ValidationError) as exc_info:
+        StoredChunk.model_validate(
+            {
+                "id": "deadbeef",
+                "tenant_id": str(uuid4()),
+                "source_id": 123,
+                "text": "t",
+                "chunk_index": 0,
+                "start_char": 0,
+                "end_char": 1,
+            }
+        )
+    errors = exc_info.value.errors()
+    assert {"type": "string_type", "loc": ("source_id",)} in [
+        {"type": e["type"], "loc": e["loc"]} for e in errors
+    ]
+    assert not any("content-addressed" in e["msg"] for e in errors)
+
+
+def test_an_id_with_a_non_string_text_falls_through_to_the_type_error() -> None:
+    """Same guard, the other operand `chunk_id` hashes."""
+    with pytest.raises(ValidationError) as exc_info:
+        StoredChunk.model_validate(
+            {
+                "id": "deadbeef",
+                "tenant_id": str(uuid4()),
+                "source_id": "doc-1",
+                "text": 123,
+                "chunk_index": 0,
+                "start_char": 0,
+                "end_char": 1,
+            }
+        )
+    errors = exc_info.value.errors()
+    assert {"type": "string_type", "loc": ("text",)} in [
+        {"type": e["type"], "loc": e["loc"]} for e in errors
+    ]
+    assert not any("content-addressed" in e["msg"] for e in errors)
+
+
 def test_the_serialised_shape_still_carries_the_id() -> None:
     """`DocumentChunked` puts these on the event log. A computed field that
     stopped serialising would change the log's shape without changing a

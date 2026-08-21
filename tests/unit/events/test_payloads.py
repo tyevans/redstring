@@ -237,15 +237,17 @@ class TestDocumentChunked:
         assert event.chunks[0].source_id == event.source_id
 
     def test_a_dumped_event_survives_being_read_back(self):
-        """The log is the authority: a payload that cannot be read back is a
-        projection that can never replay.
+        """The log is the authority: an event carrying chunks must be
+        readable back from its own `model_dump()`, or replay is broken.
 
-        `StoredChunk.id` is a computed field, so `model_dump()` includes it
-        on every chunk here -- and `StoredChunk` also forbids extra fields,
-        so this is exactly the case a naive `extra="forbid"` would break. A
-        test at the `StoredChunk` level alone would not have caught this: the
-        failure is only obvious once a real event, carrying more than one
-        chunk, is dumped and read back.
+        This is the `extra="forbid"`-breaks-replay failure mode: `id` is
+        purely derived, so it does not distinguish a correct implementation
+        from one where the computed field silently stopped serialising --
+        `test_the_serialised_shape_still_carries_the_id` in
+        `tests/unit/domain/test_chunk.py` is what covers that case,
+        asserting `dumped["id"] == chunk.id` directly. What this test catches
+        is real regardless: a `DocumentChunked` built from real chunks must
+        round-trip through the log format at all.
         """
         tenant_id = uuid4()
         event = _chunked(
