@@ -25,7 +25,7 @@ from redstring.aggregates.repositories import (
     consolidation_repository,
     document_repository,
 )
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import ConsolidationInvariantError
@@ -225,7 +225,6 @@ def _chunks(tenant_id, source_id: str, revision: int) -> list[StoredChunk]:
     texts = [f"{source_id} opening", f"{source_id} revision {revision}"]
     return [
         StoredChunk(
-            id=chunk_id(source_id, text),
             tenant_id=tenant_id,
             source_id=source_id,
             text=text,

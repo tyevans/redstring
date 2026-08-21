@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from redstring.aggregates.document import Document
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.domain.entity import Entity
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.vector import VectorRecord
@@ -50,7 +50,6 @@ def _entity(tenant_id, name="Ada Lovelace"):
 
 def _chunk(tenant_id, text, index=0):
     return StoredChunk(
-        id=chunk_id(SOURCE_ID, text),
         tenant_id=tenant_id,
         source_id=SOURCE_ID,
         text=text,

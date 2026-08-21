@@ -1,8 +1,10 @@
 """`ChunkRetriever`: the chunk-corpus mirror of `Retriever`.
 
-Chunk ids are pinned as literals throughout -- never drawn from `uuid4()` or
-`chunk_id()` -- so a test failure names the chunk that mis-ranked rather than
-a fresh hash every run.
+Chunk ids are content-addressed (`StoredChunk` rejects any other id), so a
+label chosen for a chunk's *text* -- "ada lovelace", "an unrelated passage" --
+is what makes a test failure legible now, rather than a pinned literal id.
+Each chunk built here still names what it is for; that name lives in the
+`text` and each test derives the id it expects with `chunk_id(...)`.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import pytest
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
 from redstring.composition.retrieval import ChunkRetriever
-from redstring.domain.chunk import StoredChunk
+from redstring.domain.chunk import StoredChunk, chunk_id
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.retrieval import RetrievalMode
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
@@ -32,7 +34,6 @@ DIMENSION = 768
 
 
 def _chunk(
-    chunk_id: str,
     tenant_id: TenantId,
     *,
     source_id: str = "doc-1",
@@ -41,7 +42,6 @@ def _chunk(
     embedding: list[float] | None = None,
 ) -> StoredChunk:
     return StoredChunk(
-        id=chunk_id,
         tenant_id=tenant_id,
         source_id=source_id,
         text=text,
@@ -104,7 +104,7 @@ async def test_k_zero_returns_nothing_and_a_negative_k_raises() -> None:
     tenant = uuid4()
     chunks = InMemoryChunkStore(dimension=DIMENSION)
     embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
-    await chunks.upsert_many([_chunk("chunk-a", tenant, text="Ada Lovelace")])
+    await chunks.upsert_many([_chunk(tenant, text="Ada Lovelace")])
     retriever = _retriever(chunks, embeddings)
 
     empty = await retriever.retrieve_chunks("Ada Lovelace", tenant, k=0)
@@ -152,14 +152,15 @@ async def test_a_lexical_only_mode_makes_no_embedding_call() -> None:
     tenant = uuid4()
     chunks = InMemoryChunkStore(dimension=DIMENSION)
     inner = FakeEmbeddingProvider(dimension=DIMENSION)
-    await chunks.upsert_many([_chunk("chunk-a", tenant, text="Ada Lovelace was a mathematician")])
+    text = "Ada Lovelace was a mathematician"
+    await chunks.upsert_many([_chunk(tenant, text=text)])
 
     counting = _CountingEmbeddingProvider(inner)
     result = await ChunkRetriever(embeddings=counting, chunks=chunks).retrieve_chunks(
         "Ada Lovelace", tenant, mode=RetrievalMode.LEXICAL
     )
 
-    assert [match.chunk.id for match in result.matches] == ["chunk-a"]
+    assert [match.chunk.id for match in result.matches] == [chunk_id("doc-1", text)]
     assert counting.calls == 0
 
 
@@ -171,16 +172,15 @@ async def test_a_semantic_only_mode_leaves_lexical_none() -> None:
     [vector] = await embeddings.embed([query])
     # The chunk's text shares no term with the query, so a lexical run would
     # find nothing -- proving the match came from the semantic channel alone.
-    await chunks.upsert_many(
-        [_chunk("chunk-a", tenant, text="totally unrelated passage", embedding=vector)]
-    )
+    text = "totally unrelated passage"
+    await chunks.upsert_many([_chunk(tenant, text=text, embedding=vector)])
 
     result = await ChunkRetriever(embeddings=embeddings, chunks=chunks).retrieve_chunks(
         query, tenant, mode=RetrievalMode.SEMANTIC
     )
 
     [match] = result.matches
-    assert match.chunk.id == "chunk-a"
+    assert match.chunk.id == chunk_id("doc-1", text)
     assert match.semantic is not None
     assert match.lexical is None
 
@@ -196,16 +196,15 @@ async def test_hybrid_fuses_both_channels() -> None:
     embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
     query = "Ada Lovelace"
     [vector] = await embeddings.embed([query])
-    await chunks.upsert_many(
-        [_chunk("chunk-a", tenant, text="Ada Lovelace, mathematician", embedding=vector)]
-    )
+    text = "Ada Lovelace, mathematician"
+    await chunks.upsert_many([_chunk(tenant, text=text, embedding=vector)])
 
     result = await ChunkRetriever(embeddings=embeddings, chunks=chunks).retrieve_chunks(
         query, tenant, mode=RetrievalMode.HYBRID
     )
 
     [match] = result.matches
-    assert match.chunk.id == "chunk-a"
+    assert match.chunk.id == chunk_id("doc-1", text)
     assert match.semantic is not None
     assert match.lexical is not None
 
@@ -222,16 +221,15 @@ async def test_a_hybrid_query_over_an_unembedded_corpus_still_returns_lexical_re
     tenant = uuid4()
     chunks = InMemoryChunkStore(dimension=DIMENSION)
     embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
-    await chunks.upsert_many(
-        [_chunk("chunk-a", tenant, text="Ada Lovelace, mathematician", embedding=None)]
-    )
+    text = "Ada Lovelace, mathematician"
+    await chunks.upsert_many([_chunk(tenant, text=text, embedding=None)])
 
     result = await ChunkRetriever(embeddings=embeddings, chunks=chunks).retrieve_chunks(
         "Ada Lovelace", tenant, mode=RetrievalMode.HYBRID
     )
 
     [match] = result.matches
-    assert match.chunk.id == "chunk-a"
+    assert match.chunk.id == chunk_id("doc-1", text)
     assert match.semantic is None
     assert match.lexical is not None
 
@@ -271,27 +269,24 @@ async def test_a_chunk_ranked_second_in_both_channels_beats_a_channel_leader() -
     [query_vector] = await embeddings.embed([query])
     [other_vector] = await embeddings.embed(["some unrelated embedded text"])
 
+    text_a = "ada lovelace"
+    text_b = (
+        "ada lovelace mathematician analytical engine pioneer computing history science notation"
+    )
+    text_c = "grace hopper compiler pioneer"
     await chunks.upsert_many(
         [
             # Short and dense in the query's terms -- wins lexically.
-            _chunk("chunk-a", tenant, text="ada lovelace", embedding=None),
+            _chunk(tenant, text=text_a, embedding=None),
             # Contains both query terms once, diluted by an otherwise
             # unrelated passage -- second lexically, and carries an
             # embedding that is not the query's exact vector -- second
             # semantically.
-            _chunk(
-                "chunk-b",
-                tenant,
-                text=(
-                    "ada lovelace mathematician analytical engine pioneer computing "
-                    "history science notation"
-                ),
-                embedding=other_vector,
-            ),
+            _chunk(tenant, text=text_b, embedding=other_vector),
             # No lexical overlap with the query at all, but its stored
             # embedding *is* the query's own vector -- wins semantically with
             # cosine similarity exactly 1.0.
-            _chunk("chunk-c", tenant, text="grace hopper compiler pioneer", embedding=query_vector),
+            _chunk(tenant, text=text_c, embedding=query_vector),
         ]
     )
 
@@ -300,7 +295,7 @@ async def test_a_chunk_ranked_second_in_both_channels_beats_a_channel_leader() -
     ).retrieve_chunks(query, tenant, k=1)
 
     [winner] = result.matches
-    assert winner.chunk.id == "chunk-b"
+    assert winner.chunk.id == chunk_id("doc-1", text_b)
 
 
 # ----------------------------------------------------------------------
@@ -331,10 +326,12 @@ async def test_the_semantic_channel_embeds_the_query_as_a_query() -> None:
     [as_query] = await embeddings.embed_query([query])
     [as_document] = await embeddings.embed([query])
     assert as_query != as_document, "the two prefixes must produce different vectors"
+    wanted_text = "unrelated passage one"
+    decoy_text = "unrelated passage two"
     await chunks.upsert_many(
         [
-            _chunk("chunk-wanted", tenant, text="unrelated passage one", embedding=as_query),
-            _chunk("chunk-decoy", tenant, text="unrelated passage two", embedding=as_document),
+            _chunk(tenant, text=wanted_text, embedding=as_query),
+            _chunk(tenant, text=decoy_text, embedding=as_document),
         ]
     )
 
@@ -342,7 +339,7 @@ async def test_the_semantic_channel_embeds_the_query_as_a_query() -> None:
         query, tenant, k=1, mode=RetrievalMode.SEMANTIC
     )
 
-    assert [match.chunk.id for match in result.matches] == ["chunk-wanted"]
+    assert [match.chunk.id for match in result.matches] == [chunk_id("doc-1", wanted_text)]
 
 
 async def test_the_query_reaches_the_provider_unprefixed_by_the_caller() -> None:

@@ -93,8 +93,8 @@ _INCOMING = (
 _TERMS_INCOMING = "t(tenant_id uuid, chunk_id text, term text, tf integer)"
 
 #: Term rows are written `ON CONFLICT DO NOTHING`, never `DO UPDATE`. Chunk
-#: ids are content-addressed over `(source_id, text)` -- see the module
-#: docstring's identity discussion -- so a given id always has the same text,
+#: ids are content-addressed over `(source_id, text)` and derived by the type
+#: -- see `StoredChunk.id` -- so a given id always has the same text,
 #: therefore always the same terms and the same `tf` for each. There is no
 #: update path for a term row: the "obvious" DELETE-then-INSERT is both
 #: unnecessary (the row can never legitimately change) and unsafe in one
@@ -112,10 +112,10 @@ _TERMS_ON_CONFLICT = "ON CONFLICT (tenant_id, chunk_id, term) DO NOTHING"
 #: rule: `doc_length` is a pure function of `text`, and `embedding` is written
 #: once and never updated on conflict either -- a content-addressed id fixes
 #: `text` for good, so there is no value either column could ever need
-#: updating to (BACKLOG B97 tracks that this reasoning is not yet enforced by
-#: a guard). Including them in the `SET` list would be a no-op that reads as
-#: one more ordinary column and hides the reasoning; omitting them and saying
-#: so here is the honest spelling.
+#: updating to (`StoredChunk.id` is a computed field, so this reasoning is
+#: enforced by construction -- ADR 0044). Including them in the `SET` list
+#: would be a no-op that reads as one more ordinary column and hides the
+#: reasoning; omitting them and saying so here is the honest spelling.
 _ON_CONFLICT = (
     "ON CONFLICT (tenant_id, id) DO UPDATE SET "
     "source_id = EXCLUDED.source_id, text = EXCLUDED.text, "
@@ -922,7 +922,11 @@ def _chunk_from(row: Any) -> StoredChunk:  # noqa: ANN401 - asyncpg.Record, unty
     by equality here.
     """
     return StoredChunk(
-        id=row["id"],
+        # `id` is not passed: it is computed from `(source_id, text)`, which
+        # is the same value the column holds for any row this adapter wrote.
+        # A legacy row whose stored id was not content-addressed therefore
+        # comes back under its derived id -- see the ADR; that row could only
+        # have been written before the id became underivable.
         tenant_id=row["tenant_id"],
         source_id=row["source_id"],
         text=row["text"],

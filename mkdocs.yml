@@ -185,4 +185,5 @@ nav:
       - "0041 · The consolidation pass is decide-then-emit": adr/0041-the-consolidation-pass-is-decide-then-emit.md
       - "0042 · Themes are recomputed, never stored": adr/0042-themes-are-recomputed-never-stored.md
       - "0043 · A query is embedded differently from a document": adr/0043-a-query-is-embedded-differently-from-a-document.md
+      - "0044 · A chunk id is derived, not supplied": adr/0044-a-chunk-id-is-derived-not-supplied.md
   - Contributing: contributing.md

@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
-from redstring.domain.chunk import StoredChunk, chunk_id
+from redstring.domain.chunk import StoredChunk
 from redstring.domain.consolidation import (
     MergeableFields,
     PropertyResolution,
@@ -118,7 +118,6 @@ def _chunk(tenant_id, **overrides):
     text = overrides.pop("text", "Ada Lovelace wrote the first program.")
     source_id = overrides.pop("source_id", SOURCE_ID)
     fields = {
-        "id": chunk_id(source_id, text),
         "tenant_id": tenant_id,
         "source_id": source_id,
         "text": text,
@@ -236,6 +235,31 @@ class TestDocumentChunked:
         tenant_id = uuid4()
         event = _chunked(tenant_id, chunks=[_chunk(tenant_id)])
         assert event.chunks[0].source_id == event.source_id
+
+    def test_a_dumped_event_survives_being_read_back(self):
+        """The log is the authority: an event carrying chunks must be
+        readable back from its own `model_dump()`, or replay is broken.
+
+        This is the `extra="forbid"`-breaks-replay failure mode: `id` is
+        purely derived, so it does not distinguish a correct implementation
+        from one where the computed field silently stopped serialising --
+        `test_the_serialised_shape_still_carries_the_id` in
+        `tests/unit/domain/test_chunk.py` is what covers that case,
+        asserting `dumped["id"] == chunk.id` directly. What this test catches
+        is real regardless: a `DocumentChunked` built from real chunks must
+        round-trip through the log format at all.
+        """
+        tenant_id = uuid4()
+        event = _chunked(
+            tenant_id,
+            chunks=[
+                _chunk(tenant_id, text="the first passage", chunk_index=0),
+                _chunk(tenant_id, text="the second passage", chunk_index=1),
+            ],
+        )
+        dumped = event.model_dump(mode="json")
+        restored = DocumentChunked.model_validate(dumped)
+        assert [chunk.id for chunk in restored.chunks] == [chunk.id for chunk in event.chunks]
 
 
 class TestEntitiesEmbedded:

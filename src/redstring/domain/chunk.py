@@ -20,6 +20,10 @@ wearing the same id, so its stored entity links and its stored vector would
 silently describe text that no longer says what they claim. The cost of
 content addressing is orphans, and `ChunkStore.replace_source` is where that
 cost is paid.
+
+`StoredChunk` derives its own `id` from these two fields and accepts no
+other value, so this is a property of the type rather than a convention
+callers follow.
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
@@ -75,7 +79,8 @@ class StoredChunk(BaseModel):
     looks reasonable in review.
     """
 
-    id: ChunkId
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: TenantId
     source_id: SourceId
     text: str
@@ -92,6 +97,71 @@ class StoredChunk(BaseModel):
     #: it. Under positional identity this field would need invalidation
     #: logic; under content addressing it needs none.
     embedding: list[float] | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def id(self) -> ChunkId:
+        """This passage's identity, derived rather than supplied.
+
+        A field here would let a caller name an id unrelated to the text,
+        and both adapters skip re-deriving `doc_length`, the term index and
+        `embedding` on an id conflict precisely because they assume no
+        caller can (see ADR 0044). A computed field makes that assumption
+        true instead of merely documented.
+
+        It is `computed_field` rather than a plain `property` because
+        `DocumentChunked` carries these to the event log: a plain property
+        would drop `id` from `model_dump()` and change the log's shape.
+
+        This recomputes the SHA-256 on every access, including the three
+        touches `upsert_many` makes per chunk on Postgres. That cost is
+        deliberate, not overlooked: `functools.cached_property` cannot sit
+        on a pydantic `computed_field`, so caching it would mean a private
+        cached attribute set alongside `source_id`/`text` -- exactly the
+        supplied-and-derived drift this design exists to remove. Leave it
+        recomputing unless a profile shows otherwise.
+        """
+        return chunk_id(self.source_id, self.text)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_a_matching_id_pop_it_reject_a_mismatch(cls, data: Any) -> Any:  # noqa: ANN401
+        """Let a round-tripped `id` back in, but only if it still agrees.
+
+        `DocumentChunked` carries `list[StoredChunk]` to the event log, and
+        the log is the authority: a payload that cannot be read back is a
+        projection that can never replay. `model_dump()` includes the
+        computed `id`, so `extra="forbid"` alone would make every stored
+        event un-deserialisable -- the id this validator pops here is the
+        same one `id` will recompute a moment later, not a caller's opinion.
+
+        A *mismatched* id is a different thing entirely: it can only mean
+        the text or source_id was edited after the id was computed, which is
+        exactly the corruption `chunk_id` exists to catch, so it still
+        raises.
+
+        Runs before field validation, so `data` may be anything pydantic
+        would otherwise reject -- not a dict, or a dict missing/mistyping
+        `source_id`/`text`. In every such case this leaves the input
+        untouched and lets the normal field validators produce their own,
+        clearer error instead of this one raising `KeyError`/`TypeError`.
+        """
+        if not isinstance(data, dict) or "id" not in data:
+            return data
+        source_id = data.get("source_id")
+        text = data.get("text")
+        if not isinstance(source_id, str) or not isinstance(text, str):
+            return data
+        expected = chunk_id(SourceId(source_id), text)
+        supplied = data["id"]
+        if supplied != expected:
+            raise ValueError(
+                f"id must be content-addressed over (source_id, text): "
+                f"expected {expected}, got {supplied}"
+            )
+        data = dict(data)
+        del data["id"]
+        return data
 
     @field_validator("text")
     @classmethod
