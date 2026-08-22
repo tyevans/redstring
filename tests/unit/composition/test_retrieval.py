@@ -753,3 +753,99 @@ async def test_the_query_reaches_the_provider_unprefixed_by_the_caller() -> None
     )
 
     assert embeddings.seen == [("embed_query", ["Ada Lovelace"])]
+
+
+# ----------------------------------------------------------------------
+# Lexical-only construction
+# ----------------------------------------------------------------------
+
+
+async def test_a_lexical_only_retriever_needs_no_embedding_provider() -> None:
+    """The whole point: a name lookup with no vector collaborator anywhere.
+
+    Not a weaker restatement of `test_a_lexical_only_mode_makes_no_embedding
+    _call` above -- that one proves the *call* is skipped while the objects
+    are still required, which is exactly the gap B163 filed.
+    """
+    tenant_id = uuid4()
+    graph = InMemoryGraphStore()
+    entity = _entity("Ada Lovelace", tenant_id)
+    await graph.upsert_entity(entity)
+
+    retriever = Retriever.lexical_only(graph=graph)
+    result = await retriever.retrieve("Ada Lovelace", tenant_id)
+
+    assert [match.entity.id for match in result.matches] == [entity.id]
+    assert result.matches[0].semantic is None
+    assert result.matches[0].lexical is not None
+
+
+async def test_a_lexical_only_retriever_defaults_to_the_lexical_mode() -> None:
+    """`retrieve` with no `mode` must not raise on a lexical-only retriever.
+
+    The default is a property of the *retriever*, not of the signature: a
+    lexical-only retriever whose default were `HYBRID` would refuse every
+    call a caller did not annotate.
+    """
+    tenant_id = uuid4()
+    graph = InMemoryGraphStore()
+    await graph.upsert_entity(_entity("Ada Lovelace", tenant_id))
+
+    retriever = Retriever.lexical_only(graph=graph)
+
+    implicit = await retriever.retrieve("Ada Lovelace", tenant_id)
+    explicit = await retriever.retrieve("Ada Lovelace", tenant_id, mode=RetrievalMode.LEXICAL)
+
+    assert [match.entity.id for match in implicit.matches] == [
+        match.entity.id for match in explicit.matches
+    ]
+    assert implicit.matches != []
+
+
+@pytest.mark.parametrize("mode", [RetrievalMode.SEMANTIC, RetrievalMode.HYBRID])
+async def test_a_lexical_only_retriever_refuses_a_mode_needing_a_vector(
+    mode: RetrievalMode,
+) -> None:
+    """Both semantic-bearing modes, not just `SEMANTIC`.
+
+    `HYBRID` is the one that would otherwise degrade silently -- it has a
+    lexical half that would answer, so a retriever that simply skipped the
+    channel it cannot run would return plausible results for a query the
+    caller believes was fused.
+    """
+    tenant_id = uuid4()
+    graph = InMemoryGraphStore()
+    await graph.upsert_entity(_entity("Ada Lovelace", tenant_id))
+
+    retriever = Retriever.lexical_only(graph=graph)
+
+    with pytest.raises(ValueError, match="lexical-only"):
+        await retriever.retrieve("Ada Lovelace", tenant_id, mode=mode)
+
+
+async def test_a_full_retriever_still_defaults_to_hybrid() -> None:
+    """The implicit default did not become `LEXICAL` for everyone.
+
+    Asserted through a fused result rather than by reading an attribute: an
+    entity ranked by both channels reports both component scores, which
+    `LEXICAL` alone cannot produce.
+    """
+    tenant_id = uuid4()
+    graph = InMemoryGraphStore()
+    vectors = InMemoryVectorStore(dimension=DIMENSION)
+    embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
+    entity = _entity("Ada Lovelace", tenant_id)
+    await graph.upsert_entity(entity)
+    await _store_vector(vectors, embeddings, entity)
+
+    result = await _retriever(graph, vectors, embeddings).retrieve("Ada Lovelace", tenant_id)
+
+    assert result.matches[0].semantic is not None
+    assert result.matches[0].lexical is not None
+
+
+@pytest.mark.parametrize("overfetch", [0, -1])
+async def test_a_lexical_only_retriever_refuses_an_overfetch_below_one(overfetch: int) -> None:
+    """The alternate constructor keeps `__init__`'s guards, not just its fields."""
+    with pytest.raises(ValueError, match="overfetch"):
+        Retriever.lexical_only(graph=InMemoryGraphStore(), overfetch=overfetch)

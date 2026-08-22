@@ -34,6 +34,17 @@ projections of one log and lag independently, so this is ordinary, not
 exceptional -- raising would make retrieval fail during replay, and topping up
 would turn a badly lagging projection into silence.
 
+## A lexical-only retriever needs no embedding provider
+
+`Retriever.lexical_only` and `ChunkRetriever.lexical_only` build a retriever
+with no `EmbeddingProvider` and, for entities, no `VectorReader`. The lexical
+channel reaches neither, so requiring them to *construct* one obliged a caller
+who wanted only that channel to keep an endpoint healthy it never called --
+and a consumer whose probe degrades to "no embeddings" therefore lost
+misspelling-tolerant entity search silently. ADR 0045 records why this is a
+constructor rather than optional arguments, and why `HYBRID` is refused rather
+than quietly reduced to its lexical half.
+
 ## The channels are fused by rank
 
 `domain/fusion.py` says why: the two scores share no unit, and a weighted
@@ -108,12 +119,61 @@ class Retriever:
         """
         if embeddings.dimension != vectors.dimension:
             raise DimensionMismatchError(expected=vectors.dimension, actual=embeddings.dimension)
+        self._wire(embeddings, vectors, graph, overfetch, RetrievalMode.HYBRID)
+
+    @classmethod
+    def lexical_only(cls, *, graph: EntityReader, overfetch: int = 3) -> Retriever:
+        """A retriever with no embedding provider and no vector store.
+
+        `RetrievalMode.LEXICAL` reaches neither collaborator -- it is
+        `find_by_blocking_keys` plus `lexical_score` over the entity's name --
+        so requiring both to *construct* one obliged a caller who wanted only
+        the blocking-key channel to wire and keep healthy an endpoint it never
+        called. A consumer found this the expensive way: its embedding probe
+        degrades to "absent" when the endpoint is misconfigured, which silently
+        removed misspelling-tolerant entity search, a feature with no embedding
+        in it.
+
+        This is a *constructor* rather than optional arguments on `__init__`
+        deliberately, and ADR 0045 records the trade. Optional arguments make
+        "lexical only" and "I forgot to pass the provider" the same call, which
+        would move a configuration mistake from the seam to the first semantic
+        query -- exactly what ADR 0017's construction-time dimension check
+        exists to prevent. A caller naming `lexical_only` has said what it
+        wants; a caller omitting an argument has not said anything.
+
+        The retriever's default mode is `LEXICAL`, so `retrieve` needs no
+        `mode=` from a caller that has already made the choice here. Asking it
+        for `SEMANTIC` or `HYBRID` raises `ValueError` -- `HYBRID` especially,
+        because it has a lexical half that would answer and so is the mode a
+        silent skip would corrupt rather than break.
+        """
+        self = cls.__new__(cls)
+        self._wire(None, None, graph, overfetch, RetrievalMode.LEXICAL)
+        return self
+
+    def _wire(
+        self,
+        embeddings: EmbeddingProvider | None,
+        vectors: VectorReader | None,
+        graph: EntityReader,
+        overfetch: int,
+        default_mode: RetrievalMode,
+    ) -> None:
+        """Store the collaborators, applying the guards both constructors share.
+
+        `lexical_only` reaches this without going through `__init__`, so a
+        guard written in `__init__` would hold for one construction path and
+        not the other. Only the dimension check stays there, because it is the
+        one guard with nothing to check when there is no provider.
+        """
         if overfetch < 1:
             raise ValueError(f"overfetch must be at least 1, got {overfetch}")
         self._overfetch = overfetch
         self._embeddings = embeddings
         self._vectors = vectors
         self._graph = graph
+        self._default_mode = default_mode
 
     async def retrieve(
         self,
@@ -122,7 +182,7 @@ class Retriever:
         *,
         k: int = 10,
         entity_types: Sequence[str] | None = None,
-        mode: RetrievalMode = RetrievalMode.HYBRID,
+        mode: RetrievalMode | None = None,
     ) -> RetrievalResult:
         """The `k` best matches for `query` in `tenant_id`, best first.
 
@@ -136,7 +196,19 @@ class Retriever:
         applied to the lexical candidates **before** they are truncated to
         `k`, because truncating first returns fewer results than exist while
         matching entities sit further down the ranking.
+
+        `mode` defaults to the retriever's own default -- `HYBRID` for one
+        built with a provider and a vector store, `LEXICAL` for one built by
+        `lexical_only`. A signature default cannot express that, and a
+        lexical-only retriever defaulting to `HYBRID` would refuse every call
+        a caller did not annotate.
         """
+        mode = self._default_mode if mode is None else mode
+        if mode is not RetrievalMode.LEXICAL and self._embeddings is None:
+            raise ValueError(
+                f"this is a lexical-only retriever and cannot serve mode {mode.value!r}; "
+                "construct Retriever(embeddings=..., vectors=..., graph=...) for that"
+            )
         if not query.strip():
             raise ValueError("query must not be blank")
         if k < 0:
@@ -189,8 +261,11 @@ class Retriever:
         its insertion order *and* the score per id, and the two cannot fall
         out of step because there is only one of them.
         """
-        [vector] = await self._embeddings.embed_query([query])
-        matches = await self._vectors.search(vector, tenant_id, k=k, entity_types=entity_types)
+        embeddings, vectors = self._embeddings, self._vectors
+        if embeddings is None or vectors is None:  # pragma: no cover -- `retrieve` refuses first
+            raise ValueError("this is a lexical-only retriever")
+        [vector] = await embeddings.embed_query([query])
+        matches = await vectors.search(vector, tenant_id, k=k, entity_types=entity_types)
         return {match.entity_id: match.score for match in matches}
 
     async def _lexical(
@@ -297,11 +372,41 @@ class ChunkRetriever:
         """
         if embeddings.dimension != chunks.dimension:
             raise DimensionMismatchError(expected=chunks.dimension, actual=embeddings.dimension)
+        self._wire(embeddings, chunks, overfetch, RetrievalMode.HYBRID)
+
+    @classmethod
+    def lexical_only(cls, *, chunks: ChunkStore, overfetch: int = 3) -> ChunkRetriever:
+        """A chunk retriever with no embedding provider.
+
+        `Retriever.lexical_only`'s mirror, for the same reason and with the
+        same shape: the lexical channel here is `lexical_candidates` plus
+        `rank_chunks`, and neither touches a vector.
+
+        Note what this does *not* change. A `HYBRID` query over a corpus whose
+        rows carry no embedding still answers lexically and still does not
+        raise -- "unembedded" is a per-row fact, as the class docstring says,
+        and refusing it would mean refusing some rows mid-answer. A retriever
+        with no provider at all is the different case: it is a configuration
+        the caller stated, so `SEMANTIC` and `HYBRID` are refused outright.
+        """
+        self = cls.__new__(cls)
+        self._wire(None, chunks, overfetch, RetrievalMode.LEXICAL)
+        return self
+
+    def _wire(
+        self,
+        embeddings: EmbeddingProvider | None,
+        chunks: ChunkStore,
+        overfetch: int,
+        default_mode: RetrievalMode,
+    ) -> None:
+        """The guards both constructors share; see `Retriever._wire`."""
         if overfetch < 1:
             raise ValueError(f"overfetch must be at least 1, got {overfetch}")
         self._overfetch = overfetch
         self._embeddings = embeddings
         self._chunks = chunks
+        self._default_mode = default_mode
 
     async def retrieve_chunks(
         self,
@@ -309,14 +414,23 @@ class ChunkRetriever:
         tenant_id: TenantId,
         *,
         k: int = 10,
-        mode: RetrievalMode = RetrievalMode.HYBRID,
+        mode: RetrievalMode | None = None,
     ) -> ChunkRetrievalResult:
         """The `k` best matching chunks for `query` in `tenant_id`, best first.
 
         `k=0` returns nothing; a negative `k` raises `ValueError`. A blank
         query raises rather than returning everything or nothing, matching
         `Retriever.retrieve`.
+
+        `mode` defaults to the retriever's own default -- `HYBRID`, or
+        `LEXICAL` for one built by `lexical_only`.
         """
+        mode = self._default_mode if mode is None else mode
+        if mode is not RetrievalMode.LEXICAL and self._embeddings is None:
+            raise ValueError(
+                f"this is a lexical-only retriever and cannot serve mode {mode.value!r}; "
+                "construct ChunkRetriever(embeddings=..., chunks=...) for that"
+            )
         if not query.strip():
             raise ValueError("query must not be blank")
         if k < 0:
@@ -365,7 +479,10 @@ class ChunkRetriever:
         A corpus with no embedded chunks answers with an empty result here,
         never a raise -- see the class docstring.
         """
-        [vector] = await self._embeddings.embed_query([query])
+        embeddings = self._embeddings
+        if embeddings is None:  # pragma: no cover -- `retrieve_chunks` refuses first
+            raise ValueError("this is a lexical-only retriever")
+        [vector] = await embeddings.embed_query([query])
         matches = await self._chunks.semantic_candidates(vector, tenant_id, k)
         return (
             {match.chunk.id: match.score for match in matches},
