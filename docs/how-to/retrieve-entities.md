@@ -106,6 +106,28 @@ round trip per keystroke is the whole cost of the feature.
 early computing" retrieves nothing lexically, because no blocking key of that
 phrase matches any stored name.
 
+## Retrieve lexically with no embedding provider at all
+
+`LEXICAL` skips the embedding *call*, but a `Retriever` built the usual way
+still requires a provider and a vector store to construct. If you want only
+the name channel, build the retriever that says so:
+
+```python
+retriever = Retriever.lexical_only(graph=graph)
+await retriever.retrieve("Ada Lovelase", tenant_id)  # LEXICAL by default
+```
+
+There is no `EmbeddingProvider` and no `VectorReader` anywhere in that path,
+so an endpoint that is absent, paid for, or misconfigured cannot take
+misspelling-tolerant entity search down with it. The retriever's default mode
+is `LEXICAL`, and asking it for `SEMANTIC` or `HYBRID` raises `ValueError`
+rather than quietly answering with the lexical half.
+
+`ChunkRetriever.lexical_only(chunks=chunks)` is the same thing over the chunk
+corpus. Note one difference it does not change: a `HYBRID` query over a corpus
+whose rows carry no embeddings still answers lexically and does not raise,
+because "unembedded" is a per-row fact rather than a configuration.
+
 ## Reading the scores
 
 `ScoredEntity` carries three numbers, on two different scales, and confusing

@@ -369,3 +369,66 @@ async def test_the_query_reaches_the_provider_unprefixed_by_the_caller() -> None
     )
 
     assert embeddings.seen == [("embed_query", ["Ada Lovelace"])]
+
+
+# ----------------------------------------------------------------------
+# Lexical-only construction -- `Retriever.lexical_only`'s mirror
+# ----------------------------------------------------------------------
+
+
+async def test_a_lexical_only_chunk_retriever_needs_no_embedding_provider() -> None:
+    tenant = uuid4()
+    chunks = InMemoryChunkStore(dimension=DIMENSION)
+    text = "Ada Lovelace was a mathematician"
+    await chunks.upsert_many([_chunk(tenant, text=text)])
+
+    result = await ChunkRetriever.lexical_only(chunks=chunks).retrieve_chunks(
+        "Ada Lovelace", tenant
+    )
+
+    assert [match.chunk.id for match in result.matches] == [chunk_id("doc-1", text)]
+    assert result.matches[0].semantic is None
+    assert result.matches[0].lexical is not None
+
+
+@pytest.mark.parametrize("mode", [RetrievalMode.SEMANTIC, RetrievalMode.HYBRID])
+async def test_a_lexical_only_chunk_retriever_refuses_a_mode_needing_a_vector(
+    mode: RetrievalMode,
+) -> None:
+    """`HYBRID` too: the class already degrades silently for an *unembedded
+    corpus*, which is a per-row fact it cannot refuse. A retriever with no
+    provider at all is a different thing -- a configuration the caller chose,
+    and one that can be refused at the point the caller names the mode.
+    """
+    tenant = uuid4()
+    chunks = InMemoryChunkStore(dimension=DIMENSION)
+    await chunks.upsert_many([_chunk(tenant, text="Ada Lovelace was a mathematician")])
+
+    with pytest.raises(ValueError, match="lexical-only"):
+        await ChunkRetriever.lexical_only(chunks=chunks).retrieve_chunks(
+            "Ada Lovelace", tenant, mode=mode
+        )
+
+
+async def test_a_full_chunk_retriever_still_defaults_to_hybrid() -> None:
+    tenant = uuid4()
+    chunks = InMemoryChunkStore(dimension=DIMENSION)
+    embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
+    query = "Ada Lovelace"
+    [vector] = await embeddings.embed([query])
+    await chunks.upsert_many([_chunk(tenant, text="Ada Lovelace, mathematician", embedding=vector)])
+
+    result = await _retriever(chunks, embeddings).retrieve_chunks(query, tenant)
+
+    assert result.matches[0].semantic is not None
+    assert result.matches[0].lexical is not None
+
+
+@pytest.mark.parametrize("overfetch", [0, -1])
+async def test_a_lexical_only_chunk_retriever_refuses_an_overfetch_below_one(
+    overfetch: int,
+) -> None:
+    with pytest.raises(ValueError, match="overfetch"):
+        ChunkRetriever.lexical_only(
+            chunks=InMemoryChunkStore(dimension=DIMENSION), overfetch=overfetch
+        )
