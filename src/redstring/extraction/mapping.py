@@ -61,6 +61,7 @@ from redstring.domain.provenance import MODEL_BEARING_METHODS, ExtractionMethod,
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import TemporalExtent
 from redstring.domain.temporal_parsing import AmbiguousReferenceDateError, parse_temporal
+from redstring.extraction.date_nodes import lift_date_nodes
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -107,6 +108,17 @@ class MappedExtraction(NamedTuple):
     #: loses every relative date in it -- which is invisible in the output,
     #: since the output simply has fewer dated entities.
     undatable_relative: int = 0
+    #: Entities that gained a `temporal_expression` lifted off a date-node
+    #: the model had related them to. See `extraction/date_nodes.py`: these
+    #: are dates the model found and filed as entities, and this counter is
+    #: how a caller sees the recovery happening rather than inferring it from
+    #: a timeline that got fuller.
+    lifted_dates: int = 0
+    #: Entities that were a bare date and were removed before mapping. A
+    #: large number here is not a fault in the document -- it is the model
+    #: reading `ExtractedEntity.temporal_expression` as a type name, which is
+    #: what `date_nodes` exists to absorb.
+    date_nodes: int = 0
 
 
 def entity_id_for(
@@ -206,6 +218,12 @@ def map_extraction(
             f"extraction_method {method.value!r} invokes no model, so `model` must be None"
         )
 
+    # **Before anything is built, and deliberately not after.** A date-node
+    # that reached `_build_entity` would be a real `Entity` with a derived id
+    # and edges pointing at it, and unpicking that is a graph surgery rather
+    # than a filter. Here it is still a row in a list.
+    extraction, lifted, date_nodes = lift_date_nodes(extraction)
+
     by_id: dict[EntityId, Entity] = {}
     dropped = 0
     undatable = 0
@@ -237,6 +255,8 @@ def map_extraction(
         unresolved_relationships=unresolved,
         self_loops=self_loops,
         undatable_relative=undatable,
+        lifted_dates=lifted,
+        date_nodes=date_nodes,
     )
 
 

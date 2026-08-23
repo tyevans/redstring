@@ -815,8 +815,15 @@ class TestBlockingKeys:
     def test_an_entity_whose_name_has_no_letters_still_has_keys(self):
         """The soundex key is absent for it, and the other two are not -- so it
         is still blockable. An entity with no keys at all cannot be
-        consolidated by any path."""
-        [built] = mapped(Extraction(entities=[entity("2024")])).entities
+        consolidated by any path.
+
+        `#12` rather than the `2024` this used to say. A bare four-digit year
+        with no description is now a date-node and `map_extraction` removes it
+        before an `Entity` exists, so the old fixture made this test fail on
+        the unpack rather than on anything about blocking. Any letterless name
+        serves; this one is letterless without also being a date.
+        """
+        [built] = mapped(Extraction(entities=[entity("#12")])).entities
 
         assert built.blocking_keys
         assert not any(key.startswith("s:") for key in built.blocking_keys)
