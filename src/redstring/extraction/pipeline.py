@@ -227,6 +227,10 @@ class PipelineResult(NamedTuple):
     #: Entities whose relative temporal expression had no `published_at` to be
     #: read against. See `MappedExtraction`.
     undatable_relative: int = 0
+    #: Dates recovered off date-nodes, and date-nodes removed. See
+    #: `MappedExtraction` and `extraction/date_nodes.py`.
+    lifted_dates: int = 0
+    date_nodes: int = 0
     #: Chunks whose model call failed and were skipped. Always 0 unless
     #: `skip_failed_chunks` is on, because otherwise the failure propagates.
     failed_chunks: int = 0
@@ -516,6 +520,8 @@ class ExtractionPipeline:
             unresolved_relationships=merged.unresolved_relationships,
             self_loops=merged.self_loops,
             undatable_relative=merged.undatable_relative,
+            lifted_dates=merged.lifted_dates,
+            date_nodes=merged.date_nodes,
             failed_chunks=failed,
             total_chunks=len(chunks),
             chunks=tuple(passages),

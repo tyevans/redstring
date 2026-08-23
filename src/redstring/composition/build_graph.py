@@ -172,6 +172,13 @@ class GraphBuildReport:
     #: could not be resolved to ids. A normal outcome, not an error, but a
     #: large number means the prompt is not landing.
     unresolved_relationships: int
+    #: Dates lifted off entities the model filed as dates, and the number of
+    #: those entities removed. A non-zero `date_nodes` with a zero
+    #: `lifted_dates` means the model is minting date entities and relating
+    #: them to nothing -- the commonest shape, and the one that used to reach
+    #: the graph as isolated nodes.
+    lifted_dates: int
+    date_nodes: int
     #: Entities written to a `VectorStore`, and zero when no embedding
     #: provider was given.
     #:
@@ -447,6 +454,8 @@ async def build_graph(
         failed_chunks=result.failed_chunks,
         total_chunks=result.total_chunks,
         unresolved_relationships=result.unresolved_relationships,
+        lifted_dates=result.lifted_dates,
+        date_nodes=result.date_nodes,
         embedded=embedded,
         chunks_written=chunks_written,
     )

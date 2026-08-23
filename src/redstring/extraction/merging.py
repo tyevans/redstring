@@ -100,6 +100,8 @@ def merge_extractions(parts: Iterable[MappedExtraction]) -> MappedExtraction:
     unresolved = 0
     self_loops = 0
     undatable = 0
+    lifted = 0
+    date_nodes = 0
 
     for part in parts:
         for entity in part.entities:
@@ -116,6 +118,8 @@ def merge_extractions(parts: Iterable[MappedExtraction]) -> MappedExtraction:
         unresolved += part.unresolved_relationships
         self_loops += part.self_loops
         undatable += part.undatable_relative
+        lifted += part.lifted_dates
+        date_nodes += part.date_nodes
 
     return MappedExtraction(
         entities=list(entities.values()),
@@ -124,6 +128,8 @@ def merge_extractions(parts: Iterable[MappedExtraction]) -> MappedExtraction:
         unresolved_relationships=unresolved,
         self_loops=self_loops,
         undatable_relative=undatable,
+        lifted_dates=lifted,
+        date_nodes=date_nodes,
     )
 
 
