@@ -89,7 +89,7 @@ downstream.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 from redstring.domain.temporal_parsing import AmbiguousReferenceDateError, parse_temporal
 
@@ -108,7 +108,28 @@ _MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec"
 _ANCHOR = re.compile(rf"\b(\d{{3,4}}s?\b|({_MONTHS})[a-z]*\b)", re.IGNORECASE)
 
 
-def is_date_node(candidate: ExtractedEntity) -> bool:
+class _Nameable(Protocol):
+    """The three attributes `is_date_node` reads, and nothing else.
+
+    A `Protocol` rather than `ExtractedEntity` because the same question is
+    asked at two different times about two different types. Extraction asks it
+    of an `ExtractedEntity`, before anything is built. A reader asks it of a
+    stored `Entity`, because a store written before this pass existed is full
+    of date-nodes that no extraction-time filter can retroactively reach --
+    and `Entity` happens to carry the same three fields.
+
+    Structural rather than a second predicate on the reader's side. Two
+    definitions of "this is a date, not a thing" would drift, and the one that
+    drifted would be the one nobody was measuring: see `domain/preference.py`
+    for the same argument about a tie-break.
+    """
+
+    name: str
+    description: str | None
+    properties: dict[str, Any]
+
+
+def is_date_node(candidate: _Nameable) -> bool:
     """Whether `candidate` is a date wearing an entity's clothes.
 
     Deliberately ignores `entity_type`. See the module docstring: the type

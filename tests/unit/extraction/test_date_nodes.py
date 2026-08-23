@@ -309,3 +309,37 @@ def _mapped(extraction: Extraction):
         reference_date=None,
         observed_at=datetime(2026, 2, 4, 11, 7, tzinfo=UTC),
     )
+
+
+def test_the_predicate_reads_a_stored_entity_too() -> None:
+    """The `Protocol` exists so a reader can ask this of a stored `Entity`.
+
+    A store written before this pass existed is full of date-nodes that no
+    extraction-time filter can reach retroactively, and the alternative to the
+    protocol is a second copy of the rule on the reader's side -- which would
+    drift, silently, in whichever copy nobody was measuring.
+    """
+    from datetime import UTC, datetime
+    from uuid import UUID
+
+    from redstring.domain.entity import Entity
+    from redstring.domain.provenance import ExtractionMethod, Provenance
+
+    def stored(name: str) -> Entity:
+        return Entity(
+            id=UUID("33333333-3333-3333-3333-333333333333"),
+            tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            name=name,
+            normalized_name=name.lower(),
+            entity_type="temporal_expression",
+            provenance=Provenance(
+                observed_at=datetime(2026, 2, 4, tzinfo=UTC),
+                extraction_method=ExtractionMethod.LLM,
+                source_id="doc-1",
+                model="test-model",
+                confidence=0.9,
+            ),
+        )
+
+    assert is_date_node(stored("September 2016"))
+    assert not is_date_node(stored("Borg"))
