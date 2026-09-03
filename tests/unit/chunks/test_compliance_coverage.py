@@ -52,11 +52,42 @@ TENANT_CONVENTION = "test_{method}_never_crosses_tenants"
 ISOLATION_EXEMPT: dict[str, str] = {}
 
 
+#: Container types a caller can mutate. A read handing one back can hand back
+#: the adapter's own object, which is the defect the isolation tests exist for
+#: -- and it does so whether or not the container holds a domain type.
+MUTABLE_CONTAINERS = (list, set, dict)
+
+
 def _mentions(annotation: object, targets: set[type]) -> bool:
     """Whether `annotation` contains any of `targets`, however nested."""
     if annotation in targets:
         return True
     return any(_mentions(argument, targets) for argument in typing.get_args(annotation))
+
+
+def _returns_mutable_container(annotation: object) -> bool:
+    """Whether `annotation` is, or contains, a container the caller can mutate.
+
+    The second axis this gate selects on, and it exists because the first one
+    cannot see `existing_ids`. That method returns `set[ChunkId]`, and
+    `ChunkId` is `str` -- so no amount of looking for domain types finds it,
+    while an adapter returning its own live set leaks stored state exactly as
+    an adapter returning its own live `list[StoredChunk]` does.
+
+    The tempting fix was to add `ChunkId` to the domain-type set instead.
+    That is the mistake this module's own guard test already warns about: the
+    alias is `str`, so the set would really read `{StoredChunk, str}` and
+    every future method returning a bare string would silently become a
+    "read" needing two tests it does not need. Selecting on the container
+    keeps the two questions apart -- "does this hand back a domain object"
+    and "does this hand back something mutable" -- and a method can answer
+    either one.
+    """
+    if annotation in MUTABLE_CONTAINERS:
+        return True
+    if typing.get_origin(annotation) in MUTABLE_CONTAINERS:
+        return True
+    return any(_returns_mutable_container(argument) for argument in typing.get_args(annotation))
 
 
 def read_methods() -> set[str]:
@@ -82,7 +113,11 @@ def read_methods() -> set[str]:
         if name.startswith("_"):
             continue
         hints = typing.get_type_hints(function, localns=_PORT_NAMESPACE)
-        if _mentions(hints.get("return"), {StoredChunk, LexicalCandidates, SemanticCandidate}):
+        returned = hints.get("return")
+        hands_back_a_domain_object = _mentions(
+            returned, {StoredChunk, LexicalCandidates, SemanticCandidate}
+        )
+        if hands_back_a_domain_object or _returns_mutable_container(returned):
             found.add(name)
     return found
 
@@ -110,9 +145,29 @@ class TestEveryReadMethodIsCovered:
             "get",
             "get_by_source",
             "get_by_entity",
+            "existing_ids",
             "lexical_candidates",
             "semantic_candidates",
         }
+
+    def test_the_container_axis_finds_a_method_the_domain_axis_cannot(self) -> None:
+        """Guard the second axis specifically, because it has one member.
+
+        `existing_ids` is the only method `_returns_mutable_container` catches
+        that `_mentions` does not, so deleting that branch would leave every
+        other assertion in this module green. Naming the asymmetry here is
+        what makes the branch's removal visible.
+        """
+        domain_only = {
+            name
+            for name, function in inspect.getmembers(ChunkStore, inspect.isfunction)
+            if not name.startswith("_")
+            and _mentions(
+                typing.get_type_hints(function, localns=_PORT_NAMESPACE).get("return"),
+                {StoredChunk, LexicalCandidates, SemanticCandidate},
+            )
+        }
+        assert read_methods() - domain_only == {"existing_ids"}
 
     def test_every_read_method_declares_isolation_coverage(self) -> None:
         missing = _uncovered(ISOLATION_CONVENTION, ISOLATION_EXEMPT)

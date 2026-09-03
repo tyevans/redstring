@@ -47,7 +47,7 @@ class InMemoryChunkStore:
     def dimension(self) -> int:
         return self._dimension
 
-    async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
+    async def upsert_many(self, chunks: Sequence[StoredChunk]) -> int:
         # Every element is validated before any is written, so a rejected
         # batch leaves no trace -- the same shape `InMemoryVectorStore.upsert_many`
         # uses for its own `_check`. Width before zero-norm, matching
@@ -56,13 +56,22 @@ class InMemoryChunkStore:
         self._reject_wrong_width(chunks)
         self._reject_zero_norm(chunks)
 
+        added = 0
         for chunk in chunks:
             tenant = self._chunks.setdefault(chunk.tenant_id, {})
             # The key is the *pair*: `chunk.tenant_id` selects the mapping and
             # `chunk.id` the slot, so two tenants holding the same
             # content-addressed id are two rows. Content addressing makes that
             # collision ordinary rather than astronomically unlikely.
+            #
+            # Counted before the assignment, and counted per element rather
+            # than over a deduplicated batch: two byte-identical passages of
+            # one source share an id, so the second finds the slot already
+            # filled and adds nothing. That is the figure the port promises --
+            # rows this call added, never rows it replaced.
+            added += chunk.id not in tenant
             tenant[chunk.id] = chunk.model_copy(deep=True)
+        return added
 
     def _reject_wrong_width(self, chunks: Sequence[StoredChunk]) -> None:
         """A stored `embedding` must have exactly `self._dimension` components.
@@ -99,6 +108,14 @@ class InMemoryChunkStore:
     async def get(self, chunk_id: ChunkId, tenant_id: TenantId) -> StoredChunk | None:
         chunk = self._chunks.get(tenant_id, {}).get(chunk_id)
         return None if chunk is None else chunk.model_copy(deep=True)
+
+    async def existing_ids(self, chunk_ids: Sequence[ChunkId], tenant_id: TenantId) -> set[ChunkId]:
+        # Built fresh from the argument rather than intersected with the
+        # tenant's own key view: `dict.keys() & chunk_ids` would also be
+        # correct today and would hand back a set derived from live state on
+        # any future dict-like backing, and the comprehension costs nothing.
+        held = self._chunks.get(tenant_id, {})
+        return {chunk_id for chunk_id in chunk_ids if chunk_id in held}
 
     async def get_by_source(self, source_id: SourceId, tenant_id: TenantId) -> list[StoredChunk]:
         found = [

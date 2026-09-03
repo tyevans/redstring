@@ -761,6 +761,17 @@ list from the Protocol and fails until each has
 `test_<method>_returns_copies` and `test_<method>_never_crosses_tenants` on
 the compliance class.
 
+**It selects on two axes, and knowing which one catches your method matters
+when you add one.** A return annotation that mentions a domain type
+(`StoredChunk`, `LexicalCandidates`, `SemanticCandidate`) is a read; so is one
+that is or contains a mutable container. The second axis exists because
+`existing_ids` returns `set[ChunkId]` and `ChunkId` is `str` — no amount of
+looking for domain types finds it, while an adapter handing back its own live
+set leaks stored state exactly as one handing back its own `list[StoredChunk]`
+does. If you add a method whose return type resembles neither, **check that
+the gate sees it before trusting it**: a detector that does not match reports
+an empty set, which is indistinguishable from having nothing to report.
+
 ### EmbeddingProvider: subclass `EmbeddingProviderCompliance` and supply a `provider` fixture
 
 ```python

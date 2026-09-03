@@ -44,6 +44,7 @@ import pytest
 from redstring.chunks.adapters.postgres import PostgresChunkStore
 from redstring.domain.chunk import chunk_id
 from redstring.domain.exceptions import DimensionMismatchError
+from redstring.domain.ids import SourceId
 from redstring.domain.tokenize import tokenize
 from redstring.testing.chunk_store import ChunkStoreCompliance
 
@@ -645,6 +646,76 @@ class TestPostgresChunkStoreSpecifics:
         assert "@>" in conditions[0], f"the index condition is not the containment test:\n{plan}"
         assert [chunk.id for chunk in found] == [matching.id]
 
+    async def test_existing_ids_seeks_the_primary_key_rather_than_scanning_the_tenant(
+        self, pool: asyncpg.Pool[Any]
+    ) -> None:
+        """The plan, not the ids -- because the ids cannot tell the two apart.
+
+        `existing_ids` exists so a resumable ingest can ask about a batch
+        without a round trip per candidate, and the whole value of it is the
+        cost. The implementation it replaced was
+        `SELECT id FROM <table> WHERE tenant_id = $1` with the membership test
+        done in Python, and that returns **exactly the same set** for every
+        input -- so no assertion about the result can distinguish a seek on
+        `(tenant_id, id)` from a scan of the tenant. `CLAUDE.md`'s
+        failure-shape table lists this one as "results only, never the query
+        plan".
+
+        What separates them is where `id` appears. A seek puts it in
+        `Index Cond`; a tenant scan puts `tenant_id` alone in `Index Cond`
+        and `id` nowhere, or in `Filter`. Asserting `id` is *in the index
+        condition* is therefore the assertion, and `Filter` is checked
+        explicitly so a plan that pushes the array test out of the index
+        fails here rather than passing on the index name alone.
+
+        EXPLAINs the adapter's own statement text off `_RecordingPool`, for
+        the reason `test_get_by_entity_uses_the_gin_index` records: a
+        hand-retyped proxy query can drift from what the adapter sends
+        without this test noticing (BACKLOG B93).
+        """
+        async with pool.acquire() as connection:
+            await connection.execute(f"TRUNCATE {TABLE} CASCADE")
+            await connection.execute("SET enable_seqscan = off")
+            recording = _RecordingPool(connection)
+            store = PostgresChunkStore(
+                cast("asyncpg.Pool[Any]", recording),
+                table=TABLE,
+                dimension=ChunkStoreCompliance.DIMENSION,
+            )
+
+            tenant = uuid4()
+            stored = [
+                ChunkStoreCompliance._chunk(tenant, "doc-1", f"passage {i}", chunk_index=i)
+                for i in range(500)
+            ]
+            await store.upsert_many(stored)
+            await connection.execute(f"ANALYZE {TABLE}")
+
+            asked = [stored[0].id, stored[1].id, chunk_id(SourceId("doc-1"), "never written")]
+            found = await store.existing_ids(asked, tenant)
+            assert recording.last_query is not None, "existing_ids never called .fetch()"
+
+            plan = "\n".join(
+                row["QUERY PLAN"]
+                for row in await connection.fetch(
+                    f"EXPLAIN (ANALYZE false, COSTS false) {recording.last_query}",
+                    *recording.last_args,
+                )
+            )
+
+        # The answer is right...
+        assert found == {stored[0].id, stored[1].id}
+        # ...and it was reached by seeking, which is the part that matters.
+        conditions = [line for line in plan.splitlines() if "Index Cond" in line]
+        assert conditions, f"no index condition -- the read is not seeking:\n{plan}"
+        assert "id = ANY" in conditions[0], (
+            f"the id test is not in the index condition, so this is a tenant "
+            f"scan with the ids filtered afterwards:\n{plan}"
+        )
+        assert not [line for line in plan.splitlines() if "Filter:" in line], (
+            f"a predicate fell out of the index condition into a filter:\n{plan}"
+        )
+
     async def test_the_order_by_alone_produces_the_tie_break(self, pool: asyncpg.Pool[Any]) -> None:
         """The total order is guaranteed **twice**, so neither guarantee is
         falsifiable by any other test in this repository.
@@ -794,23 +865,39 @@ class TestPostgresChunkStoreSpecifics:
     async def test_upsert_many_is_one_statement(
         self, store: PostgresChunkStore, pool: asyncpg.Pool[Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """One statement for 250 rows, counted across every pool method.
+
+        This watched `execute` alone until `upsert_many` gained a return
+        value and moved to `fetchval`, at which point it reported **zero**
+        statements for 250 rows and failed -- having been, for as long as it
+        watched one method, unable to see a loop written through any other.
+        Its sibling `test_replace_source_is_one_statement` already counted all
+        four and said why in its docstring; the lesson simply had not been
+        carried across to the neighbour. Counting every method is what makes
+        the assertion about *round trips* rather than about which method
+        happens to carry them.
+        """
         tenant = uuid4()
         chunks = [
             ChunkStoreCompliance._chunk(tenant, "doc-1", f"passage {i}", chunk_index=i)
             for i in range(250)
         ]
-        executed: list[str] = []
-        original = type(pool).execute
 
-        async def counting(self: Any, query: str, *args: Any, **kwargs: Any) -> Any:
-            executed.append(query)
-            return await original(self, query, *args, **kwargs)
+        statements: list[str] = []
+        for name in ("execute", "fetchval", "fetch", "fetchrow"):
+            original = getattr(type(pool), name)
 
-        monkeypatch.setattr(type(pool), "execute", counting)
+            def counting(self: Any, query: str, *args: Any, _inner: Any = original) -> Any:
+                statements.append(query)
+                return _inner(self, query, *args)
 
-        await store.upsert_many(chunks)
+            monkeypatch.setattr(type(pool), name, counting)
 
-        assert len(executed) == 1, f"{len(executed)} statements for 250 rows: this is a loop"
+        added = await store.upsert_many(chunks)
+
+        assert len(statements) == 1, f"{len(statements)} statements for 250 rows: this is a loop"
+        assert added == 250
+        monkeypatch.undo()
         assert len(await store.get_by_source("doc-1", tenant)) == 250
 
     async def test_replace_source_is_one_statement(
