@@ -12,6 +12,163 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [0.11.0] - 2026-09-03
+
+Retrieval that runs without an embedding endpoint, a mapper that absorbs a
+date the model filed as an entity, and two chunker fixes found by a property
+test. The public surface gains two constructors and no new type.
+
+### Added
+
+- **`Retriever.lexical_only` and `ChunkRetriever.lexical_only`.** A retriever
+  built without an `EmbeddingProvider` and, for entities, without a
+  `VectorReader`. `RetrievalMode.LEXICAL` reaches neither collaborator — it is
+  `find_by_blocking_keys` plus `lexical_score` over the entity's name — so
+  requiring both to *construct* one obliged a caller who wanted only the
+  blocking-key channel to wire and keep healthy an endpoint it never called.
+  A consumer found this the expensive way: its embedding probe degrades to
+  "absent" when the endpoint is misconfigured, which silently removed
+  misspelling-tolerant entity search, a feature with no embedding in it.
+
+  These are *constructors* rather than optional arguments on `__init__`.
+  Optional arguments make "lexical only" and "I forgot to pass the provider"
+  the same call, which moves a configuration mistake off the seam and into the
+  first semantic query — against
+  [ADR 0017](https://github.com/tyevans/redstring/blob/main/docs/adr/0017-the-embedding-provider-port.md),
+  whose construction-time dimension check exists to prevent exactly that.
+  [ADR 0045](https://github.com/tyevans/redstring/blob/main/docs/adr/0045-a-lexical-only-retriever-is-a-constructor.md)
+  records the shapes rejected.
+
+  Such a retriever defaults to `LEXICAL`, and `SEMANTIC` and `HYBRID` raise by
+  name. `HYBRID` especially: it has a lexical half that would answer, so it is
+  the mode a silent skip would corrupt rather than break.
+
+  Closes B163.
+
+### Changed
+
+- **A date the model filed as an entity now becomes the date of the thing it
+  dates.** `ExtractedEntity.temporal_expression` is described to the model as
+  "The date or period this entity is associated with", and a model reading a
+  schema cannot reliably tell a field name from a type name. Measured against
+  a 5,647-entity corpus: 356 entities of type `temporal_expression`, one named
+  literally `the 1990s` — this library's own example, handed back as an
+  entity. None had a description, none had properties, 335 were isolated.
+
+  This is a shape the schema invites from every caller, so it is absorbed once
+  in the mapper rather than left to each caller's prompt. `lift_date_nodes`
+  runs at the top of `map_extraction`, before anything is built; a date-node
+  that reached `_build_entity` would be a real `Entity` with a derived id and
+  edges pointing at it, and unpicking that is graph surgery rather than a
+  filter.
+
+  **The date is not junk; the node is.** Each edge touching a date-node reads
+  as a statement about the other endpoint, so the pass copies the date onto
+  that entity and only then drops the node and its edges. Replaying the
+  corpus: entities 7563 → 7220, edges 4051 → 4024, dated entities 436 → 458.
+
+  The test is a shape rather than a type name — a year-or-month anchor,
+  `parse_temporal` reading the whole name, no description, no properties —
+  because `entity_type == "temporal_expression"` catches today's spelling and
+  nothing else. The anchor is load-bearing: `parse_temporal` accepts a
+  startling number of short real names (`Borg`, `Kor`, `MIT`, `Sun`, `API`),
+  so a shape test without it deletes the Borg from a Star Trek graph. Measured
+  over the same corpus: 343 caught, all typed `temporal_expression`, zero
+  false positives.
+
+  No prompt change and no schema change. Renaming the field would break every
+  caller's stored payloads for a defect that survives the rename, since the
+  next field name is just as readable as a type name.
+
+  `lifted_dates` is counted apart from `date_nodes`, so the lift can be removed
+  alone if the trade is judged wrong later.
+
+- **`is_date_node` takes a protocol**, so a reader can ask the question of a
+  stored `domain.Entity` as well as an `ExtractedEntity`. The extraction-time
+  pass cannot reach a store written before it existed, and that store is where
+  the measured date-nodes live. Structural typing rather than a shared base
+  class: the two types have no relationship worth inventing for this, and two
+  copies of "this is a date, not a thing" would drift.
+
+- **Semantic search is ordered by the raw distance ascending**, in both
+  `pgvector` and the Postgres chunk store. `1 - (embedding <=> $2) / 2 DESC`
+  is the same order — the score decreases monotonically in the distance — but
+  pgvector's `hnsw` and `ivfflat` opclasses can only serve the plain distance
+  form, so the rescaled spelling forces a sequential scan and a full sort over
+  the whole tenant however large it grows.
+
+  Nothing here adds an index, and
+  `test_there_is_no_ann_index_on_the_embedding` still holds. What changes is
+  that the ordering stops being a *second*, independent reason a vector index
+  would be ignored.
+
+  Measured downstream: three partial HNSW indexes built against the old
+  ordering ended at `idx_scan = 0` on a 549,697-row tenant, and dense
+  retrieval was 3.1× *slower* with them present, because 5.7 GB of unread
+  index evicted the table from the page cache. With this change, on a
+  129,656-row tenant with one partial index, `idx_scan` went to 280 for a
+  280-query run and wall time fell from 43.1 s to 6.3 s, with `hit@1`, `hit@5`
+  and `recall@20` matching the exact scan to every digit.
+
+  No integration test asserts the plan, deliberately: whether the planner
+  *chooses* an index is a cost decision, and a test needing a fixture that
+  large fails on cost-model changes rather than on regressions.
+
+### Fixed
+
+- **`SlidingWindowChunker` no longer emits a redundant final chunk.** Every
+  text longer than the window got one last chunk at
+  `(text_len - overlap, text_len)`, wholly contained in the chunk before it.
+  The loop's only exit test was on `next_start`, which is `end - overlap` and
+  so still `overlap` short of the end. The redundant chunk bought nothing —
+  every term in it is already in the containing chunk — while costing a row,
+  an embedding call, and a second draw for the tail's terms that no
+  mid-document span gets. A consumer deduplicating passages by offset cannot
+  collapse it, because the two spans differ.
+
+- **`SlidingWindowChunker` no longer emits the overlap region alone** when the
+  best break point for two consecutive windows is the same mark. The previous
+  chunk is cut back to that mark, `start` becomes the mark minus the overlap,
+  and the search from `start` finds the very same mark — so the chunk emitted
+  is exactly the overlap, every character of which the previous chunk already
+  carried. Falling back to the hard boundary always advances: `__init__`
+  refuses an overlap that is not smaller than the chunk size, so
+  `start + chunk_size > last_end` is guaranteed. Coverage is unaffected, since
+  the span dropped was already inside the previous chunk.
+
+  Found by the property test written for the first fix. The same property is
+  added to `BoundaryPreferenceChunker`'s suite, where it passed before this
+  change; B162 files the shared contract suite that would make the copy
+  unnecessary.
+
+- **A type filter containing a NUL byte is dropped rather than raising.** A
+  `text[]` parameter cannot carry a NUL: asyncpg passes it through and the
+  server answers `invalid byte sequence for encoding "UTF8": 0x00`. The port
+  says a type filter never raises whatever the caller passes, and the
+  in-memory adapter matches nothing — so the two adapters diverged, which is
+  what the shared compliance suite exists to catch. It did catch it; the
+  failure was being lived with.
+
+  Dropping the unencodable values changes no result. `metadata` is already
+  filtered by `_is_storable` on the way in for the same encoding reason, so no
+  stored `entity_type` can contain a NUL. Dropping every value still means
+  "matches nothing" rather than "matches everything", because "no filter at
+  all" travels as a separate boolean.
+
+### Notes
+
+- Chunk ids are unchanged
+  ([ADR 0044](https://github.com/tyevans/redstring/blob/main/docs/adr/0044-a-chunk-id-is-derived-not-supplied.md)),
+  and the chunking signature digests the split produced
+  ([ADR 0023](https://github.com/tyevans/redstring/blob/main/docs/adr/0023-the-chunk-corpus.md)),
+  so a consumer re-indexes on its next call without being told. The two
+  chunker fixes change the split, and therefore the signature.
+- The date-node lift changes what `map_extraction` produces for the same
+  input. A corpus extracted before this release and one extracted after it
+  will not agree, and there is no migration for a store already holding
+  date-nodes — B163's sibling problem, and the reason `is_date_node` takes a
+  protocol.
+
 ## [0.10.0] - 2026-08-20
 
 A thematic read surface, an asymmetric embedding port, and a chunk id that
@@ -1004,7 +1161,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/tyevans/redstring/releases/tag/v0.11.0
 [0.10.0]: https://github.com/tyevans/redstring/releases/tag/v0.10.0
 [0.9.2]: https://github.com/tyevans/redstring/releases/tag/v0.9.2
 [0.9.1]: https://github.com/tyevans/redstring/releases/tag/v0.9.1
