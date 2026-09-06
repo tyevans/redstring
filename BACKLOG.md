@@ -3319,24 +3319,6 @@ is the part with user-visible value. Sized medium-to-large because
 `hot_reload` and `get_schemas_for_entity_type` need callers found or deleted
 first.
 
-### B130. `docs/reference/events.md` documents four events; there are five
-
-`DocumentChunked` (`src/redstring/events/document.py:175`) is in
-`KG_EVENT_TYPES`, is registered, and has **no section on the events reference
-page** — no payload table, no field notes, no entry anywhere except the
-`event_version`/`aggregate_type` table this branch just corrected. Every other
-event has a `## <Name>` section running to a few hundred lines.
-
-Found while bumping `DocumentExtracted.event_version` to 2: the version table
-said "in full" and listed four rows, and the fifth had to be added to make the
-correction true. That the omission survived is the point — the page's
-per-event sections are hand-written prose with **no gate tying them to
-`KG_EVENT_TYPES`**, which is the same shape the tuple itself exists to prevent
-in `tests/unit/events/test_schema.py`. So the fix is two things, and the second
-is the one worth having: write the missing section, *and* add a test that every
-name in `KG_EVENT_TYPES` appears as a heading in that page. Without it the next
-event will be undocumented in the same silent way and nothing will say so.
-
 ### B134. `_SELECT_COLUMNS` builds its `real[]` cast with a substring replace
 
 `_SELECT_COLUMNS = _COLUMNS.replace("embedding", "embedding::real[] AS

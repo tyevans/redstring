@@ -72,6 +72,17 @@ under **Removed** or **Changed**. See
 
 ### Changed
 
+- **`DocumentChunked` is documented.** It was registered, in
+  `KG_EVENT_TYPES`, folded by a projection, and absent from
+  `docs/reference/events.md` except for one row in a summary table, while
+  every other event had a full section. The page now carries one — field
+  table, why the event holds a whole chunking rather than one chunk, what
+  `chunking_signature` is for and why the emitter composes it rather than the
+  aggregate, and what the validator refuses. A new test derives the required
+  headings from `KG_EVENT_TYPES` and fails in both directions, so the next
+  event cannot go undocumented the same silent way and a removed one cannot
+  leave a section behind. Closes BACKLOG B130.
+
 - **Every CI job declares a `timeout-minutes`.** None did, so all of them
   inherited GitHub's silent 360-minute default. That was found the only way a
   ceiling that high ever is — by failing to fire: the `integration` job spent
