@@ -626,3 +626,36 @@ all four and said why in its docstring. The lesson existed in the file, one
 method away, and had not been carried across. **When you write the stronger
 version of a test, grep for its siblings** — §5's "the sweep fixes the pages it
 thought of", applied to tests.
+
+**(k) §4 — a guard written one step too wide, and the property that found it
+had never once failed on CI.** `extraction/date_nodes.py` deletes an entity
+that looks like a date wearing an entity's clothes, and its anchor — the check
+that stops `parse_temporal` deleting `Borg`, `MIT` and `Sun` — read "a 3-4
+digit year **or a month name**". `MAR`, `May`, `Jun` and `April` satisfy that,
+so an `ExtractedEntity(name="MAR", entity_type="Person")` was removed from the
+extraction entirely. The module ignores `entity_type` on purpose and for good
+reasons; the cost of that is that the name check has to carry the whole
+decision, and this one carried it one clause too far. **The guard admitted
+exactly the class it was written to exclude** — a short token that is both a
+common name and a date — which is worth reading as a shape: when a guard is a
+disjunction, check each clause against the failure the guard exists to
+prevent, not just against the examples that motivated it.
+
+The second half is about the test. It was found by
+`test_every_mapped_entity_id_is_a_uuid5`, a hypothesis property over arbitrary
+unicode names, which failed locally with an opaque
+`ValueError: not enough values to unpack (expected 1, got 0)` — the unpack of a
+one-element list that came back empty. It reproduced on a pristine tree, and it
+had **passed on CI throughout**: drawing exactly `MAR` from `st.text()` is
+negligible, and it surfaced only because a local `.hypothesis` database had
+learned the example. Confirmed rather than assumed — the branch's own CI run
+passed this test while the bug was live.
+
+That is CLAUDE.md's "a property test is a sampler, not a proof about a specific
+value" with a three-letter string in place of `k=0`, and it is the second
+recorded instance. The rule is the same and generalises past integers:
+**wherever a specific value is known to be interesting, write it as an
+`@example` beside the property.** The month abbreviations are pinned now.
+Between the two instances the practical tell is worth naming: *a property that
+fails locally and passes on CI is not flaky infrastructure — it is a sampler
+that got lucky in one of the two places.*

@@ -31,6 +31,30 @@ under **Removed** or **Changed**. See
   just its answers. See
   [ADR 0046](https://github.com/tyevans/redstring/blob/main/docs/adr/0046-a-chunk-write-reports-what-it-added.md).
 
+### Fixed
+
+- **An entity named after a month is no longer deleted.** `lift_date_nodes`
+  removes an entity when its name is anchored by a date, `parse_temporal`
+  reads the whole name as one, and it carries neither description nor
+  properties. The anchor was "a 3-4 digit year **or a month name**", which
+  `MAR`, `May`, `Jun` and `April` satisfy — all ordinary surnames, all
+  removed whatever `entity_type` the model gave them, and with no date lifted
+  out of them either, since a bare month is `undatable_relative` downstream.
+  A month name now anchors only when it is not the whole name. Every
+  date-node name in the corpus this heuristic was measured against carries a
+  second token, and the one bare-month case on record is among the lifts the
+  module itself describes as attributing a date to the wrong entity.
+
+  The narrowing was argued from the module's own measurements rather than by
+  re-running the 5,647-entity corpus, which is not in this repository — see
+  BACKLOG B165 for what to count to settle it.
+
+  Found by a hypothesis property that draws arbitrary unicode names, which
+  had almost certainly never failed on CI: the chance of drawing exactly
+  `MAR` is negligible, and it surfaced from a local example database. The
+  month abbreviations are now pinned as `@example`s, because a property is a
+  sampler and a known-interesting value belongs written down.
+
 ### Changed
 
 - **`ChunkWriter.upsert_many` returns the number of rows it added** instead of
