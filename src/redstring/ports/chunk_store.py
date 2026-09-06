@@ -82,13 +82,38 @@ if TYPE_CHECKING:
 class ChunkWriter(AsyncClosable, Protocol):
     """Putting passages in. What a projection needs, and all of it."""
 
-    async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
-        """Insert or replace chunks, keyed by `(tenant_id, id)`.
+    async def upsert_many(self, chunks: Sequence[StoredChunk]) -> int:
+        """Insert or replace chunks, keyed by `(tenant_id, id)`; return rows added.
 
         Idempotent, last-write-wins. Chunks may belong to different tenants;
         each is keyed by its own `tenant_id`. Two chunks with the same
         `(tenant_id, id)` in one call leave one row holding the later value --
         the same rule that applies across calls.
+
+        **The return value counts rows this call added to the store**, never
+        rows it replaced. So a batch of 5,000 chunks holding 189 internal id
+        collisions returns 4,811, and re-writing an already-stored batch
+        returns `0` rather than its length. Both halves are load-bearing: the
+        first is the only way a caller learns that content addressing
+        collapsed passages it thought were distinct, and the second is what
+        makes the figure reconcile against a row count on the resume path.
+
+        Returning `None` was the original signature and it made a real defect
+        invisible. A corpus ingest reported 549,886 chunks written into a
+        tenant holding 549,697 -- 189 short, across 78 documents, because a
+        sliding window over repetitive text emitted byte-identical passages
+        for one source and a chunk id is content-addressed over
+        `(source_id, text)`. The merge is correct and must stay; adding
+        `start_char` to the id would "fix" the count by storing redundant
+        duplicates, which `domain/chunk.py` records as rejected. What was
+        wrong is that nothing could observe it, and the discrepancy was found
+        by a hand-written script comparing a report against `count(*)` rather
+        than by anything failing.
+
+        A caller cannot compute this for itself. Deduplicating its own batch
+        before the write catches collisions *within* one call and misses
+        collisions against rows already stored -- which is the resume path,
+        and the case that actually bites. Only the store knows.
 
         A document's chunking is thousands of rows, so an adapter over a
         database must send this as one statement, not a loop.
@@ -153,7 +178,7 @@ class ChunkWriter(AsyncClosable, Protocol):
 
 @runtime_checkable
 class ChunkReader(AsyncClosable, Protocol):
-    """Getting passages back by id, by source, or by entity."""
+    """Getting passages back by id, by source, or by entity -- or asking which exist."""
 
     async def get(self, chunk_id: ChunkId, tenant_id: TenantId) -> StoredChunk | None:
         """Return the stored chunk, or `None` if this tenant has no such id.
@@ -161,6 +186,48 @@ class ChunkReader(AsyncClosable, Protocol):
         An unknown id is not an error. The returned chunk is the caller's:
         mutating it -- including appending to `entity_ids` -- cannot change
         stored state.
+        """
+        ...
+
+    async def existing_ids(self, chunk_ids: Sequence[ChunkId], tenant_id: TenantId) -> set[ChunkId]:
+        """Which of `chunk_ids` this tenant already holds.
+
+        The resumable-ingest question, asked once per batch instead of once
+        per candidate. Unknown ids are simply absent from the result; an
+        empty `chunk_ids` returns an empty set without touching the store.
+        Duplicate ids in the argument collapse, because the answer is a set.
+
+        **Bounded by the caller's input, not by the corpus.** The obvious
+        alternative -- `ids_for_tenant(tenant_id) -> set[ChunkId]` -- is what
+        a caller built for itself in the absence of this method, and it is
+        the wrong port for a library: fine at 129,375 chunks and ruinous at
+        50,000,000, and a port should not have a corpus size past which it
+        becomes unusable. This shape composes with any batch size and leaves
+        the caller deciding how much to hold at once.
+
+        The three things a caller had to do instead were each bad in their
+        own way, and the third is the one that says a port is missing.
+        `get` per candidate is one round trip per chunk, and it ships whole
+        `StoredChunk`s -- text plus a full embedding each -- to answer a
+        yes/no question. `get_by_source` per node has the same round-trip
+        count and answers a different question: whether *this source* is
+        stored, not whether *this text* is, which is the one a
+        content-addressed id poses. The third was to go around the port with
+        `SELECT id FROM <table> WHERE tenant_id = $1` issued from a CLI --
+        which drags `asyncpg` and a DSN into a layer with no other reason to
+        know Postgres exists, and re-derives the table name, so a change to
+        the naming scheme desynchronises two places instead of one.
+
+        **An adapter over a database must make this an index seek on the
+        primary key, not a scan**, and a test for it must assert the plan
+        rather than the ids. A full scan and an index seek return the same
+        answers and differ only in cost, which is why `CLAUDE.md`'s
+        failure-shape table lists "results only, never the query plan" --
+        no assertion about the returned set can tell them apart.
+
+        The returned set is the caller's; mutating it cannot change stored
+        state. `ChunkId` is a `str`, so the set holds no shared mutable
+        object and the isolation risk is the container itself.
         """
         ...
 
@@ -323,7 +390,7 @@ class ChunkStore(
     implement this and `redstring/testing/chunk_store.py` runs against it.
 
     **Collaborators should not**, and the number here is worse than the one
-    `GraphStore` records about itself. Ten methods and a property; the only
+    `GraphStore` records about itself. Eleven methods and a property; the only
     first-party consumer is `ChunkProjection`, which calls `replace_source`
     and nothing else. One of ten. The rest exist for library users, which is
     a good reason for the *port* to have them and no reason at all for the

@@ -386,7 +386,7 @@ class PostgresChunkStore:
             if chunk.embedding is not None and len(chunk.embedding) != self._dimension:
                 raise DimensionMismatchError(expected=self._dimension, actual=len(chunk.embedding))
 
-    async def upsert_many(self, chunks: Sequence[StoredChunk]) -> None:
+    async def upsert_many(self, chunks: Sequence[StoredChunk]) -> int:
         # Validated against the raw argument, not the deduplicated rows --
         # matching `PgVectorStore.upsert_many`'s reasoning: collapsing first
         # would let a rejected record vanish because a later one happened to
@@ -398,33 +398,52 @@ class PostgresChunkStore:
 
         rows = deduplicate(chunks)
         if not rows:
-            return
-        await self._pool.execute(self._insert_sql(), encode(rows), encode_terms(rows))
+            return 0
+        added = await self._pool.fetchval(self._insert_sql(), encode(rows), encode_terms(rows))
+        return int(added)
 
     def _insert_sql(self) -> str:
-        """One statement for the whole batch, not a loop.
+        """One statement for the whole batch, not a loop; returns rows added.
 
         A document's chunking is thousands of rows and the port says so. The
         payload is one `jsonb` parameter rather than parallel arrays because
         `entity_ids` is a per-row array; see the module docstring.
 
         The term-index insert rides in a CTE alongside the chunk insert.
-        `written` is unreferenced by the final statement and still runs --
-        Postgres executes every data-modifying CTE regardless of whether its
-        output is read, the same property `_replace_sql` relies on for
-        `written` there.
+        `terms_written` is unreferenced by the final `SELECT` and still runs
+        -- Postgres executes every data-modifying CTE regardless of whether
+        its output is read, the same property `_replace_sql` relies on. The
+        shape of this statement now matches `_replace_sql`'s exactly: two
+        data-modifying CTEs and a final `SELECT` over one of them, rather
+        than a bare trailing `INSERT`.
+
+        **`xmax = 0` is what separates an insert from an update**, and it is
+        the only thing that can. `ON CONFLICT DO UPDATE` returns every row it
+        touched, so a plain `count(*)` over `written` counts replacements as
+        additions and reports `len(chunks)` for a batch that added nothing --
+        which is the exact figure the port's return value exists to
+        contradict. A row inserted by this statement has `xmax` zero; a row
+        updated by it carries the current transaction's id there. `DO
+        NOTHING` would make the count fall out of `RETURNING` alone, but it
+        is not available here: the port promises last-write-wins, and
+        `_ON_CONFLICT` is a real update path.
+
+        `count(*) FILTER (WHERE inserted)` rather than `sum(inserted::int)`:
+        both are correct, and the filter says what it means.
         """
         return (
             f"WITH written AS ("  # nosec B608
             f"    INSERT INTO {self._table} ({_COLUMNS})"
             f"    SELECT {_COLUMNS} FROM jsonb_to_recordset($1::jsonb) AS {_INCOMING}"
             f"    {_ON_CONFLICT}"
+            "    RETURNING (xmax = 0) AS inserted"
+            "), terms_written AS ("
+            f"    INSERT INTO {self._table}_terms (tenant_id, chunk_id, term, tf)"
+            f"    SELECT tenant_id, chunk_id, term, tf FROM jsonb_to_recordset($2::jsonb) "
+            f"    AS {_TERMS_INCOMING} "
+            f"    {_TERMS_ON_CONFLICT}"
             "    RETURNING 1"
-            ")"
-            f"INSERT INTO {self._table}_terms (tenant_id, chunk_id, term, tf)"
-            f"SELECT tenant_id, chunk_id, term, tf FROM jsonb_to_recordset($2::jsonb) "
-            f"AS {_TERMS_INCOMING} "
-            f"{_TERMS_ON_CONFLICT}"
+            ") SELECT count(*) FILTER (WHERE inserted) FROM written"
         )
 
     async def replace_source(
@@ -507,6 +526,30 @@ class PostgresChunkStore:
             chunk_id,
         )
         return None if row is None else _chunk_from(row)
+
+    async def existing_ids(self, chunk_ids: Sequence[ChunkId], tenant_id: TenantId) -> set[ChunkId]:
+        """Which of `chunk_ids` this tenant holds, as an index seek.
+
+        `id = ANY($2::text[])` against the `(tenant_id, id)` primary key,
+        which the planner satisfies without reading the table -- the port
+        requires the plan, not merely the answer, and
+        `tests/integration/chunks/` asserts it. The tempting spelling,
+        `SELECT id FROM <table> WHERE tenant_id = $1` with the filtering done
+        in Python, returns the identical set and scans the whole tenant.
+
+        The empty case short-circuits rather than issuing `= ANY('{}')`. Both
+        are correct; not making a round trip to be told nothing is cheaper,
+        and the port states the behaviour so an adapter may rely on it.
+        """
+        if not chunk_ids:
+            return set()
+        rows = await self._pool.fetch(
+            f"SELECT id FROM {self._table} "  # nosec B608
+            "WHERE tenant_id = $1 AND id = ANY($2::text[])",
+            tenant_id,
+            list(chunk_ids),
+        )
+        return {row["id"] for row in rows}
 
     async def get_by_source(self, source_id: SourceId, tenant_id: TenantId) -> list[StoredChunk]:
         rows = await self._pool.fetch(

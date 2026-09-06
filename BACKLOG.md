@@ -123,9 +123,66 @@ layer.
 Entries here can produce an incorrect result for a caller. They are first
 because nothing else in this file costs a user anything.
 
-Ordered by whether a caller doing an ordinary thing meets it: B43 needs only a
-merge and a re-extraction, B32 needs a second extraction run, and B35 fails
-loudly.
+Ordered by whether a caller doing an ordinary thing meets it: B164 needs only
+an entity whose name is a month, B43 needs a merge and a re-extraction, B32
+needs a second extraction run, and B35 fails loudly.
+
+### B164. An entity named after a month is deleted, whatever its type
+
+`extraction/date_nodes.py::lift_date_nodes` removes an entity when four
+things hold: the name is anchored by a 3-4 digit year **or a month name**,
+`parse_temporal` reads the whole name as a date, and the entity carries
+neither a description nor properties. A bare month abbreviation satisfies all
+four, so an entity the model returned as
+
+    ExtractedEntity(name="MAR", entity_type="Person")
+
+is dropped and counted in `date_nodes` rather than appearing in
+`MappedExtraction.entities`. Confirmed for `MAR`, `Mar`, `MAY` and `JUN`;
+`SAT` and `IBM` survive, because `parse_temporal` declines them.
+
+**`entity_type` is never consulted.** That is deliberate and the module says
+why at length: `entity_type == "temporal_expression"` catches one spelling,
+the corpus already shows date-shaped nodes filed under `event`, and the next
+model will invent a third name. The shape test is the right call. But it
+means an explicit, confident `Person` is discarded on the strength of its
+name alone, and "May" is an ordinary surname — as are Mar, Jun and April.
+
+**The module already knows this class of false positive exists and stops one
+step short of this instance.** Its docstring records that without the anchor
+`parse_temporal` reads `Borg`, `Seven of Nine`, `Kor`, `MIT`, `Sun`, `API`
+and `DIS` as dates, "and a shape test without an anchor deletes the Borg from
+a Star Trek graph". The anchor was added for exactly that. What was not
+noticed is that the anchor is itself satisfied by a bare month name, so the
+guard admits the very cases it was written to exclude — a three-letter token
+that is both a common name and a month.
+
+**The damage is a deletion, not a bad date.** The docstring's mitigation —
+"a bare month like `August` raises `AmbiguousReferenceDateError` in
+`_build_entity` unless the document has a publication date, so it is dropped
+and counted as `undatable_relative`" — limits the *lifted date*. It does
+nothing about the node, which is removed either way.
+
+**Found by `tests/unit/extraction/test_mapping.py::TestProperties::test_every_mapped_entity_id_is_a_uuid5`**,
+which fails with `ValueError: not enough values to unpack (expected 1, got 0)`
+on `name='MAR'` — the unpack of a one-element list that came back empty. It
+reproduces on a pristine tree.
+
+**Do not read that test as a working gate.** It is a hypothesis property over
+arbitrary unicode text, and the chance of a random draw landing on exactly
+`MAR`, `MAY` or `JUN` is negligible; it surfaced here through the local
+`.hypothesis` database, so CI has very likely been green throughout. This is
+CLAUDE.md's "a property test is a sampler, not a proof about a specific
+value" with a three-letter string in place of `k=0` — **whoever fixes this
+pins the month abbreviations as `@example`s**, or the regression test is
+another sampler.
+
+Two candidate fixes, and the choice is a real one. Requiring the anchor to be
+a *year* (dropping bare month names from it) loses the `'August'` lift the
+docstring shows as a genuine case. Requiring a second token — a month name
+plus something — keeps `January 1968` and `the 1990s` and refuses `MAR`,
+which looks right and needs checking against the same corpus the module's
+measurements came from rather than against intuition.
 
 ### B43. A merge plans against a graph read outside its concurrency window
 
@@ -2936,144 +2993,6 @@ so neither can reach `mapping.py` — which is currently readable only by
 someone who thinks to open a config file.
 
 ---
-
-### B159. `ChunkReader` cannot answer "which of these chunks do I already have?"
-
-Every read on `ChunkReader` is keyed on one thing: `get` takes a chunk id,
-`get_by_source` a source, `get_by_entity` an entity. There is no way to ask
-about a *set* of chunk ids at once, and that is the question a resumable
-ingest asks on every batch.
-
-A caller with 129,375 documents to load, wanting to skip the ones already
-stored, has three options today and all of them are bad:
-
-- **`get` per candidate** — ~129k round trips, and it transfers whole
-  `StoredChunk`s (text plus a 2048-dimension vector each) to answer a
-  yes/no question.
-- **`get_by_source` per node** — same round-trip count, and it cannot
-  answer the question a content-addressed id actually poses, which is
-  whether *this text* is stored rather than whether *this source* is.
-- **Go around the port with SQL.** This is what happened. `stark-bench`
-  issued `SELECT id FROM <table> WHERE tenant_id = $1` directly against the
-  chunk table, from its CLI, interpolating a table name it derived itself.
-
-The third is the one to look at, because it is what a missing port looks
-like from outside: not a caller doing something lazy, but a caller with a
-legitimate need and no legitimate way to express it. It also drags the
-`asyncpg` import and the DSN into a layer that had no other reason to know
-Postgres exists, and it re-derives the table name — so a change to the
-naming scheme silently desynchronises two places instead of one.
-
-**The shape to add, on `ChunkReader`:**
-
-```python
-async def existing_ids(self, chunk_ids: Sequence[ChunkId], tenant_id: TenantId) -> set[ChunkId]:
-    """Which of `chunk_ids` this tenant already holds."""
-```
-
-Bounded by the caller's input, not by the corpus. The obvious alternative —
-`ids_for_tenant(tenant_id) -> set[ChunkId]` — is what `stark-bench` built
-for itself and is the wrong port for a library: it is fine at 129k chunks
-and ruinous at 50M, and a port should not have a corpus size past which it
-becomes unusable. `existing_ids` composes with any batch size and the
-caller decides how much to hold.
-
-It is also an index seek on the primary key rather than a scan, which
-matters here for a reason this file has already recorded: "results only,
-never the query plan" is in the failure-shape table in `CLAUDE.md`, because
-a full scan and an index seek return the same answers and differ only in
-cost. A test for this method must assert the plan, not just the ids.
-
-**Adding it is not free, and the cost is the point.**
-`tests/unit/chunks/test_compliance_coverage.py` derives the read-method
-list from the Protocol by introspection and fails if any method lacks a
-registered mutation-isolation test and a tenant-isolation test. So this
-method cannot land half-tested, and both of those tests are ones it
-genuinely needs:
-
-- **Mutation isolation**: it returns a `set`, and returning the adapter's
-  own object is correct on every read and wrong only afterwards. That exact
-  defect has been found four times in this repository by mutation testing
-  and zero times by review.
-- **Tenant isolation**: the whole method is a filtered membership test, so
-  a body that forgets the tenant predicate returns *more* ids and the
-  caller skips work it should have done — silently producing a corpus with
-  another tenant's chunks treated as its own. Force the collision: same
-  chunk id, two tenants. Ids built from `uuid4()` never collide, which is
-  the fifth row of the failure-shape table.
-
-**Why it is deferred rather than done:** it needs both adapters, a
-compliance case, and a Postgres integration test that asserts the query
-plan — and the caller that motivated it (`stark-bench`) is mid-benchmark
-against an editable install of this library, so a change here lands in a
-running experiment. Pick it up when that finishes.
-
-### B161. A chunk write that collides with an existing id is invisible to the caller
-
-`ChunkWriter.upsert_many` returns `None`. A caller handing it 5,000 chunks
-cannot learn that 4,900 rows exist afterwards, and there is no other read
-that answers it either (**B159** is the missing read; this is the missing
-half of the write).
-
-That matters because chunk identity is content-addressed over
-`(source_id, text)` and, since **ADR 0044**, is derived rather than
-supplied — so a chunker emitting the same text twice for one source is not
-a caller error that could be caught upstream, it is a normal outcome of a
-sliding window over repetitive text. The two writes are one row, correctly.
-`ChunkWriter.upsert_many`'s docstring already states that rule, so the
-behaviour is documented; what is missing is any way to learn that it
-*happened* on a given call.
-
-**Measured, not hypothesised.** `stark-bench`'s `qwen-rel-sliding1k` arm
-reported 549,886 chunks written and its tenant holds 549,697 — **189**
-short. Re-chunking that corpus offline reproduces the figure to the unit:
-38,964 documents over 1,000 characters produce 459,475 chunks, of which 189
-collapse across 78 documents. A second arm was 10 short by the same
-mechanism. It was found by a standalone verification script comparing
-reports against `count(*)`, not by anything failing.
-
-**The dedup is right and must stay.** Two byte-identical chunk texts embed
-to the same vector, so the second row buys no retrieval and costs storage;
-adding `start_char` to the id would "fix" the count by storing redundant
-duplicates, which is worse, and it is the positional identity
-`domain/chunk.py` records as rejected. The defect is not the merge — it is
-that the merge is unobservable.
-
-**Why the caller cannot paper over it.** Deduplicating its own batch before
-the write catches collisions *within* one call and misses collisions
-against rows already stored, which is the resume path and the case that
-actually bites. Only the store knows.
-
-**The shape to add**, on `ChunkWriter`:
-
-```python
-async def upsert_many(self, chunks: Sequence[StoredChunk]) -> int:
-    """The number of rows written -- fewer than `len(chunks)` when ids collide."""
-```
-
-Postgres can answer it without a second statement (`RETURNING` on the
-upsert, or the driver's affected-row count); `InMemoryChunkStore` counts
-keys new to the dict. So the cost is not the implementation.
-
-**The cost is that it is a signature change on a port**, so it lands with a
-compliance case both adapters must satisfy — and that case has to force a
-collision to have any teeth, which means one source id and two chunks whose
-text is byte-identical. A fixture building distinct text per chunk makes
-every candidate implementation agree by returning `len(chunks)`, which is
-the failure shape `CLAUDE.md`'s table calls out. The complementary case is
-that a re-`upsert_many` of an already-stored batch returns 0, not
-`len(chunks)`.
-
-Whether it returns a count or the set of ids actually written is open. The
-count is enough for the reporting defect that motivated it; the set is
-enough to tell a caller *which* passages it lost, which is what someone
-debugging a chunker would want. The set is strictly more useful and
-strictly more expensive to return at 50M chunks — decide it against
-`existing_ids`' framing in B159, which chose bounded-by-the-caller's-input
-for the same reason.
-
-Deferred with B159 and for the same reason: the caller that motivated it is
-mid-benchmark against an editable install of this library.
 
 ## 6. Tooling, packaging and hygiene
 

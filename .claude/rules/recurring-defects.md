@@ -580,3 +580,49 @@ existed except the call. Building `EmbeddingProvider` turned out to be mostly
 *calling* code that was already there. **Code that is fully tested and never
 invoked passes every gate this repository has**, so the question to ask of a
 new component is not "is it covered" but "what in the tree reaches it".
+
+**(j) §3 — a compliance coverage gate that could not see the method it was
+about to be asked to cover.** `tests/unit/chunks/test_compliance_coverage.py`
+derives its read-method list by introspection, which is the right design and
+is why it exists: a hand-kept list needs updating by the same person who
+forgot the test. But it selected on return annotations that *mention a domain
+type* — `{StoredChunk, LexicalCandidates, SemanticCandidate}` — and the read
+added alongside it, `ChunkReader.existing_ids`, returns `set[ChunkId]` where
+`ChunkId` is `str`. So the method would have landed with neither a
+mutation-isolation nor a tenant-isolation test, and **the gate would have said
+nothing**: not failed, not warned, simply reported a set that did not contain
+it. Its own guard test — which pins the read-method set by literal — would
+have stayed green too, because the set it pins was still correct about the
+methods it knew about.
+
+BACKLOG B159 had asserted the opposite in writing ("this method cannot land
+half-tested"), which is the part worth keeping: *a note claiming a gate covers
+your case is a claim about the gate, not evidence about it.* Read the
+selector.
+
+The fix was a second selection axis — a return annotation that is, or
+contains, a mutable container — deliberately kept separate from the domain-type
+axis rather than merged into it. Adding `ChunkId` to the domain set would have
+made it `{StoredChunk, str}` and turned every future method returning a bare
+string into a "read" owing two tests it does not need, which is the same
+over-broad-detector mistake the module's own guard docstring already warned
+about. Two questions ("does this hand back a domain object", "does this hand
+back something mutable"), two predicates.
+
+The general shape, which is §3 wearing a gate's clothes: **a check keyed on the
+types a port happens to use today goes quiet when a method returns something
+outside that set.** Silence and success are the same output. When you add a
+method whose return type is unlike its neighbours', run the gate's detector
+against it before trusting it — here that was one assertion, and it failed for
+the right reason first.
+
+A smaller instance landed in the same change.
+`test_upsert_many_is_one_statement` counted `execute` calls to prove a batch
+write was not a loop; when `upsert_many` gained a return value and moved to
+`fetchval` it reported **zero statements for 250 rows**. For as long as it
+watched one method it could not have seen a loop written through any other —
+and its own sibling, `test_replace_source_is_one_statement`, already counted
+all four and said why in its docstring. The lesson existed in the file, one
+method away, and had not been carried across. **When you write the stronger
+version of a test, grep for its siblings** — §5's "the sweep fixes the pages it
+thought of", applied to tests.

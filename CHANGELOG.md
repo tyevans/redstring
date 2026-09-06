@@ -12,6 +12,47 @@ rename or signature change there is not a breaking change and will not appear
 under **Removed** or **Changed**. See
 [ADR 0006](https://github.com/tyevans/redstring/blob/main/docs/adr/0006-the-public-surface-is-gated.md).
 
+## [Unreleased]
+
+### Added
+
+- **`ChunkReader.existing_ids(chunk_ids, tenant_id)`.** Which of a batch of
+  chunk ids a tenant already holds, asked once per batch instead of once per
+  candidate. This is the question a resumable ingest asks, and there was no
+  way to express it: every other read on the port is keyed on a single chunk,
+  source or entity. A caller loading a large corpus had to choose between a
+  round trip per candidate — shipping whole `StoredChunk`s, text and
+  embedding, to answer a yes/no question — and going around the port with
+  SQL, which is what happened. Bounded by the caller's input rather than by
+  the corpus, deliberately: `ids_for_tenant(tenant_id)` is fine at 129,375
+  chunks and ruinous at 50,000,000, and a port should not have a size past
+  which it stops being usable. Adapters over a database must serve it as an
+  index seek on the primary key; the Postgres adapter's plan is asserted, not
+  just its answers. See
+  [ADR 0046](https://github.com/tyevans/redstring/blob/main/docs/adr/0046-a-chunk-write-reports-what-it-added.md).
+
+### Changed
+
+- **`ChunkWriter.upsert_many` returns the number of rows it added** instead of
+  `None` — rows added, never rows replaced, so re-writing an already-stored
+  batch returns `0` rather than its length. A chunk id is content-addressed
+  over `(source_id, text)`, so a sliding window over repetitive text emits
+  byte-identical passages that are correctly stored as one row; until now
+  nothing could observe that happening. A corpus ingest reported 549,886
+  chunks written into a tenant holding 549,697 — short by 189 across 78
+  documents — and the discrepancy was found by a hand-written script comparing
+  the report against `count(*)`, not by anything failing. The merge is right
+  and stays; what changes is that it is now visible. A caller cannot compute
+  this itself: deduplicating its own batch catches collisions within one call
+  and misses collisions against rows already stored, which is the resume path.
+
+  **Breaking for third-party `ChunkStore` adapters**, as is the new read
+  above. Both are caught by the shipped compliance suite rather than at
+  runtime. Neither changes `redstring.__all__`, so by this file's own
+  definition neither is a breaking change to the public API — the ports are
+  reached by dotted path — but an adapter author is the one person this
+  distinction does not help, so it is stated plainly here.
+
 ## [0.11.0] - 2026-09-03
 
 Retrieval that runs without an embedding endpoint, a mapper that absorbs a

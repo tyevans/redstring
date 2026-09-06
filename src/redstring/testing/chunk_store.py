@@ -1589,3 +1589,181 @@ class ChunkStoreCompliance:
         assert [ranked_chunk.score for ranked_chunk in ranked] == sorted(
             (ranked_chunk.score for ranked_chunk in ranked), reverse=True
         )
+
+    # ------------------------------------------------------------------
+    # `existing_ids`: the resumable-ingest question
+    # ------------------------------------------------------------------
+
+    async def test_existing_ids_reports_only_the_asked_for_ids_that_are_stored(
+        self, store: ChunkStore
+    ) -> None:
+        """Three ways to be wrong, and this case separates all of them.
+
+        A body returning its argument unchanged passes any case where every
+        asked-for id is stored, so one id here is *absent* from the store. A
+        body returning everything the tenant holds passes any case where the
+        argument covers the whole corpus, so one stored chunk is *not asked
+        about*. Neither wrong answer is exotic -- they are the two obvious
+        implementations.
+        """
+        tenant = TenantId(uuid4())
+        stored = self._chunk(tenant, "doc-1", "stored and asked about")
+        unasked = self._chunk(tenant, "doc-1", "stored but not asked about", chunk_index=1)
+        await store.upsert_many([stored, unasked])
+        absent = chunk_id(SourceId("doc-1"), "never written")
+
+        found = await store.existing_ids([stored.id, absent], tenant)
+
+        assert found == {stored.id}
+
+    async def test_existing_ids_of_an_empty_sequence_is_empty(self, store: ChunkStore) -> None:
+        tenant = TenantId(uuid4())
+        await store.upsert_many([self._chunk(tenant, "doc-1", "a passage")])
+
+        assert await store.existing_ids([], tenant) == set()
+
+    async def test_existing_ids_collapses_duplicates_in_its_argument(
+        self, store: ChunkStore
+    ) -> None:
+        """The answer is a set, so asking twice is asking once."""
+        tenant = TenantId(uuid4())
+        stored = self._chunk(tenant, "doc-1", "a passage")
+        await store.upsert_many([stored])
+
+        assert await store.existing_ids([stored.id, stored.id, stored.id], tenant) == {stored.id}
+
+    async def test_existing_ids_never_crosses_tenants(self, store: ChunkStore) -> None:
+        """The **same chunk id** under two tenants, which content addressing
+        makes ordinary rather than unlikely.
+
+        This is the case with teeth. `existing_ids` is a filtered membership
+        test, so a body that forgets the tenant predicate returns *more* ids
+        and the caller skips work it should have done -- silently building a
+        corpus in which another tenant's chunk stands in for one of its own.
+        Ids drawn from `uuid4()` never collide and cannot see it; here the
+        two ids are equal by construction, because the id is a hash of
+        `(source_id, text)` and both tenants hold the same passage of the
+        same document.
+        """
+        ours, theirs, stranger = TenantId(uuid4()), TenantId(uuid4()), TenantId(uuid4())
+        mine = self._chunk(ours, "doc-1", "one passage")
+        yours = self._chunk(theirs, "doc-1", "one passage")
+        assert mine.id == yours.id, "the fixture must force the collision this test is about"
+        await store.upsert_many([yours])
+
+        # `theirs` holds it; `ours` does not, and asking as `ours` must say so
+        # even though the id exists in the store under another tenant.
+        assert await store.existing_ids([mine.id], ours) == set()
+        assert await store.existing_ids([yours.id], theirs) == {yours.id}
+        assert await store.existing_ids([mine.id], stranger) == set()
+
+    async def test_existing_ids_returns_copies(self, store: ChunkStore) -> None:
+        """Mutate the returned set and re-read.
+
+        `ChunkId` is a `str`, so there is no nested object to share -- the
+        container itself is the whole isolation risk, and an adapter handing
+        back its own set is correct on this read and wrong only afterwards.
+        """
+        tenant = TenantId(uuid4())
+        stored = self._chunk(tenant, "doc-1", "a passage")
+        await store.upsert_many([stored])
+
+        first = await store.existing_ids([stored.id], tenant)
+        first.add(chunk_id(SourceId("doc-1"), "__tampered__"))
+        first.discard(stored.id)
+
+        assert await store.existing_ids([stored.id], tenant) == {stored.id}
+
+    # ------------------------------------------------------------------
+    # `upsert_many` counts rows added, and only rows added
+    # ------------------------------------------------------------------
+
+    async def test_upsert_many_returns_the_number_of_rows_added(self, store: ChunkStore) -> None:
+        tenant = TenantId(uuid4())
+        chunks = [
+            self._chunk(tenant, "doc-1", "passage one", chunk_index=0),
+            self._chunk(tenant, "doc-1", "passage two", chunk_index=1),
+        ]
+
+        assert await store.upsert_many(chunks) == 2
+
+    async def test_upsert_many_of_an_empty_batch_adds_nothing(self, store: ChunkStore) -> None:
+        assert await store.upsert_many([]) == 0
+
+    async def test_upsert_many_counts_byte_identical_passages_once(self, store: ChunkStore) -> None:
+        """The defect this return value exists for, forced rather than hoped for.
+
+        A chunk id is content-addressed over `(source_id, text)`, so a
+        sliding window over repetitive text can emit the same passage twice
+        for one source and the two writes are one row -- correctly. A corpus
+        ingest reported 549,886 chunks written into a tenant holding 549,697
+        for exactly this reason, and nothing could see it.
+
+        The fixture must make the two texts *byte-identical*. A batch of
+        distinct passages makes every candidate implementation agree by
+        returning `len(chunks)`, which is the failure shape `CLAUDE.md`'s
+        table is about: the test would pass against a body that had never
+        looked at the store at all.
+        """
+        tenant = TenantId(uuid4())
+        first = self._chunk(tenant, "doc-1", "the very same words", chunk_index=3)
+        second = self._chunk(tenant, "doc-1", "the very same words", chunk_index=7)
+        assert first.id == second.id, "the fixture must force the collision this test is about"
+
+        added = await store.upsert_many([first, second])
+
+        assert added == 1
+        assert len(await store.get_by_source(SourceId("doc-1"), tenant)) == 1
+
+    async def test_re_upserting_a_stored_batch_adds_nothing(self, store: ChunkStore) -> None:
+        """`0`, not `len(chunks)`.
+
+        The complement of the case above, and the one that separates "rows
+        new to the store" from "distinct ids in this batch". A body counting
+        the deduplicated argument passes the collision case and fails here.
+        """
+        tenant = TenantId(uuid4())
+        chunks = [
+            self._chunk(tenant, "doc-1", "passage one", chunk_index=0),
+            self._chunk(tenant, "doc-1", "passage two", chunk_index=1),
+        ]
+        assert await store.upsert_many(chunks) == 2
+
+        assert await store.upsert_many(chunks) == 0
+
+    async def test_upsert_many_counts_only_the_rows_a_partly_stored_batch_adds(
+        self, store: ChunkStore
+    ) -> None:
+        """The resume path: a batch that overlaps what is already there."""
+        tenant = TenantId(uuid4())
+        already = self._chunk(tenant, "doc-1", "passage one", chunk_index=0)
+        await store.upsert_many([already])
+
+        added = await store.upsert_many(
+            [
+                already,
+                self._chunk(tenant, "doc-1", "passage two", chunk_index=1),
+                self._chunk(tenant, "doc-1", "passage three", chunk_index=2),
+            ]
+        )
+
+        assert added == 2
+
+    async def test_upsert_many_counts_the_same_id_under_two_tenants_twice(
+        self, store: ChunkStore
+    ) -> None:
+        """Two tenants holding one passage are two rows, so two additions.
+
+        The key is `(tenant_id, id)`. A body counting new ids alone reports
+        `0` for the second tenant's write -- one tenant's row vouching for
+        another's, which is the fifth row of `CLAUDE.md`'s failure-shape
+        table. Forced here, because content addressing makes the two ids
+        equal by construction.
+        """
+        ours, theirs = TenantId(uuid4()), TenantId(uuid4())
+        mine = self._chunk(ours, "doc-1", "one passage")
+        yours = self._chunk(theirs, "doc-1", "one passage")
+        assert mine.id == yours.id, "the fixture must force the collision this test is about"
+
+        assert await store.upsert_many([mine]) == 1
+        assert await store.upsert_many([yours]) == 1
