@@ -552,11 +552,27 @@ It runs the full default suite under coverage, compares the total against
 `.coverage-baseline` with `TOLERANCE = 0.1`, and calls `write_baseline` to
 raise and stage the baseline when coverage rose. **That last part is what CI
 cannot do**: `write_baseline` stages the new high-water mark into the commit
-that earned it, and a CI run has no commit to stage into. So the baseline no
-longer raises itself — see `BACKLOG.md` B-RATCHET-1, which records why a floor
-that never follows the work is worse than it sounds and lists three routes
-back. Run the script yourself after adding tests that raise coverage, so the
-new baseline lands in the same commit as the work that earned it.
+that earned it, and a CI run has no commit to stage into. So the baseline still
+does not raise itself. Run the script yourself after adding tests that raise
+coverage, so the new baseline lands in the same commit as the work that earned
+it.
+
+**CI fails when you forget.** `scripts/coverage_ratchet.py --check-rise` is its
+own step in the `pytest` job: it measures the `.coverage` that job just
+produced — it does not run the suite a second time — and exits non-zero when
+the total has risen clear of the baseline, naming the command to run.
+
+Failing on a *rise* is deliberate, and the alternative is what it replaced: a
+floor nobody moves is a check you never see fail. Coverage drifts up over
+months, the baseline does not, and a later regression back to the stale figure
+passes silently while the gate reports green the whole way. Both directions
+share one `TOLERANCE` and one baseline file, so the band is symmetric by
+construction rather than by two constants agreeing.
+
+A bot that pushed the new baseline itself was considered and not taken: it
+needs a token with write access to a protected branch, and it turns every
+coverage improvement into a second commit. This costs one command from the
+author who earned the rise, at the moment they earned it.
 
 ### Run the suite yourself — nothing else will before CI does
 

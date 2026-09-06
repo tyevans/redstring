@@ -275,8 +275,9 @@ else's guarantee (B101 through B86).
 
 `extraction/date_nodes.py::_is_anchored` now requires a month name to be
 accompanied by something else in the name, so `MAR`, `May`, `Jun` and
-`August` are no longer date-nodes. That closed B164, a silent deletion of
-any entity whose name is a bare month whatever its `entity_type`.
+`August` are no longer date-nodes. That closed a silent deletion of any
+entity whose name is a bare month whatever its `entity_type` -- `May` and
+`Mar` are surnames, and the model had typed one of them `Person`.
 
 **The change was argued, not measured.** The module's numbers come from a
 5,647-entity corpus replayed on 2026-08-23 — 343 date-nodes caught, 22 dates
@@ -2632,52 +2633,6 @@ because the pre-merge shape is not derivable from the result. It raises
 believed it asked for something else. Implement when a caller needs it, with an
 undo path in hand — not before.
 
-### B103. The only production adapters live on paths the package calls unsupported
-
-`redstring/__init__.py` states the contract plainly: anything reached through
-a dotted path "is internal and may change without notice, including in a patch
-release." The adapters a caller actually deploys are all reached that way --
-`redstring.llm.adapters.langchain.LangChainLlmProvider`,
-`LangChainEmbeddingProvider`, `Neo4jGraphStore`, `PgVectorStore` -- while the
-two *exported* providers are `FakeLlmProvider` and `FakeEmbeddingProvider`.
-
-So the README's primary quickstart imports from an explicitly unsupported
-path, and the supported surface is the one nobody ships. The reason for not
-exporting them is good and should not be reversed: exporting
-`LangChainLlmProvider` makes `import redstring` pull LangChain in, and the
-extras exist so a caller pays only for the backends they use.
-
-**The obvious fix is blocked by the architecture contract, which is why this
-is filed rather than done.** A `redstring.adapters` namespace re-exporting the
-extra-gated adapters would import `llm`, `graph` and `vector` -- three
-siblings forbidden from importing each other -- so it could only sit on
-`composition`. And `pyproject.toml`'s contract says exactly what to do with
-such a candidate: "ask what it composes; a candidate that cannot name such a
-pair is a piece of one half placed above it for convenience." A re-export
-shim composes nothing. CLAUDE.md separately records that `context`, a
-re-export shim, was deleted in slice 10.
-
-Three routes, none free:
-
-1. **A module-level `__getattr__` on `redstring`** raising a helpful
-   `ImportError` naming the extra, with the names declared under
-   `TYPE_CHECKING` so checkers still resolve them. Smallest, adds no module to
-   the contract, and keeps `import redstring` lazy. The cost is that
-   `__all__` stops being the literal list of what a caller may use, which the
-   three public-surface gates are built around -- so those gates need to
-   learn about it, and ADR 0006 needs amending rather than merely citing.
-2. **A stability promise attached to the existing dotted paths**, stated in
-   `__init__.py` and enforced by a test that those four import paths still
-   resolve. No new module, no contract change; the promise becomes prose plus
-   one gate rather than membership of `__all__`.
-3. **Accept it and say so in the README**, which is the status quo made
-   honest rather than a fix.
-
-Route 2 is the cheapest thing that removes the contradiction, and route 1 is
-the one that gives a caller what they actually want. Either needs an ADR,
-because "the public surface is `__all__` and nothing else" is ADR 0006's
-decision and both routes qualify it.
-
 ### B114. `index_documents` takes a whole `ChunkStore` and drives a `ChunkWriter`
 
 `src/redstring/composition/index_documents.py:114` declares `store: ChunkStore`
@@ -2996,58 +2951,6 @@ and why an entry that turned out to be about a *cost* (B92, B133, B136) or a
 *weak test* (B93, B135) was moved out of it in the 2026-08-18 pass. This
 section had become where drive-by deferrals landed regardless of kind.
 
-### B-RATCHET-1. The coverage baseline no longer raises itself
-
-The `pytest-coverage-ratchet` pre-commit hook was removed: it ran the whole
-unit suite on every commit touching `src/` or `tests/`, which duplicated CI's
-`pytest` job exactly — `addopts` already deselects `integration` and
-`accuracy`, so both selected the same tests — and cost minutes per commit in a
-workflow built on many small commits.
-
-**The floor moved; the ratchet did not.** CI's `pytest` job now passes
-`--cov-fail-under="$(cat .coverage-baseline)"`, so coverage still cannot fall.
-
-> **The move shipped broken and nobody looked.** `--cov-fail-under` was added
-> without `--cov-precision`, and coverage's `should_fail_under` returns
-> `round(total, precision) < fail_under` with precision defaulting to **0** —
-> so a two-decimal baseline of 96.22 was compared against a total rounded to
-> 96.0 and failed *while coverage was above the floor*. The job could only
-> have passed at 96.5 or better. It failed on its first run, took `main` red,
-> and stayed red through a second merge, because the branch that introduced it
-> was verified with a bare `uv run pytest` rather than with CI's own command.
-> Fixed by `--cov-precision=2`. **The lesson is not about rounding**: a gate
-> whose invocation differs from the one you tested is an untested gate, and
-> the one command worth running before changing a CI check is the one CI runs.
-
-What was lost is the *rise*: `scripts/coverage_ratchet.py::write_baseline`
-wrote the new high-water mark and `git add`ed it, so a commit that earned more
-coverage carried the new baseline with it. A CI run has no commit to stage
-into, so the baseline now sits at whatever it last held (96.22 at the time of
-writing) until someone edits it.
-
-Why that is worse than it sounds, and worth fixing rather than accepting: a
-ratchet that only ever holds is a floor, and the value of the original was
-that the floor *followed* the work. Coverage can now drift upward for months
-and a later regression back to 96.22 passes silently — the exact class of
-"passing check you have never seen fail" that CLAUDE.md warns about, since the
-gate keeps reporting green while measuring a bar nobody has moved.
-
-Routes back, cheapest first:
-
-- A CI step on `main` only that runs the script and opens a PR (or pushes a
-  commit) when the baseline rises. Costs a bot commit per improvement.
-- Keep the script as an on-demand command (`uv run python
-  scripts/coverage_ratchet.py`) and name it in the definition of done for work
-  that adds tests, so raising it is a human step someone is told to take. Free,
-  and relies on a rule rather than a mechanism — which this project has
-  repeatedly found is indistinguishable from nothing.
-- Compute the floor as "last release's coverage" rather than a checked-in
-  number, removing the second declaration site entirely.
-
-Note also that `scripts/coverage_ratchet.py` is now referenced by no hook. It
-still works and is still the only implementation of the comparison; it is not
-dead code, but nothing runs it automatically any more.
-
 ### B126. The version is one fact with two declaration sites
 
 `pyproject.toml`'s `version` and `src/redstring/__init__.py`'s `__version__`
@@ -3274,36 +3177,6 @@ The first is probably right, and the reason to write it down rather than do it
 now is that it is a change to the release pipeline made immediately after a
 release, which is the worst time to touch one.
 
-### B79. No workflow job declares `timeout-minutes`, so the ceiling is six hours
-
-Not one job across `ci.yml`, `release.yml` and `docs.yml` sets
-`timeout-minutes`, so every one inherits GitHub's 6-hour default. Verified:
-`grep -n "timeout-minutes" .github/workflows/*.yml` returns nothing.
-
-This was found because it *failed to fire*. The `integration` job spent ~90
-minutes per run waiting out embedding probes against an unreachable address
-(B78) for a full day, on green runs as well as red, and nothing capped it —
-6 hours is far enough above the real ~35-minute cost that the job would have
-had to be an order of magnitude wrong before the default noticed.
-
-The reason to file rather than fix now: **the right number is not obvious and
-a wrong one is worse than none.** The `integration` job's honest duration is
-still being established (it was ~35 min before `317e7a5` and should return to
-roughly that with `-m "integration and not live"` — but that is a prediction,
-not a measurement, and the next run is the first data point). A cap set below
-the real distribution turns a slow-but-fine run into a red X that reads as a
-test failure, which is the same misdiagnosis in the other direction.
-
-So: take two or three runs of the post-fix `integration` job, set the cap at a
-generous multiple of the observed p100, and do the same per job rather than
-one blanket value — `lint` and `import-linter` finish in under a minute and
-want a cap in single digits, where `integration` does not.
-
-Note this interacts with `release.yml`, which calls `ci.yml` via
-`workflow_call`: a cap on the reusable workflow's jobs applies to the release
-pipeline too, which is the case where an unbounded hang is most expensive
-(B72 — a failed release consumes the version number).
-
 ### B94. Generated Postgres index names can exceed the 63-byte NAMEDATALEN, and truncation is silent
 
 `chunks/adapters/postgres.py`'s DDL builds index names by interpolating the
@@ -3446,24 +3319,6 @@ module-level instance over the bundled directory. That removes the global
 is the part with user-visible value. Sized medium-to-large because
 `hot_reload` and `get_schemas_for_entity_type` need callers found or deleted
 first.
-
-### B130. `docs/reference/events.md` documents four events; there are five
-
-`DocumentChunked` (`src/redstring/events/document.py:175`) is in
-`KG_EVENT_TYPES`, is registered, and has **no section on the events reference
-page** — no payload table, no field notes, no entry anywhere except the
-`event_version`/`aggregate_type` table this branch just corrected. Every other
-event has a `## <Name>` section running to a few hundred lines.
-
-Found while bumping `DocumentExtracted.event_version` to 2: the version table
-said "in full" and listed four rows, and the fifth had to be added to make the
-correction true. That the omission survived is the point — the page's
-per-event sections are hand-written prose with **no gate tying them to
-`KG_EVENT_TYPES`**, which is the same shape the tuple itself exists to prevent
-in `tests/unit/events/test_schema.py`. So the fix is two things, and the second
-is the one worth having: write the missing section, *and* add a test that every
-name in `KG_EVENT_TYPES` appears as a heading in that page. Without it the next
-event will be undocumented in the same silent way and nothing will say so.
 
 ### B134. `_SELECT_COLUMNS` builds its `real[]` cast with a substring replace
 

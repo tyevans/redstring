@@ -63,6 +63,8 @@ jobs:
   # disagree. Catching it here costs a re-tag; catching it after upload costs
   # a version number, because PyPI does not allow re-uploading a filename.
   validate:
+    # tag and version checks
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -230,6 +232,8 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   build:
+    # wheel and sdist
+    timeout-minutes: 15
     needs: [validate, ci]
     runs-on: ubuntu-latest
     steps:
@@ -304,6 +308,8 @@ jobs:
           path: dist/
 
   publish-pypi:
+    # upload; a hang here spends the version number
+    timeout-minutes: 15
     needs: [validate, build]
     if: needs.validate.outputs.publish_target == 'pypi'
     runs-on: ubuntu-latest
@@ -324,6 +330,8 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
 
   publish-testpypi:
+    # upload to TestPyPI
+    timeout-minutes: 15
     needs: [validate, build]
     if: needs.validate.outputs.publish_target == 'testpypi'
     runs-on: ubuntu-latest
@@ -344,6 +352,8 @@ jobs:
 
   github-release:
     needs: [validate, build, publish-pypi, publish-testpypi]
+    # creating the release and uploading assets
+    timeout-minutes: 10
     # One of the two publish jobs is always skipped, so `success()` would never
     # be true here. Require that the one which ran, succeeded.
     if: >-
@@ -408,6 +418,8 @@ jobs:
   # than the performance it is rehearsing for.
   verify:
     needs: [validate, publish-pypi, publish-testpypi]
+    # installs the published wheel; B72 -- a hang here spends the tag
+    timeout-minutes: 15
     if: >-
       always()
       && (needs.publish-pypi.result == 'success' || needs.publish-testpypi.result == 'success')

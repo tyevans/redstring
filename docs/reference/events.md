@@ -844,6 +844,118 @@ mutant rewriting one as `<` or `>` is half right against a single random
 accepts the rest, so the suite would pass or fail by luck. Bracketing makes
 both mutants fail deterministically.
 
+## `DocumentChunked`
+
+How one document was split, and into what. Defined in
+`redstring/events/document.py`; category `Document`, so it lands on the same
+[`document_stream(tenant_id=…, source_id=…)`](#document_stream-tenant_id-source_id)
+as that document's extraction and embeddings, ordered against them.
+
+| Field | Type | Default |
+|---|---|---|
+| `source_id` | `SourceId` (`str`) | required |
+| `chunking_signature` | `str` | required |
+| `chunks` | `list[StoredChunk]` | `Field(default_factory=list)` |
+
+Plus the [inherited
+envelope](#inherited-envelope-from-tenantdomainevent--domainevent), and
+`event_version: int = 1` / `aggregate_type: str = DOCUMENT_CATEGORY`
+redeclared on the class. `extra="forbid"` means there is nothing else on the
+wire.
+
+**The event carries the document's whole chunking, not one chunk.** Same
+reason `DocumentExtracted` carries every entity: the projection folds it with
+a single `ChunkStore.replace_source` call, so a re-chunk is a *replacement*
+rather than an accumulation, and the event is never partly applied. Split per
+chunk, the orphan deletion would have nothing to be scoped to — there would be
+no point at which the old passages of a source are known to be superseded.
+
+**An empty `chunks` is legitimate and is not a no-op.** It says this document
+now has no passages, and the projection needs it to empty a source. A
+`if not chunks: return` guard anywhere on this path is the defensive-looking
+line that leaves the old passages readable forever.
+
+**`source_id`** — the document these passages were split from. Required, and
+deliberately redundant with the stream for the reason given on
+[`DocumentExtracted`](#documentextracted): `aggregate_id` is a `uuid5` of the
+tenant and this value, and a hash cannot be read back, so a consumer of a
+global feed would otherwise not know which document an event came from.
+Nothing normalises it.
+
+**`chunks`** — `StoredChunk` payloads, described under [payload
+types](#payload-types-referenced-by-the-wire-schema). Note that
+`StoredChunk.id` is a **computed field** derived from `(source_id, text)`
+rather than a value the emitter chooses ([ADR
+0044](../adr/0044-a-chunk-id-is-derived-not-supplied.md)), so two
+byte-identical passages of one document are one chunk, correctly, and a
+replay cannot reconstruct a different id than the one first written. That is
+also why the id round-trips: the model validator accepts a serialised `id`
+that still agrees with the derivation, because `extra="forbid"` alone broke
+replay of already-written events.
+
+### `chunking_signature`, and why the emitter composes it
+
+`chunking_signature` is what makes a repeat distinguishable from a new
+chunking. `Document.record_chunking` is keyed on it and returns `None` for a
+signature already recorded, so a retry emits nothing.
+
+**The aggregate does not derive it — the emitter composes it**, and the two
+write paths compose it differently on purpose:
+
+- `index_documents` emits `f"{method}:{split_digest}"`.
+- The extraction pipeline emits `f"{method}:{split_digest}:{model_version}"`.
+
+So indexing a document and later extracting it produce two *different*
+signatures. Both are recorded, and the extraction — whose chunks carry
+`entity_ids` — lands last and wins. A retry of either is a no-op. Were the
+signature derived from the split alone, the second write would look like a
+repeat and the entity links would never reach the corpus.
+
+**The digest is over the split actually produced, not over chunker settings.**
+A re-chunk under new settings is therefore recorded only when it produces a
+*different* split; settings that happen to yield an identical split are, by
+design, the same chunking. See [ADR 0023](../adr/0023-the-chunk-corpus.md) for
+why the digest is computed this way.
+
+**It is a third key space, not a share of either existing one.** The aggregate
+tracks recorded model versions and recorded chunking signatures in separate
+lists, because `"v1"` is a plausible chunking signature *and* a plausible
+model version, and one list would let either suppress the other.
+
+### Validator `_chunks_belong_to_this_document_and_tenant`
+
+Two rules, both rejecting the event outright rather than dropping a payload.
+
+**1 — every chunk carries this event's `tenant_id`.** The shared
+`_reject_foreign_tenants` check, the same one `DocumentExtracted` and
+`EntitiesEmbedded` apply to their own payloads. This matters more here than
+elsewhere: a chunk id is content-addressed over `(source_id, text)`, so *the
+same passage of the same document under two tenants has the same id*. A
+tenant that leaked into this list would not collide harmlessly — it would
+address a row another tenant legitimately owns.
+
+**2 — every chunk names this event's `source_id`.**
+
+```
+chunks must be attributed to the document they were split from;
+found source_id ['doc-2'] in an event for 'doc-1'
+```
+
+The strays are collected and sorted into the message rather than the first
+one being reported, so a consumer fixing an emitter sees the whole set in one
+pass. Rejecting rather than rewriting is the point: `replace_source` deletes
+this source's chunks that are absent from the payload, so a chunk written
+under the argument's `source_id` instead of its own would both attach one
+document's passage to another *and* make it a survivor of the wrong source's
+orphan sweep.
+
+#### Where these claims are enforced
+
+`tests/unit/events/test_payloads.py` covers both rules; the round-trip of a
+derived `StoredChunk.id` through the log is covered in
+`tests/unit/domain/test_chunk.py`, and the projection's use of
+`replace_source` in `tests/unit/projections/`.
+
 ## `EntitiesEmbedded`
 
 Embeddings computed for entities of one document. Defined in

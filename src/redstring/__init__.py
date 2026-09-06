@@ -24,6 +24,33 @@ cannot quietly stop being sufficient.
 through a dotted path (`redstring.extraction.mapping`, say) is internal and
 may change without notice, including in a patch release.
 
+**Four dotted paths are excepted, and they are the adapters you deploy.**
+
+    redstring.graph.adapters.neo4j.Neo4jGraphStore
+    redstring.vector.adapters.pgvector.PgVectorStore
+    redstring.llm.adapters.langchain.LangChainLlmProvider
+    redstring.llm.adapters.langchain_embedding.LangChainEmbeddingProvider
+
+Those four import paths are stable: they will not move or be renamed without
+a major version and a note in the changelog. Everything else about the
+modules holding them stays internal -- a private helper beside them may
+change in a patch release, and nothing here promises anything about the rest
+of `graph.adapters` or `llm.adapters`.
+
+They are not exported, and that is not an oversight. `import redstring` would
+then import LangChain, neo4j and asyncpg, and the extras exist precisely so a
+caller pays only for the backends they use. But leaving them merely internal
+made the promise above false in the one place a reader would test it: the
+only `LlmProvider` and `EmbeddingProvider` in `__all__` are `FakeLlmProvider`
+and `FakeEmbeddingProvider`, so the *supported* surface was the one nobody
+ships and the README's own quickstart imported from a path this module called
+liable to change without notice.
+
+`tests/unit/test_deployed_adapter_paths_are_stable.py` is what makes this a
+promise rather than a paragraph. It imports each path and fails when one stops
+resolving, so a rename becomes a visible decision in review instead of a
+silent break in every consumer.
+
 The surface is **closed**, which is a stronger claim than "documented" and is
 the one that took a review to get right. Every type named in an exported
 signature is either exported too, or belongs to another package and is

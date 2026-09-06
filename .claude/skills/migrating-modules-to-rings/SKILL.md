@@ -1395,8 +1395,9 @@ reading ahead):
 `--cov-fail-under="$(cat .coverage-baseline)"` enforcing the same coverage
 floor the old hook did — but nothing in CI *raises* the baseline, so run
 `uv run python scripts/coverage_ratchet.py` yourself when a migration's test
-moves raise coverage, and stage the new baseline in the same commit
-(`BACKLOG.md` B-RATCHET-1). Run `uv run pytest` before every commit in a
+moves raise coverage, and stage the new baseline in the same commit. CI's
+`the baseline follows the work` step fails if you do not, so forgetting is
+caught rather than accumulated. Run `uv run pytest` before every commit in a
 migration slice; nothing else will catch a broken import before CI does.
 
 **Do not run ruff, mypy, bandit, or `lint-imports` as separate steps before
