@@ -595,10 +595,10 @@ it. Its own guard test — which pins the read-method set by literal — would
 have stayed green too, because the set it pins was still correct about the
 methods it knew about.
 
-BACKLOG B159 had asserted the opposite in writing ("this method cannot land
-half-tested"), which is the part worth keeping: *a note claiming a gate covers
-your case is a claim about the gate, not evidence about it.* Read the
-selector.
+The backlog entry that asked for the method had asserted the opposite in
+writing -- "this method cannot land half-tested" -- which is the part worth
+keeping: *a note claiming a gate covers your case is a claim about the gate,
+not evidence about it.* Read the selector.
 
 The fix was a second selection axis — a return annotation that is, or
 contains, a mutable container — deliberately kept separate from the domain-type

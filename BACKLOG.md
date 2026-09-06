@@ -275,8 +275,9 @@ else's guarantee (B101 through B86).
 
 `extraction/date_nodes.py::_is_anchored` now requires a month name to be
 accompanied by something else in the name, so `MAR`, `May`, `Jun` and
-`August` are no longer date-nodes. That closed B164, a silent deletion of
-any entity whose name is a bare month whatever its `entity_type`.
+`August` are no longer date-nodes. That closed a silent deletion of any
+entity whose name is a bare month whatever its `entity_type` -- `May` and
+`Mar` are surnames, and the model had typed one of them `Person`.
 
 **The change was argued, not measured.** The module's numbers come from a
 5,647-entity corpus replayed on 2026-08-23 — 343 date-nodes caught, 22 dates
