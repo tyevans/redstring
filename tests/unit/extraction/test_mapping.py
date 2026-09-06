@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from redstring.domain.blocking import blocking_keys_for
@@ -695,6 +695,19 @@ class TestProperties:
         alphabet=st.characters(codec="utf-8", exclude_characters="\x00"), min_size=1
     ).filter(lambda s: s.strip())
 
+    # Pinned as examples, not left to the sampler. A bare month abbreviation
+    # was deleted by `lift_date_nodes` -- so this property returned *zero*
+    # entities and failed on the unpack below -- and the chance of drawing
+    # exactly "MAR" from arbitrary unicode text is negligible. It surfaced
+    # from a local `.hypothesis` database and had almost certainly never
+    # failed on CI. That is CLAUDE.md's "a property test is a sampler, not a
+    # proof about a specific value", with a three-letter string in place of a
+    # boundary integer: where a specific value is known to be interesting,
+    # write it down.
+    @example(name="MAR")
+    @example(name="May")
+    @example(name="Jun")
+    @example(name="August")
     @given(name=_NAMES)
     def test_every_mapped_entity_id_is_a_uuid5(self, name):
         [mapped_entity] = mapped(Extraction(entities=[entity(name)])).entities

@@ -123,66 +123,9 @@ layer.
 Entries here can produce an incorrect result for a caller. They are first
 because nothing else in this file costs a user anything.
 
-Ordered by whether a caller doing an ordinary thing meets it: B164 needs only
-an entity whose name is a month, B43 needs a merge and a re-extraction, B32
-needs a second extraction run, and B35 fails loudly.
-
-### B164. An entity named after a month is deleted, whatever its type
-
-`extraction/date_nodes.py::lift_date_nodes` removes an entity when four
-things hold: the name is anchored by a 3-4 digit year **or a month name**,
-`parse_temporal` reads the whole name as a date, and the entity carries
-neither a description nor properties. A bare month abbreviation satisfies all
-four, so an entity the model returned as
-
-    ExtractedEntity(name="MAR", entity_type="Person")
-
-is dropped and counted in `date_nodes` rather than appearing in
-`MappedExtraction.entities`. Confirmed for `MAR`, `Mar`, `MAY` and `JUN`;
-`SAT` and `IBM` survive, because `parse_temporal` declines them.
-
-**`entity_type` is never consulted.** That is deliberate and the module says
-why at length: `entity_type == "temporal_expression"` catches one spelling,
-the corpus already shows date-shaped nodes filed under `event`, and the next
-model will invent a third name. The shape test is the right call. But it
-means an explicit, confident `Person` is discarded on the strength of its
-name alone, and "May" is an ordinary surname — as are Mar, Jun and April.
-
-**The module already knows this class of false positive exists and stops one
-step short of this instance.** Its docstring records that without the anchor
-`parse_temporal` reads `Borg`, `Seven of Nine`, `Kor`, `MIT`, `Sun`, `API`
-and `DIS` as dates, "and a shape test without an anchor deletes the Borg from
-a Star Trek graph". The anchor was added for exactly that. What was not
-noticed is that the anchor is itself satisfied by a bare month name, so the
-guard admits the very cases it was written to exclude — a three-letter token
-that is both a common name and a month.
-
-**The damage is a deletion, not a bad date.** The docstring's mitigation —
-"a bare month like `August` raises `AmbiguousReferenceDateError` in
-`_build_entity` unless the document has a publication date, so it is dropped
-and counted as `undatable_relative`" — limits the *lifted date*. It does
-nothing about the node, which is removed either way.
-
-**Found by `tests/unit/extraction/test_mapping.py::TestProperties::test_every_mapped_entity_id_is_a_uuid5`**,
-which fails with `ValueError: not enough values to unpack (expected 1, got 0)`
-on `name='MAR'` — the unpack of a one-element list that came back empty. It
-reproduces on a pristine tree.
-
-**Do not read that test as a working gate.** It is a hypothesis property over
-arbitrary unicode text, and the chance of a random draw landing on exactly
-`MAR`, `MAY` or `JUN` is negligible; it surfaced here through the local
-`.hypothesis` database, so CI has very likely been green throughout. This is
-CLAUDE.md's "a property test is a sampler, not a proof about a specific
-value" with a three-letter string in place of `k=0` — **whoever fixes this
-pins the month abbreviations as `@example`s**, or the regression test is
-another sampler.
-
-Two candidate fixes, and the choice is a real one. Requiring the anchor to be
-a *year* (dropping bare month names from it) loses the `'August'` lift the
-docstring shows as a genuine case. Requiring a second token — a month name
-plus something — keeps `January 1968` and `the 1990s` and refuses `MAR`,
-which looks right and needs checking against the same corpus the module's
-measurements came from rather than against intuition.
+Ordered by whether a caller doing an ordinary thing meets it: B43 needs only a
+merge and a re-extraction, B32 needs a second extraction run, and B35 fails
+loudly.
 
 ### B43. A merge plans against a graph read outside its concurrency window
 
@@ -327,6 +270,38 @@ they come first: a check that cannot fail is worse than a missing one. Then
 the two adapter divergences nothing can observe, then the measurements nobody
 has taken (B150 through B-BENCH-1), then the seams whose tests pass on someone
 else's guarantee (B101 through B86).
+
+### B165. The date-node anchor was narrowed without re-running the corpus
+
+`extraction/date_nodes.py::_is_anchored` now requires a month name to be
+accompanied by something else in the name, so `MAR`, `May`, `Jun` and
+`August` are no longer date-nodes. That closed B164, a silent deletion of
+any entity whose name is a bare month whatever its `entity_type`.
+
+**The change was argued, not measured.** The module's numbers come from a
+5,647-entity corpus replayed on 2026-08-23 — 343 date-nodes caught, 22 dates
+lifted, zero false positives — and that corpus is not in this repository, so
+the narrowing was justified from the module's own docstring rather than by
+re-running it. The argument is sound as far as it goes: every date-node name
+the docstring quotes carries a second token (`September 2016`, `January
+1968`, `the 1990s`), and the one bare-month case it records —
+`'Chris Pine' (person) <- 'August'` — is listed there among the lifts that
+put a date on the wrong entity. So the names now declined are ones the module
+was arguably getting wrong in both directions.
+
+**What is not known is the count.** If some of the 343 were bare months, they
+now survive as junk nodes with their edges intact, which is the outcome the
+module's docstring calls worse than an over-attributed date. Nobody has
+counted them.
+
+To settle it, replay that corpus through `is_date_node` before and after and
+compare the two sets. The interesting number is not the total but the
+difference: how many bare-month names were being caught, and whether any of
+them had an `entity_type` a reader would call temporal. If it turns out to be
+a large class, the fix to reach for is not reverting this — deleting a real
+`Person` is a wrong answer and a junk node is noise — but consulting
+`entity_type` *negatively* in the bare-month case only, which the module
+currently refuses to do in either direction and says why.
 
 ### B160. `StoredChunk.text` assignment bypasses `_text_is_storable`, and now silently re-derives `id`
 

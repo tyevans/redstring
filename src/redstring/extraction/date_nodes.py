@@ -65,7 +65,8 @@ unchanged and keeping only the drop -- without touching the rest of this pass.
 else; the same corpus already shows `date`-shaped nodes filed under `event`,
 and the next model will invent a third name. So the test is the *shape*:
 
-1. the name is anchored by a 3-4 digit year or a month name,
+1. the name is anchored by a 3-4 digit year, or by a month name that is not
+   the whole name,
 2. `parse_temporal` reads the whole name as a date,
 3. the entity carries no description, and
 4. the entity carries no properties.
@@ -74,9 +75,21 @@ All four are needed, and (1) is the one that is easy to leave out. Without it
 `parse_temporal` accepts a startling number of short real names -- measured
 over that corpus, it reads `Borg`, `Seven of Nine`, `Kor`, `MIT`, `Sun`,
 `API` and `DIS` as dates, and a shape test without an anchor deletes the Borg
-from a Star Trek graph. (3) and (4) are what separate a bare date-node from an
-event the model named badly but described anyway; those keep their node,
-because there is something in them to read.
+from a Star Trek graph.
+
+**And (1)'s month clause is easy to write one step too wide, which is how the
+Borg came back wearing a different name.** The anchor originally read "a year
+or a month name", which `MAR`, `May`, `Jun` and `April` satisfy -- ordinary
+surnames, deleted whatever type the model gave them, and with no date lifted
+out of them either, since a bare month is `undatable_relative` downstream. A
+month name therefore anchors only when something else is in the name too; see
+`_is_anchored`. Every date-node in the measured corpus carries that something,
+and the bare-month case recorded above (`'Chris Pine' <- 'August'`) is one of
+the lifts this module already describes as putting a date on the wrong entity.
+
+(3) and (4) are what separate a bare date-node from an event the model named
+badly but described anyway; those keep their node, because there is something
+in them to read.
 
 **Measured over 5,647 real entities: 343 caught, all 343 typed
 `temporal_expression`, and zero false positives.** The 14 typed date-nodes it
@@ -99,13 +112,49 @@ if TYPE_CHECKING:
 #: Month names, full or abbreviated, as the anchor alternation uses them.
 _MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec"
 
-#: What a name must contain before `parse_temporal` is even asked about it.
-#:
-#: Three or four digits (a year, optionally decade-pluralised -- "1990s") or a
-#: month name. Two digits deliberately do not qualify: `M 33`, `G2`, `#1` and
-#: `The 37's` are all real entity names from the measured corpus that
-#: `parse_temporal` accepts, and all four survive because of this.
-_ANCHOR = re.compile(rf"\b(\d{{3,4}}s?\b|({_MONTHS})[a-z]*\b)", re.IGNORECASE)
+#: A year: three or four digits, optionally decade-pluralised ("1990s"). Two
+#: digits deliberately do not qualify -- `M 33`, `G2`, `#1` and `The 37's` are
+#: all real entity names from the measured corpus that `parse_temporal`
+#: accepts, and all four survive because of this.
+_YEAR = re.compile(r"\b\d{3,4}s?\b")
+
+#: A month name, full or abbreviated.
+_MONTH = re.compile(rf"\b({_MONTHS})[a-z]*\b", re.IGNORECASE)
+
+
+def _is_anchored(name: str) -> bool:
+    """Whether `name` looks enough like a date to ask `parse_temporal` about it.
+
+    A year anchors on its own. **A month name anchors only when it is not the
+    whole name**, and that asymmetry is the whole of this function.
+
+    `parse_temporal` reads a startling number of short real names as dates --
+    `Borg`, `Seven of Nine`, `Kor`, `MIT`, `Sun`, `API`, `DIS` -- so an anchor
+    is what stops a shape test deleting the Borg from a Star Trek graph. But
+    an anchor written as "a year *or a month name*" is satisfied by `MAR`,
+    `May` and `Jun`, which are surnames at least as often as they are months,
+    and the entity was deleted whatever type the model gave it. That is a
+    silent data loss: the node is removed and, for a bare month, no date is
+    lifted out of it either, because `AmbiguousReferenceDateError` makes it
+    `undatable_relative` downstream.
+
+    Requiring a second token costs nothing measured. Every genuine date-node
+    in the corpus this module was built against carries one -- `September
+    2016`, `January 1968`, `the 1990s`, `March 15, 1920` -- and the bare-month
+    case the module's own docstring records, `'Chris Pine' (person) <-
+    'August'`, is one it lists among the lifts that attribute a date to the
+    wrong entity. So the names this now declines are the ones it was getting
+    wrong in both directions.
+
+    The remainder is tested for an **alphanumeric character** rather than for
+    being non-empty: stripping the month out of `Mar.` leaves a full stop,
+    which is punctuation and not a second token.
+    """
+    if _YEAR.search(name):
+        return True
+    if not _MONTH.search(name):
+        return False
+    return any(character.isalnum() for character in _MONTH.sub("", name))
 
 
 class _Nameable(Protocol):
@@ -143,7 +192,7 @@ def is_date_node(candidate: _Nameable) -> bool:
     lifts.
     """
     name = candidate.name.strip()
-    if not name or not _ANCHOR.search(name):
+    if not name or not _is_anchored(name):
         return False
     if candidate.description or candidate.properties:
         return False

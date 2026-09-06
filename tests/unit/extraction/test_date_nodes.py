@@ -49,6 +49,47 @@ def test_a_short_real_name_is_not_a_date_node(name: str) -> None:
     assert not is_date_node(entity(name))
 
 
+@pytest.mark.parametrize("name", ["MAR", "Mar", "May", "MAY", "Jun", "August", "april", "Mar."])
+def test_a_name_that_is_only_a_month_is_not_a_date_node(name: str) -> None:
+    """A month name alone is a surname as often as it is a date.
+
+    The anchor exists to stop `parse_temporal` deleting short real names --
+    `Borg`, `MIT`, `Sun` -- and it is satisfied by "a 3-4 digit year **or a
+    month name**", so a bare month abbreviation clears the whole four-part
+    shape test and the entity is removed. `May`, `Mar`, `Jun` and `April` are
+    all ordinary surnames, and the model had typed this one `Person`.
+
+    So a month name anchors only when it is not the entire name. Every
+    genuine date-node in the measured corpus carries something else --
+    `September 2016`, `January 1968`, `the 1990s` -- and the cases this now
+    declines are ones the module's own docstring already records as lifting
+    *wrongly*: `'Chris Pine' (person) <- 'August'` puts a date belonging to
+    an event onto the person who took part in it.
+
+    `Mar.` is here because the remainder has to be tested for an
+    alphanumeric rather than for being non-empty; stripping the month from it
+    leaves a full stop, which is not a second token.
+    """
+    assert not is_date_node(entity(name, "Person"))
+
+
+def test_a_month_with_anything_else_in_the_name_is_still_a_date_node() -> None:
+    """The other side of the rule above, so it cannot be satisfied by
+    refusing every month-anchored name.
+
+    `March 15` carries no year, so nothing but the month anchor can bring it
+    in -- it is the case that separates "a month name plus something" from
+    "no month anchor at all", and it reaches `is_date_node` through
+    `AmbiguousReferenceDateError` rather than through a parsed value.
+
+    `early August` is deliberately *not* here: `parse_temporal` returns
+    `None` for it, so it was never a date node and asserting it would be
+    testing the parser rather than the anchor.
+    """
+    assert is_date_node(entity("March 15", "temporal_expression"))
+    assert is_date_node(entity("August 1968", "temporal_expression"))
+
+
 @pytest.mark.parametrize(
     "name", ["the 1990s", "2017", "September 2016", "January 1968", "1966-1967", "1970"]
 )
