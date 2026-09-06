@@ -3176,36 +3176,6 @@ The first is probably right, and the reason to write it down rather than do it
 now is that it is a change to the release pipeline made immediately after a
 release, which is the worst time to touch one.
 
-### B79. No workflow job declares `timeout-minutes`, so the ceiling is six hours
-
-Not one job across `ci.yml`, `release.yml` and `docs.yml` sets
-`timeout-minutes`, so every one inherits GitHub's 6-hour default. Verified:
-`grep -n "timeout-minutes" .github/workflows/*.yml` returns nothing.
-
-This was found because it *failed to fire*. The `integration` job spent ~90
-minutes per run waiting out embedding probes against an unreachable address
-(B78) for a full day, on green runs as well as red, and nothing capped it —
-6 hours is far enough above the real ~35-minute cost that the job would have
-had to be an order of magnitude wrong before the default noticed.
-
-The reason to file rather than fix now: **the right number is not obvious and
-a wrong one is worse than none.** The `integration` job's honest duration is
-still being established (it was ~35 min before `317e7a5` and should return to
-roughly that with `-m "integration and not live"` — but that is a prediction,
-not a measurement, and the next run is the first data point). A cap set below
-the real distribution turns a slow-but-fine run into a red X that reads as a
-test failure, which is the same misdiagnosis in the other direction.
-
-So: take two or three runs of the post-fix `integration` job, set the cap at a
-generous multiple of the observed p100, and do the same per job rather than
-one blanket value — `lint` and `import-linter` finish in under a minute and
-want a cap in single digits, where `integration` does not.
-
-Note this interacts with `release.yml`, which calls `ci.yml` via
-`workflow_call`: a cap on the reusable workflow's jobs applies to the release
-pipeline too, which is the case where an unbounded hang is most expensive
-(B72 — a failed release consumes the version number).
-
 ### B94. Generated Postgres index names can exceed the 63-byte NAMEDATALEN, and truncation is silent
 
 `chunks/adapters/postgres.py`'s DDL builds index names by interpolating the

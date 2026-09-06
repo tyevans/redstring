@@ -72,6 +72,18 @@ under **Removed** or **Changed**. See
 
 ### Changed
 
+- **Every CI job declares a `timeout-minutes`.** None did, so all of them
+  inherited GitHub's silent 360-minute default. That was found the only way a
+  ceiling that high ever is — by failing to fire: the `integration` job spent
+  roughly 90 minutes a run waiting out probes against an unreachable address,
+  on green runs as well as red, for a full day, and nothing capped it. The
+  caps are per job and set from each one's measured p100 over recent runs
+  times a generous multiple, because a cap below the real distribution turns a
+  slow-but-fine run into a red X that reads as a test failure. A new test
+  derives the job list from the workflow files and fails until a new job
+  chooses its number — the caps alone would be one edit that a single new job
+  silently undoes. Closes BACKLOG B79.
+
 - **CI fails when the coverage baseline goes stale.** The ratchet's floor
   moved into CI when the pre-commit hook was removed, but its *rise* did not:
   a CI job cannot stage a raised baseline into a commit that already exists,
