@@ -117,6 +117,7 @@ know what is already decided, so here is the set, by what each one settles:
 | [`0044` a chunk id is derived, not supplied](../../docs/adr/0044-a-chunk-id-is-derived-not-supplied.md) | `StoredChunk.id` becomes a `computed_field` over `(source_id, text)` instead of a caller-supplied `str`, so the two `ChunkStore` adapters' `ON CONFLICT` reasoning is a property of the type. A `model_validator` accepts a round-tripped `id` that still agrees, because `extra="forbid"` alone broke event-log replay. Amends 0038, closes BACKLOG B97. |
 | [`0045` a lexical-only retriever is a constructor](../../docs/adr/0045-a-lexical-only-retriever-is-a-constructor.md) | `Retriever.lexical_only(graph=...)` and `ChunkRetriever.lexical_only(chunks=...)` construct a retriever with no `EmbeddingProvider`; its default mode is `LEXICAL` and `SEMANTIC`/`HYBRID` raise by name. Optional constructor arguments were rejected because they make "lexical only" and "I forgot the provider" the same call, against 0017. Closes BACKLOG B163. |
 | [`0046` a chunk write reports what it added](../../docs/adr/0046-a-chunk-write-reports-what-it-added.md) | `ChunkWriter.upsert_many` returns the rows it added rather than `None`, and `ChunkReader` gains `existing_ids(chunk_ids, tenant_id)`. Both are bounded by the caller's input rather than by the corpus. Content-addressed ids make a collapse a normal outcome, so it is made observable rather than prevented. Closes BACKLOG B159 and B161. |
+| [`0047` four adapter paths are stable](../../docs/adr/0047-four-adapter-paths-are-stable.md) | The four adapters a caller deploys keep their import paths across minor versions without entering `__all__`, because exporting them would make `import redstring` pull in every optional backend. Qualifies 0006 rather than amending it. Closes BACKLOG B103. |
 
 Anything touching an event payload, a store port, consolidation, temporal
 relations, or `__all__` has a related ADR by construction — say for each one
@@ -209,7 +210,8 @@ deferral: it goes in `BACKLOG.md` with why ignoring it was correct.
    below `.coverage-baseline` — no hook runs the suite any more, so CI is the
    first place a regression would otherwise be caught. Run
    `uv run python scripts/coverage_ratchet.py` if the change raises coverage,
-   so the new baseline lands in the same commit; see `BACKLOG.md` B-RATCHET-1.
+   so the new baseline lands in the same commit. CI's `the baseline follows the
+   work` step fails if you do not, so this is a gate rather than a reminder.
 
 ## Bug fix
 

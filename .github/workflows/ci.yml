@@ -163,9 +163,13 @@ jobs:
       # with it, and a falling number would have looked exactly like a passing
       # build.
       #
-      # What did not move: the baseline no longer raises itself. The script
-      # staged a rise into the commit that earned it, and a CI run has no
-      # commit to stage into. See BACKLOG B-RATCHET-1.
+      # What did not move on its own is the *rise*: the script staged a new
+      # high-water mark into the commit that earned it, and a CI run has no
+      # commit to stage into. The step after this one closes that -- it fails
+      # when the measured total has risen clear of the baseline, telling the
+      # author to run the script and commit the number. A bot pushing the
+      # baseline itself was not taken: it needs a token with write access to a
+      # protected branch, and it makes a second commit of every improvement.
       #
       # **`--cov-precision=2` is load-bearing, not cosmetic.** coverage's
       # `should_fail_under` returns `round(total, precision) < fail_under`,
@@ -182,6 +186,24 @@ jobs:
             --cov=src/redstring --cov-report=xml --cov-report=term-missing \
             --cov-precision=2 \
             --cov-fail-under="$(cat .coverage-baseline)"
+
+      # The other half of the ratchet: the step above stops coverage falling,
+      # this one stops the baseline going stale while coverage rises.
+      #
+      # It measures the `.coverage` the run above left behind rather than
+      # running the suite again -- one question does not justify a second
+      # four-minute run -- and it shares `TOLERANCE` and the baseline file
+      # with the fall check, so the band is symmetric by construction rather
+      # than by two constants happening to agree.
+      #
+      # **Failing on a rise reads oddly, and the alternative is worse.** A CI
+      # job cannot stage a file into a commit that already exists, so without
+      # this the baseline sits wherever it was last edited by hand while the
+      # real number climbs, and a regression back to the stale figure passes
+      # silently. Proved in both directions before landing: it exits 1 against
+      # a baseline rolled back to 96.22 and 0 against the current one.
+      - name: the baseline follows the work
+        run: uv run python scripts/coverage_ratchet.py --check-rise
 
       - name: Upload coverage report
         if: matrix.python-version == '3.13'

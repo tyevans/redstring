@@ -86,10 +86,17 @@ is the loop. Nothing will run them for you before the commit lands, and the
 first thing that disagrees is CI, on a branch you have already pushed.
 
 The coverage floor moved rather than disappeared: CI's `pytest` job passes
-`--cov-fail-under="$(cat .coverage-baseline)"`. The baseline no longer *raises*
-itself, because the script staged the new value into the commit that earned it
-and a CI run has no commit to stage into — see BACKLOG B-RATCHET-1, which is
-open for that reason.
+`--cov-fail-under="$(cat .coverage-baseline)"`.
+
+**The baseline still does not raise itself, and CI now fails rather than
+letting it go stale.** The script staged a rise into the commit that earned it
+and a CI run has no commit to stage into, so a separate step —
+`scripts/coverage_ratchet.py --check-rise` — measures the coverage the suite
+just produced and fails when it has risen clear of the baseline, telling you to
+run `uv run python scripts/coverage_ratchet.py` and commit the number. Failing
+on a *rise* is deliberate: a floor nobody moves is a check you never see fail,
+and a regression back to a stale figure passes silently while the gate reports
+green throughout.
 
 **Do not run ruff, bandit, or lint-imports as separate steps before
 committing.** Those still duplicate work the hook does. Write the change, then

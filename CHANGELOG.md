@@ -16,6 +16,21 @@ under **Removed** or **Changed**. See
 
 ### Added
 
+- **Four adapter import paths are now promised stable.**
+  `redstring.graph.adapters.neo4j.Neo4jGraphStore`,
+  `redstring.vector.adapters.pgvector.PgVectorStore`,
+  `redstring.llm.adapters.langchain.LangChainLlmProvider` and
+  `redstring.llm.adapters.langchain_embedding.LangChainEmbeddingProvider` will
+  not move or be renamed without a major version and a note here. They are
+  still not in `__all__` — exporting them would make `import redstring` pull in
+  LangChain, neo4j and asyncpg, which is exactly what the extras exist to
+  avoid — so what is fixed is the path rather than the name. Until now the
+  supported surface was the one nobody ships: the only providers in `__all__`
+  are the fakes, while the README's quickstart imported from a path this
+  package called liable to change in a patch release. See
+  [ADR 0047](https://github.com/tyevans/redstring/blob/main/docs/adr/0047-four-adapter-paths-are-stable.md).
+  Closes BACKLOG B103.
+
 - **`ChunkReader.existing_ids(chunk_ids, tenant_id)`.** Which of a batch of
   chunk ids a tenant already holds, asked once per batch instead of once per
   candidate. This is the question a resumable ingest asks, and there was no
@@ -56,6 +71,20 @@ under **Removed** or **Changed**. See
   sampler and a known-interesting value belongs written down.
 
 ### Changed
+
+- **CI fails when the coverage baseline goes stale.** The ratchet's floor
+  moved into CI when the pre-commit hook was removed, but its *rise* did not:
+  a CI job cannot stage a raised baseline into a commit that already exists,
+  so `.coverage-baseline` sat wherever it was last edited by hand while the
+  real number climbed. A new step, `scripts/coverage_ratchet.py --check-rise`,
+  measures the coverage the suite just produced — it does not run the suite
+  again — and fails when the total has risen clear of the baseline, naming the
+  command to run. Failing on a *rise* is deliberate: a floor nobody moves is a
+  check nobody ever sees fail, and a regression back to a stale figure passes
+  silently while the gate reports green throughout. Both directions share one
+  tolerance and one baseline file. `.coverage-baseline` rises 96.22 → 96.34,
+  which is the drift this step exists to have caught. Closes BACKLOG
+  B-RATCHET-1.
 
 - **`ChunkWriter.upsert_many` returns the number of rows it added** instead of
   `None` — rows added, never rows replaced, so re-writing an already-stored

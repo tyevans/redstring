@@ -22,7 +22,7 @@ pre-commit hook; that hook is gone (`ec7861f`), so the suite now runs in CI's
 `pytest` job — which enforces the same `.coverage-baseline` floor the hook
 did, via `--cov-fail-under` — and whenever you run it yourself. Nothing runs
 it automatically at commit time any more, so run it before committing; see
-`docs/reference/quality-gates.md` and `BACKLOG.md` B-RATCHET-1.
+`docs/reference/quality-gates.md`.
 
 The second frontmatter path is deliberate. `src/redstring/testing/` holds no
 `test_*.py` files, so `tests/**/*.py` matches it only by accident of the glob
@@ -1015,5 +1015,12 @@ uv run python scripts/coverage_ratchet.py
 A deliberate drop means editing `.coverage-baseline` in the same commit and
 justifying it in the message. Deleting or weakening a test to get past the
 gate is a deferral — it goes in `BACKLOG.md` in that same commit, naming the
-test and what it was protecting. See `BACKLOG.md` B-RATCHET-1 for why a floor
-that never follows the work is worse than it sounds.
+test and what it was protecting.
+
+**A rise is also your job, and CI will say so.** `scripts/coverage_ratchet.py
+--check-rise` runs as its own step and fails when the measured total has risen
+clear of the baseline, because a CI job cannot stage a file into a commit that
+already exists. Run `uv run python scripts/coverage_ratchet.py` and commit the
+new number. A floor nobody moves is a check you never see fail: coverage
+drifts up, the baseline does not, and a later regression back to the stale
+figure passes silently.
