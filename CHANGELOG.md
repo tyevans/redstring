@@ -14,6 +14,11 @@ under **Removed** or **Changed**. See
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-30
+
+Four adapter paths are promised stable, batch existence checks and added-count
+reporting on the chunk store, and a month-name filter fix.
+
 ### Added
 
 - **Four adapter import paths are now promised stable.**
@@ -1278,7 +1283,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/tyevans/redstring/releases/tag/v0.12.0
 [0.11.0]: https://github.com/tyevans/redstring/releases/tag/v0.11.0
 [0.10.0]: https://github.com/tyevans/redstring/releases/tag/v0.10.0
 [0.9.2]: https://github.com/tyevans/redstring/releases/tag/v0.9.2
