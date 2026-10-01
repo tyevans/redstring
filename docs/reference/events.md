@@ -403,7 +403,7 @@ consumer that needs to name a stream from outside should call
 ### `document_stream(*, tenant_id, source_id)`
 
 ```python
-def document_stream(*, tenant_id: TenantId, source_id: SourceId) -> StreamId
+def document_stream(*, tenant_id: TenantId, source_id: SourceId) -> StreamId: ...
 ```
 
 Returns `StreamId(aggregate_id=uuid5(tenant_id, source_id),
@@ -491,7 +491,7 @@ passes the empty case and admits the whitespace one.
 ### `consolidation_stream(*, tenant_id)`
 
 ```python
-def consolidation_stream(*, tenant_id: TenantId) -> StreamId
+def consolidation_stream(*, tenant_id: TenantId) -> StreamId: ...
 ```
 
 Returns `StreamId(aggregate_id=tenant_id, category=CONSOLIDATION_CATEGORY)` —

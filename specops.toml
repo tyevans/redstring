@@ -1,0 +1,82 @@
+[project]
+name = "redstring"
+repo = ""
+docs_dir = "docs/project"
+site_output = "dist/site"
+
+[documentation]
+allowed_directories = ["adr", "examples", "history", "plans", "superpowers"]
+allowed_root_files = ["getting-started.md", "installation.md"]
+
+[architecture]
+file_length_limit = 500
+buffer_target = 10
+buffer_warning_threshold = 6
+
+components = [
+  { id = "core", name = "Core Engine", path = "src" }
+]
+
+[vertical_slices]
+slices = [
+  { type = "spike", name = "Architectural Spike", prefix = "SPIKE:", requires_adr = true },
+  { type = "domain", name = "Domain Model & State Handlers" },
+  { type = "api", name = "Public API Contracts" },
+  { type = "ui", name = "User Interface & Component Stories" },
+  { type = "test", name = "Blackbox Frontdoor Test Suite" }
+]
+
+[quality]
+testing_style = "blackbox-frontdoor"
+require_bdd = true
+preflight = [
+  "uv run pytest"
+]
+
+[execution]
+agent_command = "agy --dangerously-skip-permissions -p {prompt}"
+agent_max_attempts = 3
+git_branch_prefix = "feat/"
+backlog_isolation = true
+
+[profiles]
+installed = ["core", "bdd", "ddd"]
+version = "0.1.0"
+
+[invariants.file_limits]
+grandfathered = [
+  "src/redstring/__init__.py",
+  "src/redstring/chunks/adapters/postgres.py",
+  "src/redstring/composition/build_graph.py",
+  "src/redstring/composition/retrieval.py",
+  "src/redstring/consolidation/service.py",
+  "src/redstring/domain/temporal_parsing.py",
+  "src/redstring/extraction/domains/models.py",
+  "src/redstring/extraction/pipeline.py",
+  "src/redstring/graph/adapters/neo4j.py",
+  "src/redstring/testing/chunk_store.py",
+  "src/redstring/testing/graph_store.py",
+  "src/redstring/testing/vector_store.py",
+  "src/redstring/vector/adapters/pgvector.py",
+  "tests/integration/chunks/test_postgres_store.py",
+  "tests/integration/graph/test_neo4j_store.py",
+  "tests/integration/vector/test_pgvector_store.py",
+  "tests/unit/chunks/test_postgres_schema.py",
+  "tests/unit/composition/test_index_documents.py",
+  "tests/unit/composition/test_retrieval.py",
+  "tests/unit/composition/test_themes.py",
+  "tests/unit/consolidation/test_candidates.py",
+  "tests/unit/consolidation/test_merge_undo_round_trip.py",
+  "tests/unit/consolidation/test_planning.py",
+  "tests/unit/domain/test_merge_strategy.py",
+  "tests/unit/domain/test_temporal_parsing.py",
+  "tests/unit/extraction/domains/test_models.py",
+  "tests/unit/extraction/domains/test_registry.py",
+  "tests/unit/extraction/test_mapping.py",
+  "tests/unit/extraction/test_merging.py",
+  "tests/unit/extraction/test_pipeline.py",
+  "tests/unit/graph/test_neo4j_adapter_is_wired.py",
+  "tests/unit/llm/test_retry.py",
+  "tests/unit/test_composition.py",
+  "tests/unit/test_consolidator.py",
+]

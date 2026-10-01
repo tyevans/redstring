@@ -1272,6 +1272,7 @@ The cause is in `bandit.core.manager._is_file_included`, which applies
 if not _matches_glob_list(path, excluded_path_strings) and not any(
     x in path for x in excluded_path_strings
 ):
+    ...
 ```
 
 `"build"` is a substring of `redstring`. Every path under

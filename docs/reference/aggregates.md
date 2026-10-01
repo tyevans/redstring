@@ -45,7 +45,7 @@ Each is both the `StreamId.category` and the aggregate class's
 ### `document_stream(*, tenant_id, source_id) -> StreamId`
 
 ```python
-document_stream(*, tenant_id: TenantId, source_id: SourceId) -> StreamId
+def document_stream(*, tenant_id: TenantId, source_id: SourceId) -> StreamId: ...
 ```
 
 Returns `StreamId(aggregate_id=uuid5(tenant_id, source_id),
@@ -71,7 +71,7 @@ would yield a valid-looking stream shared by every document that had one.
 ### `consolidation_stream(*, tenant_id) -> StreamId`
 
 ```python
-consolidation_stream(*, tenant_id: TenantId) -> StreamId
+def consolidation_stream(*, tenant_id: TenantId) -> StreamId: ...
 ```
 
 Returns `StreamId(aggregate_id=tenant_id, category=CONSOLIDATION_CATEGORY)`.
@@ -150,14 +150,14 @@ is kept here — those live in the events, and projections read them.
 ### `record_extraction(...) -> DocumentExtracted | None`
 
 ```python
-record_extraction(
+def record_extraction(
     *,
     tenant_id: TenantId,
     source_id: SourceId,
     model_version: str,
     entities: Sequence[Entity] = (),
     relationships: Sequence[Relationship] = (),
-) -> DocumentExtracted | None
+) -> DocumentExtracted | None: ...
 ```
 
 Records what one extraction run found. Keyword-only; `entities` and
@@ -208,13 +208,13 @@ the `None` return — see *`None` return vs. raising*.
 ### `record_embeddings(...) -> EntitiesEmbedded | None`
 
 ```python
-record_embeddings(
+def record_embeddings(
     *,
     tenant_id: TenantId,
     source_id: SourceId,
     embedding_model: str,
     embeddings: Sequence[VectorRecord] = (),
-) -> EntitiesEmbedded | None
+) -> EntitiesEmbedded | None: ...
 ```
 
 Records the vectors one embedding run produced for this document's entities.
@@ -555,7 +555,7 @@ a replayed `alias_of` compares equal to one built in process.
 ### `merge(...) -> EntitiesMerged`
 
 ```python
-merge(
+def merge(
     *,
     tenant_id: TenantId,
     canonical_entity_id: EntityId,
@@ -563,7 +563,7 @@ merge(
     merge_reason: str | None = None,
     redirections: Sequence[RelationshipRedirection] = (),
     resolution: PropertyResolution | None = None,
-) -> EntitiesMerged
+) -> EntitiesMerged: ...
 ```
 
 Records that `merged_entity_ids` were absorbed into `canonical_entity_id`.
@@ -716,7 +716,7 @@ producer of one — see
 ### `undo_merge(*, tenant_id, merge_event_id) -> MergeUndone`
 
 ```python
-undo_merge(*, tenant_id: TenantId, merge_event_id: UUID) -> MergeUndone
+def undo_merge(*, tenant_id: TenantId, merge_event_id: UUID) -> MergeUndone: ...
 ```
 
 Reverses the merge that `merge_event_id` recorded. Keyword-only, and the
@@ -1005,7 +1005,7 @@ rather than landing in the log.
 ### `document_repository(event_store) -> TenantAwareRepository[Document]`
 
 ```python
-document_repository(event_store: AggregateStore) -> TenantAwareRepository[Document]
+def document_repository(event_store: AggregateStore) -> TenantAwareRepository[Document]: ...
 ```
 
 No snapshot store, by design: a document accumulates one event per model
@@ -1015,12 +1015,12 @@ save replaying three events.
 ### `consolidation_repository(event_store, snapshot_store, *, snapshot_every=...)`
 
 ```python
-consolidation_repository(
+def consolidation_repository(
     event_store: AggregateStore,
     snapshot_store: SnapshotStore,
     *,
     snapshot_every: int = CONSOLIDATION_SNAPSHOT_EVERY,
-) -> TenantAwareRepository[ConsolidationLog]
+) -> TenantAwareRepository[ConsolidationLog]: ...
 ```
 
 `snapshot_store` is **required**, not optional. The unbounded stream is the

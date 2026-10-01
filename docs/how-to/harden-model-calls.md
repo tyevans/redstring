@@ -430,6 +430,8 @@ Because the real type is only on `__cause__`, dispatching on *what* failed
 means inspecting it:
 
 ```python
+try:
+    ...
 except RetryExhausted as exhausted:
     if isinstance(exhausted.__cause__, TimeoutError):
         ...  # the model server is slow, not gone
