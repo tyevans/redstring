@@ -231,7 +231,7 @@ docs = [
 ]
 dev = [
     "bandit[toml]==1.9.4",
-    "cosmic-ray==8.4.6",
+    "cosmic-ray==8.7.0",
     "coverage[toml]==7.15.3",
     "hypothesis==6.165.10",
     # Used only by `tests/integration/llm/test_live_endpoint.py`, to probe a
