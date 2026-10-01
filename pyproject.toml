@@ -237,8 +237,9 @@ dev = [
     # Used only by `tests/integration/llm/test_live_endpoint.py`, to probe a
     # model server before the suite talks to it. Never imported by `src/`.
     "httpx==0.28.1",
-    "import-linter==2.13",
+    "import-linter==2.15",
     "mutmut==3.8.0",
+
     "mypy==2.3.0",
     "pip-audit==2.10.1",
     "pre-commit==4.6.2",
