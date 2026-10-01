@@ -245,7 +245,7 @@ dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
-    "pytest-randomly==4.1.0",
+    "pytest-randomly==5.0.0",
     "pytest-xdist==3.8.0",
     "ruff==0.16.1",
     "types-dateparser==1.4.1.20260617",
