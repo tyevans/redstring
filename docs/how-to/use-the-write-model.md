@@ -960,6 +960,8 @@ the real canonical rather than the next link in a chain.
 The remedy is therefore to retry against the id the error names:
 
 ```python
+try:
+    ...
 except MergeIntoAliasError as exc:
     log.merge(
         tenant_id=scoped_tenant,
