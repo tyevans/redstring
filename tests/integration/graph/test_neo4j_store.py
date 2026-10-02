@@ -469,9 +469,7 @@ class TestNeo4jSpecifics:
         interleaving leaves: the check passes (stubbed out for its first call)
         and the endpoints are genuinely absent when the write runs.
 
-        This is the half of the fix a mock cannot cover: it proves the real
-        Cypher actually returns a row per edge written, which is what makes a
-        short write detectable at all.
+        This proves the real Cypher detects when endpoints vanish (B119).
         """
         tenant = uuid4()
         source, target = _entity(tenant=tenant), _entity(tenant=tenant)
@@ -486,11 +484,13 @@ class TestNeo4jSpecifics:
                 await real(relationships)
 
         store._reject_dangling = skip_the_first_check
-
-        with pytest.raises(MissingEntityError) as raised:
-            await store.upsert_relationships(
-                [_relationship(tenant, source=source.id, target=target.id)]
-            )
+        try:
+            with pytest.raises(MissingEntityError) as raised:
+                await store.upsert_relationships(
+                    [_relationship(tenant, source=source.id, target=target.id)]
+                )
+        finally:
+            store._reject_dangling = real
 
         # The re-check still names which endpoint is missing, so the error a
         # caller sees is the same one an up-front dangling edge produces.
@@ -584,7 +584,7 @@ def _counting(store: Neo4jGraphStore, monkeypatch: pytest.MonkeyPatch) -> Any:
         try:
             yield log
         finally:
-            monkeypatch.undo()
+            store._run = original
 
     return _cm()
 
