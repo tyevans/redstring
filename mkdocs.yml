@@ -47,6 +47,7 @@ plugins:
 exclude_docs: |
   plans/
   history/
+  project/
 
 # `--strict` turns a link to a missing page into a build failure, which is the
 # point rather than a preference: this project renumbered seven ADRs by
@@ -189,4 +190,7 @@ nav:
       - "0045 · A lexical-only retriever is a constructor": adr/0045-a-lexical-only-retriever-is-a-constructor.md
       - "0046 · A chunk write reports what it added": adr/0046-a-chunk-write-reports-what-it-added.md
       - "0047 · Four adapter paths are stable": adr/0047-four-adapter-paths-are-stable.md
+  - Explanation:
+      - Project management as code: explanation/project-management-as-code.md
+      - Library release workflow and SpecOps: explanation/library-release-workflow-and-specops.md
   - Contributing: contributing.md

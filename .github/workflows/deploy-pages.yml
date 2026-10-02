@@ -39,10 +39,10 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Build Diataxis Documentation and Living Visualizer
-        run: uv run spec-ops docs build --base-url /${{ github.event.repository.name }}/
+        run: uv tool run --from git+https://github.com/tyevans/spec-ops.git spec-ops docs build --base-url /${{ github.event.repository.name }}/
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

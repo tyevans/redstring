@@ -14,7 +14,14 @@ buffer_target = 10
 buffer_warning_threshold = 6
 
 components = [
-  { id = "core", name = "Core Engine", path = "src" }
+  { id = "extraction", name = "Extraction Pipeline", path = "src/redstring/extraction" },
+  { id = "consolidation", name = "Consolidation & Aliasing", path = "src/redstring/consolidation" },
+  { id = "projections", name = "Read Model Projections", path = "src/redstring/projections" },
+  { id = "aggregates", name = "Write Aggregates", path = "src/redstring/aggregates" },
+  { id = "events", name = "Domain Events", path = "src/redstring/events" },
+  { id = "ports", name = "Ports & Interfaces", path = "src/redstring/ports" },
+  { id = "composition", name = "Composition & Retrieval", path = "src/redstring/composition" },
+  { id = "domain", name = "Domain Models", path = "src/redstring/domain" }
 ]
 
 [vertical_slices]
