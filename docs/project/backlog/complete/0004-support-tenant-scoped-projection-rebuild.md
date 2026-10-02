@@ -1,7 +1,7 @@
 ---
 id: '0004'
 title: Support tenant-scoped projection rebuild
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0002
 governing_prds:
