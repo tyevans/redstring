@@ -1,8 +1,7 @@
 ---
 id: '0011'
 title: Audit and prune backwards compatibility shims in extraction BC
-status: Refined
-dependencies: []
+status: Complete
 governing_adrs:
 - ADR-0003
 - ADR-0007
@@ -11,8 +10,7 @@ governing_prds:
 governing_stories:
 - US-0005
 target_bc: extraction
-mutation_scope:
-- src/redstring/extraction/
+mutation_scope: '[''src/redstring/extraction/'']'
 ---
 
 # TASK-0011: Audit and prune backwards compatibility shims in extraction BC

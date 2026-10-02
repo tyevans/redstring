@@ -12,7 +12,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0008 (Complete)**: [`0008-decompose-themes-module-to-satisfy-file-length-inv`](complete/0008-decompose-themes-module-to-satisfy-file-length-inv.md)
 - **TASK-0009 (Complete)**: [`0009-decompose-consolidation-test-resolve-suite`](complete/0009-decompose-consolidation-test-resolve-suite.md)
 - **TASK-0010 (Complete)**: [`0010-decompose-vector-test-wired-suite`](complete/0010-decompose-vector-test-wired-suite.md)
-- **TASK-0011 (Refined)**: [`0011-audit-and-prune-compatibility-shims-extraction`](refined/0011-audit-and-prune-compatibility-shims-extraction.md)
+- **TASK-0011 (Complete)**: [`0011-audit-and-prune-compatibility-shims-extraction`](complete/0011-audit-and-prune-compatibility-shims-extraction.md)
 - **TASK-0012 (Refined)**: [`0012-audit-and-prune-compatibility-shims-consolidation`](refined/0012-audit-and-prune-compatibility-shims-consolidation.md)
 - **TASK-0013 (Refined)**: [`0013-audit-and-prune-compatibility-shims-projections`](refined/0013-audit-and-prune-compatibility-shims-projections.md)
 - **TASK-0014 (Refined)**: [`0014-audit-and-prune-compatibility-shims-aggregates`](refined/0014-audit-and-prune-compatibility-shims-aggregates.md)
