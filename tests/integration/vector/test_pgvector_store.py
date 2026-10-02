@@ -49,6 +49,7 @@ import pytest
 
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.vector import VectorRecord
+from redstring.testing.lifetime import CallerOwnedResourceContract
 from redstring.testing.vector_store import VectorStoreCompliance
 from redstring.vector.adapters.pgvector import PgVectorStore
 
@@ -518,26 +519,19 @@ class TestPgVectorSpecifics:
     async def test_close_does_not_close_a_pool_it_does_not_own(
         self, store: PgVectorStore, pool: asyncpg.Pool[Any]
     ) -> None:
-        """The suite disposes a store per hypothesis example.
-
-        Closing an injected pool would take the whole session's connections
-        down with the first example.
-        """
+        """The suite disposes store without closing injected pool (B119)."""
+        CallerOwnedResourceContract.assert_resource_identity(store, pool, "_pool")
         await store.close()
-        assert await pool.fetchval("SELECT 1") == 1
+        CallerOwnedResourceContract.assert_resource_not_closed(pool)
 
     async def test_connect_owns_and_closes_its_pool(self, pool: asyncpg.Pool[Any]) -> None:
-        """`pool` is requested purely for its skip.
-
-        This is the only test that builds a pool of its own, so without the
-        dependency it is the only one that *fails* rather than skips when
-        Postgres is absent. A skip guard is only honest if every test in the
-        module is behind it.
-        """
+        """`pool` is requested purely for its skip guard."""
         owned = await PgVectorStore.connect(DSN, dimension=DIMENSION, table=TABLE)
         await owned.ensure_schema()
         assert await owned.search([1.0, *([0.0] * (DIMENSION - 1))], uuid4()) == []
+        owned_pool = owned._pool
         await owned.close()
+        CallerOwnedResourceContract.assert_resource_closed(owned_pool)
 
         with pytest.raises(Exception, match="closed"):
             await owned.search([1.0, *([0.0] * (DIMENSION - 1))], uuid4())

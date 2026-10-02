@@ -46,6 +46,7 @@ from redstring.domain.exceptions import MissingEntityError
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.graph.adapters.neo4j import Neo4jGraphStore
 from redstring.testing.graph_store import EXAMPLE_OBSERVED_AT, GraphStoreCompliance
+from redstring.testing.lifetime import CallerOwnedResourceContract
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -257,15 +258,10 @@ class TestNeo4jSpecifics:
     async def test_close_does_not_close_a_driver_it_does_not_own(
         self, store: Neo4jGraphStore, neo4j_driver: AsyncDriver
     ) -> None:
-        """The suite disposes a store per hypothesis example.
-
-        Closing an injected driver would take the whole session's pool down
-        with the first example.
-        """
+        """The suite disposes store without closing injected driver (B119)."""
+        CallerOwnedResourceContract.assert_resource_identity(store, neo4j_driver, "_driver")
         await store.close()
-        async with neo4j_driver.session() as session:
-            result = await session.run("RETURN 1 AS one")
-            assert (await result.single())["one"] == 1  # type: ignore[index]
+        CallerOwnedResourceContract.assert_resource_not_closed(neo4j_driver)
 
     async def test_connect_owns_and_closes_its_driver(self, neo4j_driver: AsyncDriver) -> None:
         """`neo4j_driver` is requested purely for its skip.
@@ -279,7 +275,9 @@ class TestNeo4jSpecifics:
         store = Neo4jGraphStore.connect(NEO4J_URI, auth=NEO4J_AUTH)
         await store.ensure_schema()
         assert await store.find_entities(uuid4()) == []
+        owned_driver = store._driver
         await store.close()
+        CallerOwnedResourceContract.assert_resource_closed(owned_driver)
 
         # The claim is "close() closed it", and the driver's way of saying so
         # changed between majors: 5.x emits a DeprecationWarning and answers
@@ -471,9 +469,7 @@ class TestNeo4jSpecifics:
         interleaving leaves: the check passes (stubbed out for its first call)
         and the endpoints are genuinely absent when the write runs.
 
-        This is the half of the fix a mock cannot cover: it proves the real
-        Cypher actually returns a row per edge written, which is what makes a
-        short write detectable at all.
+        This proves the real Cypher detects when endpoints vanish (B119).
         """
         tenant = uuid4()
         source, target = _entity(tenant=tenant), _entity(tenant=tenant)
@@ -487,12 +483,14 @@ class TestNeo4jSpecifics:
             if calls > 1:
                 await real(relationships)
 
-        monkeypatch.setattr(store, "_reject_dangling", skip_the_first_check)
-
-        with pytest.raises(MissingEntityError) as raised:
-            await store.upsert_relationships(
-                [_relationship(tenant, source=source.id, target=target.id)]
-            )
+        store._reject_dangling = skip_the_first_check
+        try:
+            with pytest.raises(MissingEntityError) as raised:
+                await store.upsert_relationships(
+                    [_relationship(tenant, source=source.id, target=target.id)]
+                )
+        finally:
+            store._reject_dangling = real
 
         # The re-check still names which endpoint is missing, so the error a
         # caller sees is the same one an up-front dangling edge produces.
@@ -582,11 +580,11 @@ def _counting(store: Neo4jGraphStore, monkeypatch: pytest.MonkeyPatch) -> Any:
             log.queries.append(query)
             return await original(query, **parameters)
 
-        monkeypatch.setattr(store, "_run", counting)
+        store._run = counting
         try:
             yield log
         finally:
-            monkeypatch.undo()
+            store._run = original
 
     return _cm()
 
