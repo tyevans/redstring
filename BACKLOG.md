@@ -207,6 +207,9 @@ rediscovered:
   graph *at the moment of the read*; this entry is the weaker half, and
   `planning.py` now points here.
 
+**Resolved in TASK-0002:** `ConsolidationService.merge` now retries and re-plans redirections on `OptimisticLockError`, re-reading graph topology against the updated aggregate state. Retired `tests/unit/consolidation/test_known_gaps.py`.
+
+
 ### B32. Re-extraction cannot remove an entity a previous run found
 
 `events/document.py` -- `DocumentExtracted` carries the whole result of one
