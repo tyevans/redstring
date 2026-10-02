@@ -260,6 +260,8 @@ is left is the wipe: a caller still has to call `delete_by_tenant` on both
 stores itself, which is what the replay tests do. Composing the two is what `rebuild` would be, and it belongs
 with whatever slice first needs it in anger.
 
+**Resolved in TASK-0004:** Added `wipe_tenant(tenant_id)` and `rebuild(feed, *, tenant_id, ...)` entry points to `GraphProjection`, `VectorProjection`, and `ChunkProjection`, and implemented `rebuild_tenant` in `redstring.projections`.
+
 ---
 
 ## 2. Things that are unverified
