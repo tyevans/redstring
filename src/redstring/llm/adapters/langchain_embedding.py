@@ -161,6 +161,14 @@ class LangChainEmbeddingProvider:
     def dimension(self) -> int:
         return self._dimension
 
+    @property
+    def document_prefix(self) -> str:
+        return self._document_prefix
+
+    @property
+    def query_prefix(self) -> str:
+        return self._query_prefix
+
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed each text as a document, in order.
 

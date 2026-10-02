@@ -165,45 +165,15 @@ could not be caught without a dotted import.
   `AliasCycleError`, `DimensionMismatchError`, `PartialExtractionError`,
   and the chunking three.
 
-**The rebuild driver is `eventsource.replay`, not ours.** `project`/`replay`,
-`ReplayReport`, `ReplayFailure` and `ReplayFailedError` were exported here
-while `eventsource-py` had no rebuild driver. They were reported upstream and
-landed in 0.12.0, so they are gone from this surface rather than re-exported
-from it -- a caller writes `from eventsource import replay`, which is the same
-choice this module makes everywhere else: depending on another package openly
-beats republishing its names under ours. `redstring.projections` says what the
-upstream version does that this one did not.
+**The rebuild driver is `eventsource.replay`, not ours.** Use `from eventsource import replay`.
 
 ## What is deliberately not here
 
 - **Temporal inference.** `redstring.temporal` is real and tested and has no
-  composed entry point yet, so exporting its classes would publish an API
-  whose shape is still being decided by callers it does not have. Import it
-  by path and expect movement.
-
-  Consolidation used to be listed here too. `Consolidator` is the composed
-  entry point it was waiting for (ADR 0015), and it is exported -- together
-  with the closure that came with it: `CandidateFinder`, `Adjudicator`, the
-  two merge events, the four value types those name, and the four
-  consolidation errors.
-
-  `Consolidator.resolve` is typed against `CandidateSource` and
-  `MergeAdjudicator` rather than those two classes. Both are single-method
-  protocols, and they are what make the docstring's "supply one to change the
-  weights or the blocking" a real offer: substituting your own search index
-  for the blocking, or a human review queue for the model, no longer means
-  subclassing a class whose constructor demands collaborators you do not
-  have. `CandidateFinder` and `Adjudicator` remain the defaults.
-
-  A merge also decides the canonical entity's own `description`,
-  `external_ids` and `properties` now, under a `PropertyMergePolicy`
-  (`PropertyMergeStrategy`) keyed by dotted path -- `MergeableFields` and
-  `PropertyResolution` are the before/after pair `EntitiesMerged` carries so
-  the projection applies the decision rather than recomputing it, exactly as
-  it already does for `redirections` (ADR 0036).
-- **No scraping, no HTML preprocessing.** A caller supplies a
-  `SourceDocument`. Fetching content is a different job with different
-  failure modes, and it was removed rather than left unfinished (slice 1).
+  composed entry point yet. Import it by path and expect movement.
+  Consolidation is exported via `Consolidator` along with `CandidateFinder`, `Adjudicator`,
+  merge events, and errors.
+- **No scraping, no HTML preprocessing.** A caller supplies a `SourceDocument`.
 - **No settings object and no environment reads.** Every component takes its
   configuration through its constructor. `tests/unit/test_library_reads_no_environment.py`
   is what keeps that true.
@@ -279,9 +249,11 @@ from redstring.domain.exceptions import (
     MissingEntityError,
     RedstringError,
     RefusedCompletionError,
+    TaskPrefixMismatchError,
     UnknownDomainError,
     UnknownMergeError,
     UnstructuredCompletionError,
+    VectorProvenanceMismatchError,
 )
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
 from redstring.domain.interval import Bounds, TemporalRelation
@@ -294,7 +266,7 @@ from redstring.domain.similarity import FeatureWeights, SimilarityFeatures
 from redstring.domain.source import SourceDocument
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.domain.tokenize import tokenize
-from redstring.domain.vector import VectorMatch, VectorRecord
+from redstring.domain.vector import VectorMatch, VectorProvenance, VectorRecord
 from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.merge import EntitiesMerged, MergeUndone
 from redstring.events.streams import document_stream
@@ -476,6 +448,7 @@ __all__ = [
     "SourceDocument",
     "SourceId",
     "StoredChunk",
+    "TaskPrefixMismatchError",
     "TemporalExtent",
     "TemporalQuery",
     "TemporalRelation",
@@ -489,6 +462,8 @@ __all__ = [
     "UnstructuredCompletionError",
     "VectorMatch",
     "VectorProjection",
+    "VectorProvenance",
+    "VectorProvenanceMismatchError",
     "VectorPurge",
     "VectorReader",
     "VectorRecord",

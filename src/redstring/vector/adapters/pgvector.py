@@ -67,8 +67,15 @@ import re
 from typing import TYPE_CHECKING, Any, Self
 
 from redstring.domain.exceptions import DimensionMismatchError
-from redstring.domain.vector import VectorMatch, VectorRecord, clamp_score, has_zero_norm
+from redstring.domain.vector import (
+    VectorMatch,
+    VectorProvenance,
+    VectorRecord,
+    clamp_score,
+    has_zero_norm,
+)
 from redstring.ports.vector_store import entity_type_of
+from redstring.vector.provenance import ensure_pgvector_provenance, provenance_table_ddl
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -78,50 +85,15 @@ if TYPE_CHECKING:
 
     from redstring.domain.ids import EntityId, TenantId
 
-#: Table names are interpolated into SQL -- Postgres has no parameter form for
-#: an identifier -- so the name is proved to be a bare lowercase identifier
-#: first. Anything else, including a quoted or schema-qualified name, is
-#: rejected rather than escaped: the set of names this store needs is small,
-#: and a rejected name is a clearer failure than a subtly mis-escaped one.
-#:
-#: This guard is what the five `# nosec B608` markers below rest on: bandit
-#: sees an f-string in a SQL literal and cannot see that the only interpolated
-#: value was proved safe in `__init__`, nor that every *caller-supplied* value
-#: travels as a `$n` parameter. Deleting the guard without deleting those
-#: markers would leave real injection unreported, so
-#: `test_a_table_name_that_is_not_a_bare_identifier_is_rejected` -- which
-#: includes a `"; DROP TABLE users; --` case -- is the thing keeping them
-#: honest, not the comment.
+#: Table names are validated as bare identifiers before interpolation (# nosec B608).
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
-#: The score expression, in one place. `<=>` is pgvector's **cosine distance**
-#: (`1 - cosine`), so this is `(1 + cosine) / 2` -- the scale the port defines.
-#: Getting this backwards is the silent-inversion bug the port warns about, and
-#: `redstring/testing/vector_store.py` pins the resulting numbers against
-#: `redstring.domain.vector.cosine_score` rather than merely their order.
+#: The score expression: `(1 + cosine) / 2` mapped from pgvector distance `<=>`.
 _SCORE = "1 - (embedding <=> $2::vector) / 2"
 
 
 def _encodable(entity_types: Sequence[str] | None) -> list[str]:
-    """The filter values Postgres can actually be asked about.
-
-    A `text[]` parameter cannot carry a NUL byte -- asyncpg hands it to
-    Postgres verbatim and the server answers
-    `invalid byte sequence for encoding "UTF8": 0x00`, an exception where the
-    port promises a type filter never raises whatever the caller passes. The
-    in-memory adapter simply fails to match such a value, so the two
-    disagreed, which is the divergence the shared suite exists to catch; it
-    was caught by `test_a_type_filter_tolerates_any_stored_metadata` drawing
-    `["\x00"]`.
-
-    Dropping those values changes no result. `metadata` is filtered by
-    `_is_storable` on the way in for the same encoding reason, so no stored
-    `entity_type` can contain a NUL, so a filter value containing one matches
-    nothing whether it reaches the query or not. Dropping every value is
-    therefore still "matches nothing" and not "matches everything" -- the
-    empty list keeps its meaning, and `$3` carries "no filter at all"
-    separately.
-    """
+    """Filter out values containing NUL bytes which Postgres text[] rejects."""
     return [value for value in entity_types or () if "\x00" not in value]
 
 
@@ -129,16 +101,15 @@ class PgVectorStore:
     """A `VectorStore` backed by Postgres with the `vector` extension."""
 
     def __init__(
-        self, pool: asyncpg.Pool[Any], *, dimension: int, table: str = "kg_vectors"
+        self,
+        pool: asyncpg.Pool[Any],
+        *,
+        dimension: int,
+        table: str = "kg_vectors",
+        model: str | None = None,
+        document_prefix: str | None = None,
     ) -> None:
-        """Wrap an existing pool. `close()` will not close it.
-
-        Ownership follows who created the pool, as it does on the Neo4j
-        adapter: a caller that injected one keeps the right to close it, and
-        `connect()` builds its own and does close it. Without that split,
-        disposing a store per hypothesis example would take the shared pool
-        down with the first one.
-        """
+        """Wrap an existing pool. `close()` will not close it."""
         if dimension <= 0:
             raise ValueError(f"dimension must be positive, not {dimension}")
         if not _IDENTIFIER.fullmatch(table):
@@ -146,6 +117,9 @@ class PgVectorStore:
         self._pool = pool
         self._dimension = dimension
         self._table = table
+        self._model = model
+        self._document_prefix = document_prefix
+        self._provenance: VectorProvenance | None = None
         self._owns_pool = False
 
     @classmethod
@@ -155,9 +129,8 @@ class PgVectorStore:
         *,
         dimension: int,
         table: str = "kg_vectors",
-        # Passed straight to `asyncpg.create_pool`, whose own signature is
-        # `**kwargs`; narrowing it here would mean restating asyncpg's options
-        # and going stale against them.
+        model: str | None = None,
+        document_prefix: str | None = None,
         **pool_options: Any,  # noqa: ANN401
     ) -> Self:
         """Build a store owning a pool of its own, which `close()` closes."""
@@ -169,7 +142,13 @@ class PgVectorStore:
             ) from error
 
         pool = await asyncpg.create_pool(dsn, **pool_options)
-        store = cls(pool, dimension=dimension, table=table)
+        store = cls(
+            pool,
+            dimension=dimension,
+            table=table,
+            model=model,
+            document_prefix=document_prefix,
+        )
         store._owns_pool = True
         return store
 
@@ -188,19 +167,7 @@ class PgVectorStore:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Close on the way out, and **never suppress**.
-
-        The `None` return is the decision, not an omission: `__aexit__` is
-        read for truthiness, so any truthy value would swallow whatever the
-        body raised -- including `CancelledError`, which would break task
-        cancellation for the caller. `None` is falsy, so the exception
-        propagates and this is a resource-release block rather than an
-        exception handler.
-
-        Closing goes through `close()`, so ownership still decides: a store
-        wrapping an injected pool leaves it open here exactly as it does
-        there.
-        """
+        """Close on the way out, and never suppress."""
         await self.close()
 
     @property
@@ -211,17 +178,24 @@ class PgVectorStore:
     def table(self) -> str:
         return self._table
 
+    @property
+    def model(self) -> str | None:
+        return self._model
+
+    @property
+    def document_prefix(self) -> str | None:
+        return self._document_prefix
+
+    @property
+    def provenance(self) -> VectorProvenance | None:
+        return self._provenance
+
     # ------------------------------------------------------------------
     # Schema
     # ------------------------------------------------------------------
 
     async def ensure_schema(self) -> None:
-        """Create the extension, table and indexes. Idempotent.
-
-        Raises `DimensionMismatchError` if the table already exists with a
-        different declared dimension -- see the module docstring on why that
-        check is here rather than left to the first failing insert.
-        """
+        """Create extension, table, indexes and provenance. Idempotent."""
         async with self._pool.acquire() as connection:
             await connection.execute("CREATE EXTENSION IF NOT EXISTS vector")
             for statement in self._schema_statements():
@@ -231,24 +205,18 @@ class PgVectorStore:
                 "WHERE attrelid = $1::regclass AND attname = 'embedding' AND NOT attisdropped",
                 self._table,
             )
-        if declared is not None and declared != self._dimension:
-            raise DimensionMismatchError(expected=int(declared), actual=self._dimension)
+            if declared is not None and declared != self._dimension:
+                raise DimensionMismatchError(expected=int(declared), actual=self._dimension)
+            self._provenance = await ensure_pgvector_provenance(
+                connection,
+                self._table,
+                dimension=self._dimension,
+                model=self._model,
+                document_prefix=self._document_prefix,
+            )
 
     def _schema_statements(self) -> tuple[str, ...]:
-        """The DDL, as data, so a server-free test can read it.
-
-        The primary key leads with `tenant_id` because every query filters on
-        it and there is no cross-tenant read: a key on `entity_id` alone would
-        also reject the same id under two tenants, which is the arrangement
-        the isolation properties depend on most.
-
-        Both btrees lead with `tenant_id`, which is what turns a tenant-scoped
-        read into a seek rather than a scan of every tenant's rows -- the trap
-        slice 4 hit on Neo4j, where correct results hid a whole-database scan
-        that no behavioural test could see. There is deliberately no third
-        index on `tenant_id` alone (either of these serves it) and deliberately
-        no index on `embedding` (see the module docstring).
-        """
+        """The DDL, as data, so a server-free test can read it."""
         return (
             f"CREATE TABLE IF NOT EXISTS {self._table} ("
             "  tenant_id uuid NOT NULL,"
@@ -260,6 +228,7 @@ class PgVectorStore:
             ")",
             f"CREATE INDEX IF NOT EXISTS {self._table}_tenant_type_idx "
             f"ON {self._table} (tenant_id, entity_type)",
+            provenance_table_ddl(self._table),
         )
 
     # ------------------------------------------------------------------

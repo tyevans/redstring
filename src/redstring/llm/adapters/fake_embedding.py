@@ -99,6 +99,14 @@ class FakeEmbeddingProvider:
     def dimension(self) -> int:
         return self._dimension
 
+    @property
+    def document_prefix(self) -> str:
+        return self._document_prefix
+
+    @property
+    def query_prefix(self) -> str:
+        return self._query_prefix
+
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """One unit vector per text, in order.
 
