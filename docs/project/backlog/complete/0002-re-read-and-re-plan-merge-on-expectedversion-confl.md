@@ -1,7 +1,7 @@
 ---
 id: '0002'
 title: Re-read and re-plan merge on ExpectedVersion conflict
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0004
 governing_prds:
