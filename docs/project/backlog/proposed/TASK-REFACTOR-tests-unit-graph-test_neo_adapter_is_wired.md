@@ -1,5 +1,5 @@
 ---
-id: REFACTOR-tests-unit-graph-test_neo4j_adapter_is_wired
+id: REFACTOR-tests-unit-graph-test_neo-graph_adapter_is_wired
 title: Refactor and Decompose Legacy File test_neo4j_adapter_is_wired.py
 status: Proposed
 created: 2026-09-29

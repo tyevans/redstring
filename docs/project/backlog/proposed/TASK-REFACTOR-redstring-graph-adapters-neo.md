@@ -1,5 +1,5 @@
 ---
-id: REFACTOR-redstring-graph-adapters-neo4j
+id: REFACTOR-redstring-graph-adapters-neo-graph
 title: Refactor and Decompose Legacy File neo4j.py
 status: Proposed
 created: 2026-09-29

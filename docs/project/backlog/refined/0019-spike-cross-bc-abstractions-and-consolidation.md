@@ -1,7 +1,16 @@
 ---
-id: '0019'
+id: 0019
 title: 'SPIKE: Cross-Bounded Context Abstractions and Consolidation Opportunities'
-status: Proposed
+status: Refined
+dependencies:
+- TASK-0011
+- TASK-0012
+- TASK-0013
+- TASK-0014
+- TASK-0015
+- TASK-0016
+- TASK-0017
+- TASK-0018
 governing_adrs:
 - ADR-0001
 - ADR-0007
@@ -10,6 +19,7 @@ governing_prds:
 governing_stories:
 - US-0002
 target_bc: core
+mutation_scope: '[''src/redstring/'']'
 ---
 
 # TASK-0019: SPIKE: Cross-Bounded Context Abstractions and Consolidation Opportunities
@@ -24,7 +34,8 @@ As `redstring` evolved, several Bounded Contexts independently developed similar
 - Connection and transaction lifecycle boilerplate across adapters (`neo4j.py`, `pgvector.py`, `postgres.py`).
 - Caching policies and rate limiters (`CallLimiter` in domain vs LLM rate limiting).
 
-## Spike Objectives
+## Spike Objectives & Definition of Done
 1. Map out structural redundancies and candidate shared abstractions across bounded contexts.
 2. Evaluate abstraction candidates against DDD bounded context boundaries and Layered Port & Adapter Isolation (ADR-0007).
 3. Produce an empirical findings brief proposing high-leverage refactorings that preserve zero-loss functionality and maintain <500 line limits.
+4. Verify all changes or proposal artifacts comply with ADR-0002 (<500 lines per file).
