@@ -87,3 +87,6 @@ grandfathered = [
   "tests/unit/test_composition.py",
   "tests/unit/test_consolidator.py",
 ]
+
+[audit.provenance]
+baseline_commit = "adae3d7"

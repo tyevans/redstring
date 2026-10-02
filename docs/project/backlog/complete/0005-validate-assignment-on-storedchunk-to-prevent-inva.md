@@ -1,7 +1,7 @@
 ---
 id: '0005'
 title: Validate assignment on StoredChunk to prevent invalid text and identity mutation
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0003
 - ADR-0007

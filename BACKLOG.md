@@ -47,6 +47,7 @@ tree resolves to something rather than to nothing:
 | B96 | ADR files, index and nav never compared | closed by `tests/unit/test_adr_declaration_sites_agree.py`, which found 0040 and 0041 missing from the index and 0042 missing from the nav |
 | B-ADR-TABLE | `definition-of-done.md`'s ADR table stopped at 0019 | closed: 23 rows written from `docs/adr/index.md`'s own summaries, gated by the same module |
 | B97 | same chunk id, changed text diverges between the adapters | closed: `StoredChunk.id` is now a `computed_field`, so the divergence can no longer be constructed — see `docs/adr/0044-a-chunk-id-is-derived-not-supplied.md` |
+| B160 | `StoredChunk.text` assignment bypasses `_text_is_storable`, and now silently re-derives `id` | closed: `StoredChunk` sets `ConfigDict(validate_assignment=True)` (TASK-0005) |
 
 Two of those — B122 against B125, and the two copies each of B140 and B141 —
 were the same finding filed twice under different numbers or the same one. That
@@ -303,31 +304,6 @@ a large class, the fix to reach for is not reverting this — deleting a real
 `Person` is a wrong answer and a junk node is noise — but consulting
 `entity_type` *negatively* in the bare-month case only, which the module
 currently refuses to do in either direction and says why.
-
-### B160. `StoredChunk.text` assignment bypasses `_text_is_storable`, and now silently re-derives `id`
-
-`src/redstring/domain/chunk.py`'s `_text_is_storable` is a `field_validator`
-on construction only. Pydantic does not run field validators on attribute
-assignment unless `ConfigDict(validate_assignment=True)` is set, and
-`StoredChunk` does not set it. `chunk.text = "bad\x00text"` is therefore
-accepted in memory and rejected only later, at the Postgres boundary
-(`recurring-defects.md` §1 — the store as first line of defense).
-
-This predates `chunk_id(source_id, text)` making `id` a `computed_field`, but
-that change raises the stakes rather than causing the bug: `text` is now
-identity-bearing, so an unvalidated assignment to `text` doesn't just admit
-unstorable bytes, it also silently changes `chunk.id` out from under whatever
-already indexed the chunk under its old id — entity links, a vector row, a
-caller's own cache.
-
-Candidate fix: `validate_assignment=True` on `StoredChunk`'s `ConfigDict`.
-This does **not** break the mutation-isolation tests. Those mutate
-`entity_ids` and `metadata` *in place* — `list.append`, `dict.__setitem__` —
-which is container mutation, not attribute assignment, so
-`validate_assignment` has nothing to intercept there; the isolation contract
-(a store must not hand back its own live object) is unaffected either way.
-Out of scope for the chunk-id-derived branch — it wants its own review of
-whatever else assignment currently allows past validation.
 
 ### B156. Nothing detects a corpus embedded under two different task prefixes
 

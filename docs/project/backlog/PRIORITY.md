@@ -2,11 +2,11 @@
 
 Strict sequential order of execution for engineering tasks.
 
-- **TASK-0001 (Refined)**: [`0001-initial-architecture-spike-and-setup`](refined/0001-initial-architecture-spike-and-setup.md)
+- **TASK-0001 (Complete)**: [`0001-initial-architecture-spike-and-setup`](complete/0001-initial-architecture-spike-and-setup.md)
 - **TASK-0002 (Refined)**: [`0002-re-read-and-re-plan-merge-on-expectedversion-confl`](refined/0002-re-read-and-re-plan-merge-on-expectedversion-confl.md)
 - **TASK-0003 (Refined)**: [`0003-retract-stale-entities-on-document-re-extraction`](refined/0003-retract-stale-entities-on-document-re-extraction.md)
 - **TASK-0004 (Refined)**: [`0004-support-tenant-scoped-projection-rebuild`](refined/0004-support-tenant-scoped-projection-rebuild.md)
-- **TASK-0005 (Refined)**: [`0005-validate-assignment-on-storedchunk-to-prevent-inva`](refined/0005-validate-assignment-on-storedchunk-to-prevent-inva.md)
+- **TASK-0005 (Complete)**: [`0005-validate-assignment-on-storedchunk-to-prevent-inva`](complete/0005-validate-assignment-on-storedchunk-to-prevent-inva.md)
 - **TASK-0006 (Refined)**: [`0006-refactor-caller-owned-resource-tests-to-verify-ide`](refined/0006-refactor-caller-owned-resource-tests-to-verify-ide.md)
 - **TASK-0007 (Refined)**: [`0007-detect-corpus-embedded-under-mismatched-task-pref`](refined/0007-detect-corpus-embedded-under-mismatched-task-pref.md)
 - **TASK-0008 (Refined)**: [`0008-decompose-themes-module-to-satisfy-file-length-inv`](refined/0008-decompose-themes-module-to-satisfy-file-length-inv.md)
