@@ -1,7 +1,7 @@
 ---
 id: '0006'
 title: Refactor caller-owned resource tests to verify connection and pool identity
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0003
 governing_prds:
