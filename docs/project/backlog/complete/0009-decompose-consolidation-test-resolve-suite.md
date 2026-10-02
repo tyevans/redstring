@@ -1,7 +1,7 @@
 ---
-id: '0009'
+id: 0009
 title: Decompose consolidation test resolve suite (<500 lines)
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0002
 - ADR-0003

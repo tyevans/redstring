@@ -10,7 +10,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0006 (Refined)**: [`0006-refactor-caller-owned-resource-tests-to-verify-ide`](refined/0006-refactor-caller-owned-resource-tests-to-verify-ide.md)
 - **TASK-0007 (Refined)**: [`0007-detect-corpus-embedded-under-mismatched-task-pref`](refined/0007-detect-corpus-embedded-under-mismatched-task-pref.md)
 - **TASK-0008 (Refined)**: [`0008-decompose-themes-module-to-satisfy-file-length-inv`](refined/0008-decompose-themes-module-to-satisfy-file-length-inv.md)
-- **TASK-0009 (Refined)**: [`0009-decompose-consolidation-test-resolve-suite`](refined/0009-decompose-consolidation-test-resolve-suite.md)
+- **TASK-0009 (Complete)**: [`0009-decompose-consolidation-test-resolve-suite`](complete/0009-decompose-consolidation-test-resolve-suite.md)
 - **TASK-0010 (Refined)**: [`0010-decompose-vector-test-wired-suite`](refined/0010-decompose-vector-test-wired-suite.md)
 - **TASK-REFACTOR-redstring-graph-adapters-neo4j (Proposed)**: [`TASK-REFACTOR-redstring-graph-adapters-neo4j`](proposed/TASK-REFACTOR-redstring-graph-adapters-neo4j.md)
 - **TASK-REFACTOR-tests-integration-graph-test_neo4j_store (Proposed)**: [`TASK-REFACTOR-tests-integration-graph-test_neo4j_store`](proposed/TASK-REFACTOR-tests-integration-graph-test_neo4j_store.md)
