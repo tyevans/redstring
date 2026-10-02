@@ -310,7 +310,9 @@ a large class, the fix to reach for is not reverting this — deleting a real
 `entity_type` *negatively* in the bare-month case only, which the module
 currently refuses to do in either direction and says why.
 
-### B156. Nothing detects a corpus embedded under two different task prefixes
+### B156. Nothing detects a corpus embedded under two different task prefixes [RESOLVED in TASK-0007]
+
+*Resolved in TASK-0007 (PR #114). Introduced store provenance tracking and frontdoor verification (`VectorProvenance`, `TaskPrefixMismatchError`, `VectorProvenanceMismatchError`) on `InMemoryVectorStore` and `PgVectorStore`, validated across wiring in `build_graph` and `Retriever`.*
 
 `document_prefix` on `LangChainEmbeddingProvider` and `FakeEmbeddingProvider`
 (both in `src/redstring/llm/adapters/`) changes which vector space a stored
