@@ -19,11 +19,17 @@ event to overwrite that the later one would not restore on its next delivery.
 
 from __future__ import annotations
 
-from eventsource.application.projections import StoreProjection, handles
+from typing import TYPE_CHECKING
+
+from eventsource.application.projections import StoreProjection, handles, replay
 
 from redstring.domain.ids import TenantId
 from redstring.events.document import DocumentChunked
 from redstring.ports.chunk_store import ChunkWriter
+
+if TYPE_CHECKING:
+    from eventsource.application.projections import ReplayReport
+    from eventsource.ports import GlobalEventFeed
 
 
 class ChunkProjection(StoreProjection[ChunkWriter]):
@@ -47,4 +53,31 @@ class ChunkProjection(StoreProjection[ChunkWriter]):
         raise NotImplementedError(
             "ChunkStore has no cross-tenant delete by design; wipe with "
             "delete_by_tenant(tenant_id) for each tenant being rebuilt"
+        )
+
+    async def wipe_tenant(self, tenant_id: TenantId) -> None:
+        """Wipe all chunk read models belonging to `tenant_id`."""
+        if hasattr(self._store, "delete_by_tenant"):
+            await self._store.delete_by_tenant(tenant_id)
+        else:
+            raise NotImplementedError(
+                f"{type(self._store).__name__} does not implement delete_by_tenant"
+            )
+
+    async def rebuild(
+        self,
+        feed: GlobalEventFeed,
+        *,
+        tenant_id: TenantId,
+        strict: bool = False,
+        batch_size: int = 1000,
+    ) -> ReplayReport:
+        """Wipe `tenant_id`'s read models and replay `feed` scoped to `tenant_id`."""
+        await self.wipe_tenant(tenant_id)
+        return await replay(
+            feed,
+            [self],
+            tenant_id=tenant_id,
+            strict=strict,
+            batch_size=batch_size,
         )

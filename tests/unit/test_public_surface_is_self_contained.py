@@ -96,6 +96,10 @@ DOCUMENTED_FOREIGN_TYPES = {
         "eventsource.ports.snapshots -- companion to `AggregateStore`; "
         "`Consolidator` needs both or neither"
     ),
+    "GlobalEventFeed": ("eventsource.ports -- the event feed projection `rebuild` reads from"),
+    "ReplayReport": (
+        "eventsource.application.projections -- summary of applied events returned by `rebuild`"
+    ),
 }
 
 #: Names that are not types to resolve: builtins, `typing` spellings, and the

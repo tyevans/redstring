@@ -46,10 +46,12 @@ instead of restating them; no projection here needs one.
 
 from redstring.projections.chunk import ChunkProjection
 from redstring.projections.graph import GraphProjection
+from redstring.projections.rebuild import rebuild_tenant
 from redstring.projections.vector import VectorProjection
 
 __all__ = [
     "ChunkProjection",
     "GraphProjection",
     "VectorProjection",
+    "rebuild_tenant",
 ]

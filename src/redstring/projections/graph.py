@@ -90,7 +90,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_OID, uuid5
 
-from eventsource.application.projections import StoreProjection, handles
+from eventsource.application.projections import StoreProjection, handles, replay
 
 from redstring.domain.alias import Alias
 from redstring.domain.exceptions import MissingEntityError
@@ -101,6 +101,9 @@ from redstring.ports.graph_store import GraphStore
 
 if TYPE_CHECKING:
     from uuid import UUID
+
+    from eventsource.application.projections import ReplayReport
+    from eventsource.ports import GlobalEventFeed
 
     from redstring.domain.consolidation import MergeableFields
     from redstring.domain.ids import EntityId
@@ -267,4 +270,26 @@ class GraphProjection(StoreProjection[GraphStore]):
         raise NotImplementedError(
             "GraphStore has no cross-tenant delete by design; wipe with "
             "delete_by_tenant(tenant_id) for each tenant being rebuilt"
+        )
+
+    async def wipe_tenant(self, tenant_id: TenantId) -> None:
+        """Wipe all graph read models belonging to `tenant_id`."""
+        await self._store.delete_by_tenant(tenant_id)
+
+    async def rebuild(
+        self,
+        feed: GlobalEventFeed,
+        *,
+        tenant_id: TenantId,
+        strict: bool = False,
+        batch_size: int = 1000,
+    ) -> ReplayReport:
+        """Wipe `tenant_id`'s read models and replay `feed` scoped to `tenant_id`."""
+        await self.wipe_tenant(tenant_id)
+        return await replay(
+            feed,
+            [self],
+            tenant_id=tenant_id,
+            strict=strict,
+            batch_size=batch_size,
         )
