@@ -15,7 +15,7 @@ from uuid import UUID
 
 from redstring.domain.limiter import CallLimiter
 
-from .test_resolve import Rig, keyed
+from .conftest import Rig, keyed
 
 
 def uid(n: int) -> UUID:
