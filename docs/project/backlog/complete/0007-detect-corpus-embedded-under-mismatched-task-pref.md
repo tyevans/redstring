@@ -1,7 +1,7 @@
 ---
 id: '0007'
 title: Detect corpus embedded under mismatched task prefixes in vector store
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0003
 - ADR-0007
