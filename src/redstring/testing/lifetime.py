@@ -79,3 +79,69 @@ class NoOpLifetime:
         mixin is the one shape where leaving the block releases nothing.
         """
         await self.close()
+
+
+class CallerOwnedResourceContract:
+    """Assertions verifying that an adapter leaves an external resource open on close (B119).
+
+    Testing caller-owned resources by issuing a query (e.g. `SELECT 1` or
+    `RETURN 1`) is unverified because certain drivers/pools reconnect or mint
+    ephemeral connections even when disposed (as proved in eventsource-py 0.13.0).
+    Checking pool/driver identity and closedness attributes directly verifies
+    the contract without relying on execution side effects.
+    """
+
+    @staticmethod
+    def assert_resource_identity(
+        store: object,
+        resource: object,
+        attr_name: str | None = None,
+    ) -> None:
+        """Verify the store holds the exact resource instance passed to it."""
+        candidates = [attr_name] if attr_name else ["_pool", "_driver", "_client", "_cache"]
+        found_attr = None
+        for attr in candidates:
+            if hasattr(store, attr):
+                found_attr = attr
+                break
+        if found_attr is None:
+            raise AssertionError(
+                f"Store {store!r} does not hold any known resource attribute in {candidates}"
+            )
+        actual = getattr(store, found_attr)
+        assert actual is resource, (
+            f"Store {store!r} resource {found_attr} ({actual!r}) is not identical "
+            f"to caller-provided resource ({resource!r})"
+        )
+
+    @staticmethod
+    def assert_resource_not_closed(resource: object) -> None:
+        """Verify directly that the underlying resource is NOT closed."""
+        if hasattr(resource, "_closed"):
+            assert not resource._closed, f"Resource {resource!r} was closed"
+        elif hasattr(resource, "is_closed"):
+            is_closed = resource.is_closed
+            closed_val = is_closed() if callable(is_closed) else is_closed
+            assert not closed_val, f"Resource {resource!r} was closed"
+        elif hasattr(resource, "closed"):
+            assert not resource.closed, f"Resource {resource!r} was closed"
+        elif hasattr(resource, "closes"):
+            assert resource.closes == 0, f"Resource {resource!r} was closed"
+        else:
+            raise TypeError(f"Resource {resource!r} does not expose a known closedness attribute")
+
+    @staticmethod
+    def assert_resource_closed(resource: object) -> None:
+        """Verify directly that the underlying resource IS closed."""
+        if hasattr(resource, "_closed"):
+            assert resource._closed, f"Resource {resource!r} was not closed"
+        elif hasattr(resource, "is_closed"):
+            is_closed = resource.is_closed
+            closed_val = is_closed() if callable(is_closed) else is_closed
+            assert closed_val, f"Resource {resource!r} was not closed"
+        elif hasattr(resource, "closed"):
+            assert resource.closed, f"Resource {resource!r} was not closed"
+        elif hasattr(resource, "closes"):
+            assert resource.closes > 0, f"Resource {resource!r} was not closed"
+        else:
+            raise TypeError(f"Resource {resource!r} does not expose a known closedness attribute")

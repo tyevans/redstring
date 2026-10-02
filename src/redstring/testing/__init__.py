@@ -79,7 +79,7 @@ from redstring.testing.cache import NOW, CacheCompliance
 from redstring.testing.chunk_store import ChunkStoreCompliance
 from redstring.testing.embedding_provider import EmbeddingProviderCompliance
 from redstring.testing.graph_store import GraphStoreCompliance
-from redstring.testing.lifetime import NoOpLifetime
+from redstring.testing.lifetime import CallerOwnedResourceContract, NoOpLifetime
 from redstring.testing.vector_store import VectorStoreCompliance
 
 #: The promise of this package, in the same sense `redstring.__all__` is the
@@ -89,6 +89,7 @@ from redstring.testing.vector_store import VectorStoreCompliance
 __all__ = [
     "NOW",
     "CacheCompliance",
+    "CallerOwnedResourceContract",
     "ChunkStoreCompliance",
     "EmbeddingProviderCompliance",
     "GraphStoreCompliance",

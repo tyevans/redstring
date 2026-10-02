@@ -47,6 +47,7 @@ from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.ids import SourceId
 from redstring.domain.tokenize import tokenize
 from redstring.testing.chunk_store import ChunkStoreCompliance
+from redstring.testing.lifetime import CallerOwnedResourceContract
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -1019,23 +1020,21 @@ class TestPostgresChunkStoreSpecifics:
     async def test_close_does_not_close_a_pool_it_does_not_own(
         self, store: PostgresChunkStore, pool: asyncpg.Pool[Any]
     ) -> None:
+        """The store disposes without closing injected pool (B119)."""
+        CallerOwnedResourceContract.assert_resource_identity(store, pool, "_pool")
         await store.close()
-        assert await pool.fetchval("SELECT 1") == 1
+        CallerOwnedResourceContract.assert_resource_not_closed(pool)
 
     async def test_connect_owns_and_closes_its_pool(self, pool: asyncpg.Pool[Any]) -> None:
-        """`pool` is requested purely for its skip.
-
-        This is the only test that builds a pool of its own, so without the
-        dependency it is the only one that *fails* rather than skips when
-        Postgres is absent. A skip guard is only honest if every test in the
-        module is behind it.
-        """
+        """`pool` is requested purely for its skip guard."""
         owned = await PostgresChunkStore.connect(
             DSN, table=TABLE, dimension=ChunkStoreCompliance.DIMENSION
         )
         await owned.ensure_schema()
         assert await owned.get(chunk_id("doc-1", "never stored"), uuid4()) is None
+        owned_pool = owned._pool
         await owned.close()
+        CallerOwnedResourceContract.assert_resource_closed(owned_pool)
 
         with pytest.raises(Exception, match="closed"):
             await owned.get(chunk_id("doc-1", "never stored"), uuid4())
