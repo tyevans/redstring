@@ -1,7 +1,7 @@
 ---
 id: '0010'
 title: Decompose vector adapter test wired suite (<500 lines)
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0002
 - ADR-0003
