@@ -56,7 +56,6 @@ grandfathered = [
   "src/redstring/chunks/adapters/postgres.py",
   "src/redstring/composition/build_graph.py",
   "src/redstring/composition/retrieval.py",
-  "src/redstring/consolidation/service.py",
   "src/redstring/domain/temporal_parsing.py",
   "src/redstring/extraction/domains/models.py",
   "src/redstring/extraction/pipeline.py",
