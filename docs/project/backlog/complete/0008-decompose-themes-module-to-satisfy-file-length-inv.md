@@ -1,7 +1,7 @@
 ---
-id: '0008'
+id: 0008
 title: Decompose themes module to satisfy file length invariant (<500 lines)
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0002
 governing_prds:

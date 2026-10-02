@@ -9,7 +9,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0005 (Complete)**: [`0005-validate-assignment-on-storedchunk-to-prevent-inva`](complete/0005-validate-assignment-on-storedchunk-to-prevent-inva.md)
 - **TASK-0006 (Refined)**: [`0006-refactor-caller-owned-resource-tests-to-verify-ide`](refined/0006-refactor-caller-owned-resource-tests-to-verify-ide.md)
 - **TASK-0007 (Refined)**: [`0007-detect-corpus-embedded-under-mismatched-task-pref`](refined/0007-detect-corpus-embedded-under-mismatched-task-pref.md)
-- **TASK-0008 (Refined)**: [`0008-decompose-themes-module-to-satisfy-file-length-inv`](refined/0008-decompose-themes-module-to-satisfy-file-length-inv.md)
+- **TASK-0008 (Complete)**: [`0008-decompose-themes-module-to-satisfy-file-length-inv`](complete/0008-decompose-themes-module-to-satisfy-file-length-inv.md)
 - **TASK-0009 (Complete)**: [`0009-decompose-consolidation-test-resolve-suite`](complete/0009-decompose-consolidation-test-resolve-suite.md)
 - **TASK-0010 (Complete)**: [`0010-decompose-vector-test-wired-suite`](complete/0010-decompose-vector-test-wired-suite.md)
 - **TASK-REFACTOR-redstring-graph-adapters-neo4j (Proposed)**: [`TASK-REFACTOR-redstring-graph-adapters-neo4j`](proposed/TASK-REFACTOR-redstring-graph-adapters-neo4j.md)
