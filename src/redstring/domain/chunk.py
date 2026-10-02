@@ -79,7 +79,7 @@ class StoredChunk(BaseModel):
     looks reasonable in review.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     tenant_id: TenantId
     source_id: SourceId
