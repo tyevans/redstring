@@ -1,5 +1,5 @@
 ---
-id: REFACTOR-tests-integration-graph-test_neo4j_store
+id: REFACTOR-tests-integration-graph-test_neo-graph_store
 title: Refactor and Decompose Legacy File test_neo4j_store.py
 status: Proposed
 created: 2026-09-29
