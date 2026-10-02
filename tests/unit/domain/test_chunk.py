@@ -117,6 +117,34 @@ def test_a_nul_byte_in_the_metadata_is_rejected() -> None:
         )
 
 
+def test_a_nul_byte_in_text_assignment_is_rejected() -> None:
+    """`validate_assignment=True` ensures field validators run on mutation (BACKLOG B160)."""
+    chunk = StoredChunk(
+        tenant_id=uuid4(),
+        source_id="d",
+        text="valid text",
+        chunk_index=0,
+        start_char=0,
+        end_char=10,
+    )
+    with pytest.raises(ValidationError, match="NUL character"):
+        chunk.text = "bad\x00text"
+
+
+def test_a_nul_byte_in_metadata_assignment_is_rejected() -> None:
+    """`validate_assignment=True` validates metadata assignment."""
+    chunk = StoredChunk(
+        tenant_id=uuid4(),
+        source_id="d",
+        text="valid text",
+        chunk_index=0,
+        start_char=0,
+        end_char=10,
+    )
+    with pytest.raises(ValidationError, match="NUL character"):
+        chunk.metadata = {"note": "bad\x00"}
+
+
 def test_a_stored_chunk_has_no_embedding_by_default() -> None:
     """`None` means not embedded, and is distinct from a zero vector.
 
