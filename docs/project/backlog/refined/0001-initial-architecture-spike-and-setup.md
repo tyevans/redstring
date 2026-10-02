@@ -6,6 +6,10 @@ created: 2026-09-29
 governing_adrs:
   - ADR-0001
   - ADR-0002
+governing_prds:
+  - PRD-0001
+governing_stories:
+  - US-0001
 target_bc: core
 ---
 
