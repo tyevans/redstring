@@ -6,14 +6,14 @@ This document explains how **redstring** executes versioned library releases, ho
 
 ## 1. Redstring's Library Release Flow
 
-As an open-source Python library published to PyPI and TestPyPI, `redstring` adheres to strict release invariants governed by [`RELEASING.md`](../RELEASING.md) and automated test gates:
+As an open-source Python library published to PyPI and TestPyPI, `redstring` adheres to strict release invariants governed by `RELEASING.md` and automated test gates:
 
 ### Dual-Declaration Version Synchronization
 A release version is declared in exactly two files:
 1. `pyproject.toml`: `[project] version = "X.Y.Z"`
 2. `src/redstring/__init__.py`: `__version__ = "X.Y.Z"`
 
-These two declarations are guarded against silent drift by [`tests/unit/test_version_is_declared_once.py`](../../tests/unit/test_version_is_declared_once.py). Any release attempt where these files disagree causes immediate preflight failure.
+These two declarations are guarded against silent drift by `tests/unit/test_version_is_declared_once.py`. Any release attempt where these files disagree causes immediate preflight failure.
 
 ### Tag-Driven OIDC Publishing Pipeline
 Releases are triggered by pushing a versioned git tag (`vX.Y.Z` for stable releases, `vX.Y.Zrc1` for release candidates, or `vX.Y.Za1` for alpha/TestPyPI):
@@ -23,7 +23,7 @@ git tag -s v0.12.0 -m "Release v0.12.0"
 git push origin v0.12.0
 ```
 
-Once pushed, GitHub Actions executes [`.github/workflows/release.yml`](../../.github/workflows/release.yml):
+Once pushed, GitHub Actions executes `.github/workflows/release.yml`:
 1. **Tag Validation**: Asserts that the pushed git tag matches the version declared in `pyproject.toml` and `__init__.py`.
 2. **Preflight Verification**: Executes the full test matrix (`uv run pytest`) across supported Python versions.
 3. **Distribution Packaging**: Builds source distributions (`.tar.gz`) and platform wheels (`.whl`).

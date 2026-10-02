@@ -14,5 +14,5 @@
 
 ## Domain Architecture Decision Records (Redstring Core)
 
-Redstring maintains 48 pre-existing architectural decisions governing its domain model, store ports, and event-sourced projections under [`docs/adr/`](../../adr/):
+Redstring maintains 48 pre-existing architectural decisions governing its domain model, store ports, and event-sourced projections under [`docs/adr/`](../../adr/index.md):
 See [`docs/adr/index.md`](../../adr/index.md) for the complete domain architectural index (ADR 0001 through ADR 0048).
