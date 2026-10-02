@@ -36,20 +36,37 @@ These rules are non-negotiable. Autonomous agents and human contributors must fo
    - Domain models, state machines, parsers, and health algorithms must maintain generative property tests (`@given(...)`).
    - Core domain modules must maintain a minimum 80% mutation kill score under `mutmut`.
    - Governed by ADR-0009.
+9. **Security & Supply-Chain Hard Invariants**:
+   - Autonomous agents are strictly forbidden from hardcoding credentials, modifying unapproved lockfiles, or executing non-allowlisted shell commands.
+   - Enforced by `uv run spec-ops health --security` and preflight secret scanners. Governed by ADR-0010, ADR-0011, and ADR-0012.
+
+---
+
+## Security & Supply-Chain Hard Invariants
+
+These security and supply-chain guardrails are non-negotiable across all autonomous worker streams:
+1. **No Hardcoded Credentials**: Autonomous agents are strictly forbidden from hardcoding credentials, API keys, tokens, or high-entropy secrets in source code, tests, or git commits.
+2. **Lockfile Immutability**: Autonomous agents are strictly forbidden from modifying unapproved lockfiles (`uv.lock`, `package-lock.json`) without explicit human architectural approval.
+3. **Allowlisted Command Execution**: Autonomous agents are strictly forbidden from executing non-allowlisted shell commands outside approved development toolchains.
 
 <!-- BEGIN CUSTOM INVARIANTS -->
-9. **Dependency Management with UV**:
+10. **Dependency Management with UV**:
    - Never edit `pyproject.toml` dependency tables by hand — use `uv add`, `uv add --optional <extra>`, or `uv remove`.
    - Always re-sync with `uv sync --all-extras` after any dependency modification.
-10. **Sourcing vs Storage Invariant**:
+11. **Sourcing vs Storage Invariant**:
    - Redstring never fetches content — document sourcing is external to this library.
    - Extraction writes to no store directly: it emits domain events, and read projections (`projections/`) perform store writes.
-11. **Layered Port & Adapter Isolation**:
+12. **Layered Port & Adapter Isolation**:
    - `ports` and `domain` sit at the foundation.
    - Adapters (`graph/adapters`, `vector/adapters`, `chunks/adapters`) import ports, never the reverse.
    - Projections read ports and the event schema, writing nothing back to domain.
    - Aggregates (`aggregates/`) and events (`events/`) are the event-sourced write model.
    - `composition/` joins pairs of non-importing layers; `testing/` sits above everything.
+
+### Orchestration Failure Protocol (Dogfooding SpecOps)
+When using the SpecOps orchestrator skill on this project, any orchestration failure is an actionable task:
+- **Immediate Bug Documentation**: Orchestrators must document all failures as high-priority bugs/tasks in the backlog (`docs/project/backlog/proposed/` or active queue).
+- **Dispatch Remediation**: Orchestrators must dispatch through them to resolve root causes and improve the life of all future maintainers.
 <!-- END CUSTOM INVARIANTS -->
 
 ---
