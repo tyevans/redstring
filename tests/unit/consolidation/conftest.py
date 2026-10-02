@@ -56,3 +56,58 @@ def edge(tenant_id, *, source, target, kind="knows", confidence=0.5, **overrides
     }
     fields.update(overrides)
     return Relationship(**fields)
+
+
+def keyed(tenant_id, name, **overrides):
+    from redstring.domain.blocking import blocking_keys_for
+
+    built = entity(tenant_id, name=name, **overrides)
+    return built.model_copy(update={"blocking_keys": blocking_keys_for(built)})
+
+
+class Rig:
+    def __init__(self) -> None:
+        from eventsource.adapters.memory import (
+            InMemoryCheckpointRepository,
+            InMemoryDLQRepository,
+            InMemoryEventStore,
+            InMemorySnapshotStore,
+        )
+
+        from redstring.consolidation.candidates import CandidateFinder
+        from redstring.consolidation.service import ConsolidationService
+        from redstring.graph.adapters.memory import InMemoryGraphStore
+        from redstring.projections import GraphProjection
+
+        self.event_store = InMemoryEventStore()
+        self.graph_store = InMemoryGraphStore()
+        self.projection = GraphProjection(
+            self.graph_store,
+            checkpoint_repo=InMemoryCheckpointRepository(),
+            dlq_repo=InMemoryDLQRepository(),
+        )
+        self.service = ConsolidationService(
+            event_store=self.event_store,
+            snapshot_store=InMemorySnapshotStore(),
+            graph_store=self.graph_store,
+        )
+        self.finder = CandidateFinder(self.graph_store, use_graph_signal=False)
+
+    async def seed(self, *entities):
+        """Entities straight into the store.
+
+        The graph is a read model, so writing it directly is what a projection
+        would have done -- and it keeps these tests about the policy rather
+        than about the extraction aggregate, which
+        `test_merge_undo_round_trip.py` already covers end to end.
+        """
+        await self.graph_store.upsert_entities(list(entities))
+
+    async def events(self):
+        return [envelope.event async for envelope in self.event_store.read_all()]
+
+    async def catch_up(self):
+        from eventsource.application.projections import replay
+
+        report = await replay(self.event_store, [self.projection])
+        assert report.failed == 0
