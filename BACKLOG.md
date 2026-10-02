@@ -336,7 +336,9 @@ in its own deployment metadata. The plausible route back is a store-side
 provenance row (model + document prefix + dimension, written at DDL time and
 checked on connect), which is a `VectorStore` capability and an ADR of its own.
 
-### B119. The caller-owned resource checks are written in the form upstream refuted
+### B119. The caller-owned resource checks are written in the form upstream refuted [RESOLVED in TASK-0006]
+
+*Resolved in TASK-0006 (PR #112). Added `CallerOwnedResourceContract` in `src/redstring/testing/lifetime.py` asserting resource identity and closedness without executing queries that can auto-reconnect, and verified with negative mutants.*
 
 Three tests assert that an adapter handed a driver or pool leaves it alone,
 and all three ask the *wrong question*:
