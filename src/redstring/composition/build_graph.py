@@ -72,7 +72,12 @@ from redstring.aggregates.repositories import document_repository
 from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.consolidation.service import ConsolidationService
-from redstring.domain.exceptions import DimensionMismatchError, EmbeddingProviderError
+from redstring.domain.exceptions import (
+    DimensionMismatchError,
+    EmbeddingProviderError,
+    TaskPrefixMismatchError,
+    VectorProvenanceMismatchError,
+)
 from redstring.domain.limiter import CallLimiter
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import document_stream
@@ -501,34 +506,10 @@ def _check_vocabulary_wiring(
 
 
 def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorStore | None) -> None:
-    """Refuse a half-configured or mismatched embedding pair, before any work.
+    """Refuse half-configured or mismatched embedding pair before any work.
 
-    Two failures, both of which are otherwise discovered late and read as
-    something else.
-
-    **Half-configured** is a silent no-op: a caller who passes an embedding
-    provider and forgets the store gets a perfectly successful run with an
-    empty vector store, and every symptom of that appears later in whatever
-    was going to search it.
-
-    **Mismatched dimensions** would otherwise surface from pgvector, after the
-    embedding API call has been paid for, as an error about a column type.
-    `VectorStore` does raise `DimensionMismatchError` per write -- that check
-    stays and is the backstop -- but it fires once per vector at the end of a
-    pipeline rather than once at the seam, which is where the configuration
-    mistake actually is. This raises the same `DimensionMismatchError`,
-    because it is the same condition `Retriever.__init__` refuses; the two
-    entry points diverged on exception type until B82 closed. Two models'
-    vectors are not comparable even at equal dimension, so point this run at
-    a store built for this model rather than widening either.
-
-    The half-configured case below stays a `ValueError`: arity and
-    disagreement are different mistakes, and there is no `DimensionMismatchError`
-    to have when one collaborator is entirely absent.
-
-    The comparison is `!=` and not `is not`. CLAUDE.md records that exact
-    defect: CPython caches small integers, so an identity check passes at a
-    test dimension of 8 and rejects every legitimate vector at 768.
+    Mismatched dimensions, models, or task prefixes are rejected at the seam
+    before paying for embedding calls or corrupting the vector store.
     """
     if (provider is None) != (store is None):
         given, missing = (
@@ -541,8 +522,23 @@ def _check_embedding_wiring(provider: EmbeddingProvider | None, store: VectorSto
             f"one alone writes no vectors while reporting success"
         )
 
-    if provider is not None and store is not None and provider.dimension != store.dimension:
-        raise DimensionMismatchError(expected=store.dimension, actual=provider.dimension)
+    if provider is not None and store is not None:
+        if provider.dimension != store.dimension:
+            raise DimensionMismatchError(expected=store.dimension, actual=provider.dimension)
+
+        store_model = getattr(store, "model", None)
+        if store_model is not None and provider.model is not None and store_model != provider.model:
+            raise VectorProvenanceMismatchError(
+                f"expected embedding model {store_model!r}, got {provider.model!r}; "
+                f"changing embedding model requires a new store"
+            )
+
+        store_prefix = getattr(store, "document_prefix", None)
+        if store_prefix is not None and store_prefix != (provider.document_prefix or ""):
+            raise TaskPrefixMismatchError(
+                expected=store_prefix,
+                actual=provider.document_prefix or "",
+            )
 
 
 async def _embed_entities(

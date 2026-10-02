@@ -19,38 +19,25 @@ holding `GraphStore` could wipe a tenant, which is precisely the fact
 
 ## Lexical recall is bounded by blocking
 
-A query that shares no blocking key with an entity cannot be retrieved
-lexically, however high its string similarity would have been. There is no
-text index in this library, so candidates come from the same prefix and
-soundex keys consolidation uses. This is the honest cost of storing no text,
-and it is the second reason this channel is not named after a term-weighted
-ranker.
+A query sharing no blocking key with an entity cannot be retrieved lexically;
+candidates come from the prefix and soundex keys consolidation uses.
 
 ## A dangling vector match is skipped, and the result is not backfilled
 
-A vector match whose entity the graph store does not have is **skipped, and
-the result is not backfilled to `k`**. The two stores are independent
-projections of one log and lag independently, so this is ordinary, not
-exceptional -- raising would make retrieval fail during replay, and topping up
-would turn a badly lagging projection into silence.
+A vector match whose entity the graph store does not have is skipped, and
+the result is not backfilled to `k`. The two stores are independent projections
+of one log and lag independently.
 
 ## A lexical-only retriever needs no embedding provider
 
 `Retriever.lexical_only` and `ChunkRetriever.lexical_only` build a retriever
 with no `EmbeddingProvider` and, for entities, no `VectorReader`. The lexical
-channel reaches neither, so requiring them to *construct* one obliged a caller
-who wanted only that channel to keep an endpoint healthy it never called --
-and a consumer whose probe degrades to "no embeddings" therefore lost
-misspelling-tolerant entity search silently. ADR 0045 records why this is a
-constructor rather than optional arguments, and why `HYBRID` is refused rather
-than quietly reduced to its lexical half.
+channel reaches neither. ADR 0045 records why this is an explicit constructor.
 
 ## The channels are fused by rank
 
-`domain/fusion.py` says why: the two scores share no unit, and a weighted
-blend of them invents an exchange rate that is unfalsifiable. The component
-scores are carried through onto `ScoredEntity` so a caller can see what
-fusion discarded.
+Rank fusion is used because scores share no unit; component scores are
+carried onto `ScoredEntity` so a caller can see what fusion discarded.
 """
 
 from __future__ import annotations
@@ -60,7 +47,11 @@ from typing import TYPE_CHECKING
 from redstring.domain.blocking import query_blocking_keys
 from redstring.domain.chunk_ranking import rank_chunks
 from redstring.domain.chunk_retrieval import ChunkRetrievalResult, ScoredChunk
-from redstring.domain.exceptions import DimensionMismatchError
+from redstring.domain.exceptions import (
+    DimensionMismatchError,
+    TaskPrefixMismatchError,
+    VectorProvenanceMismatchError,
+)
 from redstring.domain.fusion import reciprocal_rank_fusion
 from redstring.domain.lexical import lexical_score
 from redstring.domain.retrieval import RetrievalMode, RetrievalResult, ScoredEntity
@@ -101,52 +92,37 @@ class Retriever:
         contains it. The candidates that decide the fused ordering are the
         ones just past each channel's cutoff.
 
-        `overfetch=1` restores the old behaviour and is the cheapest setting;
-        raising it costs a wider `VectorStore.search` and a wider blocking-key
-        scan per query, and buys recall. Values below 1 raise `ValueError` --
-        fetching fewer than `k` per channel cannot improve on `k` and is
-        always a mistake.
-
-        The dimension check is at construction, before any text is embedded --
-        the same rule `build_graph` applies, and for the same reason: the
-        mistake is in the configuration, so it should surface at the seam
-        rather than once per vector at the end of a pipeline, after the
-        embedding call has been paid for.
-
-        The comparison is `!=` and not `is not`. CPython caches small
-        integers, so an identity check passes at a test dimension of 8 and
-        rejects every legitimate vector at 768.
+        `overfetch=1` is cheapest; values below 1 raise `ValueError`.
+        Dimension and provenance checks occur at construction before text is embedded.
         """
         if embeddings.dimension != vectors.dimension:
             raise DimensionMismatchError(expected=vectors.dimension, actual=embeddings.dimension)
+
+        vector_model = getattr(vectors, "model", None)
+        if (
+            vector_model is not None
+            and embeddings.model is not None
+            and vector_model != embeddings.model
+        ):
+            raise VectorProvenanceMismatchError(
+                f"expected embedding model {vector_model!r}, got {embeddings.model!r}; "
+                f"changing embedding model requires a new store"
+            )
+
+        vector_prefix = getattr(vectors, "document_prefix", None)
+        if vector_prefix is not None and vector_prefix != (embeddings.document_prefix or ""):
+            raise TaskPrefixMismatchError(
+                expected=vector_prefix,
+                actual=embeddings.document_prefix or "",
+            )
         self._wire(embeddings, vectors, graph, overfetch, RetrievalMode.HYBRID)
 
     @classmethod
     def lexical_only(cls, *, graph: EntityReader, overfetch: int = 3) -> Retriever:
         """A retriever with no embedding provider and no vector store.
 
-        `RetrievalMode.LEXICAL` reaches neither collaborator -- it is
-        `find_by_blocking_keys` plus `lexical_score` over the entity's name --
-        so requiring both to *construct* one obliged a caller who wanted only
-        the blocking-key channel to wire and keep healthy an endpoint it never
-        called. A consumer found this the expensive way: its embedding probe
-        degrades to "absent" when the endpoint is misconfigured, which silently
-        removed misspelling-tolerant entity search, a feature with no embedding
-        in it.
-
-        This is a *constructor* rather than optional arguments on `__init__`
-        deliberately, and ADR 0045 records the trade. Optional arguments make
-        "lexical only" and "I forgot to pass the provider" the same call, which
-        would move a configuration mistake from the seam to the first semantic
-        query -- exactly what ADR 0017's construction-time dimension check
-        exists to prevent. A caller naming `lexical_only` has said what it
-        wants; a caller omitting an argument has not said anything.
-
-        The retriever's default mode is `LEXICAL`, so `retrieve` needs no
-        `mode=` from a caller that has already made the choice here. Asking it
-        for `SEMANTIC` or `HYBRID` raises `ValueError` -- `HYBRID` especially,
-        because it has a lexical half that would answer and so is the mode a
-        silent skip would corrupt rather than break.
+        `RetrievalMode.LEXICAL` reaches neither collaborator. ADR 0045 records
+        why this is a constructor rather than optional arguments.
         """
         self = cls.__new__(cls)
         self._wire(None, None, graph, overfetch, RetrievalMode.LEXICAL)

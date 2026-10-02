@@ -83,6 +83,14 @@ class VectorMatch(_HasPortableMetadata):
     score: float = Field(ge=0.0, le=1.0)
 
 
+class VectorProvenance(BaseModel):
+    """Provenance metadata for a vector store: model, dimension, and document prefix (TASK-0007)."""
+
+    dimension: int
+    model: str | None = None
+    document_prefix: str = ""
+
+
 def clamp_score(value: float) -> float:
     """`value` forced into `VectorMatch`'s `0..1` bound.
 

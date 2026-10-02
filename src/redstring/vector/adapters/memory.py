@@ -22,8 +22,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Self
 
 from redstring.domain.exceptions import DimensionMismatchError
-from redstring.domain.vector import VectorMatch, VectorRecord, cosine_score, has_zero_norm
+from redstring.domain.vector import (
+    VectorMatch,
+    VectorProvenance,
+    VectorRecord,
+    cosine_score,
+    has_zero_norm,
+)
 from redstring.ports.vector_store import entity_type_of
+from redstring.vector.provenance import verify_vector_provenance
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -35,15 +42,61 @@ if TYPE_CHECKING:
 class InMemoryVectorStore:
     """A `VectorStore` backed by plain dictionaries."""
 
-    def __init__(self, *, dimension: int) -> None:
+    def __init__(
+        self,
+        *,
+        dimension: int,
+        model: str | None = None,
+        document_prefix: str | None = None,
+    ) -> None:
         if dimension <= 0:
             raise ValueError(f"dimension must be positive, not {dimension}")
         self._dimension = dimension
+        self._model = model
+        self._document_prefix = document_prefix
         self._records: dict[TenantId, dict[EntityId, VectorRecord]] = {}
 
     @property
     def dimension(self) -> int:
         return self._dimension
+
+    @property
+    def model(self) -> str | None:
+        return self._model
+
+    @property
+    def document_prefix(self) -> str | None:
+        return self._document_prefix
+
+    @property
+    def provenance(self) -> VectorProvenance | None:
+        if self._model is not None or self._document_prefix is not None:
+            return VectorProvenance(
+                dimension=self._dimension,
+                model=self._model,
+                document_prefix=self._document_prefix or "",
+            )
+        return None
+
+    def ensure_schema(
+        self,
+        *,
+        model: str | None = None,
+        document_prefix: str | None = None,
+    ) -> None:
+        """Verify provenance compatibility on schema initialization."""
+        verify_vector_provenance(
+            expected_dimension=self._dimension,
+            actual_dimension=self._dimension,
+            expected_model=self._model,
+            actual_model=model,
+            expected_document_prefix=self._document_prefix,
+            actual_document_prefix=document_prefix,
+        )
+        if self._model is None and model is not None:
+            self._model = model
+        if self._document_prefix is None and document_prefix is not None:
+            self._document_prefix = document_prefix
 
     # ------------------------------------------------------------------
     # Writes

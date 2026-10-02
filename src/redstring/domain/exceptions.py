@@ -245,3 +245,27 @@ class UnknownMergeError(ConsolidationInvariantError):
     def __init__(self, *, merge_event_id: UUID) -> None:
         self.merge_event_id = merge_event_id
         super().__init__(f"no merge in effect with event id {merge_event_id}")
+
+
+class VectorProvenanceMismatchError(RedstringError):
+    """A vector store's recorded provenance does not match the configured model or prefix.
+
+    A vector store is built for one embedding model, dimension, and task prefix.
+    Vectors embedded under different models or prefixes are mathematically incomparable.
+    """
+
+
+class TaskPrefixMismatchError(VectorProvenanceMismatchError):
+    """An embedding provider's task prefix does not match the store's recorded prefix.
+
+    When document_prefix is changed, the resulting vector space shifts, rendering
+    prior vectors incomparable with new vectors.
+    """
+
+    def __init__(self, *, expected: str, actual: str) -> None:
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            f"expected task prefix {expected!r}, got {actual!r}; "
+            f"vectors embedded under different prefixes are incomparable"
+        )

@@ -108,6 +108,16 @@ class EmbeddingProvider(Protocol):
         """
         ...
 
+    @property
+    def document_prefix(self) -> str:
+        """The task prefix prepended to texts passed to embed(). Defaults to empty."""
+        ...
+
+    @property
+    def query_prefix(self) -> str:
+        """The task prefix prepended to texts passed to embed_query(). Defaults to empty."""
+        ...
+
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed each text, in order.
 
