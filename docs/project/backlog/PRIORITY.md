@@ -3,7 +3,7 @@
 Strict sequential order of execution for engineering tasks.
 
 - **TASK-0001 (Complete)**: [`0001-initial-architecture-spike-and-setup`](complete/0001-initial-architecture-spike-and-setup.md)
-- **TASK-0002 (Refined)**: [`0002-re-read-and-re-plan-merge-on-expectedversion-confl`](refined/0002-re-read-and-re-plan-merge-on-expectedversion-confl.md)
+- **TASK-0002 (Complete)**: [`0002-re-read-and-re-plan-merge-on-expectedversion-confl`](complete/0002-re-read-and-re-plan-merge-on-expectedversion-confl.md)
 - **TASK-0003 (Refined)**: [`0003-retract-stale-entities-on-document-re-extraction`](refined/0003-retract-stale-entities-on-document-re-extraction.md)
 - **TASK-0004 (Refined)**: [`0004-support-tenant-scoped-projection-rebuild`](refined/0004-support-tenant-scoped-projection-rebuild.md)
 - **TASK-0005 (Complete)**: [`0005-validate-assignment-on-storedchunk-to-prevent-inva`](complete/0005-validate-assignment-on-storedchunk-to-prevent-inva.md)
