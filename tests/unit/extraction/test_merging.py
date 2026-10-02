@@ -25,11 +25,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from redstring.extraction.mapping import (
-    map_extraction,
-    preference,
-    relationship_preference,
-)
+from redstring.domain.preference import preference, relationship_preference
+from redstring.extraction.mapping import map_extraction
 from redstring.extraction.merging import mention_counts, merge_extractions
 from redstring.extraction.schema import (
     DEFAULT_CONFIDENCE,

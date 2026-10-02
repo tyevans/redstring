@@ -1,42 +1,12 @@
 """From what a model said to what the domain requires.
 
-`ExtractedEntity` has a name and a type. `Entity` needs an id, a tenant, a
-source, a normalized name and a provenance string. This module is the one
-place that gap is closed, which makes it the one place a cross-tenant write or
-a hallucinated identity could be introduced.
+ExtractedEntity has a name and type; Entity requires an id, tenant, source,
+normalized name, and provenance. This module closes that gap cleanly.
 
-## Identity is derived, never invented
-
-`entity_id_for` is a pure function of `(tenant, source, entity type,
-normalized name)`. Everything downstream rests on that:
-
-- **Chunks agree.** A document split into ten overlapping windows mentions the
-  same person in several of them. Random ids would make those ten different
-  people, and any merge would have to re-derive exactly this key to see they
-  are one -- at which point the key may as well be the id.
-- **Re-extraction upserts.** `Document.record_extraction` permits a second run
-  under a new model version, and the projection upserts. With derived ids the
-  second run lands on the first run's entities instead of doubling them.
-- **Relationships resolve.** The model names its endpoints; a name maps to an
-  id by the same function that gave the entity its id, so the two cannot drift.
-
-### Why the `uuid5` calls are nested rather than the parts joined
-
-ADR 0001 records the hazard for stream ids: a scheme that concatenates before
-hashing maps `("ab", "c")` and `("a", "bc")` onto one value. Two of the four
-parts here are free-form model output, so no separator character can be ruled
-out of them. Nesting means every hashed name is a single whole string and the
-ambiguity cannot arise -- it is not a delimiter chosen carefully, it is a
-delimiter that does not exist.
-
-## Nothing here raises on the model's behalf
-
-A model that emits one blank name, or one edge to something it forgot to list,
-has not failed -- it has produced a long answer with a bad row in it. Raising
-would discard the other two hundred rows. So bad rows are dropped and
-**counted** on `MappedExtraction`, where a caller can log them, alert on a
-ratio, or ignore them. Silently dropping would be the actual sin; the counters
-are what make this a decision rather than a bug.
+Identity is derived, never invented: entity_id_for is a pure function of
+(tenant, source, entity type, normalized name). Nested uuid5 hashing prevents
+concatenation collisions (ADR 0001). Bad rows from models are dropped and
+counted on MappedExtraction rather than failing the extraction run.
 """
 
 from __future__ import annotations
@@ -49,19 +19,18 @@ from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, RelationshipId
 from redstring.domain.json_safety import has_unstorable_text
 from redstring.domain.normalization import normalize_name
-
-# Re-exported rather than defined here. They moved to `domain/` when
-# consolidation became the third caller: `consolidation` and `extraction` are
-# sibling layers and may not import each other, so a shared tie-break has to
-# live below both. Kept importable from this module because `merging.py` and
-# every test already name it here, and because the alternative -- two
-# definitions -- is what `domain/preference.py` exists to prevent.
 from redstring.domain.preference import preference, relationship_preference
 from redstring.domain.provenance import MODEL_BEARING_METHODS, ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import TemporalExtent
 from redstring.domain.temporal_parsing import AmbiguousReferenceDateError, parse_temporal
 from redstring.extraction.date_nodes import lift_date_nodes
+
+__all__ = [
+    "MappedExtraction",
+    "entity_id_for",
+    "map_extraction",
+]
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -169,44 +138,18 @@ def map_extraction(
 
     Args:
         extraction: What the model returned.
-        tenant_id: Applied to every entity and relationship produced. This is
-            the only place it is set, so `DocumentExtracted`'s foreign-tenant
-            validator cannot catch a mistake made here -- it would be a
-            consistent, valid, wrong tenant.
-        source_id: The document these came from. Recorded on every entity;
-            `DocumentExtracted` rejects a payload that disagrees with it.
-        model: Provenance, from `LlmProvider.model`. Required for `LLM` and
-            `HYBRID`, forbidden otherwise.
-        reference_date: The vantage point relative temporal expressions are
-            read against -- `SourceDocument.published_at`. Required rather
-            than defaulted, and explicitly `None`-able, because the parser
-            reads no clock: see `redstring.domain.temporal_parsing`. `None`
-            means "this document is undated", and expressions that need a
-            vantage point are then dropped and counted rather than resolved
-            against today.
-        observed_at: When this library was told -- *record* time, stamped onto
-            every entity's `Provenance`. Distinct from `reference_date`, which
-            is *world* time: a document published in 1923 and extracted today
-            has both, and neither is inferred from the other. Required and
-            read from the caller for the same reason `reference_date` is, and
-            the reason is sharper here: a clock in this module would make a
-            re-extraction of one document stamp its entities differently on
-            every run, so the same input would stop producing the same
-            `DocumentExtracted`. One instant for the whole document, not one
-            per chunk -- two entities from one document differing by
-            milliseconds is a difference no reader could act on.
-        method: How these were derived. Defaults to `LLM` because that is what
-            this module exists for; `PATTERN` and the rest are for callers
-            mapping non-model extractions through the same code.
+        tenant_id: Applied to every entity and relationship produced.
+        source_id: Document these entities and edges originated from.
+        model: Provenance model name, required for model-bearing methods.
+        reference_date: Vantage point for relative temporal expressions.
+        observed_at: Record time stamped onto every entity's Provenance.
+        method: Extraction method used (defaults to LLM).
 
     Returns:
-        A `MappedExtraction`. Never raises for anything the *model* did wrong.
+        MappedExtraction containing valid domain entities and relationships.
 
     Raises:
-        ValueError: `model` disagrees with `method` -- either a model-bearing
-            method with no model string, which would put unattributable
-            entities in a permanent log, or a model string on a method that
-            invokes no model, which `Entity` refuses anyway.
+        ValueError: If model presence disagrees with extraction method.
     """
     if method in _MODEL_BEARING and model is None:
         raise ValueError(
