@@ -13,7 +13,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0009 (Complete)**: [`0009-decompose-consolidation-test-resolve-suite`](complete/0009-decompose-consolidation-test-resolve-suite.md)
 - **TASK-0010 (Complete)**: [`0010-decompose-vector-test-wired-suite`](complete/0010-decompose-vector-test-wired-suite.md)
 - **TASK-0011 (Complete)**: [`0011-audit-and-prune-compatibility-shims-extraction`](complete/0011-audit-and-prune-compatibility-shims-extraction.md)
-- **TASK-0012 (Refined)**: [`0012-audit-and-prune-compatibility-shims-consolidation`](refined/0012-audit-and-prune-compatibility-shims-consolidation.md)
+- **TASK-0012 (Complete)**: [`0012-audit-and-prune-compatibility-shims-consolidation`](complete/0012-audit-and-prune-compatibility-shims-consolidation.md)
 - **TASK-0013 (Refined)**: [`0013-audit-and-prune-compatibility-shims-projections`](refined/0013-audit-and-prune-compatibility-shims-projections.md)
 - **TASK-0014 (Refined)**: [`0014-audit-and-prune-compatibility-shims-aggregates`](refined/0014-audit-and-prune-compatibility-shims-aggregates.md)
 - **TASK-0015 (Refined)**: [`0015-audit-and-prune-compatibility-shims-events`](refined/0015-audit-and-prune-compatibility-shims-events.md)
