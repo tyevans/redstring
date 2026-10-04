@@ -1,7 +1,7 @@
 ---
 id: 0018
 title: Audit and prune backwards compatibility shims in domain BC
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0003
 - ADR-0007
@@ -10,6 +10,8 @@ governing_prds:
 governing_stories:
 - US-0001
 target_bc: domain
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T18:32:03.232784+00:00'
 mutation_scope: '[''src/redstring/domain/'']'
 ---
 

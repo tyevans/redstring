@@ -19,7 +19,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0015 (Complete)**: [`0015-audit-and-prune-compatibility-shims-events`](complete/0015-audit-and-prune-compatibility-shims-events.md)
 - **TASK-0016 (Complete)**: [`0016-audit-and-prune-compatibility-shims-ports`](complete/0016-audit-and-prune-compatibility-shims-ports.md)
 - **TASK-0017 (Complete)**: [`0017-audit-and-prune-compatibility-shims-composition`](complete/0017-audit-and-prune-compatibility-shims-composition.md)
-- **TASK-0018 (Refined)**: [`0018-audit-and-prune-compatibility-shims-domain`](refined/0018-audit-and-prune-compatibility-shims-domain.md)
+- **TASK-0018 (Complete)**: [`0018-audit-and-prune-compatibility-shims-domain`](complete/0018-audit-and-prune-compatibility-shims-domain.md)
 - **TASK-0019 (Refined)**: [`0019-spike-cross-bc-abstractions-and-consolidation`](refined/0019-spike-cross-bc-abstractions-and-consolidation.md)
 - **TASK-0020 (Proposed)**: [`0020-spike-investigate-retract-stale-entities-on-do`](proposed/0020-spike-investigate-retract-stale-entities-on-do.md)
 - **TASK-0021 (Refined)**: [`0021-audit-and-port-legacy-adrs-to-specops-registry`](refined/0021-audit-and-port-legacy-adrs-to-specops-registry.md)
