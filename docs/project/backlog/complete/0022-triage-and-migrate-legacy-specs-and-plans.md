@@ -1,7 +1,7 @@
 ---
 id: '0022'
 title: Triage and migrate legacy specs and plans from superpowers/ and plans/
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0007
@@ -10,7 +10,9 @@ governing_prds:
 governing_stories:
 - US-0005
 target_bc: core
-mutation_scope: []
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T19:09:55.916294+00:00'
+mutation_scope: '[]'
 ---
 
 # TASK-0022: Triage and migrate legacy specs and plans from superpowers/ and plans/
