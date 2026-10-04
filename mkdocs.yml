@@ -109,6 +109,9 @@ nav:
       - index.md
       - Installation: installation.md
       - Your first graph: getting-started.md
+  - Tutorials:
+      - tutorials/index.md
+      - Contributor onboarding: tutorials/01-getting-started.md
   - How-to:
       - how-to/index.md
       - Build and extract:
@@ -133,8 +136,10 @@ nav:
       - Development:
           - Run the integration and mutation suites: how-to/run-integration-and-mutation-suites.md
           - Run the ingestion benchmark: how-to/run-the-benchmark.md
+          - Bootstrap a project with SpecOps: how-to/bootstrap-project.md
   - Reference:
       - reference/index.md
+      - SpecOps CLI: reference/cli.md
       - Events: reference/events.md
       - Aggregates: reference/aggregates.md
       - Domain value types: reference/domain-value-types.md
@@ -195,3 +200,4 @@ nav:
       - Library release workflow and SpecOps: explanation/library-release-workflow-and-specops.md
       - Cross-BC abstractions and consolidation: explanation/cross-bc-abstractions-and-consolidation-findings.md
   - Contributing: contributing.md
+  - Operating manual: operating-manual.md

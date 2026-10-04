@@ -62,3 +62,5 @@ from a concrete goal rather than from a concept — for the concepts, see
 - [**Run the ingestion benchmark**](run-the-benchmark.md) — wall-clock and
   accuracy against a live endpoint, what it refuses and why, and the exit
   code table.
+- [**Bootstrap a project with SpecOps**](bootstrap-project.md) — initialize or adopt
+  SpecOps Project Management as Code with opinionated invariants and Diataxis docs.
