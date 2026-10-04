@@ -22,7 +22,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0018 (Complete)**: [`0018-audit-and-prune-compatibility-shims-domain`](complete/0018-audit-and-prune-compatibility-shims-domain.md)
 - **TASK-0019 (Complete)**: [`0019-spike-cross-bc-abstractions-and-consolidation`](complete/0019-spike-cross-bc-abstractions-and-consolidation.md)
 - **TASK-0020 (Proposed)**: [`0020-spike-investigate-retract-stale-entities-on-do`](proposed/0020-spike-investigate-retract-stale-entities-on-do.md)
-- **TASK-0021 (Refined)**: [`0021-audit-and-port-legacy-adrs-to-specops-registry`](refined/0021-audit-and-port-legacy-adrs-to-specops-registry.md)
+- **TASK-0021 (Complete)**: [`0021-audit-and-port-legacy-adrs-to-specops-registry`](complete/0021-audit-and-port-legacy-adrs-to-specops-registry.md)
 - **TASK-0022 (Refined)**: [`0022-triage-and-migrate-legacy-specs-and-plans`](refined/0022-triage-and-migrate-legacy-specs-and-plans.md)
 - **TASK-0023 (Refined)**: [`0023-align-public-docs-and-mkdocs-with-specops`](refined/0023-align-public-docs-and-mkdocs-with-specops.md)
 - **TASK-REFACTOR-redstring-__init__ (Proposed)**: [`TASK-REFACTOR-redstring-__init__`](proposed/TASK-REFACTOR-redstring-__init__.md)
