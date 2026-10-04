@@ -1,7 +1,7 @@
 ---
 id: '0031'
 title: Decompose domains loader test suite
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0002
@@ -11,7 +11,9 @@ governing_prds:
 governing_stories:
 - US-0001
 target_bc: testing
-mutation_scope: []
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T21:12:57.898568+00:00'
+mutation_scope: '[]'
 ---
 
 # TASK-0031: Decompose domains loader test suite

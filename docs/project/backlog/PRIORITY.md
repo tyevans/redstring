@@ -65,7 +65,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0028 (Complete)**: [`0028-decompose-langchain-adapter-test-suite`](complete/0028-decompose-langchain-adapter-test-suite.md)
 - **TASK-0029 (Complete)**: [`0029-resolve-anti-mock-and-private-symbol-violations`](complete/0029-resolve-anti-mock-and-private-symbol-violations.md)
 - **TASK-0030 (Complete)**: [`0030-standardize-extraction-retry-policy-naming`](complete/0030-standardize-extraction-retry-policy-naming.md)
-- **TASK-0031 (Refined)**: [`0031-decompose-domains-loader-test-suite`](refined/0031-decompose-domains-loader-test-suite.md)
+- **TASK-0031 (Complete)**: [`0031-decompose-domains-loader-test-suite`](complete/0031-decompose-domains-loader-test-suite.md)
 - **TASK-0032 (Refined)**: [`0032-port-legacy-storage-and-event-log-adrs`](refined/0032-port-legacy-storage-and-event-log-adrs.md)
 - **TASK-0033 (Refined)**: [`0033-port-legacy-domain-schema-and-extraction-adrs`](refined/0033-port-legacy-domain-schema-and-extraction-adrs.md)
 - **TASK-0034 (Refined)**: [`0034-port-legacy-ports-and-adapter-capability-adrs`](refined/0034-port-legacy-ports-and-adapter-capability-adrs.md)
