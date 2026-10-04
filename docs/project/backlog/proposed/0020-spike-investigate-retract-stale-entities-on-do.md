@@ -6,6 +6,11 @@ hypothesis: How to define entity identity across extraction runs and retract sta
   entities without violating GraphStore port invariants?
 timebox: 2h
 allows_dependencies: true
+governing_stories:
+- US-0001
+governing_prds:
+- PRD-0001
+target_bc: extraction
 ---
 
 # SPIKE-0020: Architectural Spike: Investigate Retract stale entities on document re-extraction
