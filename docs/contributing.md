@@ -47,32 +47,39 @@ failure surface legible.
 
 ## Commit messages
 
-Not conventional commits. An imperative sentence, capitalised, no trailing
-period, no `feat:`/`fix:` prefix:
+Commits follow the **Conventional Commits** specification (`type(scope): description`) with structured SpecOps RFC-822 trailers for full traceability:
 
+```text
+feat(extraction): add stream parsing support
+
+SpecOps-Task: TASK-0042
+SpecOps-Story: US-0005
 ```
-Add BACKLOG.md and require deferred work to land in it
-Fix all 42 pre-existing test failures
-Configure ruff, bandit, coverage ratchet
-```
 
-The subject says *what changed*. The body says what it cost and what you
-learned — counts, file tables and survivor lists belong there, because a
-commit message is immutable and correctly scoped to a moment, unlike an ADR or
-a doc page.
+Enforced by `uv run spec-ops security check-trailers` and pre-commit hooks (governed by ADR-0010 and ADR-0012).
 
-## Deferred work goes in `BACKLOG.md`
+## SpecOps PMaC Backlog Management
 
-**Anything you notice and do not fix lands in `BACKLOG.md` in the same commit
-that passes it by.** No exceptions and no substitutes: not a TODO comment, not
-a line in the PR body, not a sentence in review that scrolls away.
+Development and backlog progression are managed through **SpecOps** (Project Management as Code):
 
-Write the entry so someone picking it up cold does not have to rediscover what
-you already know — name the file and line, say what is actually wrong, and say
-what you learned that made you defer rather than fix. An entry that only says
-"clean up X" has thrown away the expensive part.
+- **Tasks live in `docs/project/backlog/`** across three states: `proposed/`, `refined/`, and `complete/`.
+- **Propose new work** using `uv run spec-ops task create` or by authoring a task markdown file in `docs/project/backlog/proposed/`. Never leave untracked TODO comments in code.
+- **Priority Queue**: `docs/project/backlog/PRIORITY.md` maintains a strict, sequential priority queue synchronized automatically with disk state.
+- **Historical Backlog**: Historical pre-SpecOps backlog items (B1–B170) remain archived in `BACKLOG.md` for lineage traceability.
 
-When you fix an entry, delete it in the same commit.
+## Worktree Isolation & Lifecycle
+
+To prevent cross-agent interference and keep feature branches isolated (ADR-0005):
+
+1. **Spawn a worktree**: Always work inside a dedicated worktree created via:
+   ```bash
+   uv run spec-ops worktree start <TASK_ID>
+   ```
+2. **Backlog Immutability**: Feature branches must **never** modify files in `docs/project/backlog/` directly. Backlog transitions occur upon integration via `uv run spec-ops queue complete <TASK_ID>` on dedicated `chore/backlog-*` branches.
+3. **Hard Invariants**:
+   - **File length limit (<500 lines)**: Strictly enforced by `uv run spec-ops health` (warns proactively at >=400 lines; ADR-0002).
+   - **Blackbox frontdoors**: Tests must exercise public interfaces without private internal mock backdoors (ADR-0003).
+   - **Lockfile immutability**: Never modify `uv.lock` by hand (ADR-0011).
 
 ## Testing
 
@@ -173,14 +180,32 @@ a row when you add a client** — it is the only thing keeping the driver out of
 
 Work that changes a public contract, a persistence format, the layer contract,
 the entity/graph data model, merge semantics, or the shape of a port is not
-complete until the decision is written down. See [Decisions](adr/index.md) for
-the conventions — above all that **numbers are allocated at merge, not at
-drafting**, and that renumbering means the filename, the title, and every
-inbound citation in one commit.
+complete until the architectural decision is authored and version-locked in git alongside code (governed by ADR-0001).
+
+- **SpecOps ADRs**: New architectural decisions are authored under `docs/project/adrs/` with SpecOps YAML frontmatter and indexed in `docs/project/adrs/REGISTRY.md`.
+- **Legacy ADRs**: Domain architecture decisions (ADR-0101 through ADR-0147) are published on the documentation site under [Decisions](adr/index.md).
 
 Run a spec against the existing ADRs and say, for each related one, whether it
 **stands**, is **amended**, or is **superseded**. Silence is not an answer.
 
+## Preflight Verification Checklist
+
+Before pushing a branch or opening a pull request, verify:
+
+```bash
+# 1. SpecOps invariant & health check (<500 lines per file, 0 numbering collisions)
+uv run spec-ops health
+
+# 2. Complete unit test suite & coverage ratchet floor (>=96.42%)
+uv run pytest
+
+# 3. Documentation build with strict link & anchor validation
+uv run mkdocs build --strict
+
+# 4. Dependency lockfile integrity
+uv lock --check
+```
+
 ## Releasing
 
-Maintainers only — see `RELEASING.md` in the repository.
+Maintainers only — see `RELEASING.md` in the repository and [Library release workflow and SpecOps](explanation/library-release-workflow-and-specops.md).

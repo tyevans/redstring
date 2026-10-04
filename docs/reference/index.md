@@ -11,6 +11,7 @@ wrapped around it.
 | [Domain schema YAML](domain-schema-yaml.md) | Every key a schema file may carry, and what each does to the generated prompt |
 | [Neo4j graph store](neo4j-graph-store.md) | The adapter's Cypher, its node and relationship layout, and the constraints it expects |
 | [Quality gates](quality-gates.md) | What each pre-commit hook checks, the configuration it reads, and why running one by hand answers a different question than the configured run |
+| [SpecOps CLI](cli.md) | Command-line interface reference for SpecOps PMaC commands, subcommands, and flags |
 
 ## The public surface
 
