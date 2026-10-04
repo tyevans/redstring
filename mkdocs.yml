@@ -193,4 +193,5 @@ nav:
   - Explanation:
       - Project management as code: explanation/project-management-as-code.md
       - Library release workflow and SpecOps: explanation/library-release-workflow-and-specops.md
+      - Cross-BC abstractions and consolidation: explanation/cross-bc-abstractions-and-consolidation-findings.md
   - Contributing: contributing.md
