@@ -139,6 +139,7 @@ model version is what keeps this path's key space distinct from
 from __future__ import annotations
 
 import asyncio
+import itertools
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final, NamedTuple
 
@@ -153,7 +154,7 @@ from redstring.extraction.merging import mention_counts, merge_extractions
 from redstring.extraction.schema import Extraction
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Mapping
     from datetime import datetime
 
     from redstring.aggregates.document import Document
@@ -284,12 +285,6 @@ class PipelineResult(NamedTuple):
     #: takes it, and a mutable one would be a default every caller could
     #: write into.
     mention_counts: Mapping[EntityId, int] = MappingProxyType({})
-
-
-def _batches(chunks: Sequence[Chunk], size: int) -> Iterator[Sequence[Chunk]]:
-    """Consecutive groups of `size`, in order. `size=1` yields one chunk each."""
-    for start in range(0, len(chunks), size):
-        yield chunks[start : start + size]
 
 
 class ExtractionPipeline:
@@ -458,7 +453,7 @@ class ExtractionPipeline:
         gleaned = 0
         failed_gleanings = 0
 
-        for batch in _batches(chunks, self._concurrency):
+        for batch in itertools.batched(chunks, self._concurrency, strict=False):
             # One prompt for the whole batch, computed before any call in it
             # runs -- every chunk in the batch sees the same carryover. At
             # concurrency=1 a batch is one chunk, so this is exactly the

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 from typing import TYPE_CHECKING
 
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.domain.limiter import CallLimiter
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Sequence
 
     from redstring.consolidation.banded import BandedCandidates
     from redstring.consolidation.candidates import ScoredCandidate
@@ -25,12 +26,6 @@ if TYPE_CHECKING:
 __all__ = [
     "execute_resolve_many",
 ]
-
-
-def _batches[T](items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
-    """Consecutive slices of at most `size`. The last may be short."""
-    for start in range(0, len(items), size):
-        yield items[start : start + size]
 
 
 async def _still_mergeable(
@@ -91,7 +86,7 @@ async def execute_resolve_many(
 
     # Phase 1 -- score and band, in wavefronts of `concurrency`.
     banded: list[BandedCandidates] = []
-    for batch in _batches(subjects, concurrency):
+    for batch in itertools.batched(subjects, concurrency, strict=False):
         results = await asyncio.gather(
             *(
                 service._score_and_band(subject, finder=finder, high=high, low=low)
