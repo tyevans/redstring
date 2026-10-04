@@ -54,6 +54,18 @@ if TYPE_CHECKING:
     from redstring.domain.entity import Entity
     from redstring.ports.llm_provider import LlmProvider
 
+__all__ = [
+    "ADJUDICATION_BATCH_SIZE",
+    "HIGH_SIMILARITY",
+    "LOW_SIMILARITY",
+    "AdjudicationBatch",
+    "AdjudicationQuestion",
+    "AdjudicationVerdict",
+    "Adjudicator",
+    "MergeDecision",
+    "decide",
+]
+
 #: At or above this, merge without asking a model.
 #:
 #: Inherited from `MERGER_HIGH_SIMILARITY_THRESHOLD`, where it was tuned. Named

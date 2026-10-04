@@ -26,10 +26,7 @@ from redstring.consolidation.policy import (
     MergeDecision,
     decide,
 )
-from redstring.domain.exceptions import (
-    EmptyCompletionError,
-    RefusedCompletionError,
-)
+from redstring.domain.exceptions import EmptyCompletionError, RefusedCompletionError
 from redstring.domain.similarity import SimilarityFeatures
 from redstring.ports.llm_provider import LlmProvider
 
@@ -79,10 +76,7 @@ class TestTheBands:
 
     @pytest.mark.parametrize(
         ("score", "expected"),
-        [
-            (HIGH_SIMILARITY, MergeDecision.MERGE),
-            (LOW_SIMILARITY, MergeDecision.ADJUDICATE),
-        ],
+        [(HIGH_SIMILARITY, MergeDecision.MERGE), (LOW_SIMILARITY, MergeDecision.ADJUDICATE)],
     )
     def test_both_bounds_are_inclusive_from_below(self, score, expected):
         """The boundary is exactly where an off-by-one hides, and a pair
@@ -344,10 +338,8 @@ class TestWhenTheModelDoesNotAnswer:
         provider = FakeProvider(
             answers=[AdjudicationBatch(verdicts=[_verdict() for _ in range(299)])]
         )
-
-        verdicts = await Adjudicator(provider, batch_size=300).adjudicate(
-            entity(tenant), candidates
-        )
+        adj = Adjudicator(provider, batch_size=300)
+        verdicts = await adj.adjudicate(entity(tenant), candidates)
 
         assert verdicts == [None] * 300
 
@@ -359,10 +351,8 @@ class TestWhenTheModelDoesNotAnswer:
         provider = FakeProvider(
             answers=[AdjudicationBatch(verdicts=[_verdict() for _ in range(300)])]
         )
-
-        verdicts = await Adjudicator(provider, batch_size=300).adjudicate(
-            entity(tenant), candidates
-        )
+        adj = Adjudicator(provider, batch_size=300)
+        verdicts = await adj.adjudicate(entity(tenant), candidates)
 
         assert all(verdict is not None for verdict in verdicts)
         assert len(verdicts) == 300

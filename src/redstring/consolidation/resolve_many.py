@@ -22,6 +22,10 @@ if TYPE_CHECKING:
     from redstring.domain.ids import EntityId
     from redstring.events.merge import EntitiesMerged
 
+__all__ = [
+    "execute_resolve_many",
+]
+
 
 def _batches[T](items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
     """Consecutive slices of at most `size`. The last may be short."""

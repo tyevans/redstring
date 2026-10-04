@@ -56,8 +56,10 @@ from typing import TYPE_CHECKING, Final
 from eventsource import OptimisticLockError
 from eventsource.domain.tenant_context import tenant_scope
 
+__all__ = ["ConsolidationService"]
+
 from redstring.aggregates.repositories import consolidation_repository
-from redstring.consolidation.banded import _Banded
+from redstring.consolidation.banded import BandedCandidates
 from redstring.consolidation.planning import plan_properties, plan_redirections
 from redstring.consolidation.policy import (
     HIGH_SIMILARITY,
@@ -301,7 +303,7 @@ class ConsolidationService:
         finder: CandidateSource,
         high: float,
         low: float,
-    ) -> _Banded | None:
+    ) -> BandedCandidates | None:
         """Resolve, block, score, band. **No writes and no model call.**
 
         Split out of `resolve` so `resolve_many` can run this half
@@ -325,7 +327,7 @@ class ConsolidationService:
         banded = [
             (candidate, decide(candidate.score, high=high, low=low)) for candidate in candidates
         ]
-        return _Banded(
+        return BandedCandidates(
             subject=subject,
             confirmed=[
                 (c, f"score >= {high}") for c, decision in banded if decision is MergeDecision.MERGE
@@ -334,7 +336,7 @@ class ConsolidationService:
         )
 
     async def _emit(
-        self, banded: _Banded, confirmed: list[tuple[ScoredCandidate, str]]
+        self, banded: BandedCandidates, confirmed: list[tuple[ScoredCandidate, str]]
     ) -> EntitiesMerged | None:
         """Append one merge covering everything that came out a yes.
 

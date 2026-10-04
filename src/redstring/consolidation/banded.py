@@ -10,6 +10,9 @@ if TYPE_CHECKING:
     from redstring.domain.entity import Entity
 
 
+__all__ = ["BandedCandidates"]
+
+
 @dataclass(frozen=True, slots=True)
 class BandedCandidates:
     """One subject's candidates, split by what the score alone settled.
@@ -28,7 +31,3 @@ class BandedCandidates:
     confirmed: list[tuple[ScoredCandidate, str]]
     #: The band. Empty unless an adjudicator is going to be asked.
     undecided: list[ScoredCandidate]
-
-
-# Backwards-compatible alias for existing service usage
-_Banded = BandedCandidates
