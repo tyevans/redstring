@@ -1,7 +1,7 @@
 ---
 id: '0025'
 title: Decompose extraction schema_org module to satisfy file length limit
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0002
@@ -11,8 +11,9 @@ governing_prds:
 governing_stories:
 - US-0001
 target_bc: extraction
-mutation_scope:
-- src/redstring/extraction/schema_org.py
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T19:56:35.392594+00:00'
+mutation_scope: '[''src/redstring/extraction/schema_org.py'']'
 ---
 
 # TASK-0025: Decompose extraction schema_org module to satisfy file length limit
