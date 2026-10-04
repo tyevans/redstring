@@ -16,7 +16,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0012 (Complete)**: [`0012-audit-and-prune-compatibility-shims-consolidation`](complete/0012-audit-and-prune-compatibility-shims-consolidation.md)
 - **TASK-0013 (Complete)**: [`0013-audit-and-prune-compatibility-shims-projections`](complete/0013-audit-and-prune-compatibility-shims-projections.md)
 - **TASK-0014 (Complete)**: [`0014-audit-and-prune-compatibility-shims-aggregates`](complete/0014-audit-and-prune-compatibility-shims-aggregates.md)
-- **TASK-0015 (Refined)**: [`0015-audit-and-prune-compatibility-shims-events`](refined/0015-audit-and-prune-compatibility-shims-events.md)
+- **TASK-0015 (Complete)**: [`0015-audit-and-prune-compatibility-shims-events`](complete/0015-audit-and-prune-compatibility-shims-events.md)
 - **TASK-0016 (Refined)**: [`0016-audit-and-prune-compatibility-shims-ports`](refined/0016-audit-and-prune-compatibility-shims-ports.md)
 - **TASK-0017 (Refined)**: [`0017-audit-and-prune-compatibility-shims-composition`](refined/0017-audit-and-prune-compatibility-shims-composition.md)
 - **TASK-0018 (Refined)**: [`0018-audit-and-prune-compatibility-shims-domain`](refined/0018-audit-and-prune-compatibility-shims-domain.md)
