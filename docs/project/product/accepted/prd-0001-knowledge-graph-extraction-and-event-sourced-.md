@@ -58,6 +58,9 @@ component: core
 - [`US-0002`](../../user_stories/accepted/us-0002-consolidate-mentions-and-resolve-entity-aliases.md): Consolidate Mentions and Resolve Entity Aliases
 - [`US-0003`](../../user_stories/accepted/us-0003-project-extraction-events-to-graph-vector-and-chun.md): Project Extraction Events to Graph, Vector, and Chunk Stores
 - [`US-0004`](../../user_stories/accepted/us-0004-hybrid-multi-channel-retrieval-over-knowledge-grap.md): Hybrid Multi-Channel Retrieval Over Knowledge Graph
+- [`US-0005`](../../user_stories/accepted/us-0005-verify-public-surface-boundaries-and-release-integ.md): Verify Public Surface Boundaries and Release Integrity
+- [`US-0006`](../../user_stories/accepted/us-0006-autonomous-task-execution-and-invariant-verificati.md): Autonomous Task Execution and Invariant Verification
+- [`US-0007`](../../user_stories/accepted/us-0007-measure-ingestion-throughput-and-track-chunk-progress.md): Measure Ingestion Throughput and Track Chunk Progress
 
 ## Implementing Backlog Tasks
 
