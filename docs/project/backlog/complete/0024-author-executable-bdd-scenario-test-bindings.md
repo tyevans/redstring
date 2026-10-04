@@ -1,7 +1,7 @@
 ---
 id: '0024'
 title: Author executable BDD scenario test bindings for US-0001 through US-0007
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0006
@@ -11,7 +11,9 @@ governing_stories:
 - US-0005
 - US-0006
 target_bc: core
-mutation_scope: []
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T19:47:28.264548+00:00'
+mutation_scope: '[]'
 ---
 
 # TASK-0024: Author executable BDD scenario test bindings for US-0001 through US-0007
