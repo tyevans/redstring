@@ -54,80 +54,22 @@ import logging
 from typing import Any
 
 from redstring.domain.provenance import ExtractionMethod
+from redstring.extraction.schema_org_types import (
+    SCHEMA_NESTED_FIELDS,
+    SCHEMA_PROPERTY_FIELDS,
+    SCHEMA_TYPE_MAP,
+    map_open_graph_type,
+)
 
 logger = logging.getLogger(__name__)
 
-# Mapping from Schema.org types to our entity types
-SCHEMA_TYPE_MAP = {
-    # Person types
-    "Person": "person",
-    "Author": "person",
-    # Organization types
-    "Organization": "organization",
-    "Corporation": "organization",
-    "LocalBusiness": "organization",
-    "Company": "organization",
-    "EducationalOrganization": "organization",
-    "GovernmentOrganization": "organization",
-    "NGO": "organization",
-    "SportsOrganization": "organization",
-    # Location types
-    "Place": "location",
-    "City": "location",
-    "Country": "location",
-    "AdministrativeArea": "location",
-    "GeoCoordinates": "location",
-    "PostalAddress": "location",
-    "Landmark": "location",
-    # Event types
-    "Event": "event",
-    "BusinessEvent": "event",
-    "ChildrensEvent": "event",
-    "ComedyEvent": "event",
-    "CourseInstance": "event",
-    "DanceEvent": "event",
-    "DeliveryEvent": "event",
-    "EducationEvent": "event",
-    "ExhibitionEvent": "event",
-    "Festival": "event",
-    "FoodEvent": "event",
-    "Hackathon": "event",
-    "LiteraryEvent": "event",
-    "MusicEvent": "event",
-    "PublicationEvent": "event",
-    "SaleEvent": "event",
-    "ScreeningEvent": "event",
-    "SocialEvent": "event",
-    "SportsEvent": "event",
-    "TheaterEvent": "event",
-    "VisualArtsEvent": "event",
-    # Product types
-    "Product": "product",
-    "ProductModel": "product",
-    "IndividualProduct": "product",
-    "SoftwareApplication": "product",
-    "MobileApplication": "product",
-    "WebApplication": "product",
-    "Book": "product",
-    "Movie": "product",
-    "MusicAlbum": "product",
-    "VideoGame": "product",
-    # Document types
-    "Article": "document",
-    "NewsArticle": "document",
-    "BlogPosting": "document",
-    "ScholarlyArticle": "document",
-    "TechArticle": "document",
-    "Report": "document",
-    "WebPage": "document",
-    "CreativeWork": "document",
-    # Date-related
-    "Date": "date",
-    "DateTime": "date",
-    # Concept types
-    "Thing": "concept",
-    "Intangible": "concept",
-}
+# Re-exported for backwards compatibility and test stability
+__all__ = [
+    "SCHEMA_TYPE_MAP",
+    "extract_entities_from_open_graph",
+    "extract_entities_from_schema_org",
+    "map_open_graph_type",
+]
 
 
 def extract_entities_from_schema_org(schema_data: list[Any]) -> list[dict[str, Any]]:
@@ -248,40 +190,7 @@ def _extract_properties(item: dict[str, Any]) -> dict[str, Any]:
     """Extract relevant properties from Schema.org item."""
     properties = {}
 
-    # Common properties to extract
-    property_fields = [
-        "url",
-        "image",
-        "logo",
-        "email",
-        "telephone",
-        "address",
-        "location",
-        "geo",
-        "startDate",
-        "endDate",
-        "datePublished",
-        "dateCreated",
-        "dateModified",
-        "author",
-        "creator",
-        "publisher",
-        "brand",
-        "jobTitle",
-        "worksFor",
-        "memberOf",
-        "price",
-        "priceCurrency",
-        "offers",
-        "aggregateRating",
-        "review",
-        "ratingValue",
-        "category",
-        "genre",
-        "keywords",
-    ]
-
-    for field in property_fields:
+    for field in SCHEMA_PROPERTY_FIELDS:
         value = item.get(field)
         if value:
             # Simplify nested objects
@@ -301,25 +210,7 @@ def _extract_nested_entities(item: dict[str, Any]) -> list[dict[str, Any]]:
     """Extract entities from nested Schema.org objects."""
     entities = []
 
-    # Fields that may contain nested entities
-    nested_fields = [
-        "author",
-        "creator",
-        "publisher",
-        "brand",
-        "worksFor",
-        "memberOf",
-        "performer",
-        "organizer",
-        "location",
-        "address",
-        "sponsor",
-        "funder",
-        "mentions",
-        "about",
-    ]
-
-    for field in nested_fields:
+    for field in SCHEMA_NESTED_FIELDS:
         value = item.get(field)
         if not value:
             continue
@@ -356,7 +247,7 @@ def extract_entities_from_open_graph(og_data: dict[str, Any]) -> list[dict[str, 
     try:
         # Determine type from og:type
         og_type = og_data.get("type", "website")
-        entity_type = _map_og_type(og_type)
+        entity_type = map_open_graph_type(og_type)
 
         # Get title
         title = og_data.get("title")
@@ -399,17 +290,5 @@ def extract_entities_from_open_graph(og_data: dict[str, Any]) -> list[dict[str, 
 
 
 def _map_og_type(og_type: str) -> str:
-    """Map Open Graph type to entity type."""
-    og_type = og_type.lower()
-
-    if og_type in ("website", "article", "blog"):
-        return "document"
-    if og_type == "profile":
-        return "person"
-    if og_type in ("product", "book", "music.album", "video.movie"):
-        return "product"
-    if og_type in ("place", "business.business"):
-        return "location"
-    if og_type in ("music.song", "music.playlist", "video.episode"):
-        return "document"
-    return "concept"
+    """Map Open Graph type to entity type (backwards-compatible alias)."""
+    return map_open_graph_type(og_type)
