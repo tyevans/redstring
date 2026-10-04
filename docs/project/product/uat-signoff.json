@@ -1,0 +1,38 @@
+{
+  "$schema": "spec-ops/uat-signoff-v1",
+  "signoffs": {
+    "PRD-0001:1": {
+      "notes": "Extraction emits DocumentExtracted with typed entities, temporal intervals, and relationships.",
+      "outcome_id": "1",
+      "prd_id": "PRD-0001",
+      "reviewer": "Ty Evans <ty@tyevans.net>",
+      "status": "Approved",
+      "timestamp": "2026-10-04T19:28:13.397992+00:00"
+    },
+    "PRD-0001:2": {
+      "notes": "Consolidation maps aliases to canonical entity IDs with deterministic preference ordering.",
+      "outcome_id": "2",
+      "prd_id": "PRD-0001",
+      "reviewer": "Ty Evans <ty@tyevans.net>",
+      "status": "Approved",
+      "timestamp": "2026-10-04T19:28:17.502624+00:00"
+    },
+    "PRD-0001:3": {
+      "notes": "GraphProjection and VectorProjection deterministically reconstruct the full graph and embedding index from the event stream.",
+      "outcome_id": "3",
+      "prd_id": "PRD-0001",
+      "reviewer": "Ty Evans <ty@tyevans.net>",
+      "status": "Approved",
+      "timestamp": "2026-10-04T19:28:17.916905+00:00"
+    },
+    "PRD-0001:4": {
+      "notes": "Retriever.retrieve accurately combines semantic vector scores with graph neighborhood traversals.",
+      "outcome_id": "4",
+      "prd_id": "PRD-0001",
+      "reviewer": "Ty Evans <ty@tyevans.net>",
+      "status": "Approved",
+      "timestamp": "2026-10-04T19:28:18.296352+00:00"
+    }
+  },
+  "version": "1.0"
+}
