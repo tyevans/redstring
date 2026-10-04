@@ -42,3 +42,4 @@ HANDOVER.md
 .claude/tackline/memory/sessions/2026*.md
 .specops/cache/
 .specops/locks/
+.specops/worker_leases/
