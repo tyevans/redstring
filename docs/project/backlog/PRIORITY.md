@@ -62,6 +62,6 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0025 (Complete)**: [`0025-decompose-schema-org-module`](complete/0025-decompose-schema-org-module.md)
 - **TASK-0026 (Complete)**: [`0026-decompose-domains-registry-module`](complete/0026-decompose-domains-registry-module.md)
 - **TASK-0027 (Complete)**: [`0027-decompose-public-surface-test-suite`](complete/0027-decompose-public-surface-test-suite.md)
-- **TASK-0028 (Refined)**: [`0028-decompose-langchain-adapter-test-suite`](refined/0028-decompose-langchain-adapter-test-suite.md)
+- **TASK-0028 (Complete)**: [`0028-decompose-langchain-adapter-test-suite`](complete/0028-decompose-langchain-adapter-test-suite.md)
 - **TASK-0029 (Refined)**: [`0029-resolve-anti-mock-and-private-symbol-violations`](refined/0029-resolve-anti-mock-and-private-symbol-violations.md)
 - **TASK-0030 (Refined)**: [`0030-standardize-extraction-retry-policy-naming`](refined/0030-standardize-extraction-retry-policy-naming.md)
