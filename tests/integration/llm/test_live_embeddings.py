@@ -44,7 +44,7 @@ from redstring.testing.embedding_provider import (
     DISTINCT_TEXTS,
     SAME_VECTOR_COSINE,
     EmbeddingProviderCompliance,
-    _cosine,
+    cosine,
 )
 
 pytestmark = [pytest.mark.integration, pytest.mark.live]
@@ -135,7 +135,7 @@ class TestWhatOnlyALiveServerShows:
         alone = (await provider.embed([DISTINCT_TEXTS[0]]))[0]
         in_batch = (await provider.embed(DISTINCT_TEXTS))[0]
 
-        similarity = _cosine(alone, in_batch)
+        similarity = cosine(alone, in_batch)
         assert similarity >= SAME_VECTOR_COSINE, (
             f"batching moved the vector further than the contract allows "
             f"(cosine {similarity:.6f} < {SAME_VECTOR_COSINE}); the tolerance "

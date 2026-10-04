@@ -40,8 +40,8 @@ class TestSqlConstruction:
         assert sql.index("WHERE") < sql.index("ORDER BY") < sql.index("LIMIT")
 
     def test_the_search_scores_with_cosine_distance_the_right_way_round(self):
-        assert adapter._SCORE == "1 - (embedding <=> $2::vector) / 2"
-        assert adapter._SCORE in make_store()._search_sql()
+        assert adapter.SCORE_SQL == "1 - (embedding <=> $2::vector) / 2"
+        assert adapter.SCORE_SQL in make_store()._search_sql()
 
     def test_the_search_orders_by_score_then_id(self):
         sql = make_store()._search_sql()

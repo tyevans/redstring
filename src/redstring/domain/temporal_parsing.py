@@ -44,6 +44,8 @@ from redstring.domain.temporal import DatePrecision, TemporalExtent, Uncertainty
 
 __all__ = [
     "MAX_INPUT_LENGTH",
+    "MONTH_NUMBERS",
+    "MONTH_PATTERN",
     "AmbiguousReferenceDateError",
     "detect_uncertainty",
     "parse_temporal",
@@ -77,6 +79,7 @@ _MONTH: Final = (
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
     r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
 )
+MONTH_PATTERN: Final = _MONTH
 
 _MONTH_NAMES: Final = (
     "January",
@@ -258,6 +261,7 @@ _MONTH_NUMBERS: Final = {
     for index, name in enumerate(_MONTH_NAMES, start=1)
     for spelling in ({name, name[:3]} if name != "September" else {name, "Sep", "Sept"})
 }
+MONTH_NUMBERS: Final = _MONTH_NUMBERS
 
 
 def _month_number(name: str) -> int:

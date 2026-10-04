@@ -19,8 +19,8 @@ from redstring.domain.merge_strategy import (
     PropertyClaim,
     PropertyMergePolicy,
     PropertyMergeStrategy,
-    _order_key,
     claims_for,
+    order_key,
     resolve,
 )
 from redstring.domain.provenance import ExtractionMethod, Provenance
@@ -254,7 +254,7 @@ def test_the_claim_order_is_total(claims: list[PropertyClaim]) -> None:
     """
     by_key: dict[tuple[object, ...], list[PropertyClaim]] = defaultdict(list)
     for c in claims:
-        by_key[_order_key(c)].append(c)
+        by_key[order_key(c)].append(c)
     for sharing in by_key.values():
         for other in sharing[1:]:
             assert other == sharing[0]

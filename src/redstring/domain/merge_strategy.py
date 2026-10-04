@@ -80,6 +80,7 @@ __all__ = [
     "PropertyMergePolicy",
     "PropertyMergeStrategy",
     "claims_for",
+    "order_key",
     "resolve",
 ]
 
@@ -209,7 +210,7 @@ class PropertyClaim(BaseModel):
     origin: EntityId
 
 
-def _order_key(claim: PropertyClaim) -> tuple[datetime, float, str]:
+def order_key(claim: PropertyClaim) -> tuple[datetime, float, str]:
     """The total order `MOST_RECENTLY_OBSERVED` picks its winner under.
 
     Recency first, which is the strategy's whole content. Confidence second,
@@ -243,6 +244,9 @@ def _order_key(claim: PropertyClaim) -> tuple[datetime, float, str]:
     claim does not have and cannot be asked about.
     """
     return (claim.provenance.observed_at, claim.provenance.confidence, str(claim.origin))
+
+
+_order_key = order_key
 
 
 # ANN401 (`Any` in a signature) is silenced on `resolve` below, and it

@@ -9,11 +9,10 @@ a plain import works and the module no longer poisons `sys.modules` for every
 test that runs after it -- part of BACKLOG B10d.
 """
 
-from unittest.mock import AsyncMock, patch
+import logging
 
 import pytest
 
-import redstring.llm.retry as retry_module
 from redstring.llm.retry import (
     DEFAULT_MAX_RETRIES,
     ExtractionRetryPolicy,
@@ -407,7 +406,7 @@ class TestWithRetryDecorator:
         assert call_count == 3
 
     @pytest.mark.asyncio
-    async def test_logging_on_retry(self):
+    async def test_logging_on_retry(self, caplog: pytest.LogCaptureFixture):
         """Test that retries are logged appropriately."""
         call_count = 0
 
@@ -422,16 +421,15 @@ class TestWithRetryDecorator:
                 raise ValueError("Temporary failure")
             return "success"
 
-        # Patch the logger on the already-loaded module
-        with patch.object(retry_module, "logger") as mock_logger:
+        with caplog.at_level(logging.WARNING):
             result = await fails_then_succeeds()
 
-            assert result == "success"
-            # Should have logged one warning for the failed attempt
-            assert mock_logger.warning.called
+        assert result == "success"
+        # Should have logged one warning for the failed attempt
+        assert any(record.levelno == logging.WARNING for record in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_logging_on_exhaustion(self):
+    async def test_logging_on_exhaustion(self, caplog: pytest.LogCaptureFixture):
         """Test that exhaustion is logged as error."""
 
         @with_retry(
@@ -441,13 +439,11 @@ class TestWithRetryDecorator:
         async def always_fails():
             raise ValueError("Always fails")
 
-        # Patch the logger on the already-loaded module
-        with patch.object(retry_module, "logger") as mock_logger:
-            with pytest.raises(RetryExhausted):
-                await always_fails()
+        with caplog.at_level(logging.ERROR), pytest.raises(RetryExhausted):
+            await always_fails()
 
-            # Should have logged error for exhaustion
-            assert mock_logger.error.called
+        # Should have logged error for exhaustion
+        assert any(record.levelno == logging.ERROR for record in caplog.records)
 
 
 class TestRetryTiming:
@@ -476,6 +472,11 @@ class TestRetryTiming:
         """
         attempts = 0
 
+        delays: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            delays.append(delay)
+
         @with_retry(
             retryable_exceptions=(ValueError,),
             policy=ExtractionRetryPolicy(
@@ -484,6 +485,7 @@ class TestRetryTiming:
                 multiplier=2.0,
                 jitter=0.0,
             ),
+            sleeper=fake_sleep,
         )
         async def flaky():
             nonlocal attempts
@@ -492,20 +494,22 @@ class TestRetryTiming:
                 raise ValueError("Fail")
             return "success"
 
-        with patch.object(retry_module.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
-            assert await flaky() == "success"
-
+        assert await flaky() == "success"
         assert attempts == 3
-        delays = [call.args[0] for call in mock_sleep.call_args_list]
         assert delays == pytest.approx([0.1, 0.2]), delays
 
     @pytest.mark.asyncio
     async def test_async_sleep_called(self):
         """Test that asyncio.sleep is used for delays."""
+        sleep_calls: list[float] = []
+
+        async def record_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
 
         @with_retry(
             retryable_exceptions=(ValueError,),
             policy=ExtractionRetryPolicy(max_retries=1, initial_delay=0.5, jitter=0.0),
+            sleeper=record_sleep,
         )
         async def fails_once():
             if not hasattr(fails_once, "called"):
@@ -513,11 +517,6 @@ class TestRetryTiming:
                 raise ValueError("First fail")
             return "success"
 
-        # Patch asyncio.sleep on the already-loaded module
-        with patch.object(retry_module.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
-            await fails_once()
-
-            mock_sleep.assert_called_once()
-            # Check that sleep was called with approximately 0.5 seconds
-            call_arg = mock_sleep.call_args[0][0]
-            assert 0.45 <= call_arg <= 0.55
+        await fails_once()
+        assert len(sleep_calls) == 1
+        assert 0.45 <= sleep_calls[0] <= 0.55

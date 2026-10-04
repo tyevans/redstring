@@ -179,15 +179,15 @@ class TestPartialDatesResolveToTheRightMoment:
         """
         import re
 
-        from redstring.domain.temporal_parsing import _MONTH, _MONTH_NUMBERS
+        from redstring.domain.temporal_parsing import MONTH_NUMBERS, MONTH_PATTERN
 
         unreachable = [
             spelling
-            for spelling in _MONTH_NUMBERS
-            if not re.fullmatch(_MONTH, spelling, re.IGNORECASE)
+            for spelling in MONTH_NUMBERS
+            if not re.fullmatch(MONTH_PATTERN, spelling, re.IGNORECASE)
         ]
         assert not unreachable, (
-            f"`_MONTH_NUMBERS` maps spellings `_MONTH` cannot produce: "
+            f"`MONTH_NUMBERS` maps spellings `MONTH_PATTERN` cannot produce: "
             f"{sorted(unreachable)}. Either the pattern is missing them or the "
             f"table should not claim them."
         )

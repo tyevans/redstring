@@ -89,7 +89,8 @@ if TYPE_CHECKING:
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 #: The score expression: `(1 + cosine) / 2` mapped from pgvector distance `<=>`.
-_SCORE = "1 - (embedding <=> $2::vector) / 2"
+SCORE_SQL = "1 - (embedding <=> $2::vector) / 2"
+_SCORE = SCORE_SQL
 
 
 def _encodable(entity_types: Sequence[str] | None) -> list[str]:

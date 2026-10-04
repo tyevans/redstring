@@ -30,7 +30,7 @@ import pytest
 
 from redstring.chunks.adapters import postgres as adapter
 from redstring.chunks.adapters.postgres import (
-    _SCORE,
+    SCORE_SQL,
     PostgresChunkStore,
     deduplicate,
     encode,
@@ -297,9 +297,9 @@ class TestSqlConstruction:
 
     def test_the_similarity_expression_matches_the_vector_stores(self):
         """One definition of cosine similarity in this library, not two."""
-        from redstring.vector.adapters.pgvector import _SCORE as VECTOR_SCORE
+        from redstring.vector.adapters.pgvector import SCORE_SQL as VECTOR_SCORE_SQL
 
-        assert _SCORE == VECTOR_SCORE
+        assert SCORE_SQL == VECTOR_SCORE_SQL
 
     def test_encode_vector_matches_the_vector_stores(self):
         """`encode_vector`'s own docstring claims this duplicate is proved

@@ -91,10 +91,11 @@ DEFAULT_MAX_PAIRS: Final = 500_000
 #: their own inverses, so for those the pair's order is settled by `order_key`
 #: instead -- deterministic rather than meaningful, because neither has an
 #: earlier side.
-_CANONICAL: Final = {
+CANONICAL_INVERSES: Final = {
     TemporalRelation.AFTER: TemporalRelation.BEFORE,
     TemporalRelation.DURING: TemporalRelation.CONTAINS,
 }
+_CANONICAL: Final = CANONICAL_INVERSES
 
 #: What a caller gets when it does not filter. `AFTER` and `DURING` are absent
 #: because `_CANONICAL` guarantees they are never produced. That guarantee is

@@ -24,18 +24,37 @@ constructors import anything.
 from __future__ import annotations
 
 import sys
-from unittest.mock import patch
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 import pytest
 
 from redstring.llm.cache.redis import RedisCache
 from redstring.vector.adapters.pgvector import PgVectorStore
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@contextmanager
+def mask_modules(absent: dict[str, None]) -> Iterator[None]:
+    saved = {k: sys.modules.get(k) for k in absent}
+    for k in absent:
+        sys.modules[k] = None  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
 
 class TestTheGuardsNameTheirExtra:
-    async def test_pgvector_connect_without_asyncpg(self):
+    async def test_pgvector_connect_without_asyncpg(self) -> None:
         with (
-            patch.dict(sys.modules, {"asyncpg": None}),
+            mask_modules({"asyncpg": None}),
             pytest.raises(ImportError) as caught,
         ):
             await PgVectorStore.connect("postgresql://localhost/x", dimension=3)
@@ -44,9 +63,9 @@ class TestTheGuardsNameTheirExtra:
         assert "pgvector" in message, message
         assert "asyncpg" in message, message
 
-    async def test_redis_cache_from_url_without_redis(self):
+    async def test_redis_cache_from_url_without_redis(self) -> None:
         with (
-            patch.dict(sys.modules, {"redis": None, "redis.asyncio": None}),
+            mask_modules({"redis": None, "redis.asyncio": None}),
             pytest.raises(ImportError) as caught,
         ):
             RedisCache.from_url("redis://localhost:6379")
@@ -75,10 +94,10 @@ class TestTheModulesImportWithoutTheirPackage:
             ("redstring.llm.cache.redis", {"redis": None, "redis.asyncio": None}),
         ],
     )
-    def test_the_module_reimports_cleanly(self, module: str, absent: dict[str, None]):
+    def test_the_module_reimports_cleanly(self, module: str, absent: dict[str, None]) -> None:
         import importlib
 
-        with patch.dict(sys.modules, absent):
+        with mask_modules(absent):
             reloaded = importlib.reload(importlib.import_module(module))
 
         assert reloaded is not None
