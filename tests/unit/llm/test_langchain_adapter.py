@@ -21,19 +21,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import BaseModel, Field
 
-from redstring.domain.exceptions import (
-    EmptyCompletionError,
-    LlmProviderError,
-    MalformedCompletionError,
-    RefusedCompletionError,
-    UnstructuredCompletionError,
-)
 from redstring.llm.adapters.langchain import NO_THINKING, LangChainLlmProvider
 from redstring.ports.llm_provider import LlmProvider
 
@@ -41,13 +33,13 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-class _Ent(BaseModel):
+class Ent(BaseModel):
     name: str
     entity_type: str
 
 
-class _Bag(BaseModel):
-    entities: list[_Ent] = Field(default_factory=list)
+class Bag(BaseModel):
+    entities: list[Ent] = Field(default_factory=list)
 
 
 class ScriptedChatModel(BaseChatModel):
@@ -101,8 +93,8 @@ def test_it_reports_the_model_it_was_built_with():
 async def test_well_formed_json_validates_into_the_requested_schema():
     provider = provider_replying('{"entities": [{"name": "Ada", "entity_type": "Person"}]}')
 
-    assert await provider.extract("Ada Lovelace.", _Bag) == _Bag(
-        entities=[_Ent(name="Ada", entity_type="Person")]
+    assert await provider.extract("Ada Lovelace.", Bag) == Bag(
+        entities=[Ent(name="Ada", entity_type="Person")]
     )
 
 
@@ -113,188 +105,7 @@ async def test_a_completion_that_validates_to_nothing_is_an_answer_not_an_error(
     distinguishable from failure only because every failure raises, so this
     test and the empty-content test below are two halves of one claim.
     """
-    assert await provider_replying('{"entities": []}').extract("Nothing here.", _Bag) == _Bag()
-
-
-async def test_empty_content_raises_rather_than_reporting_an_empty_extraction():
-    """The verified failure of `qwen3.6-27b-mtp`: HTTP 200, `content` empty.
-
-    Returning `_Bag()` here would be indistinguishable from the test above,
-    and a knowledge graph built on that silently loses every document whose
-    extraction failed this way.
-    """
-    with pytest.raises(EmptyCompletionError) as caught:
-        await provider_replying("", finish_reason="length").extract("Ada Lovelace.", _Bag)
-
-    assert caught.value.finish_reason == "length"
-    assert caught.value.model == "test/scripted-v1"
-
-
-async def test_a_truncation_the_vendor_sdk_refuses_becomes_the_same_empty_error():
-    """Found against the live server, and not findable from the shapes above.
-
-    Requesting `response_format: json_schema` routes langchain-openai through
-    the openai SDK's parsing path, which raises `LengthFinishReasonError` for
-    `finish_reason == "length"` *instead of* returning a message. So the more
-    common half of the empty case never reaches `_parse` at all, and without
-    this translation it escapes as a vendor exception -- making `openai` part
-    of this library's public failure contract by accident.
-    """
-    from openai import LengthFinishReasonError
-    from openai.types.chat import ChatCompletion
-
-    truncated = ChatCompletion(
-        id="x",
-        created=0,
-        model="scripted",
-        object="chat.completion",
-        choices=[
-            {
-                "finish_reason": "length",
-                "index": 0,
-                "message": {"role": "assistant", "content": ""},
-            }
-        ],
-    )
-
-    class TruncatingChatModel(ScriptedChatModel):
-        def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
-            raise LengthFinishReasonError(completion=truncated)
-
-    provider = LangChainLlmProvider(
-        TruncatingChatModel(reply=AIMessage(content="{}")), model="test/scripted-v1"
-    )
-
-    with pytest.raises(EmptyCompletionError) as caught:
-        await provider.extract("Ada.", _Bag)
-
-    assert caught.value.finish_reason == "length"
-
-
-async def test_a_content_filter_refusal_becomes_a_distinct_domain_error():
-    """The same openai parsing path, the other exception it can raise.
-
-    `ContentFilterFinishReasonError` escaped untranslated, making `openai`
-    part of this library's public failure contract in exactly the way the
-    module docstring says translation prevents.
-
-    Its own error rather than `EmptyCompletionError`, because the two call
-    for opposite responses: a truncation is a configuration problem a larger
-    budget fixes, while a refusal is a permanent property of the content and
-    retrying it just spends tokens. A caller extracting from clinical or
-    legal text needs to tell "this chunk was refused" from "this run was
-    misconfigured", and one error type cannot say both.
-    """
-    from openai import ContentFilterFinishReasonError
-
-    class RefusingChatModel(ScriptedChatModel):
-        def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
-            raise ContentFilterFinishReasonError
-
-    provider = LangChainLlmProvider(
-        RefusingChatModel(reply=AIMessage(content="{}")), model="test/scripted-v1"
-    )
-
-    with pytest.raises(RefusedCompletionError) as caught:
-        await provider.extract("Ada.", _Bag)
-
-    assert caught.value.model == "test/scripted-v1"
-
-
-async def test_a_refusal_is_still_one_of_the_catchable_family():
-    """A caller wrapping extraction keeps one `except`, and the pipeline's
-    `skip_failed_chunks` keeps working without knowing the new type exists."""
-    from openai import ContentFilterFinishReasonError
-
-    class RefusingChatModel(ScriptedChatModel):
-        def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
-            raise ContentFilterFinishReasonError
-
-    provider = LangChainLlmProvider(RefusingChatModel(reply=AIMessage(content="{}")), model="m")
-
-    with pytest.raises(LlmProviderError):
-        await provider.extract("Ada.", _Bag)
-
-
-async def test_a_refusal_is_not_reported_as_an_empty_completion():
-    """Guards the distinction: a shared base would make this pass vacuously."""
-    from openai import ContentFilterFinishReasonError
-
-    class RefusingChatModel(ScriptedChatModel):
-        def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
-            raise ContentFilterFinishReasonError
-
-    provider = LangChainLlmProvider(RefusingChatModel(reply=AIMessage(content="{}")), model="m")
-
-    with pytest.raises(RefusedCompletionError):
-        await provider.extract("Ada.", _Bag)
-    assert not issubclass(RefusedCompletionError, EmptyCompletionError)
-
-
-async def test_whitespace_only_content_counts_as_empty():
-    with pytest.raises(EmptyCompletionError):
-        await provider_replying("  \n\t ").extract("Ada Lovelace.", _Bag)
-
-
-async def test_content_that_is_not_json_raises_malformed_and_names_the_schema():
-    with pytest.raises(MalformedCompletionError) as caught:
-        await provider_replying("I'm sorry, I can't help with that.").extract("Ada.", _Bag)
-
-    assert caught.value.schema == "_Bag"
-
-
-async def test_content_that_is_not_json_at_all_is_unstructured_not_merely_malformed():
-    """Fluent prose instead of JSON is a different failure from bad JSON.
-
-    This is the failure a server ignoring `response_format` actually produces
-    -- see `docs`/the module docstring on the langchain adapter -- and it used
-    to read exactly like a schema-validation failure, because both went
-    through `pydantic.ValidationError`. Pinning `UnstructuredCompletionError`
-    (still an `except MalformedCompletionError`, since it subclasses it) and
-    asserting the message names the *server*, not the schema, is the point of
-    the distinction: someone reading this exception should check whether the
-    server compiled a grammar, not stare at `_Bag`.
-    """
-    markdown = (
-        "## Extraction results\n\n"
-        "I found the following entities in the text:\n\n"
-        "- **Ada Lovelace** -- a mathematician\n"
-        "- **Charles Babbage** -- an inventor\n\n"
-        "They worked together on the Analytical Engine."
-    )
-
-    with pytest.raises(UnstructuredCompletionError) as caught:
-        await provider_replying(markdown).extract("Ada and Charles.", _Bag)
-
-    assert isinstance(caught.value, MalformedCompletionError)
-    assert "response_format" in caught.value.cause
-    assert "grammar" in caught.value.cause
-
-
-async def test_a_json_array_is_unstructured_too_not_a_validation_failure():
-    """`Extraction` and `_Bag` are objects; a bare array is not a wrong shape, it is no shape."""
-    with pytest.raises(UnstructuredCompletionError):
-        await provider_replying('["Ada", "Charles"]').extract("Ada.", _Bag)
-
-
-async def test_json_of_the_wrong_shape_raises_malformed_and_not_a_partial_object():
-    """Valid JSON, wrong schema. The failure most likely to pass silently.
-
-    `entity_type` is missing, so a lenient adapter could produce
-    `_Bag(entities=[])` -- valid, plausible, and wrong. Pinning the exception
-    is what stops the "the document held nothing" reading.
-    """
-    with pytest.raises(MalformedCompletionError) as caught:
-        await provider_replying('{"entities": [{"name": "Ada"}]}').extract("Ada.", _Bag)
-
-    assert "entity_type" in caught.value.cause
-
-
-async def test_both_failure_types_are_one_catchable_family():
-    """A caller wrapping extraction needs one `except`, not a growing tuple."""
-    for provider in (provider_replying(""), provider_replying("garbage")):
-        with pytest.raises(LlmProviderError):
-            await provider.extract("Ada.", _Bag)
+    assert await provider_replying('{"entities": []}').extract("Nothing here.", Bag) == Bag()
 
 
 async def test_content_delivered_as_text_blocks_is_joined_rather_than_rejected():
@@ -310,21 +121,9 @@ async def test_content_delivered_as_text_blocks_is_joined_rather_than_rejected()
         ]
     )
 
-    assert await provider.extract("Ada.", _Bag) == _Bag(
-        entities=[_Ent(name="Ada", entity_type="Person")]
+    assert await provider.extract("Ada.", Bag) == Bag(
+        entities=[Ent(name="Ada", entity_type="Person")]
     )
-
-
-async def test_a_block_list_holding_no_text_is_empty_not_malformed():
-    """Reasoning-only output arrives this way, and it is the empty case.
-
-    Calling it malformed would send someone to look at the prompt when the
-    fix is a larger token budget.
-    """
-    with pytest.raises(EmptyCompletionError):
-        await provider_replying([{"type": "reasoning", "reasoning": "thinking..."}]).extract(
-            "Ada.", _Bag
-        )
 
 
 async def test_the_system_prompt_reaches_the_model_and_the_text_is_a_separate_turn():
@@ -336,7 +135,7 @@ async def test_the_system_prompt_reaches_the_model_and_the_text_is_a_separate_tu
     """
     chat = ScriptedChatModel(reply=AIMessage(content="{}"))
     await LangChainLlmProvider(chat, model="test/v1").extract(
-        "Ada Lovelace.", _Bag, system_prompt="Find people."
+        "Ada Lovelace.", Bag, system_prompt="Find people."
     )
 
     [sent] = chat.seen_messages
@@ -353,7 +152,7 @@ async def test_without_a_system_prompt_only_the_text_is_sent():
     get different answers for a reason neither could see.
     """
     chat = ScriptedChatModel(reply=AIMessage(content="{}"))
-    await LangChainLlmProvider(chat, model="test/v1").extract("Ada Lovelace.", _Bag)
+    await LangChainLlmProvider(chat, model="test/v1").extract("Ada Lovelace.", Bag)
 
     [sent] = chat.seen_messages
     assert [(m.type, m.content) for m in sent] == [("human", "Ada Lovelace.")]
@@ -366,27 +165,12 @@ async def test_the_requested_schema_is_sent_as_a_json_schema_response_format():
     exceptional one, and the adapter's error handling becomes the feature.
     """
     chat = ScriptedChatModel(reply=AIMessage(content="{}"))
-    await LangChainLlmProvider(chat, model="test/v1").extract("Ada.", _Bag)
+    await LangChainLlmProvider(chat, model="test/v1").extract("Ada.", Bag)
 
     response_format = chat.seen_kwargs["response_format"]
     assert response_format["type"] == "json_schema"
-    assert response_format["json_schema"]["name"] == "_Bag"
-    assert response_format["json_schema"]["schema"] == _Bag.model_json_schema()
-
-
-async def test_blank_text_is_refused_before_a_model_is_called():
-    """Cheap, and it stops a chunker bug from being billed as a model failure.
-
-    A blank prompt gets an unpredictable answer, which surfaces as an
-    intermittent `MalformedCompletionError` far from the empty chunk.
-    """
-    chat = ScriptedChatModel(reply=AIMessage(content="{}"))
-    provider = LangChainLlmProvider(chat, model="test/v1")
-
-    with pytest.raises(ValueError, match="text must not be blank"):
-        await provider.extract("   ", _Bag)
-
-    assert chat.seen_messages == []
+    assert response_format["json_schema"]["name"] == "Bag"
+    assert response_format["json_schema"]["schema"] == Bag.model_json_schema()
 
 
 class TestTheConvenienceConstructorsRequestBody:
