@@ -103,6 +103,12 @@ if TYPE_CHECKING:
     from redstring.domain.ids import EntityId
     from redstring.domain.relationship import Relationship
 
+__all__ = [
+    "duplicate_preference",
+    "plan_properties",
+    "plan_redirections",
+]
+
 type _Signature = tuple[EntityId, EntityId, str]
 
 

@@ -65,6 +65,12 @@ if TYPE_CHECKING:
     from redstring.domain.ids import EntityId, TenantId
     from redstring.ports.vector_store import VectorReader
 
+__all__ = [
+    "EMBEDDING_SEARCH_K",
+    "CandidateFinder",
+    "ScoredCandidate",
+]
+
 #: How many nearest vectors the embedding step asks for.
 #:
 #: The block, not the tenant, decides which candidates are scored -- this only

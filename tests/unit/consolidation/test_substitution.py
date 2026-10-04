@@ -49,10 +49,11 @@ from uuid import uuid4
 import pytest
 from eventsource.adapters.memory import InMemoryEventStore, InMemorySnapshotStore
 
-from redstring.consolidation.candidates import ScoredCandidate, SimilarityFeatures
+from redstring.consolidation.candidates import ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict
 from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
 from redstring.consolidation.service import ConsolidationService
+from redstring.domain.similarity import SimilarityFeatures
 from redstring.graph.adapters.memory import InMemoryGraphStore
 
 from .conftest import entity

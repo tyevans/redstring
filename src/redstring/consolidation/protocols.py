@@ -77,6 +77,12 @@ if TYPE_CHECKING:
     from redstring.consolidation.policy import AdjudicationVerdict
     from redstring.domain.entity import Entity
 
+__all__ = [
+    "CandidateSource",
+    "ConsolidationGraph",
+    "MergeAdjudicator",
+]
+
 
 @runtime_checkable
 class ConsolidationGraph(EntityReader, AliasStore, RelationshipStore, Protocol):
