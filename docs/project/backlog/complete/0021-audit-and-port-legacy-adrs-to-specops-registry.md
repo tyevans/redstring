@@ -1,7 +1,7 @@
 ---
 id: '0021'
 title: Audit and port legacy ADRs (0001-0047) to SpecOps Registry
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0007
@@ -10,7 +10,9 @@ governing_prds:
 governing_stories:
 - US-0005
 target_bc: core
-mutation_scope: []
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T19:00:24.602468+00:00'
+mutation_scope: '[]'
 ---
 
 # TASK-0021: Audit and port legacy ADRs (0001-0047) to SpecOps Registry
