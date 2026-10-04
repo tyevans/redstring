@@ -24,7 +24,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0020 (Proposed)**: [`0020-spike-investigate-retract-stale-entities-on-do`](proposed/0020-spike-investigate-retract-stale-entities-on-do.md)
 - **TASK-0021 (Complete)**: [`0021-audit-and-port-legacy-adrs-to-specops-registry`](complete/0021-audit-and-port-legacy-adrs-to-specops-registry.md)
 - **TASK-0022 (Complete)**: [`0022-triage-and-migrate-legacy-specs-and-plans`](complete/0022-triage-and-migrate-legacy-specs-and-plans.md)
-- **TASK-0023 (Refined)**: [`0023-align-public-docs-and-mkdocs-with-specops`](refined/0023-align-public-docs-and-mkdocs-with-specops.md)
+- **TASK-0023 (Complete)**: [`0023-align-public-docs-and-mkdocs-with-specops`](complete/0023-align-public-docs-and-mkdocs-with-specops.md)
 - **TASK-REFACTOR-redstring-__init__ (Proposed)**: [`TASK-REFACTOR-redstring-__init__`](proposed/TASK-REFACTOR-redstring-__init__.md)
 - **TASK-REFACTOR-redstring-chunks-adapters-postgres (Proposed)**: [`TASK-REFACTOR-redstring-chunks-adapters-postgres`](proposed/TASK-REFACTOR-redstring-chunks-adapters-postgres.md)
 - **TASK-REFACTOR-redstring-composition-build_graph (Proposed)**: [`TASK-REFACTOR-redstring-composition-build_graph`](proposed/TASK-REFACTOR-redstring-composition-build_graph.md)

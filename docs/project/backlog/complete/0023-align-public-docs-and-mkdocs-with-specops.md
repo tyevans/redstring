@@ -1,7 +1,7 @@
 ---
 id: '0023'
 title: Align public documentation and MkDocs navigation with SpecOps PMaC
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0004
@@ -10,7 +10,9 @@ governing_prds:
 governing_stories:
 - US-0005
 target_bc: documentation
-mutation_scope: []
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T19:22:08.641220+00:00'
+mutation_scope: '[]'
 ---
 
 # TASK-0023: Align public documentation and MkDocs navigation with SpecOps PMaC
