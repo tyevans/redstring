@@ -40,6 +40,7 @@ refuses all-zero weights to avoid.
 
 from __future__ import annotations
 
+import itertools
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -192,8 +193,7 @@ class Adjudicator:
         about pair 3 gets recorded against pair 1.
         """
         verdicts: list[AdjudicationVerdict | None] = []
-        for start in range(0, len(candidates), self._batch_size):
-            batch = candidates[start : start + self._batch_size]
+        for batch in itertools.batched(candidates, self._batch_size, strict=False):
             verdicts.extend(await self._one_batch(subject, batch))
         return verdicts
 
@@ -260,8 +260,8 @@ class Adjudicator:
             (subject, candidate) for subject, candidates in work for candidate in candidates
         ]
         verdicts: list[AdjudicationVerdict | None] = []
-        for start in range(0, len(flat), self._batch_size):
-            verdicts.extend(await self._one_mixed_batch(flat[start : start + self._batch_size]))
+        for batch in itertools.batched(flat, self._batch_size, strict=False):
+            verdicts.extend(await self._one_mixed_batch(batch))
 
         # Re-slice by each subject's candidate count. A running cursor rather
         # than `len()` comparisons, so a mismatch between what was asked and
