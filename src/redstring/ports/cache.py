@@ -45,6 +45,8 @@ from typing import Protocol, runtime_checkable
 
 from redstring.ports.lifecycle import AsyncClosable
 
+__all__ = ["Cache", "HitWindow", "KeyValueCache"]
+
 
 @runtime_checkable
 class KeyValueCache(AsyncClosable, Protocol):

@@ -2,65 +2,14 @@
 
 Like `GraphStore` and `VectorStore`, a `ChunkStore` is a **projection**. The
 event log is the authority; every write here is idempotent because projection
-handlers replay.
+handlers replay. Every method is tenant-scoped. There is no cross-tenant read.
 
-Every method is tenant-scoped. There is no cross-tenant read, ever.
-
-## There is a candidate method and no ranked one
-
-The port offers `lexical_candidates`, which answers "which chunks contain
-these terms, how often, how long are they, and how many chunks contain each
-term". It does **not** rank. Ranking is `domain/chunk_ranking.py`.
-
-The split is by responsibility. Recall and corpus statistics are storage
-questions and a database is uniquely good at all of them; relevance is a
-domain rule. The obvious alternative -- `ts_rank_cd` over a Postgres
-`tsvector` -- was rejected because two adapters ranking by different formulas
-mean retrieval quality changes when a caller swaps their store, and the
-compliance suite could then no longer assert that two adapters agree. It would
-be reduced to checking contracts while the answers diverged silently.
-
-The same reasoning is why the method takes **terms rather than a query
-string**: tokenization decides what a term is, so a string argument would hand
-that decision back to each adapter and let two stores disagree about it before
-any score was computed. See `domain/tokenize.py`.
-
-## There are two candidate channels now, and they score differently
-
-`SemanticCandidateSource` is the second recall channel, alongside
-`LexicalCandidateSource`. Both hand back candidates for a caller to rank; the
-domain still owns fusion (`domain/chunk_ranking.py` for lexical scoring,
-`domain/reciprocal_rank_fusion.py` for combining channels). What differs
-between the two channels is *where the per-channel score is computed*.
-`lexical_candidates` returns raw counts and lets the domain apply BM25,
-because two adapters implementing a ranking formula could diverge silently
-while agreeing on which chunks matched -- exactly the failure `0024` argues
-against. Cosine similarity is not that kind of formula: there is one
-definition, `VectorStore` already relies on the adapter computing it, and
-shipping every candidate's full vector across the port to score it in Python
-would be its own defect. So `SemanticCandidateSource.semantic_candidates`
-returns scored, ordered chunks -- the adapter scores -- and the port pins the
-order instead: score descending, ties by `id` ascending, so two adapters
-computing the same similarities cannot disagree about which chunks survive a
-`limit`.
-
-## `replace_source` is one operation, not an upsert and a delete
-
-Folding one `DocumentChunked` event must be atomic. Split into an
-`upsert_many` followed by a `delete`, a crash between them leaves a corpus
-that is neither the old chunking nor the new one -- and once term statistics
-are computed over it, leaves them computed over a set that never existed.
-
-An empty `chunks` argument is legal and means "this source now has no
-chunks". It is not a no-op guard.
-
-## `chunk_index` is not unique, so ordering needs a tie-break
-
-Content-addressed ids mean a re-chunk landing mid-replay can transiently
-produce two chunks claiming index 3. `get_by_source` therefore orders by
-`chunk_index` ascending **and then by `id` ascending**; ordering on the index
-alone would let two adapters disagree about which comes first, which is
-exactly the divergence the compliance suite exists to prevent.
+- `lexical_candidates`: Answers matching chunks and term counts without ranking.
+  Takes terms rather than query strings so tokenization stays in domain.
+- `SemanticCandidateSource`: Recall channel returning scored, ordered chunks.
+  Pinned order: score descending, ties by `id` ascending.
+- `replace_source`: Atomic replacement for `DocumentChunked` events.
+- `get_by_source`: Ordered by `chunk_index` ascending, then `id` ascending.
 """
 
 from __future__ import annotations
@@ -76,6 +25,16 @@ if TYPE_CHECKING:
     from redstring.domain.chunk_ranking import LexicalCandidates
     from redstring.domain.chunk_retrieval import SemanticCandidate
     from redstring.domain.ids import EntityId, SourceId, TenantId
+
+
+__all__ = [
+    "ChunkPurge",
+    "ChunkReader",
+    "ChunkStore",
+    "ChunkWriter",
+    "LexicalCandidateSource",
+    "SemanticCandidateSource",
+]
 
 
 @runtime_checkable

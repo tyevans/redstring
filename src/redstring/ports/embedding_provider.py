@@ -84,6 +84,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
+__all__ = ["EmbeddingProvider"]
+
+
 @runtime_checkable
 class EmbeddingProvider(Protocol):
     """Text to vectors, in batches, with a fixed dimension."""
