@@ -1,7 +1,7 @@
 ---
 id: '0022'
 title: Triage and migrate legacy specs and plans from superpowers/ and plans/
-status: Proposed
+status: Refined
 governing_adrs:
 - ADR-0001
 - ADR-0007
@@ -10,6 +10,7 @@ governing_prds:
 governing_stories:
 - US-0005
 target_bc: core
+mutation_scope: []
 ---
 
 # TASK-0022: Triage and migrate legacy specs and plans from superpowers/ and plans/
