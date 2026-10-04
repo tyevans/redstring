@@ -29,6 +29,14 @@ from eventsource.domain import StreamId
 if TYPE_CHECKING:
     from redstring.domain.ids import SourceId, TenantId
 
+
+__all__ = [
+    "CONSOLIDATION_CATEGORY",
+    "DOCUMENT_CATEGORY",
+    "consolidation_stream",
+    "document_stream",
+]
+
 #: Stream category (and `aggregate_type`) for the `Document` aggregate.
 DOCUMENT_CATEGORY = "Document"
 
