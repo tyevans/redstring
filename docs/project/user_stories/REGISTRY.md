@@ -8,3 +8,5 @@
 | `US-0004` | Hybrid Multi-Channel Retrieval Over Knowledge Graph | Accepted | Alex | FEAT-CORE-04 | `PRD-0001` |
 | `US-0005` | Verify Public Surface Boundaries and Release Integrity | Accepted | Riley | FEAT-GATE-01 | `PRD-0001` |
 | `US-0006` | Autonomous Task Execution and Invariant Verification | Accepted | Morgan | FEAT-ORCH-01 | `PRD-0001` |
+| `US-0008` | Store Content-Addressed Document Chunks | Accepted | Jordan | FEAT-CHUNKS-01 | `PRD-0002` |
+| `US-0009` | Retrieve Scored Passages via Dual-Channel Fusion | Accepted | Alex | FEAT-CHUNKS-02 | `PRD-0002` |
