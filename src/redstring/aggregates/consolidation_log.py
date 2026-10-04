@@ -56,6 +56,9 @@ if TYPE_CHECKING:
     from redstring.domain.ids import TenantId
 
 
+__all__ = ["ConsolidationLog", "ConsolidationLogState", "MergeRecord"]
+
+
 class MergeRecord(BaseModel):
     """One merge as the log remembers it.
 

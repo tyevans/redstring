@@ -35,6 +35,13 @@ if TYPE_CHECKING:
     from eventsource.ports.snapshots import SnapshotStore
     from eventsource.ports.store import AggregateStore
 
+
+__all__ = [
+    "CONSOLIDATION_SNAPSHOT_EVERY",
+    "consolidation_repository",
+    "document_repository",
+]
+
 #: Events between `ConsolidationLog` snapshots.
 #:
 #: The stream grows with a tenant's merge history and has no natural bound, so
