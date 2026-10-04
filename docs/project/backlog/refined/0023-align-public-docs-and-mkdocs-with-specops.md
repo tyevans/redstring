@@ -1,7 +1,7 @@
 ---
 id: '0023'
 title: Align public documentation and MkDocs navigation with SpecOps PMaC
-status: Proposed
+status: Refined
 governing_adrs:
 - ADR-0001
 - ADR-0004
@@ -10,6 +10,7 @@ governing_prds:
 governing_stories:
 - US-0005
 target_bc: documentation
+mutation_scope: []
 ---
 
 # TASK-0023: Align public documentation and MkDocs navigation with SpecOps PMaC

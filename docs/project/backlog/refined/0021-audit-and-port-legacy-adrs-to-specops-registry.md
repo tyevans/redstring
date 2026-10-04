@@ -1,7 +1,7 @@
 ---
 id: '0021'
 title: Audit and port legacy ADRs (0001-0047) to SpecOps Registry
-status: Proposed
+status: Refined
 governing_adrs:
 - ADR-0001
 - ADR-0007
@@ -10,6 +10,7 @@ governing_prds:
 governing_stories:
 - US-0005
 target_bc: core
+mutation_scope: []
 ---
 
 # TASK-0021: Audit and port legacy ADRs (0001-0047) to SpecOps Registry
