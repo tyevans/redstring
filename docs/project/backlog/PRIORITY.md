@@ -60,7 +60,7 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-REFACTOR-tests-unit-graph-test_neo_adapter_is_wired (Proposed)**: [`TASK-REFACTOR-tests-unit-graph-test_neo_adapter_is_wired`](proposed/TASK-REFACTOR-tests-unit-graph-test_neo_adapter_is_wired.md)
 - **TASK-0024 (Complete)**: [`0024-author-executable-bdd-scenario-test-bindings`](complete/0024-author-executable-bdd-scenario-test-bindings.md)
 - **TASK-0025 (Complete)**: [`0025-decompose-schema-org-module`](complete/0025-decompose-schema-org-module.md)
-- **TASK-0026 (Refined)**: [`0026-decompose-domains-registry-module`](refined/0026-decompose-domains-registry-module.md)
+- **TASK-0026 (Complete)**: [`0026-decompose-domains-registry-module`](complete/0026-decompose-domains-registry-module.md)
 - **TASK-0027 (Refined)**: [`0027-decompose-public-surface-test-suite`](refined/0027-decompose-public-surface-test-suite.md)
 - **TASK-0028 (Refined)**: [`0028-decompose-langchain-adapter-test-suite`](refined/0028-decompose-langchain-adapter-test-suite.md)
 - **TASK-0029 (Refined)**: [`0029-resolve-anti-mock-and-private-symbol-violations`](refined/0029-resolve-anti-mock-and-private-symbol-violations.md)

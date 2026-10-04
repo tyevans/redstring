@@ -1,7 +1,7 @@
 ---
 id: '0026'
 title: Decompose domains registry module to satisfy file length limit
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0002
@@ -11,8 +11,9 @@ governing_prds:
 governing_stories:
 - US-0001
 target_bc: extraction
-mutation_scope:
-- src/redstring/extraction/domains/registry.py
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T20:06:59.843863+00:00'
+mutation_scope: '[''src/redstring/extraction/domains/registry.py'']'
 ---
 
 # TASK-0026: Decompose domains registry module to satisfy file length limit
