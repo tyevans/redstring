@@ -1,7 +1,7 @@
 ---
-id: '0028'
+id: 0028
 title: Decompose LangChain adapter test suite to satisfy file length limit
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0002
@@ -12,7 +12,9 @@ governing_prds:
 governing_stories:
 - US-0001
 target_bc: llm
-mutation_scope: []
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T20:28:01.741198+00:00'
+mutation_scope: '[]'
 ---
 
 # TASK-0028: Decompose LangChain adapter test suite to satisfy file length limit
