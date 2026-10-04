@@ -53,7 +53,7 @@ hardening pieces is in it, nor the `Cache` port they store state behind, so
 you import all of them by dotted path:
 
 ```python
-from redstring.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
+from redstring.llm.retry import LlmRetryPolicy, RetryExhausted, with_retry
 from redstring.llm.rate_limiter import RateLimitExceeded, RateLimiter
 from redstring.llm.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
 from redstring.llm.cache import MemoryCache
@@ -203,7 +203,7 @@ you want retried and it re-invokes that call on the exception types you name,
 sleeping between attempts:
 
 ```python
-from redstring.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
+from redstring.llm.retry import LlmRetryPolicy, RetryExhausted, with_retry
 
 
 @with_retry(retryable_exceptions=(ConnectionError, TimeoutError))
@@ -222,7 +222,7 @@ scope, so the policy stays a constructor argument:
 ```python
 self._call = with_retry(
     retryable_exceptions=retryable,
-    policy=ExtractionRetryPolicy(max_retries=3, initial_delay=1.0),
+    policy=LlmRetryPolicy(max_retries=3, initial_delay=1.0),
 )(self._inner.extract)
 ```
 
@@ -271,13 +271,13 @@ better-judged line than enumerating six connection errors.
 
 ### Tune the backoff
 
-`ExtractionRetryPolicy` is where the waiting is configured. Construct one and
-pass it to `with_retry`; with no `policy=` you get `ExtractionRetryPolicy()`.
+`LlmRetryPolicy` (formerly `ExtractionRetryPolicy`, which remains available as an alias) is where the waiting is configured. Construct one and
+pass it to `with_retry`; with no `policy=` you get `LlmRetryPolicy()`.
 
 ```python
 @with_retry(
     retryable_exceptions=(ConnectionError,),
-    policy=ExtractionRetryPolicy(max_retries=5, initial_delay=2.0, max_delay=30.0),
+    policy=LlmRetryPolicy(max_retries=5, initial_delay=2.0, max_delay=30.0),
 )
 async def call_it_more_patiently(text: str) -> Extraction: ...
 ```
@@ -1359,7 +1359,7 @@ from redstring import InMemoryGraphStore, LlmProvider, SourceDocument, build_gra
 from redstring.llm.adapters.langchain import LangChainLlmProvider
 from redstring.llm.circuit_breaker import CircuitBreaker, CircuitOpen
 from redstring.llm.rate_limiter import RateLimitExceeded, RateLimiter
-from redstring.llm.retry import ExtractionRetryPolicy, RetryExhausted, with_retry
+from redstring.llm.retry import LlmRetryPolicy, RetryExhausted, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -1382,7 +1382,7 @@ class HardenedLlmProvider:
         self._breaker = breaker
         self._call = with_retry(
             retryable_exceptions=retryable,
-            policy=ExtractionRetryPolicy(max_retries=3, initial_delay=1.0),
+            policy=LlmRetryPolicy(max_retries=3, initial_delay=1.0),
         )(self._inner.extract)
 
     @property

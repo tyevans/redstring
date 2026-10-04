@@ -43,6 +43,14 @@ logger = logging.getLogger(__name__)
 P = ParamSpec("P")
 T = TypeVar("T")
 
+__all__ = [
+    "DEFAULT_MAX_RETRIES",
+    "ExtractionRetryPolicy",
+    "LlmRetryPolicy",
+    "RetryExhausted",
+    "with_retry",
+]
+
 
 #: Attempts after the first, when the caller does not say.
 DEFAULT_MAX_RETRIES = 3
@@ -66,8 +74,8 @@ class RetryExhausted(Exception):
         self.attempts = attempts
 
 
-class ExtractionRetryPolicy:
-    """Retry policy configuration for extraction operations.
+class LlmRetryPolicy:
+    """Retry policy configuration for LLM provider operations.
 
     Implements exponential backoff with configurable jitter to prevent
     thundering herd problems when multiple clients retry simultaneously.
@@ -184,7 +192,7 @@ class ExtractionRetryPolicy:
 
     def __repr__(self) -> str:
         return (
-            f"ExtractionRetryPolicy("
+            f"{self.__class__.__name__}("
             f"max_retries={self.max_retries}, "
             f"initial_delay={self.initial_delay}, "
             f"max_delay={self.max_delay}, "
@@ -193,9 +201,13 @@ class ExtractionRetryPolicy:
         )
 
 
+#: Backward-compatible alias for LlmRetryPolicy
+ExtractionRetryPolicy = LlmRetryPolicy
+
+
 def with_retry(
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
-    policy: ExtractionRetryPolicy | None = None,
+    policy: LlmRetryPolicy | None = None,
     *,
     sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Coroutine[Any, Any, T]]]:
@@ -209,7 +221,7 @@ def with_retry(
             Only these exceptions will be caught and retried; others will
             propagate immediately. Defaults to (Exception,) which retries all.
         policy: Retry policy configuration. If not provided, uses default
-            ExtractionRetryPolicy with settings from configuration.
+            LlmRetryPolicy with settings from configuration.
 
     Returns:
         Decorated async function with retry behavior
@@ -219,7 +231,7 @@ def with_retry(
             exception is available as __cause__.
 
     Example:
-        from redstring.llm.retry import ExtractionRetryPolicy, with_retry
+        from redstring.llm.retry import LlmRetryPolicy, with_retry
 
         # Retry on connection errors with the default policy
         @with_retry(retryable_exceptions=(ConnectionError, TimeoutError))
@@ -229,12 +241,12 @@ def with_retry(
         # Custom policy
         @with_retry(
             retryable_exceptions=(ConnectionError,),
-            policy=ExtractionRetryPolicy(max_retries=5, initial_delay=0.5),
+            policy=LlmRetryPolicy(max_retries=5, initial_delay=0.5),
         )
         async def fetch_with_custom_retry(url: str) -> dict:
             ...
     """
-    retry_policy = policy or ExtractionRetryPolicy()
+    retry_policy = policy or LlmRetryPolicy()
 
     # `Callable[P, Awaitable[T]]`, not `Callable[P, T]`. This decorator only
     # works on coroutine functions -- it awaits the result -- and the looser
