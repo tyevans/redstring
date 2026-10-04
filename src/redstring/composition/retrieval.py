@@ -69,6 +69,9 @@ if TYPE_CHECKING:
     from redstring.ports.vector_store import VectorReader
 
 
+__all__ = ["ChunkRetriever", "Retriever"]
+
+
 class Retriever:
     """Ranked entity retrieval, fusing a semantic and a lexical channel."""
 

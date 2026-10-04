@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from redstring.ports.graph_store import EntityReader, RelationshipStore
 
 
+__all__ = ["node_degrees", "read_topology"]
+
+
 async def read_topology(
     tenant_id: TenantId,
     graph: EntityReader,

@@ -56,13 +56,7 @@ def _retriever(chunks: InMemoryChunkStore, embeddings: FakeEmbeddingProvider) ->
     return ChunkRetriever(embeddings=embeddings, chunks=chunks)
 
 
-# ----------------------------------------------------------------------
-# Construction guards
-# ----------------------------------------------------------------------
-
-
 async def test_a_provider_and_store_of_different_dimensions_are_refused() -> None:
-    """At construction, before any text is embedded -- `Retriever`'s rule."""
     with pytest.raises(DimensionMismatchError):
         ChunkRetriever(
             embeddings=FakeEmbeddingProvider(dimension=8),
@@ -72,8 +66,6 @@ async def test_a_provider_and_store_of_different_dimensions_are_refused() -> Non
 
 @pytest.mark.parametrize("overfetch", [0, -1])
 async def test_an_overfetch_below_one_is_refused(overfetch: int) -> None:
-    # Fetching fewer than `k` per channel cannot improve on `k`, so there is
-    # no reading of it that is a caller's intent rather than a mistake.
     with pytest.raises(ValueError, match="overfetch"):
         ChunkRetriever(
             embeddings=FakeEmbeddingProvider(dimension=DIMENSION),
@@ -82,14 +74,8 @@ async def test_an_overfetch_below_one_is_refused(overfetch: int) -> None:
         )
 
 
-# ----------------------------------------------------------------------
-# `retrieve_chunks` guards
-# ----------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
 async def test_a_blank_query_raises(blank: str) -> None:
-    """A blank query is a caller bug; neither empty-answer reading hides it."""
     chunks = InMemoryChunkStore(dimension=DIMENSION)
     embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
     with pytest.raises(ValueError, match="query"):
@@ -97,10 +83,6 @@ async def test_a_blank_query_raises(blank: str) -> None:
 
 
 async def test_k_zero_returns_nothing_and_a_negative_k_raises() -> None:
-    """Both pinned as literals -- a property sampling `k` makes boundary
-    coverage depend on the sampler and on the lowered example count under
-    mutation.
-    """
     tenant = uuid4()
     chunks = InMemoryChunkStore(dimension=DIMENSION)
     embeddings = FakeEmbeddingProvider(dimension=DIMENSION)
@@ -115,18 +97,8 @@ async def test_k_zero_returns_nothing_and_a_negative_k_raises() -> None:
         await retriever.retrieve_chunks("Ada Lovelace", tenant, k=-1)
 
 
-# ----------------------------------------------------------------------
-# Single-channel modes
-# ----------------------------------------------------------------------
-
-
 class _CountingEmbeddingProvider:
-    """A real `FakeEmbeddingProvider` that counts `embed` calls.
-
-    Delegation, not a mock: every vector returned is the real provider's, so
-    a test using this still exercises the semantic channel. Only the call
-    count is observed -- what proves `LEXICAL` mode makes no embedding call.
-    """
+    """Delegation counting embed calls to verify LEXICAL mode skips embedding."""
 
     def __init__(self, inner: FakeEmbeddingProvider) -> None:
         self._inner = inner
@@ -140,9 +112,6 @@ class _CountingEmbeddingProvider:
         self.calls += 1
         return await self._inner.embed(texts)
 
-    # Counting both sides is what keeps the assertion honest. A double
-    # counting only `embed` reads zero for a mode that embeds every query,
-    # once the semantic channel calls `embed_query` instead.
     async def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
         self.calls += 1
         return await self._inner.embed_query(texts)
@@ -183,11 +152,6 @@ async def test_a_semantic_only_mode_leaves_lexical_none() -> None:
     assert match.chunk.id == chunk_id("doc-1", text)
     assert match.semantic is not None
     assert match.lexical is None
-
-
-# ----------------------------------------------------------------------
-# HYBRID fuses both, and an unembedded corpus still answers lexically
-# ----------------------------------------------------------------------
 
 
 async def test_hybrid_fuses_both_channels() -> None:
@@ -232,11 +196,6 @@ async def test_a_hybrid_query_over_an_unembedded_corpus_still_returns_lexical_re
     assert match.chunk.id == chunk_id("doc-1", text)
     assert match.semantic is None
     assert match.lexical is not None
-
-
-# ----------------------------------------------------------------------
-# Overfetch: the property it exists for
-# ----------------------------------------------------------------------
 
 
 async def test_a_chunk_ranked_second_in_both_channels_beats_a_channel_leader() -> None:
@@ -297,10 +256,6 @@ async def test_a_chunk_ranked_second_in_both_channels_beats_a_channel_leader() -
     [winner] = result.matches
     assert winner.chunk.id == chunk_id("doc-1", text_b)
 
-
-# ----------------------------------------------------------------------
-# The query goes through the query side of the port
-# ----------------------------------------------------------------------
 
 #: Non-empty and different from each other. Equal prefixes would make a
 #: retriever calling `embed` indistinguishable from one calling `embed_query`,
@@ -369,11 +324,6 @@ async def test_the_query_reaches_the_provider_unprefixed_by_the_caller() -> None
     )
 
     assert embeddings.seen == [("embed_query", ["Ada Lovelace"])]
-
-
-# ----------------------------------------------------------------------
-# Lexical-only construction -- `Retriever.lexical_only`'s mirror
-# ----------------------------------------------------------------------
 
 
 async def test_a_lexical_only_chunk_retriever_needs_no_embedding_provider() -> None:

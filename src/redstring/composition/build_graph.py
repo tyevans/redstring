@@ -10,15 +10,10 @@ SourceDocument -> ExtractionPipeline -> Document.record_extraction
 Every arrow already existed and was tested; nothing called them in sequence,
 which is why `redstring.__init__` exported a version string and nothing else.
 
-## Why this is a layer of its own
+## Layer Isolation
 
-`extraction` may not import `projections`, and neither may import the other's
-adapters -- that separation is what stops a store reference growing back into
-the pipeline, and `tests/unit/extraction/test_pipeline.py::TestNoStoreReachesExtraction`
-enforces it directly. But *somebody* has to hold both, or the library ships
-two halves and a diagram. `composition` is the top layer of the import
-contract for exactly that reason, and it is the only module in it: if a second
-one appears, ask what it composes before adding it.
+`extraction` and `projections` cannot import each other; `composition`
+coordinates both halves.
 
 ## What `build_graph` skips, and when that matters
 
@@ -37,17 +32,8 @@ stating plainly rather than discovering:
   restored from backup.
 
 **Both are removed by passing `event_store`**, which loads the aggregate from
-that log and appends to it. That is not merely a convenience: the chunking
-signature's whole design -- two write paths, two key spaces, so that indexing
-a document and later extracting it does not suppress the entity links -- is
-only *observable* across calls that share aggregate state. Without a log there
-is no state and no refusal, so nothing behavioural can distinguish the design
-from its opposite. See `index_documents`.
-
-A caller who wants a log without this parameter appends `report.event` to an
-`EventStore` themselves and drives `eventsource.replay` over the feed.
-`report.event` is returned for precisely that, and it is the same object the
-projection just consumed.
+that log and appends to it. Callers can also append `report.event` to an
+`EventStore` directly and drive replay over the feed.
 
 ## `domain=AUTO` costs an extra model call, and says so
 
@@ -115,6 +101,16 @@ if TYPE_CHECKING:
     from redstring.ports.graph_store import GraphStore
     from redstring.ports.llm_provider import LlmProvider
     from redstring.ports.vector_store import VectorStore
+
+
+__all__ = [
+    "AUTO",
+    "AutoDomain",
+    "ConsolidationReport",
+    "Consolidator",
+    "GraphBuildReport",
+    "build_graph",
+]
 
 
 class AutoDomain:

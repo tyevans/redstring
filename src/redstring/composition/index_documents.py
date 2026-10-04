@@ -87,6 +87,9 @@ if TYPE_CHECKING:
     from redstring.ports.embedding_provider import EmbeddingProvider
 
 
+__all__ = ["IndexReport", "index_documents"]
+
+
 @dataclass(frozen=True, slots=True)
 class IndexReport:
     """What one `index_documents` call split, and what it wrote."""

@@ -25,6 +25,9 @@ if TYPE_CHECKING:
     from redstring.ports.llm_provider import LlmProvider
 
 
+__all__ = ["summarize_themes"]
+
+
 async def summarize_themes(
     tenant_id: TenantId,
     *,
