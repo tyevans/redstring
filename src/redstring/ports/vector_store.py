@@ -91,6 +91,16 @@ if TYPE_CHECKING:
     from redstring.domain.ids import EntityId, TenantId
     from redstring.domain.vector import VectorMatch, VectorRecord
 
+
+__all__ = [
+    "ENTITY_TYPE_KEY",
+    "VectorPurge",
+    "VectorReader",
+    "VectorStore",
+    "VectorWriter",
+    "entity_type_of",
+]
+
 #: The metadata key `search(entity_types=...)` filters on. See the docstring.
 ENTITY_TYPE_KEY = "entity_type"
 

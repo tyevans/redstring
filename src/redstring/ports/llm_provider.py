@@ -51,6 +51,9 @@ if TYPE_CHECKING:
     from pydantic import BaseModel
 
 
+__all__ = ["LlmProvider"]
+
+
 @runtime_checkable
 class LlmProvider(Protocol):
     """Structured extraction from text against a caller-supplied schema."""

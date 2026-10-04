@@ -1,34 +1,13 @@
 """The `GraphStore` port: entity and relationship storage, in domain terms.
 
 A `GraphStore` is a **projection**, not the write model. The event log is the
-authority; stores are derived, disposable, and rebuildable by replay. Two
-consequences shape this interface:
+authority; stores are derived, disposable, and rebuildable by replay.
 
-- **Every write is idempotent.** Projection handlers replay. Applying the same
-  event twice must leave the store in the same state as applying it once.
-- **Nothing here is Cypher-shaped.** Backends must include SQL and plain
-  dictionaries as well as Neo4j.
-
-Adapters are required to be **read-your-writes**: once an `upsert_*` call has
-returned, the effect is visible to the next read on the same store. Lag, when
-these stores are fed by projections, exists between the event log and the
-store -- never inside the store.
-
-Every method is tenant-scoped. There is no cross-tenant read, ever.
-
-## Aliases, and why the store has to know about them
-
-A merge does not delete the absorbed entity -- there is no `delete_entity` and
-there never will be. What it does is record an `Alias`, and the store keeps it
-because **a later write has to be able to consult it**. Without that, a
-`DocumentExtracted` folded after an `EntitiesMerged` writes the pre-merge
-endpoints back and silently reverts the merge, in strict log order, with every
-event delivered once (BACKLOG B34, closed by this pair).
-
-So `resolve_entity_ids` is the read a fold makes before writing an edge, and
-`upsert_alias`/`remove_alias` are how the merge and undo folds maintain what it
-reads. This is not consolidation logic leaking into the store: it is the store
-having somewhere to put a fact that already happened.
+- **Idempotent writes**: Projection handlers replay.
+- **Pure domain vocabulary**: No Cypher or SQL leaks across the boundary.
+- **Read-your-writes**: Visible immediately to subsequent reads on the same store.
+- **Tenant-scoped**: Strict tenant isolation across all operations.
+- **Aliases**: Records absorbed entity mappings to prevent edge write reversion.
 """
 
 from __future__ import annotations
@@ -46,17 +25,19 @@ if TYPE_CHECKING:
     from redstring.domain.relationship import Relationship
 
 
+__all__ = [
+    "AliasStore",
+    "EntityReader",
+    "EntityWriter",
+    "GraphStore",
+    "RelationshipStore",
+    "TenantPurge",
+]
+
+
 @runtime_checkable
 class EntityReader(AsyncClosable, Protocol):
-    """Reads entities back out.
-
-    The narrowest useful slice of the port, and the one most collaborators
-    want. `TemporalQuery` needs exactly one of these methods and nothing else
-    in `GraphStore`; typing it against the whole port made a test double an
-    eighteen-method exercise, which is why `tests/unit/test_temporal_surface.py`
-    once faked a store by *subclassing the in-memory adapter* rather than
-    implementing the interface.
-    """
+    """Reads entities back out."""
 
     async def get_entity(self, entity_id: EntityId, tenant_id: TenantId) -> Entity | None:
         """Return the entity, or `None` if this tenant has no such id.

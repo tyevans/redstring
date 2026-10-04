@@ -45,6 +45,9 @@ if TYPE_CHECKING:
     from types import TracebackType
 
 
+__all__ = ["AsyncClosable"]
+
+
 @runtime_checkable
 class AsyncClosable(Protocol):
     """Something holding a resource that a caller must be able to release."""
