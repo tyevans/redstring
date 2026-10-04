@@ -138,11 +138,10 @@ _COLUMNS = (
 _SELECT_COLUMNS = _COLUMNS.replace("embedding", "embedding::real[] AS embedding")
 
 #: One definition of cosine similarity in this library, not two -- see
-#: `redstring.vector.adapters.pgvector._SCORE`. `chunks` cannot import
+#: `redstring.vector.adapters.pgvector.SCORE_SQL`. `chunks` cannot import
 #: `vector` (siblings under the same layer, and `lint-imports` forbids it),
 #: so this is a second declaration proved identical to the first by
-#: `tests/unit/chunks/test_postgres_schema.py`, not a shared import.
-_SCORE = "1 - (embedding <=> $2::vector) / 2"
+SCORE_SQL = _SCORE = "1 - (embedding <=> $2::vector) / 2"
 
 
 class PostgresChunkStore:

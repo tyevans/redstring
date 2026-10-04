@@ -33,9 +33,9 @@ from redstring.domain.entity import Entity
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.extraction.schema_org import (
     SCHEMA_TYPE_MAP,
-    _map_og_type,
     extract_entities_from_open_graph,
     extract_entities_from_schema_org,
+    map_open_graph_type,
 )
 
 #: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
@@ -303,14 +303,14 @@ class TestOpenGraphTypeMapping:
         ],
     )
     def test_each_known_type_maps_to_its_entity_type(self, og_type, expected):
-        assert _map_og_type(og_type) == expected
+        assert map_open_graph_type(og_type) == expected
 
     def test_an_unrecognised_type_falls_back_to_concept(self):
-        assert _map_og_type("garden.gnome") == "concept"
+        assert map_open_graph_type("garden.gnome") == "concept"
 
     def test_the_mapping_is_case_insensitive(self):
-        assert _map_og_type("PROFILE") == "person"
+        assert map_open_graph_type("PROFILE") == "person"
 
     def test_every_result_is_a_plain_string(self):
-        assert type(_map_og_type("profile")) is str
-        assert type(_map_og_type("garden.gnome")) is str
+        assert type(map_open_graph_type("profile")) is str
+        assert type(map_open_graph_type("garden.gnome")) is str

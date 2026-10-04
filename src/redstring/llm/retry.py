@@ -196,6 +196,8 @@ class ExtractionRetryPolicy:
 def with_retry(
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
     policy: ExtractionRetryPolicy | None = None,
+    *,
+    sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Coroutine[Any, Any, T]]]:
     """Decorator for retry with exponential backoff.
 
@@ -269,7 +271,7 @@ def with_retry(
                                 "error_type": type(e).__name__,
                             },
                         )
-                        await asyncio.sleep(delay)
+                        await sleeper(delay)
                     else:
                         logger.error(
                             "All %d retry attempts exhausted for %s",

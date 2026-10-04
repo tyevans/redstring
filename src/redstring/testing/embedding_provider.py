@@ -117,11 +117,14 @@ async def _embed(provider: EmbeddingProvider, side: str, texts: list[str]) -> li
     return await method(texts)
 
 
-def _cosine(a: list[float], b: list[float]) -> float:
+def cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity, used instead of `==` throughout. See the docstring."""
     dot = sum(x * y for x, y in zip(a, b, strict=True))
     norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
     return 0.0 if norm == 0.0 else dot / norm
+
+
+_cosine = cosine
 
 
 class EmbeddingProviderCompliance:
