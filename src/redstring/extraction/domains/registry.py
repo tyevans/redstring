@@ -34,16 +34,18 @@ from functools import lru_cache
 from threading import Lock
 from typing import TYPE_CHECKING
 
+from redstring.extraction.domains.catalog import DomainCatalog
 from redstring.extraction.domains.loader import (
     SchemaLoadError,
     get_schema_directory,
     load_all_schemas,
 )
-from redstring.extraction.domains.models import DomainSchema, DomainSummary
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+
+    from redstring.extraction.domains.models import DomainSchema, DomainSummary
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +96,10 @@ class DomainSchemaRegistry:
         """
         self._schema_dir = schema_dir or DEFAULT_SCHEMA_DIR
         self._schemas: dict[str, DomainSchema] = {}
+        self._catalog = DomainCatalog(self._schemas)
         self._loaded = False
         self._load_lock = Lock()
 
-        # Off unless the caller asks. It used to default to the
-        # `DOMAIN_SCHEMA_HOT_RELOAD` environment variable, which made a
-        # library's disk-access behaviour depend on the shell that started the
-        # process -- see `tests/unit/test_library_reads_no_environment.py`.
         self._hot_reload = bool(hot_reload)
 
         if self._hot_reload:
@@ -192,6 +191,7 @@ class DomainSchemaRegistry:
             try:
                 # Use existing loader module
                 self._schemas = load_all_schemas(self._schema_dir)
+                self._catalog = DomainCatalog(self._schemas)
                 self._loaded = True
 
                 logger.info(
@@ -248,117 +248,47 @@ class DomainSchemaRegistry:
             KeyError: If the domain is not found.
         """
         self.ensure_loaded()
-
-        normalized_id = domain_id.lower().strip()
-        if normalized_id not in self._schemas:
-            available = ", ".join(sorted(self._schemas.keys()))
-            raise KeyError(
-                f"Unknown domain: '{domain_id}'. Available domains: {available or 'none'}"
-            )
-
-        return self._schemas[normalized_id]
+        return self._catalog.get_schema(domain_id)
 
     def get_schema_or_none(self, domain_id: str) -> DomainSchema | None:
-        """Get a domain schema by ID, or None if not found.
-
-        Args:
-            domain_id: The domain identifier.
-
-        Returns:
-            The DomainSchema if found, None otherwise.
-        """
-        try:
-            return self.get_schema(domain_id)
-        except KeyError:
-            return None
+        """Get a domain schema by ID, or None if not found."""
+        self.ensure_loaded()
+        return self._catalog.get_schema_or_none(domain_id)
 
     def get_default_schema(self) -> DomainSchema | None:
-        """Get the default/fallback domain schema.
-
-        Currently returns the 'encyclopedia_wiki' schema as the most
-        general-purpose domain. Returns None if no schemas are loaded.
-
-        Returns:
-            The default DomainSchema, or None if not available.
-        """
+        """Get the default/fallback domain schema."""
         self.ensure_loaded()
-
-        # Try encyclopedia_wiki as the default (most general)
-        default_domain_id = "encyclopedia_wiki"
-        if default_domain_id in self._schemas:
-            return self._schemas[default_domain_id]
-
-        # Fallback to first available schema if any
-        if self._schemas:
-            return next(iter(self._schemas.values()))
-
-        return None
+        return self._catalog.get_default_schema()
 
     def list_domains(self) -> list[DomainSummary]:
-        """List all available domains.
-
-        Returns:
-            List of DomainSummary objects for all loaded domains,
-            sorted alphabetically by display_name.
-        """
+        """List all available domains."""
         self.ensure_loaded()
-
-        return [
-            DomainSummary.from_schema(schema)
-            for schema in sorted(
-                self._schemas.values(),
-                key=lambda s: s.display_name,
-            )
-        ]
+        return self._catalog.list_domains()
 
     def list_domain_ids(self) -> list[str]:
-        """List all available domain IDs.
-
-        Returns:
-            Sorted list of domain ID strings.
-        """
+        """List all available domain IDs."""
         self.ensure_loaded()
-        return sorted(self._schemas.keys())
+        return self._catalog.list_domain_ids()
 
     def has_domain(self, domain_id: str) -> bool:
-        """Check if a domain exists.
-
-        Args:
-            domain_id: The domain identifier.
-
-        Returns:
-            True if the domain exists, False otherwise.
-        """
+        """Check if a domain exists."""
         self.ensure_loaded()
-        return domain_id.lower().strip() in self._schemas
+        return self._catalog.has_domain(domain_id)
 
     def get_schemas_for_entity_type(self, entity_type: str) -> list[DomainSchema]:
-        """Find all schemas that support a given entity type.
-
-        Args:
-            entity_type: The entity type ID to search for.
-
-        Returns:
-            List of DomainSchemas that include the entity type.
-        """
+        """Find all schemas that support a given entity type."""
         self.ensure_loaded()
-
-        normalized = entity_type.lower().strip()
-        return [
-            schema
-            for schema in self._schemas.values()
-            if normalized in schema.get_entity_type_ids()
-        ]
+        return self._catalog.get_schemas_for_entity_type(entity_type)
 
     def __len__(self) -> int:
         """Return the number of loaded schemas."""
         self.ensure_loaded()
-        return len(self._schemas)
+        return len(self._catalog)
 
     def __iter__(self) -> Iterator[DomainSchema]:
         """Iterate over all loaded schemas."""
         self.ensure_loaded()
-        return iter(self._schemas.values())
+        return iter(self._catalog)
 
     def __contains__(self, domain_id: str) -> bool:
         """Check if a domain exists using 'in' operator."""
