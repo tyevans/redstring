@@ -1,7 +1,7 @@
 ---
 id: '0013'
 title: Audit and prune backwards compatibility shims in projections BC
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0003
 - ADR-0007
@@ -10,6 +10,8 @@ governing_prds:
 governing_stories:
 - US-0003
 target_bc: projections
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T17:15:42.613315+00:00'
 mutation_scope: '[''src/redstring/projections/'']'
 ---
 
