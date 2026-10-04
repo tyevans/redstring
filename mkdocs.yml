@@ -199,5 +199,6 @@ nav:
       - Project management as code: explanation/project-management-as-code.md
       - Library release workflow and SpecOps: explanation/library-release-workflow-and-specops.md
       - Cross-BC abstractions and consolidation: explanation/cross-bc-abstractions-and-consolidation-findings.md
+      - Release notes (PRD-0001): releases/prd-0001-release-notes.md
   - Contributing: contributing.md
   - Operating manual: operating-manual.md
