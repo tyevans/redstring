@@ -69,6 +69,9 @@ if TYPE_CHECKING:
     from redstring.domain.vector import VectorRecord
 
 
+__all__ = ["Document", "DocumentState"]
+
+
 class DocumentState(BaseModel):
     """Which runs this document has already recorded.
 
