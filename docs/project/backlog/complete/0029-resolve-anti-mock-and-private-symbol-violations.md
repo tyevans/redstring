@@ -1,7 +1,7 @@
 ---
-id: '0029'
+id: 0029
 title: Resolve anti-mock and private symbol backdoor violations in tests
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0003
@@ -11,7 +11,9 @@ governing_prds:
 governing_stories:
 - US-0006
 target_bc: testing
-mutation_scope: []
+signed_off_by: Ty Evans <ty@tyevans.net>
+signed_off_at: '2026-10-04T20:44:33.956039+00:00'
+mutation_scope: '[]'
 ---
 
 # TASK-0029: Resolve anti-mock and private symbol backdoor violations in tests
