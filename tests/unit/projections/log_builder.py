@@ -21,10 +21,7 @@ from uuid import NAMESPACE_URL, uuid5
 from eventsource.domain.tenant_context import tenant_scope
 from hypothesis import strategies as st
 
-from redstring.aggregates.repositories import (
-    consolidation_repository,
-    document_repository,
-)
+from redstring.aggregates.repositories import consolidation_repository, document_repository
 from redstring.domain.chunk import StoredChunk
 from redstring.domain.consolidation import RelationshipRedirection
 from redstring.domain.entity import Entity
@@ -365,11 +362,8 @@ async def build_log(event_store, snapshot_store, scenario: Scenario) -> BuiltLog
 
 
 def _is_usable_pair(mirror, canonical_index: int, absorbed_index: int) -> bool:
-    return (
-        canonical_index != absorbed_index
-        and canonical_index < len(mirror.entity_ids)
-        and absorbed_index < len(mirror.entity_ids)
-    )
+    n = len(mirror.entity_ids)
+    return canonical_index != absorbed_index and canonical_index < n and absorbed_index < n
 
 
 def _redirections_for(mirror, canonical, absorbed) -> list[RelationshipRedirection]:

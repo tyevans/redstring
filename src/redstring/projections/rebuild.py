@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from redstring.domain.ids import TenantId
 
 
+__all__ = ["rebuild_tenant"]
+
+
 async def rebuild_tenant(
     feed: GlobalEventFeed,
     projections: Sequence[EventSubscriber],

@@ -38,6 +38,9 @@ if TYPE_CHECKING:
     from redstring.domain.ids import TenantId
 
 
+__all__ = ["VectorProjection"]
+
+
 class VectorProjection(StoreProjection[VectorWriter]):
     """Maintains a `VectorStore` from the event log."""
 
