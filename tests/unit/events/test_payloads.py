@@ -55,13 +55,6 @@ OBSERVED = datetime(2026, 2, 17, 11, 7, tzinfo=UTC)
 
 
 def _entity(tenant_id, *, source_id=SOURCE_ID, **overrides):
-    """`source_id` is a named parameter rather than an `overrides` key.
-
-    It moved to `Provenance`, and several tests here pass a *foreign* one to
-    prove `DocumentExtracted` rejects it -- so the builder has to route it
-    into the nested model rather than let it land on `Entity`, where it would
-    now be an unknown field.
-    """
     fields = {
         "id": uuid4(),
         "tenant_id": tenant_id,
@@ -75,8 +68,7 @@ def _entity(tenant_id, *, source_id=SOURCE_ID, **overrides):
             source_id=source_id,
         ),
     }
-    fields.update(overrides)
-    return Entity(**fields)
+    return Entity(**(fields | overrides))
 
 
 def _relationship(tenant_id, **overrides):
@@ -88,8 +80,7 @@ def _relationship(tenant_id, **overrides):
         "relationship_type": "works_for",
         "confidence": 0.8,
     }
-    fields.update(overrides)
-    return Relationship(**fields)
+    return Relationship(**(fields | overrides))
 
 
 def _extracted(tenant_id, **overrides):
@@ -99,8 +90,7 @@ def _extracted(tenant_id, **overrides):
         "source_id": SOURCE_ID,
         "model_version": "ollama/qwen3.6-27b",
     }
-    fields.update(overrides)
-    return DocumentExtracted(**fields)
+    return DocumentExtracted(**(fields | overrides))
 
 
 def _merged(tenant_id, **overrides):
@@ -110,8 +100,7 @@ def _merged(tenant_id, **overrides):
         "canonical_entity_id": uuid4(),
         "merged_entity_ids": [uuid4()],
     }
-    fields.update(overrides)
-    return EntitiesMerged(**fields)
+    return EntitiesMerged(**(fields | overrides))
 
 
 def _chunk(tenant_id, **overrides):
@@ -125,8 +114,7 @@ def _chunk(tenant_id, **overrides):
         "start_char": 0,
         "end_char": len(text),
     }
-    fields.update(overrides)
-    return StoredChunk(**fields)
+    return StoredChunk(**(fields | overrides))
 
 
 def _chunked(tenant_id, **overrides):
@@ -136,8 +124,7 @@ def _chunked(tenant_id, **overrides):
         "source_id": SOURCE_ID,
         "chunking_signature": "recursive:abc123",
     }
-    fields.update(overrides)
-    return DocumentChunked(**fields)
+    return DocumentChunked(**(fields | overrides))
 
 
 class TestDocumentExtracted:
@@ -173,25 +160,12 @@ class TestDocumentExtracted:
             _extracted(tenant_id, relationships=[_relationship(tenant_id, source_id=other_source)])
 
     def test_a_relationship_with_no_provenance_is_still_a_legal_event(self):
-        """Not laxness -- history. `Relationship.source_id` was added after
-        this event shipped, so every edge in an existing log has none, and
-        this validator runs on replay. Rejecting the absent case would make
-        already-written events unreadable rather than catch anything.
-
-        `_relationship` omits `source_id`, so this is the shape a real replay
-        of an old event produces rather than one written to pass.
-        """
+        """Relationship.source_id was added later; existing log events omit it."""
         tenant_id = uuid4()
         event = _extracted(tenant_id, relationships=[_relationship(tenant_id)])
         assert event.relationships[0].source_id is None
 
     def test_the_document_a_carrier_names_is_the_one_it_is_appended_to(self):
-        """`source_id` is on the event as well as implied by its stream.
-
-        The stream id is a `uuid5` of the source id and so cannot be read back
-        -- a consumer of the global feed would have no way to say which
-        document an event came from without this field.
-        """
         tenant_id = uuid4()
         event = _extracted(tenant_id, entities=[_entity(tenant_id)])
         assert event.entities[0].provenance.source_id == event.source_id
@@ -200,55 +174,30 @@ class TestDocumentExtracted:
 class TestDocumentChunked:
     @pytest.mark.parametrize("other", OTHER_TENANTS, ids=TENANT_IDS)
     def test_chunks_of_another_tenant_are_rejected(self, other):
-        """`_reject_foreign_tenants`. The projection writes each chunk under
-        its own `tenant_id`, so this is the one place the two can still be
-        compared -- and the two others bracket the pivot because the check is
-        a `!=` that a mutant rewrites as an ordered comparison."""
         with pytest.raises(ValidationError, match="chunks carries tenants"):
             _chunked(PIVOT_TENANT, chunks=[_chunk(other)])
 
     @pytest.mark.parametrize("other_source", OTHER_SOURCES)
     def test_chunks_of_another_document_are_rejected(self, other_source):
-        """Same rule the entity check enforces, and for the same reason: the
-        projection scopes its `replace_source` to the *event's* source, so a
-        stray chunk would be written under a provenance it does not have."""
         tenant_id = uuid4()
         with pytest.raises(ValidationError, match="attributed to the document"):
             _chunked(tenant_id, chunks=[_chunk(tenant_id, source_id=other_source)])
 
     def test_an_empty_chunking_is_a_legitimate_event(self):
-        """A document that chunks to nothing is expressible; the projection
-        needs it to empty a source."""
         event = _chunked(uuid4())
         assert event.chunks == []
 
     def test_the_signature_is_carried_verbatim(self):
-        """The emitter composes it -- `index_documents` and the extraction
-        pipeline compose it differently on purpose -- so the event must not
-        normalise, truncate or re-derive it."""
         signature = "recursive:abc123:ollama/qwen3.6-27b"
         assert _chunked(uuid4(), chunking_signature=signature).chunking_signature == signature
 
     def test_a_chunk_of_this_document_and_tenant_is_accepted(self):
-        """The negative tests above pass on a validator that rejects
-        everything."""
         tenant_id = uuid4()
         event = _chunked(tenant_id, chunks=[_chunk(tenant_id)])
         assert event.chunks[0].source_id == event.source_id
 
     def test_a_dumped_event_survives_being_read_back(self):
-        """The log is the authority: an event carrying chunks must be
-        readable back from its own `model_dump()`, or replay is broken.
-
-        This is the `extra="forbid"`-breaks-replay failure mode: `id` is
-        purely derived, so it does not distinguish a correct implementation
-        from one where the computed field silently stopped serialising --
-        `test_the_serialised_shape_still_carries_the_id` in
-        `tests/unit/domain/test_chunk.py` is what covers that case,
-        asserting `dumped["id"] == chunk.id` directly. What this test catches
-        is real regardless: a `DocumentChunked` built from real chunks must
-        round-trip through the log format at all.
-        """
+        """DocumentChunked must round-trip through model_dump(mode='json')."""
         tenant_id = uuid4()
         event = _chunked(
             tenant_id,
@@ -365,26 +314,17 @@ class TestMergeUndone:
             )
 
     def test_an_undo_must_name_at_least_one_entity(self):
-        """An undo that frees nothing is not an undo. Without this the field's
-        `min_length=1` is decoration -- a mutant relaxing it to 0 survived
-        until this test existed, and `EntitiesMerged` had the equivalent test
-        from the start, which is how the asymmetry went unnoticed."""
-        tenant_id = uuid4()
         with pytest.raises(ValidationError, match="at least 1"):
             MergeUndone(
-                aggregate_id=tenant_id,
-                tenant_id=tenant_id,
+                aggregate_id=uuid4(),
+                tenant_id=uuid4(),
                 merge_event_id=uuid4(),
                 canonical_entity_id=uuid4(),
                 unmerged_entity_ids=[],
             )
 
     def test_an_undo_names_the_merge_it_reverses(self):
-        """A `MergeUndone` that only carried restorations would be
-        indistinguishable from an unrelated correction, and the aggregate
-        could not tell whether the merge it refers to ever happened."""
-        tenant_id = uuid4()
-        merge_event_id = uuid4()
+        tenant_id, merge_event_id = uuid4(), uuid4()
         event = MergeUndone(
             aggregate_id=tenant_id,
             tenant_id=tenant_id,
@@ -396,74 +336,60 @@ class TestMergeUndone:
 
 
 class TestComparisonsAreByValueNotIdentity:
-    """Every check above compares two ids or two strings, and every test above
-    supplies them as the *same object* -- so `is` and `==` agree and nothing
-    distinguishes them.
-
-    That is not theoretical here. An event round-tripped through JSON, which is
-    what a stored event is, has values that are equal and not identical; and
-    CPython interns string literals, so a `source_id` built at runtime is a
-    different object from the one in a test. A `!=` silently meaning `is not`
-    would *reject* perfectly good payloads, and only in production.
-    """
+    """Every check compares by value (==) rather than object identity (is)."""
 
     def test_a_tenant_that_arrived_as_a_string_is_still_this_tenant(self):
-        tenant_id = uuid4()
-        entity = _entity(UUID(str(tenant_id)))
-        assert entity.tenant_id is not tenant_id
-        _extracted(tenant_id, entities=[entity])
+        t = uuid4()
+        e = _entity(UUID(str(t)))
+        assert e.tenant_id is not t
+        _extracted(t, entities=[e])
 
     def test_a_relationship_tenant_that_arrived_as_a_string_is_accepted(self):
-        tenant_id = uuid4()
-        relationship = _relationship(UUID(str(tenant_id)))
-        assert relationship.tenant_id is not tenant_id
-        _extracted(tenant_id, relationships=[relationship])
+        t = uuid4()
+        r = _relationship(UUID(str(t)))
+        assert r.tenant_id is not t
+        _extracted(t, relationships=[r])
 
     def test_an_embedding_tenant_that_arrived_as_a_string_is_accepted(self):
-        tenant_id = uuid4()
-        record = VectorRecord(entity_id=uuid4(), tenant_id=UUID(str(tenant_id)), vector=[1.0, 0.0])
+        t = uuid4()
+        rec = VectorRecord(entity_id=uuid4(), tenant_id=UUID(str(t)), vector=[1.0, 0.0])
         EntitiesEmbedded(
             aggregate_id=uuid4(),
-            tenant_id=tenant_id,
+            tenant_id=t,
             source_id=SOURCE_ID,
             embedding_model="ollama/nomic-embed-text",
-            embeddings=[record],
+            embeddings=[rec],
         )
 
     def test_a_source_id_built_at_runtime_is_still_this_document(self):
-        """CPython interns literals, so `"doc-1"` in two places is one object.
-        A source id assembled from parts is not, which is what a real
-        extractor produces."""
-        tenant_id = uuid4()
-        built_at_runtime = "".join(["doc", "-", "1"])
-        assert built_at_runtime is not SOURCE_ID
-        assert built_at_runtime == SOURCE_ID
-        _extracted(tenant_id, entities=[_entity(tenant_id, source_id=built_at_runtime)])
+        t, src = uuid4(), "".join(["doc", "-", "1"])
+        assert src is not SOURCE_ID
+        assert src == SOURCE_ID
+        _extracted(t, entities=[_entity(t, source_id=src)])
 
     def test_a_chunk_tenant_that_arrived_as_a_string_is_accepted(self):
-        tenant_id = uuid4()
-        chunk = _chunk(UUID(str(tenant_id)))
-        assert chunk.tenant_id is not tenant_id
-        _chunked(tenant_id, chunks=[chunk])
+        t = uuid4()
+        c = _chunk(UUID(str(t)))
+        assert c.tenant_id is not t
+        _chunked(t, chunks=[c])
 
     def test_a_chunk_source_id_built_at_runtime_is_still_this_document(self):
-        tenant_id = uuid4()
-        built_at_runtime = "".join(["doc", "-", "1"])
-        assert built_at_runtime is not SOURCE_ID
-        _chunked(tenant_id, chunks=[_chunk(tenant_id, source_id=built_at_runtime)])
+        t, src = uuid4(), "".join(["doc", "-", "1"])
+        assert src is not SOURCE_ID
+        assert src == SOURCE_ID
+        _chunked(t, chunks=[_chunk(t, source_id=src)])
 
     def test_a_redirection_tenant_that_arrived_as_a_string_is_accepted(self):
-        tenant_id = uuid4()
-        redirection = RelationshipRedirection(before=_relationship(UUID(str(tenant_id))))
-        _merged(tenant_id, redirections=[redirection])
+        t = uuid4()
+        _merged(t, redirections=[RelationshipRedirection(before=_relationship(UUID(str(t))))])
 
     def test_a_restored_relationship_tenant_that_arrived_as_a_string_is_accepted(self):
-        tenant_id = uuid4()
+        t = uuid4()
         MergeUndone(
-            aggregate_id=tenant_id,
-            tenant_id=tenant_id,
+            aggregate_id=t,
+            tenant_id=t,
             merge_event_id=uuid4(),
             canonical_entity_id=uuid4(),
             unmerged_entity_ids=[uuid4()],
-            restored_relationships=[_relationship(UUID(str(tenant_id)))],
+            restored_relationships=[_relationship(UUID(str(t)))],
         )

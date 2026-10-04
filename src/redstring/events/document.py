@@ -61,6 +61,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
+__all__ = ["DocumentChunked", "DocumentExtracted", "EntitiesEmbedded"]
+
+
 class _HasTenant(Protocol):
     """What `_reject_foreign_tenants` needs of a payload: a tenant to compare.
 

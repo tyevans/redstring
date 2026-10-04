@@ -39,6 +39,8 @@ from redstring.domain.ids import EntityId
 from redstring.domain.relationship import Relationship
 from redstring.events.streams import CONSOLIDATION_CATEGORY
 
+__all__ = ["EntitiesMerged", "MergeUndone"]
+
 
 @register_event
 class EntitiesMerged(TenantDomainEvent):
