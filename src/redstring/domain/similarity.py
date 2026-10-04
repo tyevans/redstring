@@ -50,6 +50,17 @@ from redstring.domain.normalization import normalize_name
 if TYPE_CHECKING:
     from collections.abc import Collection, Hashable
 
+__all__ = [
+    "CONTAINMENT_CEILING",
+    "FeatureWeights",
+    "SimilarityFeatures",
+    "combined_score",
+    "graph_similarity",
+    "name_tokens",
+    "overlap_coefficient",
+    "string_similarity",
+]
+
 
 #: The most a token-containment match alone may score.
 #:

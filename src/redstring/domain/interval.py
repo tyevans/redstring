@@ -57,6 +57,8 @@ from redstring.domain.temporal_parsing import widen
 if TYPE_CHECKING:
     from redstring.domain.temporal import TemporalExtent
 
+__all__ = ["INSTANT", "Bounds", "TemporalRelation", "bounds", "relate", "relate_bounds"]
+
 
 #: The width given to a moment whose extent states no precision. Not a day:
 #: defaulting to a day would invent a claim the extent never made, and let one

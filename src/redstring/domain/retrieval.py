@@ -34,6 +34,8 @@ from pydantic import BaseModel, Field
 
 from redstring.domain.entity import Entity
 
+__all__ = ["RetrievalMode", "RetrievalResult", "ScoredEntity"]
+
 
 class RetrievalMode(StrEnum):
     """Which channels a retrieval runs."""

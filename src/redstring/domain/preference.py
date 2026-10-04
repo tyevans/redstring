@@ -44,6 +44,8 @@ if TYPE_CHECKING:
     from redstring.domain.relationship import Relationship
     from redstring.domain.temporal import TemporalExtent
 
+__all__ = ["preference", "relationship_preference"]
+
 
 def preference(entity: Entity) -> tuple[float, bool, int, bool, str, str, str, int, str]:
     """A **total** order on two mappings of one entity. Higher wins.

@@ -33,6 +33,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Hashable, Sequence
 
+__all__ = ["RRF_K", "reciprocal_rank_fusion"]
+
 #: The `k` of `1/(k + rank)`, from Cormack, Clarke and Buettcher (SIGIR 2009),
 #: "Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning
 #: Methods", where 60 was found to work across runs without tuning.

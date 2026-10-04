@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 
+__all__ = ["normalize_name"]
+
 _WHITESPACE_RUN = re.compile(r"\s+")
 
 

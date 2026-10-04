@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from redstring.domain.ids import EntityId, TenantId
 
+__all__ = ["Alias"]
+
 
 class Alias(BaseModel):
     """One entity having been merged into another.

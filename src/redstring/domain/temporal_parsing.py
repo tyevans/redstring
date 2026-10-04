@@ -4,17 +4,10 @@ No store, no clock, no config object. One function of two arguments.
 
 ## The reference date is a parameter because a replay would otherwise diverge
 
-"last year" is not a date; it is a date *and* a vantage point. A parser that
-reads the vantage point from `date.today()` answers the same question
-differently on different days, and this is an event-sourced system: entities
-reach the log inside `DocumentExtracted`, and a re-extraction of the same
-document under a new model version is the supported way an entity's temporal
-data improves. With a hidden clock, that re-extraction silently produces a
-**different graph** from the original run, and every test written on the day
-the code was written agrees with every test run on the day it was reviewed.
-
-So `reference_date` is required, and there is nowhere in this module that a
-clock can be read. `SourceDocument.published_at` is the natural value for it.
+"last year" is a date and a vantage point. A parser reading date.today()
+diverges on replay. With a hidden clock, re-extraction silently produces a
+different graph. So `reference_date` is required, and there is nowhere in
+this module that a clock can be read. `SourceDocument.published_at` is the natural value.
 
 ### What happens when the caller has no reference date
 
@@ -23,18 +16,9 @@ does not silently return `None` for anything it could not date. It raises
 `AmbiguousReferenceDateError` -- but only for text whose meaning *actually*
 depends on the vantage point. "14 July 1789" is fine without one.
 
-That distinction is not a keyword list ("last", "ago", "next", ...), which
-would be an incomplete enumeration of a natural language and would fail open.
-It is measured: parse the text twice against two reference dates decades apart
-and compare the results. Identical results mean the text did not consult the
-vantage point, which is exactly the property being asserted, for whatever
-reason the underlying library had. Different results mean it did.
-
-The same probe covers a hazard that is *not* spelled `today` anywhere in our
-source: `dateutil.parser.parse` fills components the text omits from the
-current date, so "March 15" acquires this year's year. Because the probe drives
-`default=` as well as `RELATIVE_BASE`, that case is caught by the same test
-rather than needing to be anticipated.
+That distinction is measured: parse the text against two reference dates
+decades apart. Identical results mean the text did not consult the vantage point.
+The same probe covers `dateutil.parser.parse` filling omitted components.
 
 ## Precision carries width; `end_date` carries a stated range
 
@@ -44,8 +28,7 @@ precision, and `domain.interval` is the one place that widening happens -- so
 there is one rule rather than one here and another there that can disagree.
 
 `end_date` is set only when the text states a second endpoint: a range
-("1914-1918"), or a period whose span is a convention rather than a precision
-("19th century").
+("1914-1918"), or a period convention ("19th century").
 """
 
 from __future__ import annotations
@@ -58,6 +41,15 @@ from dateutil import parser as dateutil_parser
 from dateutil.relativedelta import relativedelta
 
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
+
+__all__ = [
+    "MAX_INPUT_LENGTH",
+    "AmbiguousReferenceDateError",
+    "detect_uncertainty",
+    "parse_temporal",
+    "render_temporal",
+    "widen",
+]
 
 #: Longer than any date expression and short enough that a pathological regex
 #: cannot be handed a novel. Text above this is not truncated -- a truncated

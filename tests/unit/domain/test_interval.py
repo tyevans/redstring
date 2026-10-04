@@ -73,28 +73,14 @@ class TestBounds:
         assert bounds(TemporalExtent(sequence_position=2)) is None
 
     def test_an_unstated_precision_is_read_as_an_instant_not_as_a_day(self):
-        """Defaulting a missing precision to DAY would invent a claim the
-        extent never made, and would make an exact timestamp swallow a whole
-        day's worth of other events."""
+        """Defaulting a missing precision to DAY would invent an unmade claim."""
         extent = TemporalExtent(start_date=utc(2023, 5, 4, 12, 30))
-        # Spelled out rather than written as `start + INSTANT`. Phrasing the
-        # expectation in terms of the constant under test makes the assertion
-        # true for *any* value of it -- cosmic-ray set `INSTANT` to zero and
-        # this test still passed, while the interval it describes became empty.
         assert bounds(extent) == Bounds(utc(2023, 5, 4, 12, 30), utc(2023, 5, 4, 12, 30, 0, 1))
         assert INSTANT.total_seconds() > 0
 
 
 class TestUncertaintyOtherThanTheOpenOnes:
-    """`bounds` branches on `uncertainty`, and only BEFORE and AFTER change
-    anything. The other four must fall through to the ordinary closed
-    interval -- which no test checked until a mutation run pointed it out.
-
-    `UncertaintyMarker` is a `str` Enum, so `is` mutated to `>=` compares the
-    *strings*: "circa" >= "before" is true, and a circa-dated extent silently
-    became open-ended in one direction. Every test at the time either left
-    `uncertainty` at `None`, skipping the branch entirely, or set exactly the
-    marker being tested."""
+    """bounds branches on uncertainty; only BEFORE and AFTER change anything."""
 
     @pytest.mark.parametrize(
         "marker",
@@ -112,14 +98,7 @@ class TestUncertaintyOtherThanTheOpenOnes:
         assert bounds(extent) == Bounds(utc(2023, 1, 1), utc(2024, 1, 1))
 
     def test_an_open_marker_wins_over_a_stated_range(self):
-        """A marker and an `end_date` together are a contradiction: the marker
-        says open in one direction, the range says closed at both. The marker
-        wins and the far endpoint is dropped, rather than the two being
-        reconciled into a plausible interval that nothing asserted.
-
-        `parse_temporal` cannot build one of these -- the range strategies run
-        before uncertainty is folded in -- so this pins the behaviour for
-        hand-built extents."""
+        """A marker and an end_date together are contradictory; marker wins."""
         contradictory = TemporalExtent(
             start_date=utc(1900, 1, 1),
             end_date=utc(1950, 1, 1),
@@ -388,24 +367,15 @@ class TestProperties:
 
 
 def _intersects(first: Bounds, second: Bounds) -> bool:
-    """Written independently of the implementation, on purpose: a helper that
-    called the same private predicate would agree with a bug."""
-    lower = max(
-        (b for b in (first.lower, second.lower) if b is not None),
-        default=None,
-    )
-    upper = min(
-        (b for b in (first.upper, second.upper) if b is not None),
-        default=None,
-    )
+    lower = max((b for b in (first.lower, second.lower) if b is not None), default=None)
+    upper = min((b for b in (first.upper, second.upper) if b is not None), default=None)
     if lower is None or upper is None:
         return True
     return lower < upper
 
 
 class TestRelateBoundsDirectly:
-    """`relate_bounds` is reachable on its own so the both-open interval --
-    which no `TemporalExtent` can produce -- is still covered."""
+    """relate_bounds covers the both-open interval directly."""
 
     @pytest.mark.parametrize(
         ("first", "second", "expected"),

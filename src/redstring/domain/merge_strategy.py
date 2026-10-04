@@ -73,6 +73,16 @@ if TYPE_CHECKING:
 
     from redstring.domain.entity import Entity
 
+__all__ = [
+    "IMPLEMENTED",
+    "MERGEABLE_FIELDS",
+    "PropertyClaim",
+    "PropertyMergePolicy",
+    "PropertyMergeStrategy",
+    "claims_for",
+    "resolve",
+]
+
 _B28 = (
     "not implemented; see BACKLOG B28. Deliberately raising rather than "
     "falling back to PREFER_CANONICAL, which would write the canonical value "

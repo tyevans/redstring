@@ -36,6 +36,8 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
 
+__all__ = ["ChunkId", "StoredChunk", "chunk_id"]
+
 #: A chunk's identity: the hex digest produced by `chunk_id`.
 ChunkId = str
 

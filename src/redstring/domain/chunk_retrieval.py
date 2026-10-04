@@ -20,6 +20,8 @@ from pydantic import BaseModel, Field
 
 from redstring.domain.chunk import StoredChunk
 
+__all__ = ["ChunkRetrievalResult", "ScoredChunk", "SemanticCandidate"]
+
 
 class SemanticCandidate(BaseModel):
     """One chunk the semantic channel ranked, with its similarity score."""

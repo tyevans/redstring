@@ -22,6 +22,8 @@ from pydantic import BaseModel, model_validator
 from redstring.domain.ids import EntityId
 from redstring.domain.relationship import Relationship
 
+__all__ = ["MergeableFields", "PropertyResolution", "RelationshipRedirection"]
+
 
 class RelationshipRedirection(BaseModel):
     """One edge, before and after a merge moved or dropped it."""
