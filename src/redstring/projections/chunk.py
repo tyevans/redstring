@@ -32,6 +32,9 @@ if TYPE_CHECKING:
     from eventsource.ports import GlobalEventFeed
 
 
+__all__ = ["ChunkProjection"]
+
+
 class ChunkProjection(StoreProjection[ChunkWriter]):
     """Maintains a `ChunkStore` from the event log.
 

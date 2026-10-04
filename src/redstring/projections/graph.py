@@ -110,6 +110,9 @@ if TYPE_CHECKING:
     from redstring.domain.relationship import Relationship
 
 
+__all__ = ["GraphProjection"]
+
+
 def _alias_id(tenant_id: TenantId, alias_entity_id: EntityId) -> UUID:
     """A stable id for the alias row a merge writes. See the module docstring."""
     return uuid5(NAMESPACE_OID, f"redstring:alias:{tenant_id}:{alias_entity_id}")
