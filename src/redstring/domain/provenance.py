@@ -58,6 +58,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from redstring.domain.ids import SourceId
 from redstring.domain.json_safety import Passthrough, reject_unstorable_text
 
+__all__ = ["MODEL_BEARING_METHODS", "ExtractionMethod", "Provenance"]
+
 
 class ExtractionMethod(StrEnum):
     """How the entity was derived — not which vendor answered.

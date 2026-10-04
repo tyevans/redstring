@@ -41,6 +41,15 @@ if TYPE_CHECKING:
 from redstring.domain.ids import EntityId, TenantId
 from redstring.domain.json_safety import reject_unstorable_text
 
+__all__ = [
+    "VectorMatch",
+    "VectorProvenance",
+    "VectorRecord",
+    "clamp_score",
+    "cosine_score",
+    "has_zero_norm",
+]
+
 
 class _HasPortableMetadata(BaseModel):
     """Shared metadata validation; see `domain/json_safety.py`.

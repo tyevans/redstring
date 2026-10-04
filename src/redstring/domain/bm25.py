@@ -34,6 +34,14 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+__all__ = [
+    "BM25_B",
+    "BM25_K1",
+    "CorpusStats",
+    "bm25_score",
+    "inverse_document_frequency",
+]
+
 #: Term-frequency saturation. Standard, and a module constant rather than a
 #: parameter for the reason `RRF_K` is one: exposing it invites tuning against
 #: a benchmark this repository does not have, and a value tuned on one

@@ -24,6 +24,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+__all__ = ["STOPWORDS", "tokenize"]
+
 #: Words dropped before they reach the index. They appear in nearly every
 #: passage, so their inverse document frequency is near zero and they cost a
 #: candidate scan for no ranking signal.

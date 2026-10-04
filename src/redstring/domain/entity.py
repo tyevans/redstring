@@ -11,6 +11,8 @@ from redstring.domain.json_safety import Passthrough, reject_unstorable_text
 from redstring.domain.provenance import Provenance
 from redstring.domain.temporal import TemporalExtent
 
+__all__ = ["Entity"]
+
 
 class Entity(BaseModel):
     """A thing extracted from a source: a person, place, concept, etc.

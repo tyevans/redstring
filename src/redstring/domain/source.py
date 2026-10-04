@@ -13,6 +13,8 @@ from pydantic import BaseModel, field_validator
 
 from redstring.domain.ids import SourceId
 
+__all__ = ["SourceDocument"]
+
 
 class SourceDocument(BaseModel):
     """A piece of content, supplied by the caller, to build a graph from."""

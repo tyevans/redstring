@@ -89,6 +89,19 @@ if TYPE_CHECKING:
 
     from redstring.domain.entity import Entity
 
+__all__ = [
+    "DEFAULT_STRATEGIES",
+    "PREFIX_LENGTH",
+    "BlockingKeyStrategy",
+    "blocking_keys_for",
+    "entity_type_key",
+    "prefix_key",
+    "prefix_key_for_name",
+    "query_blocking_keys",
+    "soundex_key",
+    "soundex_key_for_name",
+]
+
 #: How many characters of the normalized name `prefix_key` keeps.
 #:
 #: Five is the inherited value, and it is a real trade rather than a default:

@@ -79,6 +79,8 @@ if TYPE_CHECKING:
 
     from redstring.domain.ids import EntityId
 
+__all__ = ["MAX_PASSES", "Community", "detect_communities"]
+
 #: How many full local-moving passes to attempt before returning what we have.
 #: Each accepted move strictly increases modularity, which bounds the loop in
 #: exact arithmetic -- but the gain is a float, and a bound that rests on an

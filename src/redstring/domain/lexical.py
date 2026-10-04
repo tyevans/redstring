@@ -25,6 +25,8 @@ from redstring.domain.similarity import string_similarity
 if TYPE_CHECKING:
     from redstring.domain.entity import Entity
 
+__all__ = ["PROPERTY_WEIGHT", "lexical_score"]
+
 #: What a match on a property value is worth relative to a match on the name.
 #:
 #: A name is what an entity *is*; a property is something recorded about it,

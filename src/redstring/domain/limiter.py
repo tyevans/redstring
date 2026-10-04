@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from types import TracebackType
 
+__all__ = ["CallLimiter"]
+
 
 class CallLimiter:
     """Admits at most `limit` callers at once."""

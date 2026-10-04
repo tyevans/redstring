@@ -14,6 +14,26 @@ if TYPE_CHECKING:
 
     from redstring.domain.ids import EntityId, TenantId
 
+__all__ = [
+    "AliasCycleError",
+    "ConsolidationInvariantError",
+    "DimensionMismatchError",
+    "DoubleMergeError",
+    "EmbeddingProviderError",
+    "EmptyCompletionError",
+    "LlmProviderError",
+    "MalformedCompletionError",
+    "MergeIntoAliasError",
+    "MissingEntityError",
+    "RedstringError",
+    "RefusedCompletionError",
+    "TaskPrefixMismatchError",
+    "UnknownDomainError",
+    "UnknownMergeError",
+    "UnstructuredCompletionError",
+    "VectorProvenanceMismatchError",
+]
+
 
 class RedstringError(Exception):
     """Base class for every error this library raises deliberately."""

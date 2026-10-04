@@ -27,6 +27,8 @@ from redstring.domain.chunk import StoredChunk
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+__all__ = ["LexicalCandidate", "LexicalCandidates", "RankedChunk", "rank_chunks"]
+
 
 class LexicalCandidate(BaseModel):
     """One chunk a store offers for ranking, with the numbers to rank it."""
