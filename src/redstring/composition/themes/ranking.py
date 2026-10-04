@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from redstring.ports.llm_provider import LlmProvider
 
 
+__all__ = ["describe_community", "extract_passages", "prompt_for"]
+
+
 async def prompt_for(
     members: tuple[EntityId, ...],
     entities: dict[EntityId, Entity],
