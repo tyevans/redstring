@@ -74,3 +74,5 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0037 (Proposed)**: [`0037-public-api-contracts-for-dual-channel-ch`](proposed/0037-public-api-contracts-for-dual-channel-ch.md)
 - **TASK-0038 (Proposed)**: [`0038-user-interface---component-stories-for-d`](proposed/0038-user-interface---component-stories-for-d.md)
 - **TASK-0039 (Proposed)**: [`0039-blackbox-frontdoor-test-suite-for-dual-c`](proposed/0039-blackbox-frontdoor-test-suite-for-dual-c.md)
+- **TASK-0040 (Proposed)**: [`0040-clean-up-spike-metadata-and-pre-commit-hooks-upon-`](proposed/0040-clean-up-spike-metadata-and-pre-commit-hooks-upon-.md)
+- **TASK-0041 (Proposed)**: [`0041-fix-worktree-finish-checkout-main-in-secondary-wor`](proposed/0041-fix-worktree-finish-checkout-main-in-secondary-wor.md)
