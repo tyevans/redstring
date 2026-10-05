@@ -13,17 +13,16 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from eventsource.adapters.memory import InMemorySnapshotStore
 from eventsource.application.projections import replay
 from eventsource.domain.tenant_context import tenant_scope
 
-from redstring.aggregates.repositories import consolidation_repository, document_repository
+from redstring.aggregates.repositories import document_repository
 from redstring.domain.alias import Alias
 from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
-from redstring.events.streams import consolidation_stream, document_stream
+from redstring.events.streams import document_stream
 
 from .conftest import fresh_rig
 

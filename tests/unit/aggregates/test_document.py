@@ -168,7 +168,6 @@ class TestExtraction:
         assert ev2.retracted_entity_ids == [e2.id]
 
 
-
 class TestEmbedding:
     def _embed(self, document, tenant_id, *, model="ollama/nomic-embed-text"):
         return document.record_embeddings(

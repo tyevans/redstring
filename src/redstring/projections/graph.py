@@ -148,9 +148,7 @@ class GraphProjection(StoreProjection[GraphStore]):
                 incident_edges = await self._store.get_relationships(retracted_id, tenant_id)
                 for edge in incident_edges:
                     await self._store.delete_relationship(edge.id, tenant_id)
-        await self._store.upsert_relationships(
-            await self._resolved(event.relationships, tenant_id)
-        )
+        await self._store.upsert_relationships(await self._resolved(event.relationships, tenant_id))
 
     async def _resolved(
         self, relationships: list[Relationship], tenant_id: TenantId

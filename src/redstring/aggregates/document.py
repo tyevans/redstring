@@ -121,7 +121,8 @@ class Document(AggregateRoot[DocumentState]):
             return None
         current_entity_ids = [e.id for e in entities]
         retracted_ids = [
-            eid for eid in self._current.last_extracted_entity_ids
+            eid
+            for eid in self._current.last_extracted_entity_ids
             if eid not in set(current_entity_ids)
         ]
         return self.create_event(

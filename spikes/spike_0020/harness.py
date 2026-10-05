@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from redstring.domain.alias import Alias
+if TYPE_CHECKING:
+    from pathlib import Path
+
 from redstring.domain.entity import Entity
-from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
+from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.extraction.mapping import _relationship_id_for, entity_id_for
@@ -60,7 +61,7 @@ async def project_extraction_with_retractions(
     store: InMemoryGraphStore,
     event: dict[str, Any],
 ) -> None:
-    """Projection handler that retracts dropped entities without violating GraphStore port invariants.
+    """Projection handler that retracts dropped entities preserving GraphStore invariants.
 
     Invariants preserved (ADR-0102):
     1. Zero calls to non-existent delete_entity.
@@ -101,7 +102,6 @@ async def project_extraction_with_retractions(
 def run_benchmark(iterations: int = 100) -> dict[str, Any]:
     """Executes empirical benchmark iterations and records latency metrics."""
     import asyncio
-
     from datetime import UTC, datetime
 
     async def _bench() -> float:
@@ -118,14 +118,36 @@ def run_benchmark(iterations: int = 100) -> dict[str, Any]:
             observed_at=datetime(2026, 2, 8, 11, 7, tzinfo=UTC),
         )
 
-        e1_id = entity_id_for(tenant_id=tenant_id, source_id=source_id, entity_type="person", name="Ada Lovelace")
-        e2_id = entity_id_for(tenant_id=tenant_id, source_id=source_id, entity_type="person", name="Charles Babbage")
+        e1_id = entity_id_for(
+            tenant_id=tenant_id, source_id=source_id, entity_type="person", name="Ada Lovelace"
+        )
+        e2_id = entity_id_for(
+            tenant_id=tenant_id, source_id=source_id, entity_type="person", name="Charles Babbage"
+        )
 
-        e1 = Entity(id=e1_id, tenant_id=tenant_id, name="Ada Lovelace", normalized_name="ada lovelace", entity_type="person", provenance=prov)
-        e2 = Entity(id=e2_id, tenant_id=tenant_id, name="Charles Babbage", normalized_name="charles babbage", entity_type="person", provenance=prov)
+        e1 = Entity(
+            id=e1_id,
+            tenant_id=tenant_id,
+            name="Ada Lovelace",
+            normalized_name="ada lovelace",
+            entity_type="person",
+            provenance=prov,
+        )
+        e2 = Entity(
+            id=e2_id,
+            tenant_id=tenant_id,
+            name="Charles Babbage",
+            normalized_name="charles babbage",
+            entity_type="person",
+            provenance=prov,
+        )
 
         rel = Relationship(
-            id=_relationship_id_for(source_entity_id=e1_id, target_entity_id=e2_id, relationship_type="collaborates_with"),
+            id=_relationship_id_for(
+                source_entity_id=e1_id,
+                target_entity_id=e2_id,
+                relationship_type="collaborates_with",
+            ),
             tenant_id=tenant_id,
             source_entity_id=e1_id,
             target_entity_id=e2_id,
@@ -139,7 +161,9 @@ def run_benchmark(iterations: int = 100) -> dict[str, Any]:
         start = time.perf_counter()
         for i in range(iterations):
             # Run 1: 2 entities + 1 relationship
-            ev1 = agg.record_extraction(model_version=f"m1-{i}", entities=[e1, e2], relationships=[rel])
+            ev1 = agg.record_extraction(
+                model_version=f"m1-{i}", entities=[e1, e2], relationships=[rel]
+            )
             if ev1:
                 await project_extraction_with_retractions(store, ev1)
 
@@ -148,8 +172,7 @@ def run_benchmark(iterations: int = 100) -> dict[str, Any]:
             if ev2:
                 await project_extraction_with_retractions(store, ev2)
 
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        return elapsed_ms
+        return (time.perf_counter() - start) * 1000
 
     elapsed_ms = asyncio.run(_bench())
     avg_latency = elapsed_ms / max(1, iterations)

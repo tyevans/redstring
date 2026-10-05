@@ -25,9 +25,11 @@ from .harness import (
     run_benchmark,
 )
 
+SampleData = tuple[TenantId, SourceId, list[Entity], list[Relationship]]
+
 
 @pytest.fixture
-def sample_data():
+def sample_data() -> SampleData:
     tenant_id = TenantId(uuid4())
     source_id = SourceId("doc-spike-0020")
     prov = Provenance(
@@ -38,16 +40,48 @@ def sample_data():
         confidence=0.9,
         observed_at=datetime(2026, 2, 8, 11, 7, tzinfo=UTC),
     )
-    e1_id = entity_id_for(tenant_id=tenant_id, source_id=source_id, entity_type="person", name="Ada Lovelace")
-    e2_id = entity_id_for(tenant_id=tenant_id, source_id=source_id, entity_type="person", name="Charles Babbage")
-    e3_id = entity_id_for(tenant_id=tenant_id, source_id=source_id, entity_type="organization", name="Analytical Engine")
+    e1_id = entity_id_for(
+        tenant_id=tenant_id, source_id=source_id, entity_type="person", name="Ada Lovelace"
+    )
+    e2_id = entity_id_for(
+        tenant_id=tenant_id, source_id=source_id, entity_type="person", name="Charles Babbage"
+    )
+    e3_id = entity_id_for(
+        tenant_id=tenant_id,
+        source_id=source_id,
+        entity_type="organization",
+        name="Analytical Engine",
+    )
 
-    e1 = Entity(id=e1_id, tenant_id=tenant_id, name="Ada Lovelace", normalized_name="ada lovelace", entity_type="person", provenance=prov)
-    e2 = Entity(id=e2_id, tenant_id=tenant_id, name="Charles Babbage", normalized_name="charles babbage", entity_type="person", provenance=prov)
-    e3 = Entity(id=e3_id, tenant_id=tenant_id, name="Analytical Engine", normalized_name="analytical engine", entity_type="organization", provenance=prov)
+    e1 = Entity(
+        id=e1_id,
+        tenant_id=tenant_id,
+        name="Ada Lovelace",
+        normalized_name="ada lovelace",
+        entity_type="person",
+        provenance=prov,
+    )
+    e2 = Entity(
+        id=e2_id,
+        tenant_id=tenant_id,
+        name="Charles Babbage",
+        normalized_name="charles babbage",
+        entity_type="person",
+        provenance=prov,
+    )
+    e3 = Entity(
+        id=e3_id,
+        tenant_id=tenant_id,
+        name="Analytical Engine",
+        normalized_name="analytical engine",
+        entity_type="organization",
+        provenance=prov,
+    )
 
     edge_1_2 = Relationship(
-        id=_relationship_id_for(source_entity_id=e1_id, target_entity_id=e2_id, relationship_type="collaborates_with"),
+        id=_relationship_id_for(
+            source_entity_id=e1_id, target_entity_id=e2_id, relationship_type="collaborates_with"
+        ),
         tenant_id=tenant_id,
         source_entity_id=e1_id,
         target_entity_id=e2_id,
@@ -56,7 +90,9 @@ def sample_data():
         provenance=prov,
     )
     edge_2_3 = Relationship(
-        id=_relationship_id_for(source_entity_id=e2_id, target_entity_id=e3_id, relationship_type="designed"),
+        id=_relationship_id_for(
+            source_entity_id=e2_id, target_entity_id=e3_id, relationship_type="designed"
+        ),
         tenant_id=tenant_id,
         source_entity_id=e2_id,
         target_entity_id=e3_id,
@@ -69,8 +105,11 @@ def sample_data():
 
 
 @pytest.mark.asyncio
-async def test_entity_identity_stability(sample_data):
-    """Entity ID is deterministically reproducible across different extraction runs with the same name and doc."""
+async def test_entity_identity_stability(sample_data: SampleData) -> None:
+    """Entity ID is deterministically reproducible across different extraction runs.
+
+    Runs with the same name and doc produce identical entity IDs.
+    """
     tenant_id, source_id, entities, _ = sample_data
     e1 = entities[0]
 
@@ -84,7 +123,7 @@ async def test_entity_identity_stability(sample_data):
 
 
 @pytest.mark.asyncio
-async def test_aggregate_diff_computation(sample_data):
+async def test_aggregate_diff_computation(sample_data: SampleData) -> None:
     """Document aggregate computes retracted entities when fewer entities are found."""
     tenant_id, source_id, entities, edges = sample_data
     agg = DocumentAggregateSim(tenant_id=tenant_id, source_id=source_id)
@@ -101,8 +140,10 @@ async def test_aggregate_diff_computation(sample_data):
 
 
 @pytest.mark.asyncio
-async def test_projection_retraction_preserves_adr0102_invariants(sample_data):
-    """Projection retracts entities by tombstoning and deleting relationships without delete_entity."""
+async def test_projection_retraction_preserves_adr0102_invariants(
+    sample_data: SampleData,
+) -> None:
+    """Projection retracts entities by tombstoning and deleting relationships."""
     tenant_id, source_id, entities, edges = sample_data
     store = InMemoryGraphStore()
     agg = DocumentAggregateSim(tenant_id=tenant_id, source_id=source_id)
@@ -145,7 +186,7 @@ async def test_projection_retraction_preserves_adr0102_invariants(sample_data):
     assert resolved[entities[1].id] == canonical_id
 
 
-def test_hypothesis_benchmark():
+def test_hypothesis_benchmark() -> None:
     """Empirical benchmark execution."""
     results = run_benchmark(iterations=50)
     assert results["status"] == "completed"
