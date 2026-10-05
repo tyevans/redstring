@@ -1,6 +1,6 @@
 ---
 id: '0132'
-title: "The id names are NewTypes"
+title: The id names are NewTypes
 status: Accepted
 target_bc: domain
 governing_prds:
@@ -8,6 +8,9 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0032'
+amends:
+- ADR-0102
+- ADR-0106
 ---
 
 # ADR-0132: The id names are `NewType`s

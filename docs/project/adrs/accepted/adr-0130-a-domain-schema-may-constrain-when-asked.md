@@ -1,6 +1,6 @@
 ---
 id: '0130'
-title: "A domain schema may constrain, when asked"
+title: A domain schema may constrain, when asked
 status: Accepted
 target_bc: extraction
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0030'
+amends:
+- ADR-0111
 ---
 
 # ADR-0130: A domain schema may constrain, when asked

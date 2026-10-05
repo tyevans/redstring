@@ -1,6 +1,6 @@
 ---
 id: '0126'
-title: "ChunkStore and Cache are composed from capabilities, like GraphStore"
+title: ChunkStore and Cache are composed from capabilities, like GraphStore
 status: Accepted
 target_bc: ports
 governing_prds:
@@ -8,6 +8,12 @@ governing_prds:
 governing_stories:
 - US-0003
 legacy_id: '0026'
+amends:
+- ADR-0108
+- ADR-0123
+amended_by:
+- ADR-0127
+- ADR-0138
 ---
 
 # ADR-0126: `ChunkStore` and `Cache` are composed from capabilities, like `GraphStore`

@@ -1,6 +1,7 @@
 ---
 id: '0135'
-title: "Provenance is a value object, and a strategy is named for the question it can answer"
+title: Provenance is a value object, and a strategy is named for the question it can
+  answer
 status: Accepted
 target_bc: domain
 governing_prds:
@@ -8,6 +9,8 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0035'
+amends:
+- ADR-0101
 ---
 
 # ADR-0135: Provenance is a value object, and a strategy is named for the question it can answer

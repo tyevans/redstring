@@ -1,6 +1,6 @@
 ---
 id: '0111'
-title: "Domain schemas prompt the model, they do not constrain it"
+title: Domain schemas prompt the model, they do not constrain it
 status: Accepted
 target_bc: extraction
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0011'
+amended_by:
+- ADR-0130
 ---
 
 # ADR-0111: Domain schemas prompt the model, they do not constrain it

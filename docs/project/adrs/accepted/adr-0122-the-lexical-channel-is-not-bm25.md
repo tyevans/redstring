@@ -1,6 +1,6 @@
 ---
 id: '0122'
-title: "The lexical channel is not BM25, and its recall is bounded by blocking"
+title: The lexical channel is not BM25, and its recall is bounded by blocking
 status: Accepted
 target_bc: composition
 governing_prds:
@@ -8,6 +8,9 @@ governing_prds:
 governing_stories:
 - US-0004
 legacy_id: '0022'
+amended_by:
+- ADR-0123
+- ADR-0124
 ---
 
 # ADR-0122: The lexical channel is not BM25, and its recall is bounded by blocking

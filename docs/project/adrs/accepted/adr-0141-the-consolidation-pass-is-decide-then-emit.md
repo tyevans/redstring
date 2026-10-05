@@ -1,6 +1,6 @@
 ---
 id: '0141'
-title: "The consolidation pass is decide-then-emit"
+title: The consolidation pass is decide-then-emit
 status: Accepted
 target_bc: consolidation
 governing_prds:
@@ -8,6 +8,9 @@ governing_prds:
 governing_stories:
 - US-0002
 legacy_id: '0041'
+amends:
+- ADR-0115
+- ADR-0139
 ---
 
 # ADR-0141: The consolidation pass is decide-then-emit

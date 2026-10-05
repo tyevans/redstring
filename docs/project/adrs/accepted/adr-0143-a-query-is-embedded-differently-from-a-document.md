@@ -1,6 +1,6 @@
 ---
 id: '0143'
-title: "A query is embedded differently from a document"
+title: A query is embedded differently from a document
 status: Accepted
 target_bc: ports
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0004
 legacy_id: '0043'
+amends:
+- ADR-0117
 ---
 
 # ADR-0143: A query is embedded differently from a document

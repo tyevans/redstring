@@ -1,6 +1,7 @@
 ---
 id: '0115'
-title: "Consolidation gets a composed entry point, and an absent graph signal stops meaning zero"
+title: Consolidation gets a composed entry point, and an absent graph signal stops
+  meaning zero
 status: Accepted
 target_bc: consolidation
 governing_prds:
@@ -8,6 +9,10 @@ governing_prds:
 governing_stories:
 - US-0002
 legacy_id: '0015'
+amended_by:
+- ADR-0125
+- ADR-0134
+- ADR-0141
 ---
 
 # ADR-0115: Consolidation gets a composed entry point, and an absent graph signal stops meaning zero

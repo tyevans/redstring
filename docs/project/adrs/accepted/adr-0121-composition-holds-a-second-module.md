@@ -1,6 +1,6 @@
 ---
 id: '0121'
-title: "composition holds a second module, and retrieval is what it composes"
+title: composition holds a second module, and retrieval is what it composes
 status: Accepted
 target_bc: composition
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0004
 legacy_id: '0021'
+amends:
+- ADR-0107
 ---
 
 # ADR-0121: `composition` holds a second module, and retrieval is what it composes

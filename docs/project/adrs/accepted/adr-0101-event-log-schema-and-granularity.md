@@ -1,6 +1,6 @@
 ---
 id: '0101'
-title: "The event log's schema, granularity, and aggregates"
+title: The event log's schema, granularity, and aggregates
 status: Accepted
 target_bc: events
 governing_prds:
@@ -8,6 +8,9 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0001'
+amended_by:
+- ADR-0135
+- ADR-0136
 ---
 
 # ADR-0101: The event log's schema, granularity, and aggregates

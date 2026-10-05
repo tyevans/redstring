@@ -1,13 +1,15 @@
 ---
-id: '0109'
-title: "The extraction fold resolves endpoints through the alias table"
+id: 0109
+title: The extraction fold resolves endpoints through the alias table
 status: Accepted
 target_bc: extraction
 governing_prds:
 - PRD-0001
 governing_stories:
 - US-0001
-legacy_id: '0009'
+legacy_id: 0009
+amended_by:
+- ADR-0119
 ---
 
 # ADR-0109: The extraction fold resolves endpoints through the alias table

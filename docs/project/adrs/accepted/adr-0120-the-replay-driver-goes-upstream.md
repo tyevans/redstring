@@ -1,6 +1,6 @@
 ---
 id: '0120'
-title: "The replay driver goes upstream, and is not re-exported back"
+title: The replay driver goes upstream, and is not re-exported back
 status: Accepted
 target_bc: projections
 governing_prds:
@@ -8,6 +8,7 @@ governing_prds:
 governing_stories:
 - US-0003
 legacy_id: '0020'
+supersedes: ADR-0118
 ---
 
 # ADR-0120: The replay driver goes upstream, and is not re-exported back

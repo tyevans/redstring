@@ -1,6 +1,6 @@
 ---
 id: '0117'
-title: "The embedding provider is a port, and it declares its dimension"
+title: The embedding provider is a port, and it declares its dimension
 status: Accepted
 target_bc: ports
 governing_prds:
@@ -8,6 +8,10 @@ governing_prds:
 governing_stories:
 - US-0004
 legacy_id: '0017'
+amends:
+- ADR-0108
+amended_by:
+- ADR-0143
 ---
 
 # ADR-0117: The embedding provider is a port, and it declares its dimension
