@@ -69,3 +69,8 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0032 (Complete)**: [`0032-port-legacy-storage-and-event-log-adrs`](complete/0032-port-legacy-storage-and-event-log-adrs.md)
 - **TASK-0033 (Complete)**: [`0033-port-legacy-domain-schema-and-extraction-adrs`](complete/0033-port-legacy-domain-schema-and-extraction-adrs.md)
 - **TASK-0034 (Complete)**: [`0034-port-legacy-ports-and-adapter-capability-adrs`](complete/0034-port-legacy-ports-and-adapter-capability-adrs.md)
+- **TASK-0035 (Proposed)**: [`0035-spike--architectural-spike-for-dual-chan`](proposed/0035-spike--architectural-spike-for-dual-chan.md)
+- **TASK-0036 (Proposed)**: [`0036-domain-model---state-handlers-for-dual-c`](proposed/0036-domain-model---state-handlers-for-dual-c.md)
+- **TASK-0037 (Proposed)**: [`0037-public-api-contracts-for-dual-channel-ch`](proposed/0037-public-api-contracts-for-dual-channel-ch.md)
+- **TASK-0038 (Proposed)**: [`0038-user-interface---component-stories-for-d`](proposed/0038-user-interface---component-stories-for-d.md)
+- **TASK-0039 (Proposed)**: [`0039-blackbox-frontdoor-test-suite-for-dual-c`](proposed/0039-blackbox-frontdoor-test-suite-for-dual-c.md)
