@@ -4,18 +4,14 @@ title: Retract stale entities on document re-extraction
 status: Refined
 governing_adrs:
 - ADR-0001
+- ADR-0102
+- ADR-0148
 governing_prds:
 - PRD-0001
 governing_stories:
 - US-0001
 target_bc: extraction
-mutation_scope: '[''src/redstring/aggregates/document.py'']'
-blocker:
-  type: spike_needed
-  question: How to define entity identity across extraction runs and retract stale
-    entities without violating GraphStore port invariants?
-  raised_at: '2026-10-02T13:45:02.874371-07:00'
-  spike_id: SPIKE-0020
+mutation_scope: ['src/redstring/aggregates/document.py']
 ---
 
 # TASK-0003: Retract stale entities on document re-extraction
