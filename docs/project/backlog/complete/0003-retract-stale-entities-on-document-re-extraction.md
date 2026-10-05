@@ -1,7 +1,7 @@
 ---
 id: '0003'
 title: Retract stale entities on document re-extraction
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0102
@@ -11,7 +11,8 @@ governing_prds:
 governing_stories:
 - US-0001
 target_bc: extraction
-mutation_scope: ['src/redstring/aggregates/document.py']
+mutation_scope:
+- src/redstring/aggregates/document.py
 ---
 
 # TASK-0003: Retract stale entities on document re-extraction

@@ -122,6 +122,52 @@ class TestExtraction:
         assert document.version == 0
         assert _extract(document, tenant_id) is not None
 
+    def test_first_extraction_has_no_retracted_entities(self, document, tenant_id):
+        e1 = _entity(tenant_id, "Ada")
+        e2 = _entity(tenant_id, "Charles")
+        event = _extract(document, tenant_id, entities=[e1, e2])
+        assert event is not None
+        assert event.retracted_entity_ids == []
+
+    def test_re_extraction_with_fewer_entities_retracts_dropped_ones(self, document, tenant_id):
+        e1 = _entity(tenant_id, "Ada")
+        e2 = _entity(tenant_id, "Charles")
+        e3 = _entity(tenant_id, "Analytical Engine")
+
+        ev1 = _extract(document, tenant_id, model_version="m1", entities=[e1, e2, e3])
+        assert ev1 is not None
+        assert ev1.retracted_entity_ids == []
+
+        # m2 finds only e1; e2 and e3 are dropped
+        ev2 = _extract(document, tenant_id, model_version="m2", entities=[e1])
+        assert ev2 is not None
+        assert set(ev2.retracted_entity_ids) == {e2.id, e3.id}
+
+    def test_re_extraction_retaining_all_entities_retracts_nothing(self, document, tenant_id):
+        e1 = _entity(tenant_id, "Ada")
+        e2 = _entity(tenant_id, "Charles")
+
+        _extract(document, tenant_id, model_version="m1", entities=[e1, e2])
+        ev2 = _extract(document, tenant_id, model_version="m2", entities=[e1, e2])
+        assert ev2 is not None
+        assert ev2.retracted_entity_ids == []
+
+    def test_retraction_state_survives_rehydration(self, tenant_id):
+        aggregate_id = document_stream(tenant_id=tenant_id, source_id=SOURCE_ID).aggregate_id
+        emitter = Document(aggregate_id)
+
+        e1 = _entity(tenant_id, "Ada")
+        e2 = _entity(tenant_id, "Charles")
+        _extract(emitter, tenant_id, model_version="m1", entities=[e1, e2])
+
+        rehydrated = Document(aggregate_id)
+        rehydrated.load_from_history(emitter.uncommitted_events)
+
+        ev2 = _extract(rehydrated, tenant_id, model_version="m2", entities=[e1])
+        assert ev2 is not None
+        assert ev2.retracted_entity_ids == [e2.id]
+
+
 
 class TestEmbedding:
     def _embed(self, document, tenant_id, *, model="ollama/nomic-embed-text"):

@@ -52,7 +52,7 @@ from pydantic import Field, model_validator
 
 from redstring.domain.chunk import StoredChunk
 from redstring.domain.entity import Entity
-from redstring.domain.ids import SourceId, TenantId
+from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.relationship import Relationship
 from redstring.domain.vector import VectorRecord
 from redstring.events.streams import DOCUMENT_CATEGORY
@@ -118,6 +118,7 @@ class DocumentExtracted(TenantDomainEvent):
     model_version: str
     entities: list[Entity] = Field(default_factory=list)
     relationships: list[Relationship] = Field(default_factory=list)
+    retracted_entity_ids: list[EntityId] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _payloads_belong_to_this_document_and_tenant(self) -> DocumentExtracted:
