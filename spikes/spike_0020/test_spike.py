@@ -1,9 +1,19 @@
-"""Empirical test harness for SPIKE-0020."""
+"""Executable benchmark skeleton for SPIKE-0020.
+
+Hypothesis: How to define entity identity across extraction runs and retract stale entities without violating GraphStore port invariants?
+"""
+
+from __future__ import annotations
+
+import pytest
+from .harness import run_benchmark
 
 
-def test_investigate_retract_stale_entities_on_do_hypothesis() -> None:
-    """Validates the empirical hypothesis for SPIKE-0020."""
-    # Question: How to define entity identity across extraction runs
-    # and retract stale entities without violating GraphStore port invariants?
-    # TODO: Implement empirical prototype benchmark
-    assert True  # nosec B101
+def test_hypothesis_benchmark():
+    """Empirical benchmark assertion for SPIKE-0020.
+
+    Hypothesis: How to define entity identity across extraction runs and retract stale entities without violating GraphStore port invariants?
+    """
+    results = run_benchmark()
+    assert results["status"] == "completed"
+    assert results["p95_latency_ms"] >= 0
