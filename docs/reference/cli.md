@@ -101,7 +101,7 @@ SpecOps provides a unified command-line interface (`spec-ops`).
 | `spec-ops spike start` | `<SPIKE_ID> [--hypothesis HYPOTHESIS] [--timebox TIMEBOX]` | Instantiate disposable sandboxed spike worktree |
 | `spec-ops spike check` | `[SPIKE_ID] [--elapsed ELAPSED]` | Check spike timebox and write isolation |
 | `spec-ops spike preflight` | `[SPIKE_ID]` | Enforce in-worktree write isolation preflight hook |
-| `spec-ops spike graduate` | `<SPIKE_ID> --result {proven,disproven} [--title TITLE] [--notes NOTES] [--findings FINDINGS] [--status STATUS]` | Graduate empirical spike findings into an Architectural Decision Record |
+| `spec-ops spike graduate` | `<SPIKE_ID> --result {proven,disproven} [--title TITLE] [--notes NOTES] [--findings FINDINGS] [--status STATUS]` | Graduate empirical spike findings into an Architectural Decision Record, clean up spike metadata, and restore pre-commit hooks |
 | `spec-ops tui` | `[--once] [--view {overview,backlog,tree,health}]` | Launch interactive Terminal UI (TUI) dashboard |
 | `spec-ops monitor live` | `[--headless] [--interval INTERVAL] [--tab {workers,events,health}] [--json]` | Multi-tab interactive terminal dashboard streaming real-time events and worker status |
 | `spec-ops queue next` | `[--json]` | Inspect next ready, unblocked backlog task |
