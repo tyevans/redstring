@@ -1,9 +1,7 @@
 ---
 id: '0003'
 title: Retract stale entities on document re-extraction
-status: Blocked
-dependencies:
-- SPIKE-0020
+status: Refined
 governing_adrs:
 - ADR-0001
 governing_prds:

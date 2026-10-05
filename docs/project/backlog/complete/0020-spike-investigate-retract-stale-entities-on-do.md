@@ -1,16 +1,16 @@
 ---
 id: SPIKE-0020
 title: 'Architectural Spike: Investigate Retract stale entities on document re-extraction'
-status: Proposed
+status: Graduated
+governing_prds:
+- PRD-0001
+governing_stories:
+- US-0001
+target_bc: extraction
 hypothesis: How to define entity identity across extraction runs and retract stale
   entities without violating GraphStore port invariants?
 timebox: 2h
 allows_dependencies: true
-governing_stories:
-- US-0001
-governing_prds:
-- PRD-0001
-target_bc: extraction
 ---
 
 # SPIKE-0020: Architectural Spike: Investigate Retract stale entities on document re-extraction
