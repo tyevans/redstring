@@ -97,3 +97,8 @@ enforce_lockfile = true
 sandbox_enabled = true
 allowed_commands = ["pytest", "git", "uv"]
 reporting_contact = "security@example.com"
+
+[security.licenses]
+profile = "permissive"
+allowed = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "UNKNOWN"]
+

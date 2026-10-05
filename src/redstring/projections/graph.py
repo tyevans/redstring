@@ -93,6 +93,7 @@ from uuid import NAMESPACE_OID, uuid5
 from eventsource.application.projections import StoreProjection, handles, replay
 
 from redstring.domain.alias import Alias
+from redstring.domain.entity import Entity
 from redstring.domain.exceptions import MissingEntityError
 from redstring.domain.ids import TenantId
 from redstring.events.document import DocumentExtracted
@@ -123,10 +124,31 @@ class GraphProjection(StoreProjection[GraphStore]):
 
     @handles(DocumentExtracted)
     async def _apply_extraction(self, _context: object, event: DocumentExtracted) -> None:
+        tenant_id = TenantId(event.tenant_id)
         await self._store.upsert_entities(event.entities)
-        await self._store.upsert_relationships(
-            await self._resolved(event.relationships, TenantId(event.tenant_id))
-        )
+        if event.retracted_entity_ids:
+            for retracted_id in event.retracted_entity_ids:
+                existing = await self._store.get_entity(retracted_id, tenant_id)
+                if existing is not None:
+                    tombstoned = Entity(
+                        id=existing.id,
+                        tenant_id=existing.tenant_id,
+                        name=existing.name,
+                        normalized_name=existing.normalized_name,
+                        entity_type=existing.entity_type,
+                        original_entity_type=existing.original_entity_type,
+                        description=existing.description,
+                        external_ids=existing.external_ids,
+                        properties={**existing.properties, "_retracted": True},
+                        provenance=existing.provenance,
+                        temporal=existing.temporal,
+                        blocking_keys=existing.blocking_keys,
+                    )
+                    await self._store.upsert_entity(tombstoned)
+                incident_edges = await self._store.get_relationships(retracted_id, tenant_id)
+                for edge in incident_edges:
+                    await self._store.delete_relationship(edge.id, tenant_id)
+        await self._store.upsert_relationships(await self._resolved(event.relationships, tenant_id))
 
     async def _resolved(
         self, relationships: list[Relationship], tenant_id: TenantId

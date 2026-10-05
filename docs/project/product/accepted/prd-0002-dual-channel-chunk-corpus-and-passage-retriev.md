@@ -50,5 +50,13 @@ component: chunks
 
 ## Linked User Stories
 
-- [`US-0008`](../../user_stories/accepted/us-0008-store-content-addressed-document-chunks.md): Store Content-Addressed Document Chunks
-- [`US-0009`](../../user_stories/accepted/us-0009-retrieve-scored-passages-via-dual-channel-fusion.md): Retrieve Scored Passages via Dual-Channel Fusion
+- `US-0010`
+
+
+## Implementing Backlog Tasks
+
+- `TASK-0035`
+- `TASK-0036`
+- `TASK-0037`
+- `TASK-0038`
+- `TASK-0039`

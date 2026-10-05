@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING
 from eventsource.domain.aggregate import AggregateRoot
 from pydantic import BaseModel, Field
 
+from redstring.domain.ids import EntityId
 from redstring.events.document import DocumentChunked, DocumentExtracted, EntitiesEmbedded
 from redstring.events.streams import DOCUMENT_CATEGORY
 
@@ -83,6 +84,7 @@ class DocumentState(BaseModel):
     extraction_model_versions: list[str] = Field(default_factory=list)
     embedding_models: list[str] = Field(default_factory=list)
     chunking_signatures: list[str] = Field(default_factory=list)
+    last_extracted_entity_ids: list[EntityId] = Field(default_factory=list)
 
 
 class Document(AggregateRoot[DocumentState]):
@@ -117,6 +119,12 @@ class Document(AggregateRoot[DocumentState]):
         """
         if model_version in self._current.extraction_model_versions:
             return None
+        current_entity_ids = [e.id for e in entities]
+        retracted_ids = [
+            eid
+            for eid in self._current.last_extracted_entity_ids
+            if eid not in set(current_entity_ids)
+        ]
         return self.create_event(
             DocumentExtracted,
             tenant_id=tenant_id,
@@ -124,6 +132,7 @@ class Document(AggregateRoot[DocumentState]):
             model_version=model_version,
             entities=list(entities),
             relationships=list(relationships),
+            retracted_entity_ids=retracted_ids,
         )
 
     def record_embeddings(
@@ -171,6 +180,7 @@ class Document(AggregateRoot[DocumentState]):
     def _apply(self, event: DomainEvent) -> None:
         if isinstance(event, DocumentExtracted):
             self._current.extraction_model_versions.append(event.model_version)
+            self._current.last_extracted_entity_ids = [e.id for e in event.entities]
         elif isinstance(event, EntitiesEmbedded):
             self._current.embedding_models.append(event.embedding_model)
         elif isinstance(event, DocumentChunked):
