@@ -1,6 +1,6 @@
 ---
 id: '0134'
-title: "Neighbours are compared by name, because ids are namespaced by document"
+title: Neighbours are compared by name, because ids are namespaced by document
 status: Accepted
 target_bc: consolidation
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0002
 legacy_id: '0034'
+amends:
+- ADR-0115
 ---
 
 # ADR-0134: Neighbours are compared by name, because ids are namespaced by document

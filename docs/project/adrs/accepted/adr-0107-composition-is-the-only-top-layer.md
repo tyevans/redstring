@@ -1,6 +1,6 @@
 ---
 id: '0107'
-title: "composition is the only top layer, and build_graph writes without a log"
+title: composition is the only top layer, and build_graph writes without a log
 status: Accepted
 target_bc: composition
 governing_prds:
@@ -8,6 +8,9 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0007'
+amended_by:
+- ADR-0121
+- ADR-0133
 ---
 
 # ADR-0107: `composition` is the only top layer, and `build_graph` writes without a log

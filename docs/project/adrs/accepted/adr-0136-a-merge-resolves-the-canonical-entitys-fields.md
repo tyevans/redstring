@@ -1,6 +1,6 @@
 ---
 id: '0136'
-title: "A merge resolves the canonical entity's fields"
+title: A merge resolves the canonical entity's fields
 status: Accepted
 target_bc: consolidation
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0002
 legacy_id: '0036'
+amends:
+- ADR-0101
 ---
 
 # ADR-0136: A merge resolves the canonical entity's fields

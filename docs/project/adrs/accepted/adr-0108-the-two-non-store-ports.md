@@ -1,13 +1,17 @@
 ---
-id: '0108'
-title: "The two non-store ports, Cache and LlmProvider"
+id: 0108
+title: The two non-store ports, Cache and LlmProvider
 status: Accepted
 target_bc: ports
 governing_prds:
 - PRD-0001
 governing_stories:
 - US-0001
-legacy_id: '0008'
+legacy_id: 0008
+amended_by:
+- ADR-0117
+- ADR-0126
+- ADR-0131
 ---
 
 # ADR-0108: The two non-store ports, `Cache` and `LlmProvider`

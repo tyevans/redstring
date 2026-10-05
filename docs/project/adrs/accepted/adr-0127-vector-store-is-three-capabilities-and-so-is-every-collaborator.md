@@ -1,6 +1,6 @@
 ---
 id: '0127'
-title: "VectorStore is three capabilities, and the collaborators are narrowed to match"
+title: VectorStore is three capabilities, and the collaborators are narrowed to match
 status: Accepted
 target_bc: ports
 governing_prds:
@@ -8,6 +8,9 @@ governing_prds:
 governing_stories:
 - US-0003
 legacy_id: '0027'
+amends:
+- ADR-0102
+- ADR-0126
 ---
 
 # ADR-0127: `VectorStore` is three capabilities, and the collaborators are narrowed to match

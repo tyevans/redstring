@@ -1,13 +1,18 @@
 ---
-id: '0138'
-title: "The chunk's vector lives on the chunk"
+id: 0138
+title: The chunk's vector lives on the chunk
 status: Accepted
 target_bc: chunks
 governing_prds:
 - PRD-0001
 governing_stories:
 - US-0003
-legacy_id: '0038'
+legacy_id: 0038
+amends:
+- ADR-0123
+- ADR-0126
+amended_by:
+- ADR-0144
 ---
 
 # ADR-0138: The chunk's vector lives on the chunk

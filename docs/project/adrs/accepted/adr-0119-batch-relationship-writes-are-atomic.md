@@ -1,13 +1,15 @@
 ---
-id: '0119'
-title: "Batch relationship writes are atomic"
+id: 0119
+title: Batch relationship writes are atomic
 status: Accepted
 target_bc: graph
 governing_prds:
 - PRD-0001
 governing_stories:
 - US-0003
-legacy_id: '0019'
+legacy_id: 0019
+amends:
+- ADR-0109
 ---
 
 # ADR-0119: Batch relationship writes are atomic

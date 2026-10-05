@@ -1,6 +1,6 @@
 ---
 id: '0102'
-title: "Two store ports, and the absence of delete_entity"
+title: Two store ports, and the absence of delete_entity
 status: Accepted
 target_bc: ports
 governing_prds:
@@ -8,6 +8,11 @@ governing_prds:
 governing_stories:
 - US-0003
 legacy_id: '0002'
+amended_by:
+- ADR-0116
+- ADR-0127
+- ADR-0128
+- ADR-0132
 ---
 
 # ADR-0102: Two store ports, and the absence of `delete_entity`

@@ -1,6 +1,6 @@
 ---
 id: '0133'
-title: "The compliance suites ship"
+title: The compliance suites ship
 status: Accepted
 target_bc: testing
 governing_prds:
@@ -8,6 +8,9 @@ governing_prds:
 governing_stories:
 - US-0005
 legacy_id: '0033'
+amends:
+- ADR-0106
+- ADR-0107
 ---
 
 # ADR-0133: The compliance suites ship

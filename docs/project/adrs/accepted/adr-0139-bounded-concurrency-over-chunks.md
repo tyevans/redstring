@@ -1,13 +1,17 @@
 ---
-id: '0139'
-title: "Bounded concurrency over chunks"
+id: 0139
+title: Bounded concurrency over chunks
 status: Accepted
 target_bc: extraction
 governing_prds:
 - PRD-0001
 governing_stories:
 - US-0001
-legacy_id: '0039'
+legacy_id: 0039
+amends:
+- ADR-0110
+amended_by:
+- ADR-0141
 ---
 
 # ADR-0139: Bounded concurrency over chunks

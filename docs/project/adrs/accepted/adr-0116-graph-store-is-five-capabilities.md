@@ -1,6 +1,6 @@
 ---
 id: '0116'
-title: "GraphStore is five capability protocols, composed"
+title: GraphStore is five capability protocols, composed
 status: Accepted
 target_bc: ports
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0003
 legacy_id: '0016'
+amends:
+- ADR-0102
 ---
 
 # ADR-0116: `GraphStore` is five capability protocols, composed

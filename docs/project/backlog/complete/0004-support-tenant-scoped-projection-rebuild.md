@@ -4,6 +4,7 @@ title: Support tenant-scoped projection rebuild
 status: Complete
 governing_adrs:
 - ADR-0002
+- ADR-0102
 governing_prds:
 - PRD-0001
 governing_stories:

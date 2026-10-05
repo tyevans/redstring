@@ -1,6 +1,6 @@
 ---
 id: '0124'
-title: "BM25 over the chunk corpus, scored in the domain"
+title: BM25 over the chunk corpus, scored in the domain
 status: Accepted
 target_bc: domain
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0004
 legacy_id: '0024'
+amends:
+- ADR-0122
 ---
 
 # ADR-0124: BM25 over the chunk corpus, scored in the domain

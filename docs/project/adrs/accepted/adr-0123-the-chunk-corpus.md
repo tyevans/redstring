@@ -1,6 +1,6 @@
 ---
 id: '0123'
-title: "The chunk corpus, and what a stored passage knows about the graph"
+title: The chunk corpus, and what a stored passage knows about the graph
 status: Accepted
 target_bc: chunks
 governing_prds:
@@ -8,6 +8,11 @@ governing_prds:
 governing_stories:
 - US-0003
 legacy_id: '0023'
+amends:
+- ADR-0122
+amended_by:
+- ADR-0126
+- ADR-0138
 ---
 
 # ADR-0123: The chunk corpus, and what a stored passage knows about the graph

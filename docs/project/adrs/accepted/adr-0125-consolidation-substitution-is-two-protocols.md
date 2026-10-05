@@ -1,6 +1,6 @@
 ---
 id: '0125'
-title: "Consolidation's two substitution points are protocols, not classes"
+title: Consolidation's two substitution points are protocols, not classes
 status: Accepted
 target_bc: consolidation
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0002
 legacy_id: '0025'
+amends:
+- ADR-0115
 ---
 
 # ADR-0125: Consolidation's two substitution points are protocols, not classes

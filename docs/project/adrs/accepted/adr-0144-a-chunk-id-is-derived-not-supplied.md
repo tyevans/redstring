@@ -1,6 +1,6 @@
 ---
 id: '0144'
-title: "A chunk id is derived, not supplied"
+title: A chunk id is derived, not supplied
 status: Accepted
 target_bc: chunks
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0003
 legacy_id: '0044'
+amends:
+- ADR-0138
 ---
 
 # ADR-0144: A chunk id is derived, not supplied

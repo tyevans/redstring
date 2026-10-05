@@ -1,6 +1,6 @@
 ---
 id: '0147'
-title: "Four adapter import paths are stable, without being exported"
+title: Four adapter import paths are stable, without being exported
 status: Accepted
 target_bc: ports
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0005
 legacy_id: '0047'
+amends:
+- ADR-0106
 ---
 
 # ADR-0147: Four adapter import paths are stable, without being exported

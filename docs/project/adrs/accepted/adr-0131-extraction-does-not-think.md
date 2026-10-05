@@ -1,6 +1,6 @@
 ---
 id: '0131'
-title: "Extraction does not think"
+title: Extraction does not think
 status: Accepted
 target_bc: llm
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0031'
+amends:
+- ADR-0108
 ---
 
 # ADR-0131: Extraction does not think

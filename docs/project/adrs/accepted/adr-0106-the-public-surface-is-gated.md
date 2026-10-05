@@ -1,6 +1,6 @@
 ---
 id: '0106'
-title: "The public surface is gated by three tests, not curated"
+title: The public surface is gated by three tests, not curated
 status: Accepted
 target_bc: core
 governing_prds:
@@ -8,6 +8,11 @@ governing_prds:
 governing_stories:
 - US-0005
 legacy_id: '0006'
+amended_by:
+- ADR-0128
+- ADR-0132
+- ADR-0133
+- ADR-0147
 ---
 
 # ADR-0106: The public surface is gated by three tests, not curated

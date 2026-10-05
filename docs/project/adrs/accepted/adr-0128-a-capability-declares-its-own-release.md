@@ -1,13 +1,16 @@
 ---
-id: '0128'
-title: "A capability declares its own release"
+id: 0128
+title: A capability declares its own release
 status: Accepted
 target_bc: ports
 governing_prds:
 - PRD-0001
 governing_stories:
 - US-0003
-legacy_id: '0028'
+legacy_id: 0028
+amends:
+- ADR-0102
+- ADR-0106
 ---
 
 # ADR-0128: A capability declares its own release

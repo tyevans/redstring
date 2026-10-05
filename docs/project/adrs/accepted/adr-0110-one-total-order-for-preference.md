@@ -1,6 +1,6 @@
 ---
 id: '0110'
-title: "One total order decides which mapping of a thing survives"
+title: One total order decides which mapping of a thing survives
 status: Accepted
 target_bc: temporal
 governing_prds:
@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0010'
+amended_by:
+- ADR-0139
 ---
 
 # ADR-0110: One total order decides which mapping of a thing survives
