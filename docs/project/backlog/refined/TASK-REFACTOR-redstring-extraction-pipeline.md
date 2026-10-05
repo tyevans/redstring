@@ -1,14 +1,13 @@
 ---
 id: REFACTOR-redstring-extraction-pipeline
 title: Refactor and Decompose Legacy File pipeline.py
-status: Proposed
-created: 2026-09-29
+status: Refined
 governing_adrs:
-  - ADR-0002
+- ADR-0002
 governing_prds:
-  - PRD-0001
+- PRD-0001
 governing_stories:
-  - US-0001
+- US-0001
 target_bc: core
 ---
 

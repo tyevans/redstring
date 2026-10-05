@@ -1,14 +1,13 @@
 ---
 id: REFACTOR-redstring-__init__
 title: Refactor and Decompose Legacy File __init__.py
-status: Proposed
-created: 2026-09-29
+status: Refined
 governing_adrs:
-  - ADR-0002
+- ADR-0002
 governing_prds:
-  - PRD-0001
+- PRD-0001
 governing_stories:
-  - US-0004
+- US-0004
 target_bc: core
 ---
 
