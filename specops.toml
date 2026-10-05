@@ -52,7 +52,6 @@ version = "0.1.0"
 
 [invariants.file_limits]
 grandfathered = [
-  "src/redstring/chunks/adapters/postgres.py",
   "src/redstring/composition/build_graph.py",
   "src/redstring/composition/retrieval.py",
   "src/redstring/domain/temporal_parsing.py",
