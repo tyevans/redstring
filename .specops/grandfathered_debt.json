@@ -1,7 +1,6 @@
 {
   "version": 1,
   "files": {
-    "src/redstring/__init__.py": 509,
     "src/redstring/chunks/adapters/postgres.py": 1006,
     "src/redstring/composition/build_graph.py": 992,
     "src/redstring/composition/retrieval.py": 505,

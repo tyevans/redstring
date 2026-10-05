@@ -119,7 +119,7 @@ async def test_entity_identity_stability(sample_data: SampleData) -> None:
         entity_type=e1.entity_type,
         name=e1.name,
     )
-    assert rederived_id == e1.id
+    assert rederived_id == e1.id  # nosec B101
 
 
 @pytest.mark.asyncio
@@ -130,13 +130,13 @@ async def test_aggregate_diff_computation(sample_data: SampleData) -> None:
 
     # Run 1: e1, e2, e3
     ev1 = agg.record_extraction(model_version="v1", entities=entities, relationships=edges)
-    assert ev1 is not None
-    assert ev1["retracted_entity_ids"] == []
+    assert ev1 is not None  # nosec B101
+    assert ev1["retracted_entity_ids"] == []  # nosec B101
 
     # Run 2: Re-extraction only finds e1 (e2 and e3 are dropped)
     ev2 = agg.record_extraction(model_version="v2", entities=[entities[0]], relationships=[])
-    assert ev2 is not None
-    assert set(ev2["retracted_entity_ids"]) == {entities[1].id, entities[2].id}
+    assert ev2 is not None  # nosec B101
+    assert set(ev2["retracted_entity_ids"]) == {entities[1].id, entities[2].id}  # nosec B101
 
 
 @pytest.mark.asyncio
@@ -152,8 +152,8 @@ async def test_projection_retraction_preserves_adr0102_invariants(
     ev1 = agg.record_extraction(model_version="v1", entities=entities, relationships=edges)
     await project_extraction_with_retractions(store, ev1)
 
-    assert (await store.get_entity(entities[1].id, tenant_id)) is not None
-    assert len(await store.get_relationships(entities[1].id, tenant_id)) > 0
+    assert (await store.get_entity(entities[1].id, tenant_id)) is not None  # nosec B101
+    assert len(await store.get_relationships(entities[1].id, tenant_id)) > 0  # nosec B101
 
     # Merge entity 2 into an alias to verify alias chains survive retraction
     canonical_id = EntityId(uuid4())
@@ -175,19 +175,19 @@ async def test_projection_retraction_preserves_adr0102_invariants(
 
     # 1. Stale entity is tombstoned, NOT deleted from store (no delete_entity)
     stored_e2 = await store.get_entity(entities[1].id, tenant_id)
-    assert stored_e2 is not None
-    assert stored_e2.properties.get("_retracted") is True
+    assert stored_e2 is not None  # nosec B101
+    assert stored_e2.properties.get("_retracted") is True  # nosec B101
 
     # 2. Incident edges to retracted entity are deleted
-    assert await store.get_relationships(entities[1].id, tenant_id) == []
+    assert await store.get_relationships(entities[1].id, tenant_id) == []  # nosec B101
 
     # 3. Alias resolution is completely preserved
     resolved = await store.resolve_entity_ids([entities[1].id], tenant_id)
-    assert resolved[entities[1].id] == canonical_id
+    assert resolved[entities[1].id] == canonical_id  # nosec B101
 
 
 def test_hypothesis_benchmark() -> None:
     """Empirical benchmark execution."""
     results = run_benchmark(iterations=50)
-    assert results["status"] == "completed"
-    assert results["p95_latency_ms"] < 20.0  # Must be fast (< 20ms per cycle)
+    assert results["status"] == "completed"  # nosec B101
+    assert results["p95_latency_ms"] < 20.0  # nosec B101
