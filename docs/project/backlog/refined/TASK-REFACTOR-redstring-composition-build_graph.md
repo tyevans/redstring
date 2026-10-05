@@ -1,14 +1,13 @@
 ---
 id: REFACTOR-redstring-composition-build_graph
 title: Refactor and Decompose Legacy File build_graph.py
-status: Proposed
-created: 2026-09-29
+status: Refined
 governing_adrs:
-  - ADR-0002
+- ADR-0002
 governing_prds:
-  - PRD-0001
+- PRD-0001
 governing_stories:
-  - US-0003
+- US-0003
 target_bc: core
 ---
 

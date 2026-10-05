@@ -1,13 +1,12 @@
 ---
 id: '0035'
-title: "SPIKE: Architectural Spike for Dual-Channel Chunk Corpus and Passage Retrieval Engine"
-status: Proposed
-created: 2026-10-04
-dependencies: []
+title: 'SPIKE: Architectural Spike for Dual-Channel Chunk Corpus and Passage Retrieval
+  Engine'
+status: Refined
 governing_prds:
-  - PRD-0002
+- PRD-0002
 governing_stories:
-  - US-0010
+- US-0010
 target_bc: chunks
 ---
 

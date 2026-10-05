@@ -1,14 +1,13 @@
 ---
 id: REFACTOR-redstring-chunks-adapters-postgres
 title: Refactor and Decompose Legacy File postgres.py
-status: Proposed
-created: 2026-09-29
+status: Refined
 governing_adrs:
-  - ADR-0002
+- ADR-0002
 governing_prds:
-  - PRD-0001
+- PRD-0001
 governing_stories:
-  - US-0003
+- US-0003
 target_bc: core
 ---
 

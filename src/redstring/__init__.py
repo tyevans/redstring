@@ -13,183 +13,38 @@ report = await build_graph(
 entities = await store.find_entities(tenant_id, entity_type="Person")
 ```
 
-`docs/examples/build_a_graph.py` is that, complete and runnable, and
-`tests/unit/test_end_to_end_example.py` runs it on every commit -- including
-an assertion that it imports nothing but this module, so the surface below
-cannot quietly stop being sufficient.
+`docs/examples/build_a_graph.py` is runnable and verified by
+`tests/unit/test_end_to_end_example.py`.
 
 ## What is supported
 
-**Everything named in `__all__` here, and nothing else.** Anything reached
-through a dotted path (`redstring.extraction.mapping`, say) is internal and
-may change without notice, including in a patch release.
-
-**Four dotted paths are excepted, and they are the adapters you deploy.**
+Everything named in `__all__` below is the supported public surface. Dotted paths
+are internal and may change without notice, with four exceptions for deployed adapters:
 
     redstring.graph.adapters.neo4j.Neo4jGraphStore
     redstring.vector.adapters.pgvector.PgVectorStore
     redstring.llm.adapters.langchain.LangChainLlmProvider
     redstring.llm.adapters.langchain_embedding.LangChainEmbeddingProvider
 
-Those four import paths are stable: they will not move or be renamed without
-a major version and a note in the changelog. Everything else about the
-modules holding them stays internal -- a private helper beside them may
-change in a patch release, and nothing here promises anything about the rest
-of `graph.adapters` or `llm.adapters`.
+These four import paths are stable (ADR 0147) and tested by
+`tests/unit/test_deployed_adapter_paths_are_stable.py`. They are not exported here
+to avoid mandatory runtime dependencies on optional adapter packages (`neo4j`, `pgvector`, `llm`).
 
-They are not exported, and that is not an oversight. `import redstring` would
-then import LangChain, neo4j and asyncpg, and the extras exist precisely so a
-caller pays only for the backends they use. But leaving them merely internal
-made the promise above false in the one place a reader would test it: the
-only `LlmProvider` and `EmbeddingProvider` in `__all__` are `FakeLlmProvider`
-and `FakeEmbeddingProvider`, so the *supported* surface was the one nobody
-ships and the README's own quickstart imported from a path this module called
-liable to change without notice.
+The public surface is closed and self-contained (ADR 0106):
+- **Composition & Retrieval:** `build_graph`, `index_documents`, `summarize_themes`,
+  `Retriever`, `ChunkRetriever`, and report types.
+- **Ports & Protocols:** `GraphStore`, `VectorStore`, `ChunkStore`, `Cache`,
+  `LlmProvider`, `EmbeddingProvider`, `Chunker`, and capability protocols (`AsyncClosable`).
+- **Domain & Events:** `SourceDocument`, `Entity`, `Relationship`, `StoredChunk`,
+  `DocumentExtracted`, `EntitiesEmbedded`, `DocumentChunked`, `EntitiesMerged`.
+- **Adapters & Providers:** In-memory stores (`InMemoryGraphStore`, `InMemoryVectorStore`,
+  `InMemoryChunkStore`) and test doubles (`FakeLlmProvider`, `FakeEmbeddingProvider`).
+- **Domain Schemas & Extraction:** `DomainSchema`, `load_schema_from_file`,
+  `load_schema_from_string`, `domain_system_prompt`, `ExtractionPipeline`.
+- **Exceptions:** `RedstringError` and all public domain and provider error subtypes.
 
-`tests/unit/test_deployed_adapter_paths_are_stable.py` is what makes this a
-promise rather than a paragraph. It imports each path and fails when one stops
-resolving, so a rename becomes a visible decision in review instead of a
-silent break in every consumer.
-
-The surface is **closed**, which is a stronger claim than "documented" and is
-the one that took a review to get right. Every type named in an exported
-signature is either exported too, or belongs to another package and is
-recorded with its import path; every `RedstringError` is either exported or
-recorded as belonging to a capability that is not.
-`tests/unit/test_public_surface_is_self_contained.py` is what enforces both,
-and the reason it exists is that four names failed the first test of it --
-`RefusedCompletionError`, whose own docstring argues a caller *must*
-distinguish it from `EmptyCompletionError`, was raised by exported code and
-could not be caught without a dotted import.
-
-- **Composition.** `build_graph`, `GraphBuildReport`, `AUTO`, `AutoDomain`.
-  `index_documents` and `IndexReport` are the other write path: it splits
-  documents into a `ChunkStore` and asks no model anything, so a corpus is
-  affordable for every document a caller holds and extraction can be paid for
-  over whichever subset is worth it.
-- **Ranking passages.** `tokenize` decides what counts as a term.
-  `rank_chunks` scores a store's `LexicalCandidates` with BM25 and returns
-  `RankedChunk`s, best first -- the scorer is pure so two `ChunkStore`
-  adapters, asked for the same candidates and statistics, rank identically.
-  `LexicalCandidate` and `CorpusStats` are what an adapter hands back;
-  `ChunkStore.lexical_candidates` is where a caller asks for them.
-- **Retrieval.** `Retriever` turns a query string into ranked entities,
-  fusing a semantic channel over `VectorStore` with a lexical one over
-  `GraphStore`'s blocking keys. `RetrievalMode` picks the channels,
-  `RetrievalResult` and `ScoredEntity` are what comes back. Note the
-  scale: `ScoredEntity.score` is a fused *rank* score, ordinal and
-  unbounded, and is not on `VectorMatch`'s 0..1.
-  `ChunkRetriever` is the same shape over the chunk corpus instead of the
-  entity graph: it fuses `ChunkStore`'s semantic and lexical channels behind
-  one `retrieve_chunks`, sharing `RetrievalMode` with `Retriever` and
-  returning `ChunkRetrievalResult`/`ScoredChunk` rather than
-  `RetrievalResult`/`ScoredEntity`. `SemanticCandidate` is what
-  `ChunkStore.semantic_candidates` hands back before fusion.
-- **Themes.** `summarize_themes` reads a whole tenant's graph, clusters it,
-  and asks the model for one report per cluster -- returning a `ThemeReport`
-  of `Theme`s and writing nothing anywhere. The cost scales with the corpus's
-  structure rather than its length, and ADR 0042 argues why a community is
-  recomputed on every call instead of stored.
-- **What you put in.** `SourceDocument`.
-- **What comes out.** `Entity` (whose `provenance` is a `Provenance`:
-  where the claim came from, when, how and how sure),
-  `Relationship`, `Alias`, `ExtractionMethod`,
-  `TemporalExtent` (with `DatePrecision` and `UncertaintyMarker`),
-  `VectorRecord`, `VectorMatch`, `StoredChunk`, and the `DocumentExtracted`,
-  `EntitiesEmbedded` and `DocumentChunked` events carrying them. `EntityId`, `RelationshipId`,
-  `TenantId` and `SourceId` are the id vocabulary -- the first three are
-  `UUID`, the last is `str`. `ChunkId` joins them for a stored passage, and
-  is a `str`: a chunk is identified by the digest of its source and its text.
-- **Ports.** `GraphStore`, `VectorStore`, `ChunkStore`, `Cache`,
-  `LlmProvider`, `EmbeddingProvider`, `Chunker`. Implement one to plug in a
-  backend of your own; the compliance suite in `redstring.testing` is what
-  says whether you got it right.
-
-  Four of them are **composed from capability protocols, and those are
-  exported too**: `GraphStore` from `EntityReader`, `EntityWriter`,
-  `AliasStore`, `RelationshipStore` and `TenantPurge`; `VectorStore` from
-  `VectorWriter`, `VectorReader` and `VectorPurge`; `ChunkStore` from
-  `ChunkWriter`, `ChunkReader`, `LexicalCandidateSource`,
-  `SemanticCandidateSource` and `ChunkPurge`; `Cache` from `KeyValueCache`
-  and `HitWindow`. Implement the composed port; *depend* on the narrowest
-  capability you actually call. The split is what lets `ChunkProjection`
-  need one method rather than ten, and what lets a caller supply BM25 recall
-  from an index that is not a chunk store at all, or a semantic recall
-  channel from one holding no lexical index. `SemanticCandidateSource`
-  declares its own `dimension`, the same shape `VectorStore` uses, so a
-  mismatched embedding provider is refused at construction rather than on
-  the first query.
-
-  Every capability protocol also inherits `AsyncClosable` (ADR 0028), which
-  is exported for the same reason the capabilities are: `async with store`
-  and `await store.close()` are supported against a port rather than only
-  against the adapter class behind it, so a caller writing
-  `async def shutdown(s: AsyncClosable)` needs the name.
-
-  `ConsolidationGraph` is the one name here that is not a store capability:
-  it composes three of `GraphStore`'s five so `CandidateFinder` can say what
-  it reads without also claiming the right to write or to wipe a tenant.
-- **Adapters.** `InMemoryGraphStore`, `InMemoryVectorStore` and
-  `InMemoryChunkStore` are complete
-  implementations, not test doubles -- suitable for a single-process job.
-  `Neo4jGraphStore` and `PgVectorStore` need their extras
-  (`redstring[neo4j]` and `redstring[pgvector]`).
-- **Providers.** `FakeLlmProvider` answers from a script or by substring
-  (`Response`, `EMPTY`) and validates like the real thing;
-  `LangChainLlmProvider` (`redstring[llm]`) speaks to any OpenAI-compatible
-  server. `FakeEmbeddingProvider` does the same job for `EmbeddingProvider`,
-  hashing text into deterministic unit vectors so the vector half of the
-  library is exercisable with no model;
-  `redstring.llm.adapters.langchain_embedding.LangChainEmbeddingProvider`
-  (`redstring[llm]`) is the live one. Both LangChain adapters are reached by
-  path rather than exported, so `import redstring` does not pull LangChain in.
-- **Domain-aware prompting.** `domain_system_prompt` takes a bundled domain id
-  or a `DomainSchema` of your own. `list_available_domains` is how you find out
-  which ids are bundled, returning a `DomainSummary` each -- without it the
-  supported way to discover them is to pass a wrong one and read
-  `UnknownDomainError`. `load_schema_from_file` and
-  `load_schema_from_string` build one, out of `EntityTypeSchema`,
-  `RelationshipTypeSchema`, `PropertySchema` and `ConfidenceThresholds`.
-- **Pieces, for callers who want the steps rather than the whole.**
-  `ExtractionPipeline` (`PipelineResult`, `DEFAULT_SYSTEM_PROMPT`),
-  `Chunk`/`ChunkingResult` and the two chunkers producing them --
-  `SlidingWindowChunker`, the default everywhere, and
-  `BoundaryPreferenceChunker`, which searches the whole window for a clean
-  break instead of its last 500 characters and is the one to pass when the
-  passages will be quoted back to a reader --
-  `GraphProjection`, `VectorProjection`,
-  `ChunkProjection`, and
-  `Document` with `document_stream` to address it.
-- **Errors.** `RedstringError` and everything under it that a caller can
-  reach: `LlmProviderError` and its three shapes, `MissingEntityError`,
-  `AliasCycleError`, `DimensionMismatchError`, `PartialExtractionError`,
-  and the chunking three.
-
-**The rebuild driver is `eventsource.replay`, not ours.** Use `from eventsource import replay`.
-
-## What is deliberately not here
-
-- **Temporal inference.** `redstring.temporal` is real and tested and has no
-  composed entry point yet. Import it by path and expect movement.
-  Consolidation is exported via `Consolidator` along with `CandidateFinder`, `Adjudicator`,
-  merge events, and errors.
-- **No scraping, no HTML preprocessing.** A caller supplies a `SourceDocument`.
-- **No settings object and no environment reads.** Every component takes its
-  configuration through its constructor. `tests/unit/test_library_reads_no_environment.py`
-  is what keeps that true.
-- **Encryption.** There was an `EncryptionService`; it had no caller, no port
-  to sit behind, and an encrypted `normalized_name` cannot be indexed or
-  blocked on -- which breaks consolidation. Deleted in slice 10; BACKLOG B58
-  records what a real answer would need.
-
-## Where the write model is
-
-Extraction emits `DocumentExtracted` on a `Document` aggregate and stops.
-`redstring.projections` folds that event into a store. `build_graph` does
-both in one call for a caller with no event store; a caller who has one
-appends `report.event` and drives `eventsource.replay` over the feed instead. The
-separation is not decoration -- it is why a store can be rebuilt, and
-`tests/unit/projections/test_replay_equivalence.py` is what proves it can.
+The write model is event-sourced: extraction emits events folded into stores by projections.
+For replay, use `from eventsource import replay`.
 """
 
 from redstring.aggregates.document import Document
@@ -211,11 +66,7 @@ from redstring.composition import (
 )
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
 from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
-from redstring.consolidation.protocols import (
-    CandidateSource,
-    ConsolidationGraph,
-    MergeAdjudicator,
-)
+from redstring.consolidation.protocols import CandidateSource, ConsolidationGraph, MergeAdjudicator
 from redstring.domain.alias import Alias
 from redstring.domain.bm25 import CorpusStats
 from redstring.domain.chunk import ChunkId, StoredChunk
@@ -292,11 +143,7 @@ from redstring.extraction.pipeline import (
 )
 from redstring.extraction.prompt_generator import domain_system_prompt
 from redstring.extraction.protocols import Chunker
-from redstring.extraction.schema import (
-    ExtractedEntity,
-    ExtractedRelationship,
-    Extraction,
-)
+from redstring.extraction.schema import ExtractedEntity, ExtractedRelationship, Extraction
 from redstring.graph.adapters.memory import InMemoryGraphStore
 from redstring.llm.adapters.fake import EMPTY, FakeLlmProvider, Response
 from redstring.llm.adapters.fake_embedding import FakeEmbeddingProvider
@@ -320,12 +167,7 @@ from redstring.ports.graph_store import (
 )
 from redstring.ports.lifecycle import AsyncClosable
 from redstring.ports.llm_provider import LlmProvider
-from redstring.ports.vector_store import (
-    VectorPurge,
-    VectorReader,
-    VectorStore,
-    VectorWriter,
-)
+from redstring.ports.vector_store import VectorPurge, VectorReader, VectorStore, VectorWriter
 from redstring.projections import ChunkProjection, GraphProjection, VectorProjection
 from redstring.temporal.inference import InferredRelation, infer_relations
 from redstring.temporal.query import CursorStalledError, TemporalQuery
