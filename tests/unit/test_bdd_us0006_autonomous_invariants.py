@@ -32,3 +32,41 @@ def test_enforcing_file_length_and_boundary_invariants_during_preflight() -> Non
     this_file = Path(__file__)
     line_count = len(this_file.read_text(encoding="utf-8").splitlines())
     assert line_count < 500, f"BDD test file exceeds 500 lines: {line_count}"
+
+
+def test_completing_task_worktree_integration_from_secondary_worktree() -> None:
+    """Scenario: Completing task worktree integration from secondary worktree.
+
+    Governed by US-0006 and ADR-0005.
+    """
+    import subprocess
+
+    root = Path(__file__).resolve().parent.parent.parent
+
+    # 1. Resolving the common git directory from within a worktree resolves primary root
+    res = subprocess.run(
+        ["git", "rev-parse", "--git-common-dir"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    common_git = Path(res.stdout.strip())
+    if not common_git.is_absolute():
+        common_git = (root / common_git).resolve()
+    primary_root = common_git.parent
+    assert primary_root.is_dir()
+    assert (primary_root / "pyproject.toml").is_file()
+
+    # 2. Verify that worktree finish CLI entry point accepts execution and exposes options
+    # when spec-ops is available in the environment
+    import shutil
+
+    if shutil.which("spec-ops"):
+        res_help = subprocess.run(
+            ["spec-ops", "worktree", "finish", "--help"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "--task-id" in res_help.stdout

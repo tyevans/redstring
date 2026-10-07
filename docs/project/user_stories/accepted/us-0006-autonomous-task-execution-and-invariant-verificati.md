@@ -10,6 +10,7 @@ governing_prd: "PRD-0001"
 scenarios:
   - "Executing backlog tasks in isolated git worktrees"
   - "Enforcing file length and boundary invariants during preflight"
+  - "Completing task worktree integration from secondary worktree"
 ---
 
 # US-0006 — Autonomous Task Execution and Invariant Verification
@@ -39,4 +40,12 @@ Scenario: Enforcing file length and boundary invariants during preflight
   When the agent runs preflight verification via "spec-ops health"
   Then zero source files exceed 500 lines (ADR-0002)
   And zero prohibited cross-layer or cross-context dependencies are introduced.
+```
+
+```gherkin
+Scenario: Completing task worktree integration from secondary worktree
+  Given an isolated secondary task worktree on a feature branch
+  When the agent executes worktree finalization via "spec-ops worktree finish"
+  Then the primary repository root is resolved without checkout collision on main
+  And integration commits are finalized under merge lock
 ```
