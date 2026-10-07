@@ -504,7 +504,7 @@ CHUNK_STORE_MARKERS = ("jsonb_to_recordset", "jsonb_object_agg", "USING gin")
 #: deleted with its last entry.
 LEGACY_CHUNK_STORE: frozenset[str] = frozenset()
 
-SOURCE_ROOT = Path(adapter.__file__).parent.parent.parent
+SOURCE_ROOT = Path(adapter.__file__).parent.parent.parent.parent
 
 
 class TestChunkStoreSyntaxDoesNotLeak:
@@ -512,7 +512,7 @@ class TestChunkStoreSyntaxDoesNotLeak:
         found: dict[str, list[str]] = {}
         for path in SOURCE_ROOT.rglob("*.py"):
             relative = path.relative_to(SOURCE_ROOT).as_posix()
-            if relative == "chunks/adapters/postgres.py" or relative in LEGACY_CHUNK_STORE:
+            if relative.startswith("chunks/adapters/postgres") or relative in LEGACY_CHUNK_STORE:
                 continue
             text = path.read_text(encoding="utf-8")
             hits = [marker for marker in CHUNK_STORE_MARKERS if marker in text]
@@ -524,7 +524,7 @@ class TestChunkStoreSyntaxDoesNotLeak:
         assert self._offenders() == {}
 
     def test_the_detector_would_notice(self):
-        text = (SOURCE_ROOT / "chunks/adapters/postgres.py").read_text(encoding="utf-8")
+        text = (SOURCE_ROOT / "chunks/adapters/postgres/postgres_sql.py").read_text("utf-8")
         assert [marker for marker in CHUNK_STORE_MARKERS if marker in text]
 
     def test_the_exemption_list_has_no_stale_entries(self):

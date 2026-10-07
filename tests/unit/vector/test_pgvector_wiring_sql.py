@@ -15,7 +15,7 @@ from .conftest import DIMENSION, make_store
 
 PGVECTOR_MARKERS = ("<=>", "::vector", " vector(", "Vector(")
 LEGACY_PGVECTOR: frozenset[str] = frozenset()
-OTHER_PGVECTOR_ADAPTERS: frozenset[str] = frozenset({"chunks/adapters/postgres.py"})
+OTHER_PGVECTOR_ADAPTERS: frozenset[str] = frozenset({"chunks/adapters/postgres/postgres_sql.py"})
 SOURCE_ROOT = Path(adapter.__file__).parent.parent.parent
 
 
