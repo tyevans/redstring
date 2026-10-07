@@ -144,3 +144,30 @@ class TestCiLooksAtTheWholeRepository:
         assert format_commands, "no `ruff format` step in CI"
         for command in format_commands:
             assert "--check" in command, f"CI must not rewrite files: {command!r} lacks --check"
+
+
+class TestGitHooksIsolation:
+    def test_core_hooks_path_not_pointing_to_stale_spike_hooks(self):
+        """Spikes configure a temporary write-isolation hook in .specops/hooks.
+        Upon spike graduation, core.hooksPath must not remain pointing to the
+        ephemeral spike hooks directory."""
+        import subprocess
+
+        res = subprocess.run(
+            ["git", "config", "--get", "core.hooksPath"],
+            cwd=PROJECT,
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode == 0:
+            hooks_path = res.stdout.strip()
+            assert not hooks_path.endswith(".specops/hooks"), (
+                f"stale spike hooksPath detected in git config: {hooks_path}; "
+                "spike graduation must clean up pre-commit hooks"
+            )
+        assert not (PROJECT / ".specops" / "hooks" / "pre-commit").exists(), (
+            "stale spike pre-commit hook found in .specops/hooks"
+        )
+        assert not (PROJECT / ".specops" / "spike.json").exists(), (
+            "stale spike metadata found in .specops/spike.json"
+        )
