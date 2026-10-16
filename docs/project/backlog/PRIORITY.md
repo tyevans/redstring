@@ -77,3 +77,8 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0040 (Refined)**: [`0040-clean-up-spike-metadata-and-pre-commit-hooks-upon-`](refined/0040-clean-up-spike-metadata-and-pre-commit-hooks-upon-.md)
 - **TASK-0041 (Refined)**: [`0041-fix-worktree-finish-checkout-main-in-secondary-wor`](refined/0041-fix-worktree-finish-checkout-main-in-secondary-wor.md)
 - **TASK-0042 (Complete)**: [`0042-explore-eventsource-py-0150-changes-and-map-adopti`](complete/0042-explore-eventsource-py-0150-changes-and-map-adopti.md)
+- **TASK-0043 (Complete)**: [`0043-bump-eventsource-py-to-0150-and-document-floor-rat`](complete/0043-bump-eventsource-py-to-0150-and-document-floor-rat.md)
+- **TASK-0044 (Complete)**: [`0044-adopt-eventsource-0150-repository-and-aggregate-co`](complete/0044-adopt-eventsource-0150-repository-and-aggregate-co.md)
+- **TASK-0045 (Complete)**: [`0045-extend-rebuild-tenant-with-event-types-filtering-a`](complete/0045-extend-rebuild-tenant-with-event-types-filtering-a.md)
+- **TASK-0046 (Complete)**: [`0046-adopt-eventsource-0150-container-dunders-and-store`](complete/0046-adopt-eventsource-0150-container-dunders-and-store.md)
+- **TASK-0047 (Complete)**: [`0047-fix-pydantic-214-type-compatibility-and-integrate-`](complete/0047-fix-pydantic-214-type-compatibility-and-integrate-.md)
