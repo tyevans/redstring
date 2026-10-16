@@ -269,3 +269,25 @@ class TestCoordinatedTenantRebuild:
         report = await rebuild_tenant(rig.event_store, projections, tenant_id=t1)
         assert report.applied > 0
         assert dummy.handled > 0
+
+    async def test_rebuild_tenant_accepts_single_projection(self) -> None:
+        rig = fresh_rig()
+        built = await build_log(rig.event_store, InMemorySnapshotStore(), TWO_TENANTS)
+        t1, _ = built.tenant_ids
+
+        report = await rebuild_tenant(rig.event_store, rig.projections[0], tenant_id=t1)
+        assert report.applied > 0
+        assert report.failed == 0
+
+    async def test_rebuild_tenant_with_event_types_filter(self) -> None:
+        rig = fresh_rig()
+        built = await build_log(rig.event_store, InMemorySnapshotStore(), TWO_TENANTS)
+        t1, _ = built.tenant_ids
+
+        report = await rebuild_tenant(
+            rig.event_store,
+            rig.projections,
+            tenant_id=t1,
+            event_types=["redstring.document.extracted"],
+        )
+        assert report.failed == 0
