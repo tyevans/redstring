@@ -12,6 +12,9 @@ from a concrete goal rather than from a concept — for the concepts, see
   does to the prompt, and the thing that surprises everyone: a schema shapes
   the prompt and validates nothing, so an off-schema entity comes back
   unflagged.
+- [**Use the unified client and batch ingestion**](unified-client-and-batch-ingestion.md) —
+  in-memory and connected client workflows, flexible input coercion from raw strings
+  and dictionaries, concurrent batch ingestion, and hybrid retrieval.
 - [**Harden model calls**](harden-model-calls.md) — retry with jitter, rate
   limiting, circuit breaking, and caching, all composed over the `Cache` port
   so a single process and a fleet behave the same way.
