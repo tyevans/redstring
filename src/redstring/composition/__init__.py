@@ -43,6 +43,7 @@ order settles it.
 
 from __future__ import annotations
 
+from redstring.composition.batch import BatchDocumentError, BatchGraphReport, build_graph_batch
 from redstring.composition.build_graph import (
     AUTO,
     AutoDomain,
@@ -51,6 +52,7 @@ from redstring.composition.build_graph import (
     GraphBuildReport,
     build_graph,
 )
+from redstring.composition.coercion import coerce_document, content_addressed_source_id
 from redstring.composition.index_documents import IndexReport, index_documents
 from redstring.composition.retrieval import ChunkRetriever, Retriever
 from redstring.composition.themes import Theme, ThemeReport, summarize_themes
@@ -58,6 +60,8 @@ from redstring.composition.themes import Theme, ThemeReport, summarize_themes
 __all__ = [
     "AUTO",
     "AutoDomain",
+    "BatchDocumentError",
+    "BatchGraphReport",
     "ChunkRetriever",
     "ConsolidationReport",
     "Consolidator",
@@ -67,6 +71,9 @@ __all__ = [
     "Theme",
     "ThemeReport",
     "build_graph",
+    "build_graph_batch",
+    "coerce_document",
+    "content_addressed_source_id",
     "index_documents",
     "summarize_themes",
 ]
