@@ -82,4 +82,4 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0045 (Complete)**: [`0045-extend-rebuild-tenant-with-event-types-filtering-a`](complete/0045-extend-rebuild-tenant-with-event-types-filtering-a.md)
 - **TASK-0046 (Complete)**: [`0046-adopt-eventsource-0150-container-dunders-and-store`](complete/0046-adopt-eventsource-0150-container-dunders-and-store.md)
 - **TASK-0047 (Complete)**: [`0047-fix-pydantic-214-type-compatibility-and-integrate-`](complete/0047-fix-pydantic-214-type-compatibility-and-integrate-.md)
-- **TASK-0048 (Refined)**: [`0048-release-redstring-0130-for-eventsource-py-0150-ado`](refined/0048-release-redstring-0130-for-eventsource-py-0150-ado.md)
+- **TASK-0048 (Complete)**: [`0048-release-redstring-0130-for-eventsource-py-0150-ado`](complete/0048-release-redstring-0130-for-eventsource-py-0150-ado.md)
