@@ -46,6 +46,10 @@ class InMemoryGraphStore:
         # right way round -- resolution runs per edge endpoint on every
         # extraction fold, and `find_aliases` runs once per undo.
         self._aliases: dict[TenantId, dict[EntityId, Alias]] = {}
+        self._blocking_index: dict[TenantId, dict[str, set[EntityId]]] = {}
+        self._outgoing: dict[TenantId, dict[EntityId, set[RelationshipId]]] = {}
+        self._incoming: dict[TenantId, dict[EntityId, set[RelationshipId]]] = {}
+        self._adjacency: dict[TenantId, dict[EntityId, set[tuple[EntityId, str]]]] = {}
 
     # ------------------------------------------------------------------
     # Entities
@@ -53,7 +57,20 @@ class InMemoryGraphStore:
 
     async def upsert_entity(self, entity: Entity) -> None:
         tenant = self._entities.setdefault(entity.tenant_id, {})
+        old_entity = tenant.get(entity.id)
+        if old_entity is not None and old_entity.blocking_keys:
+            tenant_idx = self._blocking_index.get(entity.tenant_id, {})
+            for key in old_entity.blocking_keys:
+                if key in tenant_idx:
+                    tenant_idx[key].discard(entity.id)
+                    if not tenant_idx[key]:
+                        del tenant_idx[key]
+
         tenant[entity.id] = entity.model_copy(deep=True)
+        if entity.blocking_keys:
+            tenant_idx = self._blocking_index.setdefault(entity.tenant_id, {})
+            for key in entity.blocking_keys:
+                tenant_idx.setdefault(key, set()).add(entity.id)
 
     async def upsert_entities(self, entities: Sequence[Entity]) -> None:
         for entity in entities:
@@ -103,22 +120,23 @@ class InMemoryGraphStore:
         return [entity.model_copy(deep=True) for entity in page]
 
     async def find_by_blocking_key(self, key: str, tenant_id: TenantId) -> list[Entity]:
-        return [
-            entity.model_copy(deep=True)
-            for entity in self._entities.get(tenant_id, {}).values()
-            if entity.blocking_keys is not None and key in entity.blocking_keys
-        ]
+        tenant_idx = self._blocking_index.get(tenant_id, {})
+        matching_ids = tenant_idx.get(key, ())
+        entities = self._entities.get(tenant_id, {})
+        return [entities[eid].model_copy(deep=True) for eid in matching_ids if eid in entities]
 
     async def find_by_blocking_keys(
         self, keys: Sequence[str], tenant_id: TenantId
     ) -> dict[str, list[Entity]]:
-        # Seeded with every requested key so absent ones map to [] rather than
-        # being missing -- the caller iterates the result, not its request.
         grouped: dict[str, list[Entity]] = {key: [] for key in keys}
-        for entity in self._entities.get(tenant_id, {}).values():
-            for key in entity.blocking_keys or ():
-                if key in grouped:
-                    grouped[key].append(entity.model_copy(deep=True))
+        tenant_idx = self._blocking_index.get(tenant_id, {})
+        entities = self._entities.get(tenant_id, {})
+        for key in keys:
+            matching_ids = tenant_idx.get(key, ())
+            if matching_ids:
+                grouped[key] = [
+                    entities[eid].model_copy(deep=True) for eid in matching_ids if eid in entities
+                ]
         return grouped
 
     # ------------------------------------------------------------------
@@ -168,31 +186,55 @@ class InMemoryGraphStore:
     # Relationships
     # ------------------------------------------------------------------
 
+    def _index_relationship(self, relationship: Relationship) -> None:
+        t_id = relationship.tenant_id
+        r_id = relationship.id
+        src = relationship.source_entity_id
+        tgt = relationship.target_entity_id
+        rtype = relationship.relationship_type
+
+        self._outgoing.setdefault(t_id, {}).setdefault(src, set()).add(r_id)
+        self._incoming.setdefault(t_id, {}).setdefault(tgt, set()).add(r_id)
+        self._adjacency.setdefault(t_id, {}).setdefault(src, set()).add((tgt, rtype))
+        self._adjacency.setdefault(t_id, {}).setdefault(tgt, set()).add((src, rtype))
+
+    def _unindex_relationship(self, relationship: Relationship) -> None:
+        t_id = relationship.tenant_id
+        r_id = relationship.id
+        src = relationship.source_entity_id
+        tgt = relationship.target_entity_id
+        rtype = relationship.relationship_type
+
+        if t_id in self._outgoing and src in self._outgoing[t_id]:
+            self._outgoing[t_id][src].discard(r_id)
+        if t_id in self._incoming and tgt in self._incoming[t_id]:
+            self._incoming[t_id][tgt].discard(r_id)
+        if t_id in self._adjacency:
+            if src in self._adjacency[t_id]:
+                self._adjacency[t_id][src].discard((tgt, rtype))
+            if tgt in self._adjacency[t_id]:
+                self._adjacency[t_id][tgt].discard((src, rtype))
+
     async def upsert_relationship(self, relationship: Relationship) -> None:
         self._require_endpoints(relationship)
         tenant = self._relationships.setdefault(relationship.tenant_id, {})
+        old_rel = tenant.get(relationship.id)
+        if old_rel is not None:
+            self._unindex_relationship(old_rel)
         tenant[relationship.id] = relationship.model_copy(deep=True)
+        self._index_relationship(relationship)
 
     async def upsert_relationships(self, relationships: Sequence[Relationship]) -> None:
-        """All-or-nothing: every endpoint is checked before anything is written.
-
-        Two passes rather than a loop over `upsert_relationship`, because the
-        port promises the batch is atomic and a loop writes the prefix before
-        it reaches the bad element. The Neo4j adapter has always behaved this
-        way -- it validates every endpoint in one query, since round-tripping
-        per element would be the expensive way to write it -- so this is the
-        cheap adapter catching up with the contract rather than a new cost
-        (BACKLOG B10g).
-
-        There is no rollback here and none is needed: nothing is written until
-        every element is known good, which is the same reason the failure
-        cannot disturb a *previous* batch.
-        """
+        """All-or-nothing: every endpoint is checked before anything is written."""
         for relationship in relationships:
             self._require_endpoints(relationship)
         for relationship in relationships:
             tenant = self._relationships.setdefault(relationship.tenant_id, {})
+            old_rel = tenant.get(relationship.id)
+            if old_rel is not None:
+                self._unindex_relationship(old_rel)
             tenant[relationship.id] = relationship.model_copy(deep=True)
+            self._index_relationship(relationship)
 
     def _require_endpoints(self, relationship: Relationship) -> None:
         """Raise `MissingEntityError` unless both endpoints exist for the tenant."""
@@ -213,11 +255,18 @@ class InMemoryGraphStore:
             raise ValueError(f"direction must be 'out', 'in' or 'both', not {direction!r}")
 
         allowed = None if relationship_types is None else set(relationship_types)
+        rels = self._relationships.get(tenant_id, {})
+        rel_ids: set[RelationshipId] = set()
+
+        if direction in ("out", "both"):
+            rel_ids.update(self._outgoing.get(tenant_id, {}).get(entity_id, ()))
+        if direction in ("in", "both"):
+            rel_ids.update(self._incoming.get(tenant_id, {}).get(entity_id, ()))
+
         return [
-            relationship.model_copy(deep=True)
-            for relationship in self._relationships.get(tenant_id, {}).values()
-            if self._touches(relationship, entity_id, direction)
-            and (allowed is None or relationship.relationship_type in allowed)
+            rels[rid].model_copy(deep=True)
+            for rid in rel_ids
+            if rid in rels and (allowed is None or rels[rid].relationship_type in allowed)
         ]
 
     async def get_relationships_for(
@@ -231,31 +280,33 @@ class InMemoryGraphStore:
         if direction not in ("out", "in", "both"):
             raise ValueError(f"direction must be 'out', 'in' or 'both', not {direction!r}")
 
-        wanted = set(entity_ids)
         allowed = None if relationship_types is None else set(relationship_types)
-        # One pass over the tenant's edges, keeping each at most once: an edge
-        # with both endpoints in `wanted` must not appear twice.
+        rels = self._relationships.get(tenant_id, {})
+        out_map = self._outgoing.get(tenant_id, {})
+        in_map = self._incoming.get(tenant_id, {})
+        rel_ids: set[RelationshipId] = set()
+
+        for eid in entity_ids:
+            if direction in ("out", "both") and eid in out_map:
+                rel_ids.update(out_map[eid])
+            if direction in ("in", "both") and eid in in_map:
+                rel_ids.update(in_map[eid])
+
         return [
-            relationship.model_copy(deep=True)
-            for relationship in self._relationships.get(tenant_id, {}).values()
-            if any(self._touches(relationship, entity_id, direction) for entity_id in wanted)
-            and (allowed is None or relationship.relationship_type in allowed)
+            rels[rid].model_copy(deep=True)
+            for rid in rel_ids
+            if rid in rels and (allowed is None or rels[rid].relationship_type in allowed)
         ]
 
     async def delete_relationship(
         self, relationship_id: RelationshipId, tenant_id: TenantId
     ) -> bool:
-        return self._relationships.get(tenant_id, {}).pop(relationship_id, None) is not None
-
-    @staticmethod
-    def _touches(
-        relationship: Relationship, entity_id: EntityId, direction: Literal["out", "in", "both"]
-    ) -> bool:
-        if direction == "out":
-            return relationship.source_entity_id == entity_id
-        if direction == "in":
-            return relationship.target_entity_id == entity_id
-        return entity_id in (relationship.source_entity_id, relationship.target_entity_id)
+        tenant = self._relationships.get(tenant_id, {})
+        old_rel = tenant.pop(relationship_id, None)
+        if old_rel is not None:
+            self._unindex_relationship(old_rel)
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Traversal
@@ -277,16 +328,8 @@ class InMemoryGraphStore:
             return []
 
         allowed = None if relationship_types is None else set(relationship_types)
-        adjacency: dict[EntityId, set[EntityId]] = {}
-        for relationship in self._relationships.get(tenant_id, {}).values():
-            if allowed is not None and relationship.relationship_type not in allowed:
-                continue
-            source, target = relationship.source_entity_id, relationship.target_entity_id
-            adjacency.setdefault(source, set()).add(target)
-            adjacency.setdefault(target, set()).add(source)
+        adj_map = self._adjacency.get(tenant_id, {})
 
-        # Breadth-first, `seen` seeded with the origin: that is what terminates
-        # cycles and what keeps the origin out of its own neighbour set.
         seen = {entity_id}
         order: list[EntityId] = []
         frontier: deque[tuple[EntityId, int]] = deque([(entity_id, 0)])
@@ -294,7 +337,12 @@ class InMemoryGraphStore:
             current, hops = frontier.popleft()
             if hops == depth:
                 continue
-            for neighbour in sorted(adjacency.get(current, set()), key=str):
+            neighbors_set = adj_map.get(current, set())
+            candidate_neighbors = sorted(
+                {target for target, rtype in neighbors_set if allowed is None or rtype in allowed},
+                key=str,
+            )
+            for neighbour in candidate_neighbors:
                 if neighbour in seen or neighbour not in entities:
                     continue
                 seen.add(neighbour)
@@ -311,6 +359,10 @@ class InMemoryGraphStore:
         removed = len(self._entities.pop(tenant_id, {}))
         self._relationships.pop(tenant_id, None)
         self._aliases.pop(tenant_id, None)
+        self._blocking_index.pop(tenant_id, None)
+        self._outgoing.pop(tenant_id, None)
+        self._incoming.pop(tenant_id, None)
+        self._adjacency.pop(tenant_id, None)
         return removed
 
     # ------------------------------------------------------------------

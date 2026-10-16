@@ -19,6 +19,7 @@ with a deep copy.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any, Self
 
 from redstring.domain.exceptions import DimensionMismatchError
@@ -26,7 +27,7 @@ from redstring.domain.vector import (
     VectorMatch,
     VectorProvenance,
     VectorRecord,
-    cosine_score,
+    clamp_score,
     has_zero_norm,
 )
 from redstring.ports.vector_store import entity_type_of
@@ -158,23 +159,28 @@ class InMemoryVectorStore:
         if k < 0:
             raise ValueError("k must not be negative")
 
-        # `None` means no filter; an empty sequence means nothing matches, so
-        # the membership test must not be short-circuited by a truthiness
-        # check on the sequence itself.
+        query_norm = float(math.sqrt(sum(x * x for x in vector)))
+        if query_norm == 0.0:
+            raise ValueError("cosine is undefined for a zero vector")
+
         wanted = None if entity_types is None else set(entity_types)
 
-        scored = [
-            VectorMatch(
-                entity_id=record.entity_id,
-                score=cosine_score(vector, record.vector),
-                metadata=dict(record.metadata),
+        scored: list[VectorMatch] = []
+        for record in self._records.get(tenant_id, {}).values():
+            if wanted is not None and entity_type_of(record.metadata) not in wanted:
+                continue
+            rec_norm = float(math.sqrt(sum(x * x for x in record.vector)))
+            if rec_norm == 0.0:
+                raise ValueError("cosine is undefined for a zero vector")
+            dot = sum(a * b for a, b in zip(vector, record.vector, strict=True))
+            score = clamp_score((1.0 + dot / (query_norm * rec_norm)) / 2.0)
+            scored.append(
+                VectorMatch(
+                    entity_id=record.entity_id,
+                    score=score,
+                    metadata=dict(record.metadata),
+                )
             )
-            for record in self._records.get(tenant_id, {}).values()
-            # `entity_type_of`, not `metadata.get(...)`: the stored value may
-            # be any JSON, and comparing it raw against a `set` raises
-            # `TypeError` for a list or a dict. The port owns that rule.
-            if wanted is None or entity_type_of(record.metadata) in wanted
-        ]
         # Filters are applied to the whole tenant *before* `k` is taken. Taking
         # `k` first and filtering after returns fewer than `k` while matching
         # records exist further down -- correct-looking and wrong.
