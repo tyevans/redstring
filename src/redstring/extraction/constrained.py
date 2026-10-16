@@ -63,7 +63,7 @@ descriptions -- which are prompt, not documentation -- come along unchanged.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import create_model
 
@@ -110,7 +110,7 @@ def constrained_extraction(schema: DomainSchema) -> type[Extraction]:
     )
 
 
-def _literal(ids: list[str]) -> object:
+def _literal(ids: list[str]) -> Any:  # noqa: ANN401
     """`Literal[...]` over the ids, deduplicated, in declaration order.
 
     Deduplicated because two entity types with one id is a schema the loader
