@@ -76,3 +76,4 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0039 (Proposed)**: [`0039-blackbox-frontdoor-test-suite-for-dual-c`](proposed/0039-blackbox-frontdoor-test-suite-for-dual-c.md)
 - **TASK-0040 (Refined)**: [`0040-clean-up-spike-metadata-and-pre-commit-hooks-upon-`](refined/0040-clean-up-spike-metadata-and-pre-commit-hooks-upon-.md)
 - **TASK-0041 (Refined)**: [`0041-fix-worktree-finish-checkout-main-in-secondary-wor`](refined/0041-fix-worktree-finish-checkout-main-in-secondary-wor.md)
+- **TASK-0042 (Complete)**: [`0042-explore-eventsource-py-0150-changes-and-map-adopti`](complete/0042-explore-eventsource-py-0150-changes-and-map-adopti.md)
