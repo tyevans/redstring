@@ -86,4 +86,4 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0049 (Complete)**: [`0049-implement-high-performance-incremental-indexing-in`](complete/0049-implement-high-performance-incremental-indexing-in.md)
 - **TASK-0050 (Complete)**: [`0050-implement-flexible-input-coercion-and-concurrent-b`](complete/0050-implement-flexible-input-coercion-and-concurrent-b.md)
 - **TASK-0051 (Complete)**: [`0051-author-unified-batteries-included-redstring-client`](complete/0051-author-unified-batteries-included-redstring-client.md)
-- **TASK-0052 (Refined)**: [`0052-author-bdd-executable-scenario-test-bindings-and-d`](refined/0052-author-bdd-executable-scenario-test-bindings-and-d.md)
+- **TASK-0052 (Complete)**: [`0052-author-bdd-executable-scenario-test-bindings-and-d`](complete/0052-author-bdd-executable-scenario-test-bindings-and-d.md)
