@@ -2,7 +2,7 @@
 id: '0052'
 title: Author BDD executable scenario test bindings and Diataxis how-to guide for
   unified client
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0149
 - ADR-0006
