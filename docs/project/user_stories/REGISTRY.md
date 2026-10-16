@@ -10,3 +10,5 @@
 | `US-0006` | Autonomous Task Execution and Invariant Verification | Accepted | Morgan | FEAT-ORCH-01 | `PRD-0001` |
 | `US-0008` | Store Content-Addressed Document Chunks | Accepted | Jordan | FEAT-CHUNKS-01 | `PRD-0002` |
 | `US-0009` | Retrieve Scored Passages via Dual-Channel Fusion | Accepted | Alex | FEAT-CHUNKS-02 | `PRD-0002` |
+| `US-0011` | Unified Knowledge Graph Client and Concurrent Batch Ingestion | Accepted | Alex | FEAT-COMP-11 | `PRD-0003` |
+| `US-0012` | High-Performance In-Memory Graph Indexing and Vector Traversal | Accepted | Morgan | FEAT-GRAP-12 | `PRD-0003` |

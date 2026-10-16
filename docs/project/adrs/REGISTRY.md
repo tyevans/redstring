@@ -75,3 +75,4 @@ The architectural decisions governing Redstring's domain models, store ports, an
 | [ADR-0146](accepted/adr-0146-a-chunk-write-reports-what-it-added.md) | 0046 | A chunk write reports what it added, and a reader answers 'which of these do I have?' | Accepted | `chunks` |
 | [ADR-0147](accepted/adr-0147-four-adapter-paths-are-stable.md) | 0047 | Four adapter import paths are stable, without being exported | Accepted | `ports` |
 | ADR-0148 | Entity Retraction on Re-extraction without delete_entity | Proposed | 2026-10-04 |
+| [ADR-0149](accepted/adr-0149-unified-redstring-client-facade-and-indexing.md) | 0149 | Unified Redstring Client Facade and In-Memory Indexing Architecture | Accepted | `composition` |
