@@ -124,10 +124,24 @@ dependencies = [
     # reading the changelog is the only thing that distinguishes those two
     # `RetryPolicy`s.
     #
-    # **The floor moves to 0.14.0 with the cap**, for the reasoning already
-    # written above -- one supported version rather than a range, because a
-    # two-version window is a test matrix nobody runs.
-    "eventsource-py>=0.14.0,<0.15",
+    # **0.15.0 is an ergonomics, resilience, and modularity release.** It
+    # brings uniform Pythonic container protocols (`len()`, `in`, iteration,
+    # truthiness) across stores and buses, aggregate and repository convenience
+    # helpers (`exists()`, `get_or_none()`, `get_or_raise()`, `load_many()`,
+    # `save_all()`, `get_version()`), projection replay filtering (`event_types`),
+    # transactional SQLite outbox, and a full modular decomposition of the
+    # upstream codebase under a 160-line per-file ceiling (ADR-0002).
+    #
+    # Zero breaking changes reach redstring's import surface: all public
+    # re-exports (`StoreProjection`, `handles`, `replay`, `TenantDomainEvent`,
+    # `AggregateRoot`, `AggregateRepository`, `TenantAwareRepository`) remain
+    # stable and backward-compatible.
+    #
+    # **The floor moves to 0.15.0 with the cap**, for the reasoning already
+    # established above -- one supported version rather than a range, keeping
+    # redstring aligned with upstream improvements and verifiable under
+    # single-version integration gates.
+    "eventsource-py>=0.15.0,<0.16",
 ]
 
 [project.optional-dependencies]
