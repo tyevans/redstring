@@ -52,6 +52,7 @@ from redstring.composition.build_graph import (
     GraphBuildReport,
     build_graph,
 )
+from redstring.composition.client import Redstring
 from redstring.composition.coercion import coerce_document, content_addressed_source_id
 from redstring.composition.index_documents import IndexReport, index_documents
 from redstring.composition.retrieval import ChunkRetriever, Retriever
@@ -67,6 +68,7 @@ __all__ = [
     "Consolidator",
     "GraphBuildReport",
     "IndexReport",
+    "Redstring",
     "Retriever",
     "Theme",
     "ThemeReport",
