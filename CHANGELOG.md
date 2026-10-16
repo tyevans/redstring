@@ -14,6 +14,39 @@ under **Removed** or **Changed**. See
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-15
+
+Adoption of `eventsource-py 0.15.0`, including repository and aggregate
+convenience ergonomics, tenant projection rebuild event filtering, event store
+container dunders, and Pydantic 2.14 typing compatibility.
+
+### Added
+
+- **`TenantAwareRepository` convenience methods adopted.** `exists()`,
+  `get_or_none()`, `get_or_raise()`, `load_many()`, `save_all()`, and
+  `get_version()` are supported across repository instances.
+- **Tenant projection rebuild event filtering.** `rebuild_tenant()` supports
+  optional `event_types` filtering and accepts single or multiple projection
+  subscribers (`Iterable[Projection]`).
+- **`InMemoryEventStore` container dunder methods.** Container ergonomics
+  (`len()`, `__contains__`, `bool()`, `clear()`, and `stream_exists()`) are
+  supported across in-memory event stores.
+
+### Changed
+
+- **`eventsource-py` floor bumped to `>=0.15.0,<0.16`.** Upstream 0.15.0
+  re-architects the event sourcing engine with modularized sub-160 line
+  boundaries while maintaining full backward compatibility for domain events,
+  aggregates, repositories, and projections.
+
+### Fixed
+
+- **Pydantic 2.14 typing compatibility.** Fixed dynamic literal resolution in
+  `redstring.extraction.constrained` to maintain strict compatibility with
+  Pydantic 2.14 and Ruff annotation checks.
+- **Removed deprecated `warn_untyped_fields` configuration.** Cleaned up
+  `pyproject.toml` tool configuration deprecated in Pydantic 2.14.
+
 ## [0.12.0] - 2026-09-30
 
 Four adapter paths are promised stable, batch existence checks and added-count
@@ -1283,7 +1316,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/tyevans/redstring/releases/tag/v0.13.0
 [0.12.0]: https://github.com/tyevans/redstring/releases/tag/v0.12.0
 [0.11.0]: https://github.com/tyevans/redstring/releases/tag/v0.11.0
 [0.10.0]: https://github.com/tyevans/redstring/releases/tag/v0.10.0
