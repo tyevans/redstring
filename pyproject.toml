@@ -410,7 +410,6 @@ ignore_missing_imports = true
 init_typed = true
 init_forbid_extra = true
 warn_required_dynamic_aliases = true
-warn_untyped_fields = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
