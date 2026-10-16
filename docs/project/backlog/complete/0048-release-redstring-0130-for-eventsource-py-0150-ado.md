@@ -1,7 +1,7 @@
 ---
 id: 0048
 title: Release redstring 0.13.0 for eventsource-py 0.15.0 adoption
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0001
 - ADR-0002
