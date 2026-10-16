@@ -10,14 +10,17 @@ import pytest
 
 from redstring import (
     BatchDocumentError,
+    FakeEmbeddingProvider,
     FakeLlmProvider,
+    InMemoryChunkStore,
     InMemoryGraphStore,
+    InMemoryVectorStore,
     SourceDocument,
     SourceId,
     TenantId,
     build_graph_batch,
 )
-from redstring.domain.exceptions import LlmProviderError
+from redstring.domain.exceptions import DimensionMismatchError, LlmProviderError
 
 TWO_PEOPLE = {
     "entities": [
@@ -162,6 +165,16 @@ async def test_build_graph_batch_continue_on_error() -> None:
     assert isinstance(report.errors[0].error, LlmProviderError)
     assert len(failed_items) == 1
 
+    # Also verify continue_on_error without callback handles failure cleanly
+    report2 = await build_graph_batch(
+        items,
+        provider=provider,  # type: ignore[arg-type]
+        store=store,
+        tenant_id=tenant,
+        continue_on_error=True,
+    )
+    assert report2.failed_documents == 1
+
 
 @pytest.mark.asyncio
 async def test_build_graph_batch_raise_on_error() -> None:
@@ -228,3 +241,84 @@ async def test_build_graph_batch_mixed_inputs() -> None:
     assert report.successful_documents == 3
     assert report.failed_documents == 0
     assert report.entities == 6
+
+
+@pytest.mark.asyncio
+async def test_build_graph_batch_chunk_dimension_mismatch() -> None:
+    store = InMemoryGraphStore()
+    provider = FakeLlmProvider(by_substring={}, default=TWO_PEOPLE)
+    tenant = TenantId(uuid4())
+    embeddings = FakeEmbeddingProvider(dimension=16)
+    chunks = InMemoryChunkStore(dimension=32)
+    vectors = InMemoryVectorStore(dimension=32)
+
+    with pytest.raises(DimensionMismatchError):
+        await build_graph_batch(
+            ["hello world"],
+            provider=provider,
+            store=store,
+            tenant_id=tenant,
+            embedding_provider=embeddings,
+            chunks=chunks,
+        )
+
+    with pytest.raises(DimensionMismatchError):
+        await build_graph_batch(
+            ["hello world"],
+            provider=provider,
+            store=store,
+            tenant_id=tenant,
+            embedding_provider=embeddings,
+            vector_store=vectors,
+        )
+
+
+@pytest.mark.asyncio
+async def test_build_graph_batch_coercion_error_continue() -> None:
+    store = InMemoryGraphStore()
+    provider = FakeLlmProvider(by_substring={}, default=TWO_PEOPLE)
+    tenant = TenantId(uuid4())
+
+    captured_errors: list[tuple[Any, Exception]] = []
+
+    # With on_document_error callback
+    report = await build_graph_batch(
+        [12345],  # type: ignore[list-item]
+        provider=provider,
+        store=store,
+        tenant_id=tenant,
+        continue_on_error=True,
+        on_document_error=lambda item, exc: captured_errors.append((item, exc)),
+    )
+
+    assert report.total_documents == 1
+    assert report.failed_documents == 1
+    assert len(report.errors) == 1
+    assert len(captured_errors) == 1
+    assert captured_errors[0][0] == 12345
+
+    # Without callback
+    report_no_cb = await build_graph_batch(
+        [12345],  # type: ignore[list-item]
+        provider=provider,
+        store=store,
+        tenant_id=tenant,
+        continue_on_error=True,
+    )
+    assert report_no_cb.failed_documents == 1
+
+
+@pytest.mark.asyncio
+async def test_build_graph_batch_coercion_error_raise() -> None:
+    store = InMemoryGraphStore()
+    provider = FakeLlmProvider(by_substring={}, default=TWO_PEOPLE)
+    tenant = TenantId(uuid4())
+
+    with pytest.raises(TypeError):
+        await build_graph_batch(
+            [12345],  # type: ignore[list-item]
+            provider=provider,
+            store=store,
+            tenant_id=tenant,
+            continue_on_error=False,
+        )

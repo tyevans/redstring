@@ -8,9 +8,13 @@ import pytest
 
 from redstring import (
     BatchGraphReport,
+    EntityId,
     FakeEmbeddingProvider,
     FakeLlmProvider,
     GraphBuildReport,
+    InMemoryChunkStore,
+    InMemoryGraphStore,
+    InMemoryVectorStore,
     Redstring,
     RetrievalResult,
     SourceDocument,
@@ -190,3 +194,58 @@ async def test_client_consolidate_and_context_manager() -> None:
         # Calling consolidate on an entity with no duplicates returns None
         report = await client.consolidate(ada)
         assert report is None
+
+        # Calling consolidate with EntityId resolves
+        report_by_id = await client.consolidate(ada.id)
+        assert report_by_id is None
+
+        # Calling consolidate with unknown EntityId returns None
+        missing_report = await client.consolidate(EntityId(uuid4()))
+        assert missing_report is None
+
+
+@pytest.mark.asyncio
+async def test_client_connect_and_lexical_only() -> None:
+    provider = FakeLlmProvider(by_substring={}, default=TWO_PEOPLE)
+    graph = InMemoryGraphStore()
+    vectors = InMemoryVectorStore(dimension=16)
+    chunks = InMemoryChunkStore(dimension=16)
+    tenant = TenantId(uuid4())
+
+    client = Redstring.connect(
+        graph_store=graph,
+        provider=provider,
+        vector_store=vectors,
+        chunk_store=chunks,
+        tenant_id=tenant,
+    )
+    assert client.graph_store is graph
+    assert client.vector_store is vectors
+    assert client.chunk_store is chunks
+
+    # Lexical-only mode when no embeddings or vector store provided
+    lexical_client = Redstring(
+        graph_store=graph,
+        provider=provider,
+        vector_store=None,
+        chunk_store=chunks,
+        embeddings=None,
+        tenant_id=tenant,
+    )
+    assert lexical_client.vector_store is None
+    # Retrieval works via lexical-only fallback
+    results = await lexical_client.retrieve_entities("Ada", k=1)
+    assert isinstance(results.matches, list)
+
+
+@pytest.mark.asyncio
+async def test_client_retrieve_passages_without_chunk_store_raises() -> None:
+    provider = FakeLlmProvider(by_substring={}, default=TWO_PEOPLE)
+    client = Redstring(
+        graph_store=InMemoryGraphStore(),
+        provider=provider,
+        vector_store=None,
+        chunk_store=None,
+    )
+    with pytest.raises(ValueError, match="No chunk store configured"):
+        await client.retrieve_passages("query")

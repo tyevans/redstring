@@ -143,6 +143,17 @@ WHOLE_PORT_IS_HONEST: dict[str, str] = {
         "Four of the port's five capabilities, and the fifth (TenantPurge) is "
         "declined explicitly with a raise rather than by omission."
     ),
+    "redstring.composition.batch:build_graph_batch": (
+        "Concurrent batch ingestion wrapper over build_graph. Forwards "
+        "caller-supplied graph, vector, and chunk stores directly to build_graph, "
+        "spanning the same capabilities as the single-document entry point."
+    ),
+    "redstring.composition.client:Redstring": (
+        "Unified top-level client facade coordinating graph, vector, and chunk "
+        "stores across ingestion (build_graph), retrieval (retrieve_entities, "
+        "retrieve_passages), and maintenance (consolidate). Spans the full "
+        "capabilities across the stores."
+    ),
 }
 
 #: A dotted name, as an annotation string spells it.

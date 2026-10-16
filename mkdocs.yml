@@ -116,6 +116,7 @@ nav:
       - how-to/index.md
       - Build and extract:
           - Author a domain schema: how-to/author-a-domain-schema.md
+          - Unified client and batch ingestion: how-to/unified-client-and-batch-ingestion.md
           - Harden model calls: how-to/harden-model-calls.md
           - Tune ingestion throughput: how-to/tune-ingestion-throughput.md
       - Search and read:
