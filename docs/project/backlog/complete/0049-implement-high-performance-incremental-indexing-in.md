@@ -2,7 +2,7 @@
 id: 0049
 title: Implement high-performance incremental indexing in InMemoryGraphStore and query-norm
   caching in InMemoryVectorStore
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0149
 - ADR-0002
