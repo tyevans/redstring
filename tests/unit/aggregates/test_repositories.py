@@ -138,6 +138,52 @@ class TestDocumentRepository:
                 stream = document_stream(tenant_id=tenant_id, source_id=source_id)
                 assert (await repo.load(stream.aggregate_id)).version == 1
 
+    async def test_exists_and_get_or_none_and_get_version(self, event_store, tenant_id):
+        """eventsource 0.15.0 repository convenience methods."""
+        repo = document_repository(event_store)
+        stream = document_stream(tenant_id=tenant_id, source_id="doc-exists")
+        agg_id = stream.aggregate_id
+
+        async with tenant_scope(tenant_id):
+            assert not await repo.exists(agg_id)
+            assert await repo.get_or_none(agg_id) is None
+            assert await repo.get_version(agg_id) == 0
+
+            doc = repo.create_new(agg_id)
+            doc.record_extraction(tenant_id=tenant_id, source_id="doc-exists", model_version=MODEL)
+            await repo.save(doc)
+
+            assert await repo.exists(agg_id)
+            loaded = await repo.get_or_none(agg_id)
+            assert loaded is not None
+            assert loaded.version == 1
+            assert await repo.get_version(agg_id) == 1
+            assert (await repo.get_or_raise(agg_id)).version == 1
+
+    async def test_load_many_and_save_all(self, event_store, tenant_id):
+        """eventsource 0.15.0 batch save and load convenience methods."""
+        repo = document_repository(event_store)
+        stream1 = document_stream(tenant_id=tenant_id, source_id="doc-batch-1")
+        stream2 = document_stream(tenant_id=tenant_id, source_id="doc-batch-2")
+
+        async with tenant_scope(tenant_id):
+            doc1 = repo.create_new(stream1.aggregate_id)
+            doc1.record_extraction(
+                tenant_id=tenant_id, source_id="doc-batch-1", model_version=MODEL
+            )
+            doc2 = repo.create_new(stream2.aggregate_id)
+            doc2.record_extraction(
+                tenant_id=tenant_id, source_id="doc-batch-2", model_version=MODEL
+            )
+
+            await repo.save_all([doc1, doc2])
+
+            loaded = await repo.load_many([stream1.aggregate_id, stream2.aggregate_id])
+            assert len(loaded) == 2
+            assert set(loaded.keys()) == {stream1.aggregate_id, stream2.aggregate_id}
+            assert loaded[stream1.aggregate_id].version == 1
+            assert loaded[stream2.aggregate_id].version == 1
+
 
 class TestConsolidationRepository:
     async def test_merges_round_trip_and_rehydrate(self, event_store, tenant_id):
