@@ -137,11 +137,11 @@ dependencies = [
     # `AggregateRoot`, `AggregateRepository`, `TenantAwareRepository`) remain
     # stable and backward-compatible.
     #
-    # **The floor moves to 0.15.0 with the cap**, for the reasoning already
+    # **The floor moves to 0.15.1 with the cap**, for the reasoning already
     # established above -- one supported version rather than a range, keeping
     # redstring aligned with upstream improvements and verifiable under
     # single-version integration gates.
-    "eventsource-py>=0.15.0,<0.16",
+    "eventsource-py>=0.15.1,<0.16",
 ]
 
 [project.optional-dependencies]
