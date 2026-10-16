@@ -1,7 +1,7 @@
 ---
 id: '0051'
 title: Author unified batteries-included Redstring client facade in composition layer
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0149
 - ADR-0002
