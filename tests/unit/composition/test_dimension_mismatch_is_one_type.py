@@ -21,11 +21,20 @@ from eventsource.ports.store import AggregateStore
 
 import redstring.composition as composition
 from redstring.chunks.adapters.memory import InMemoryChunkStore
-from redstring.composition import ChunkRetriever, Retriever, build_graph, index_documents
+from redstring.composition import (
+    BatchDocumentError,
+    BatchGraphReport,
+    ChunkRetriever,
+    Redstring,
+    Retriever,
+    build_graph,
+    build_graph_batch,
+    index_documents,
+)
 from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
 from redstring.domain.entity import Entity
 from redstring.domain.exceptions import DimensionMismatchError
-from redstring.domain.ids import EntityId, TenantId
+from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.merge_strategy import PropertyMergePolicy
 from redstring.domain.source import SourceDocument
 from redstring.events.document import DocumentExtracted
@@ -73,6 +82,10 @@ _COMPOSITION_NAMESPACE: dict[str, object] = {
     "LlmProvider": LlmProvider,
     "VectorReader": VectorReader,
     "VectorStore": VectorStore,
+    "Redstring": Redstring,
+    "build_graph_batch": build_graph_batch,
+    "BatchGraphReport": BatchGraphReport,
+    "BatchDocumentError": BatchDocumentError,
 }
 
 TENANT_ID = uuid4()
@@ -129,10 +142,41 @@ def _index_documents_mismatch() -> None:
     asyncio.run(_run())
 
 
+def _redstring_mismatch() -> None:
+    Redstring(
+        graph_store=InMemoryGraphStore(),
+        provider=FakeLlmProvider(by_substring={}, default={}),
+        embeddings=FakeEmbeddingProvider(dimension=DIMENSION),
+        vector_store=InMemoryVectorStore(dimension=384),
+    )
+
+
+def _build_graph_batch_mismatch() -> None:
+    async def _run() -> None:
+        doc = SourceDocument(
+            id=SourceId(f"doc-{uuid4()}"),
+            text="Ada Lovelace was a mathematician.",
+        )
+        await build_graph_batch(
+            [doc],
+            provider=FakeLlmProvider(by_substring={}, default={}),
+            store=InMemoryGraphStore(),
+            tenant_id=TENANT_ID,
+            embedding_provider=FakeEmbeddingProvider(dimension=DIMENSION),
+            vector_store=InMemoryVectorStore(dimension=384),
+        )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
 CASES = {
     "ChunkRetriever": _chunk_retriever_mismatch,
+    "Redstring": _redstring_mismatch,
     "Retriever": _retriever_mismatch,
     "build_graph": _build_graph_mismatch,
+    "build_graph_batch": _build_graph_batch_mismatch,
     "index_documents": _index_documents_mismatch,
 }
 

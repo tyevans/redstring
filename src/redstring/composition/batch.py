@@ -12,6 +12,7 @@ from redstring.composition.build_graph import (
     build_graph,
 )
 from redstring.composition.coercion import coerce_document
+from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.ids import SourceId
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 
@@ -118,6 +119,21 @@ async def build_graph_batch(
     """
     if max_concurrency < 1:
         raise ValueError("max_concurrency must be at least 1")
+
+    if (
+        embedding_provider is not None
+        and vector_store is not None
+        and embedding_provider.dimension != vector_store.dimension
+    ):
+        raise DimensionMismatchError(
+            expected=vector_store.dimension, actual=embedding_provider.dimension
+        )
+    if (
+        embedding_provider is not None
+        and chunks is not None
+        and embedding_provider.dimension != chunks.dimension
+    ):
+        raise DimensionMismatchError(expected=chunks.dimension, actual=embedding_provider.dimension)
 
     if not documents:
         return BatchGraphReport(
