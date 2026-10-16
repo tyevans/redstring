@@ -1,7 +1,7 @@
 ---
 id: '0050'
 title: Implement flexible input coercion and concurrent batch ingestion build_graph_batch
-status: Refined
+status: Complete
 governing_adrs:
 - ADR-0149
 - ADR-0002

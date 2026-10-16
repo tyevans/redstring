@@ -84,6 +84,6 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0047 (Complete)**: [`0047-fix-pydantic-214-type-compatibility-and-integrate-`](complete/0047-fix-pydantic-214-type-compatibility-and-integrate-.md)
 - **TASK-0048 (Complete)**: [`0048-release-redstring-0130-for-eventsource-py-0150-ado`](complete/0048-release-redstring-0130-for-eventsource-py-0150-ado.md)
 - **TASK-0049 (Complete)**: [`0049-implement-high-performance-incremental-indexing-in`](complete/0049-implement-high-performance-incremental-indexing-in.md)
-- **TASK-0050 (Refined)**: [`0050-implement-flexible-input-coercion-and-concurrent-b`](refined/0050-implement-flexible-input-coercion-and-concurrent-b.md)
+- **TASK-0050 (Complete)**: [`0050-implement-flexible-input-coercion-and-concurrent-b`](complete/0050-implement-flexible-input-coercion-and-concurrent-b.md)
 - **TASK-0051 (Refined)**: [`0051-author-unified-batteries-included-redstring-client`](refined/0051-author-unified-batteries-included-redstring-client.md)
 - **TASK-0052 (Refined)**: [`0052-author-bdd-executable-scenario-test-bindings-and-d`](refined/0052-author-bdd-executable-scenario-test-bindings-and-d.md)
