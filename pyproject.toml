@@ -207,7 +207,7 @@ llm = [
 # `docs/how-to/implement-a-store-adapter.md` says so.
 test = [
     "hypothesis<7,>=6.100",
-    "pytest>=8,<10",
+    "pytest<10,>=8",
     "pytest-asyncio<2,>=0.24",
 ]
 all = [
@@ -257,7 +257,7 @@ dev = [
     "mypy==2.3.0",
     "pip-audit==2.10.1",
     "pre-commit==4.6.2",
-    "pytest==9.1.1",
+    "pytest==9.2.0",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "pytest-randomly==5.0.0",
