@@ -476,9 +476,9 @@ async def test_entities_are_compared_by_equality_not_identity() -> None:
             return [self._rebuild(entity) for entity in found]
 
         async def find_by_blocking_keys(
-            self, keys: Sequence[str], tenant_id: TenantId
+            self, keys: Sequence[str], tenant_id: TenantId, **kwargs: int | None
         ) -> dict[str, list[Entity]]:
-            groups = await self._inner.find_by_blocking_keys(keys, tenant_id)
+            groups = await self._inner.find_by_blocking_keys(keys, tenant_id, **kwargs)
             return {key: [self._rebuild(e) for e in found] for key, found in groups.items()}
 
         async def find_aliases(

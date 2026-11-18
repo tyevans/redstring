@@ -76,6 +76,7 @@ WIRE_FORMAT: dict[type[enum.Enum], dict[str, str]] = {
         "OPEN_GRAPH": "open_graph",
         "HYBRID": "hybrid",
         "MANUAL": "manual",
+        "IMPORTED": "imported",
     },
     MergeDecision: {
         "MERGE": "merge",

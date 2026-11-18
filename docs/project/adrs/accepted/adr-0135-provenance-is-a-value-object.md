@@ -18,7 +18,9 @@ amends:
 
 ## Status
 
-Accepted.
+Accepted. Amended by
+[ADR-0151](adr-0151-missing-import-provenance-is-marked-not-invented.md),
+which adds `ExtractionMethod.IMPORTED`.
 
 **Amends [`0001` event log schema and granularity](adr-0101-event-log-schema-and-granularity.md).**
 0001's decisions stand — one coarse `DocumentExtracted` per extraction run,

@@ -76,6 +76,10 @@ class ExtractionMethod(StrEnum):
     OPEN_GRAPH = "open_graph"
     HYBRID = "hybrid"
     MANUAL = "manual"
+    #: Read from a portable import file that did not say how the claim was
+    #: derived. The import call, not the file, supplied this value, so it
+    #: claims no method and no certainty.
+    IMPORTED = "imported"
 
 
 #: The methods that can have invoked a model, and so may carry

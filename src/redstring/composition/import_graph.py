@@ -5,7 +5,10 @@ domain `Entity` and `Relationship` objects and idempotently upserts them into
 narrow `EntityWriter` and `RelationshipStore` ports.
 
 Trust rule: an import file is trusted for provenance and entity identity.
-Provenance is kept as the file states it. An entity whose id already exists
+Provenance is kept as the file states it. A provenance field that the file
+does not state is not invented as a confident claim: the method becomes
+`ExtractionMethod.IMPORTED`, the confidence becomes `IMPORTED_CONFIDENCE`,
+and the observation time becomes the import time. An entity whose id already exists
 in the target tenant is replaced, not merged. The parser limits are the only
 defence against the file itself: payload size is bounded, JSON nesting that
 exceeds the interpreter limit is refused, and GraphML is read by
@@ -36,6 +39,7 @@ if TYPE_CHECKING:
     from redstring.ports.graph_store import EntityWriter
 
 __all__ = [
+    "IMPORTED_CONFIDENCE",
     "MAX_IMPORT_CHARACTERS",
     "GraphImportReport",
     "import_graph",
@@ -52,6 +56,24 @@ _REL_URN_PREFIX = "urn:redstring:relationship:"
 #: for one snapshot, not a figure measured against a workload. A payload above
 #: it raises `ValueError`; it is never truncated.
 MAX_IMPORT_CHARACTERS: Final = 64 * 1024 * 1024
+
+#: The confidence given to an imported entity or relationship whose file
+#: states none. It is the midpoint of the scale: the file made no claim of
+#: certainty, so the import makes none in either direction.
+IMPORTED_CONFIDENCE: Final = 0.5
+
+
+def _import_time(imported_at: datetime | None) -> datetime:
+    """The observation time for fields the file omits.
+
+    Raises:
+        ValueError: `imported_at` has no time zone.
+    """
+    if imported_at is None:
+        return datetime.now(UTC)
+    if imported_at.tzinfo is None:
+        raise ValueError("imported_at must be timezone-aware")
+    return imported_at
 
 
 def _check_payload_size(payload: str, fmt: str) -> None:
@@ -80,22 +102,15 @@ def _parse_uuid_urn(value: str, prefix: str, what: str) -> UUID:
         raise ValueError(f"Invalid {what} identifier: {value!r}") from exc
 
 
-def _parse_provenance(raw_prov: dict[str, Any] | None) -> Provenance:
+def _parse_provenance(raw_prov: dict[str, Any] | None, imported_at: datetime) -> Provenance:
+    """The file's provenance, with each field it omits marked as imported."""
     if not isinstance(raw_prov, dict):
-        return Provenance(
-            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
-            extraction_method=ExtractionMethod.MANUAL,
-            confidence=1.0,
-        )
+        raw_prov = {}
     obs_raw = raw_prov.get("observedAt")
-    observed_at = (
-        datetime.fromisoformat(obs_raw)
-        if isinstance(obs_raw, str)
-        else datetime(2026, 1, 1, tzinfo=UTC)
-    )
-    method_raw = raw_prov.get("extractionMethod", "manual")
-    method = ExtractionMethod(method_raw)
-    confidence = float(raw_prov.get("confidence", 1.0))
+    observed_at = datetime.fromisoformat(obs_raw) if isinstance(obs_raw, str) else imported_at
+    method_raw = raw_prov.get("extractionMethod")
+    method = ExtractionMethod(method_raw) if method_raw is not None else ExtractionMethod.IMPORTED
+    confidence = float(raw_prov.get("confidence", IMPORTED_CONFIDENCE))
     source_id_raw = raw_prov.get("sourceId")
     source_id = SourceId(str(source_id_raw)) if source_id_raw is not None else None
     source_text = raw_prov.get("sourceText")
@@ -129,14 +144,20 @@ def parse_json_ld(
     payload: str,
     *,
     tenant_id: TenantId,
+    imported_at: datetime | None = None,
 ) -> tuple[list[Entity], list[Relationship]]:
     """Parse a redstring JSON-LD document (`@context` + `@graph`) into domain records.
+
+    A provenance field or relationship confidence that the document omits is
+    filled as the module docstring states. `imported_at` is the observation
+    time used for an omitted `observedAt`; the default is the time of the call.
 
     Raises `ValueError` for every malformed input, including a payload above
     `MAX_IMPORT_CHARACTERS` and JSON nested past the interpreter's recursion
     limit. Neither `json.JSONDecodeError` nor `RecursionError` escapes.
     """
     _check_payload_size(payload, "JSON-LD")
+    import_time = _import_time(imported_at)
     try:
         doc = json.loads(payload)
     except json.JSONDecodeError as exc:
@@ -169,7 +190,7 @@ def parse_json_ld(
         description = node.get("description")
         raw_props = node.get("properties")
         props: dict[str, Any] = dict(raw_props) if isinstance(raw_props, dict) else {}
-        prov = _parse_provenance(node.get("provenance"))
+        prov = _parse_provenance(node.get("provenance"), import_time)
         temporal = _parse_temporal(node.get("temporal"))
 
         base_entity = Entity(
@@ -208,7 +229,7 @@ def parse_json_ld(
         tgt_id = EntityId(_parse_uuid_urn(raw_target, _ENTITY_URN_PREFIX, "target entity"))
         if tgt_id not in entity_ids:
             raise ValueError(f"Relationship {rid} references unknown target entity {tgt_id}")
-        conf = float(rel_obj.get("confidence", 1.0))
+        conf = float(rel_obj.get("confidence", IMPORTED_CONFIDENCE))
         src_doc = rel_obj.get("sourceId")
         raw_rel_props = rel_obj.get("properties")
         rel_props: dict[str, Any] = dict(raw_rel_props) if isinstance(raw_rel_props, dict) else {}
@@ -232,8 +253,13 @@ def parse_graphml(
     payload: str,
     *,
     tenant_id: TenantId,
+    imported_at: datetime | None = None,
 ) -> tuple[list[Entity], list[Relationship]]:
     """Parse a GraphML XML document into domain `Entity` and `Relationship` records.
+
+    GraphML carries no provenance, so every entity is marked as imported, as
+    the module docstring states, observed at `imported_at` (default: the time
+    of the call). An edge without `d_conf` gets `IMPORTED_CONFIDENCE`.
 
     Raises `ValueError` for DTDs, entity declarations, malformed XML, child
     markup inside `<data>`, and payloads above `MAX_IMPORT_CHARACTERS`.
@@ -242,7 +268,7 @@ def parse_graphml(
     _check_payload_size(payload, "GraphML")
     raw_nodes, raw_edges = read_graphml_elements(payload)
 
-    default_prov = _parse_provenance(None)
+    default_prov = _parse_provenance(None, _import_time(imported_at))
     entities: list[Entity] = []
     entity_ids: set[EntityId] = set()
 
@@ -275,7 +301,8 @@ def parse_graphml(
         if src_id not in entity_ids or tgt_id not in entity_ids:
             raise ValueError(f"GraphML edge {rid} references endpoint absent from <node> set")
         rel_type = data.get("d_rel_type", "RELATED_TO").strip() or "RELATED_TO"
-        conf = float(data.get("d_conf", "1.0"))
+        raw_conf = data.get("d_conf")
+        conf = float(raw_conf) if raw_conf is not None else IMPORTED_CONFIDENCE
         relationships.append(
             Relationship(
                 id=rid,
@@ -297,8 +324,13 @@ async def import_graph(
     graph: EntityWriter,
     relationships: RelationshipStore | None = None,
     format: ExportFormat | str = ExportFormat.JSON_LD,
+    imported_at: datetime | None = None,
 ) -> GraphImportReport:
-    """Parse a portable JSON-LD or GraphML payload and idempotently upsert into stores."""
+    """Parse a portable JSON-LD or GraphML payload and idempotently upsert into stores.
+
+    `imported_at` is the observation time recorded for entities whose file
+    states none. The default is the time of the call.
+    """
     t0 = time.perf_counter()
     resolved_format = ExportFormat(format)
     if resolved_format is ExportFormat.MERMAID:
@@ -315,9 +347,9 @@ async def import_graph(
         )
 
     if resolved_format is ExportFormat.JSON_LD:
-        entities, rels = parse_json_ld(payload, tenant_id=tenant_id)
+        entities, rels = parse_json_ld(payload, tenant_id=tenant_id, imported_at=imported_at)
     else:
-        entities, rels = parse_graphml(payload, tenant_id=tenant_id)
+        entities, rels = parse_graphml(payload, tenant_id=tenant_id, imported_at=imported_at)
 
     if entities:
         await graph.upsert_entities(entities)

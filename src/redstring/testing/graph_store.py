@@ -72,6 +72,7 @@ from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
 from redstring.ports.graph_store import MAX_TRAVERSAL_DEPTH, GraphStore
 from redstring.testing import strategies as gen
+from redstring.testing.graph_store_blocking_limits import GraphStoreBlockingReadLimits
 from redstring.testing.graph_store_bounds import GraphStoreTraversalBounds
 
 if TYPE_CHECKING:
@@ -130,7 +131,7 @@ def _mutate(entity: Entity) -> None:
             value.append("__nested_tamper__")
 
 
-class GraphStoreCompliance(GraphStoreTraversalBounds):
+class GraphStoreCompliance(GraphStoreTraversalBounds, GraphStoreBlockingReadLimits):
     """Tests every `GraphStore` implementation must pass."""
 
     async def new_store(self) -> GraphStore:
@@ -1306,9 +1307,6 @@ class GraphStoreCompliance(GraphStoreTraversalBounds):
         batched = await store.find_by_blocking_keys(["A430", "B123"], tenant)
         for key in ("A430", "B123"):
             assert batched[key] == await store.find_by_blocking_key(key, tenant)
-
-    async def test_find_by_blocking_keys_with_no_keys_is_empty(self, store: GraphStore) -> None:
-        assert await store.find_by_blocking_keys([], TenantId(uuid4())) == {}
 
     async def test_mutating_a_grouped_result_does_not_change_the_store(
         self, store: GraphStore

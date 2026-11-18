@@ -37,6 +37,11 @@ CLOCK_IS_THE_POINT = {
         "The vantage point enters the library here. Everything below takes it "
         "as a required argument."
     ),
+    "composition/import_graph.py": (
+        "An import file that states no observation time is observed when the "
+        "import runs. A caller who wants determinism passes `imported_at`, as "
+        "with `build_graph`'s `observed_at`."
+    ),
     # These are not about record time at all: a circuit breaker's recovery
     # timeout and a rate limiter's window are questions about *now* by
     # definition, and no caller could supply an instant that made them

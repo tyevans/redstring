@@ -45,6 +45,7 @@ def test_extraction_method_members():
     assert ExtractionMethod.OPEN_GRAPH == "open_graph"
     assert ExtractionMethod.HYBRID == "hybrid"
     assert ExtractionMethod.MANUAL == "manual"
+    assert ExtractionMethod.IMPORTED == "imported"
 
 
 def test_extraction_method_names_no_vendors():
@@ -56,6 +57,7 @@ def test_extraction_method_names_no_vendors():
         "open_graph",
         "hybrid",
         "manual",
+        "imported",
     }
 
 

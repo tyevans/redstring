@@ -128,28 +128,6 @@ Ordered by whether a caller doing an ordinary thing meets it: B43 needs only a
 merge and a re-extraction, B32 needs a second extraction run, and B35 fails
 loudly.
 
-### B168. A portable import invents a confident, manual provenance when the file has none
-
-`composition/import_graph.py`, `_parse_provenance`: when a JSON-LD node or a
-GraphML node has no provenance, the importer builds
-`Provenance(observed_at=2026-01-01, extraction_method=MANUAL,
-confidence=1.0)`. A file with no provenance thus imports as hand-curated,
-fully confident data, dated to an arbitrary day. A consumer that filters on
-`extraction_method` or `confidence` (consolidation tie-breaks, retrieval
-diagnostics) treats it as the most trustworthy data in the tenant.
-
-ADR-0150 records that an import file is trusted for the provenance it
-*states*. This default is provenance the file did not state, which is a
-different thing, and it was found twice in the 2026-11-17 sweep (the
-parsing review and the coverage pass).
-
-Deferred because the right fix adds a value. The honest default is an
-`ExtractionMethod.IMPORTED` with a low confidence, plus an `observed_at` taken
-from the import call, not a constant. `ExtractionMethod` values are a wire
-format (`tests/unit/test_enum_values_are_a_wire_format.py`), and persisted
-events carry them, so a new value needs its own ADR. Also decide whether a
-missing provenance should be refused instead of defaulted.
-
 ### B43. A merge plans against a graph read outside its concurrency window
 
 `consolidation/service.py::merge` reads `get_relationships_for` *before*
@@ -1054,25 +1032,6 @@ with a *reported* symptom shape (a shared limiter starving extraction); B123
 and B124 corrupt a similarity score rather than a timing; the rest are growth
 curves nobody has climbed.
 
-### B167. The consolidation candidate cap bounds scoring, not the block read
-
-TASK-0065 capped the candidates that `consolidation/candidates.py` scores per
-subject (`DEFAULT_MAX_CANDIDATES`, selected by name similarity with ties to
-the lower id). The read before the cut is not bounded.
-`find_by_blocking_keys` still returns the whole block, and
-`domain/blocking.py` includes an `ENTITY_TYPE` strategy in
-`DEFAULT_STRATEGIES`, so the `t:<type>` block is every entity of that type in
-the tenant. A tenant with 100 000 `person` entities reads 100 000 entities
-for each subject, then scores 500 of them.
-
-Deferred because both fixes change consolidation recall, and the 2026-11-17
-security sweep had no measurement to decide that with. The options are a
-`limit` on `find_by_blocking_keys` (a port change, owed to both adapters and
-the compliance suite), or the removal of `ENTITY_TYPE` from the default
-strategies (cheaper, but it removes the only key two differently spelled
-names of one type always share). Measure recall on the accuracy corpus
-before you choose.
-
 ### B140. The endpoint ceiling is per pass, not per model call
 
 `ConsolidationService.resolve_many` acquires its `CallLimiter` once, around
@@ -1404,6 +1363,23 @@ scale. Revisit if temporal traversal raises typical depths above about 3.
 Traps in the harness. Several of these are filed specifically because they
 cause failures that read as infrastructure trouble and get retried rather than
 investigated.
+
+### B169. A wall-clock bound in the default suite fails under machine load
+
+`tests/unit/test_bdd_us0020_us0023_import_topology_and_diff.py`,
+`test_scenario_sub_500ms_performance_bound_on_topology_analysis`, asserts
+`analyze_topology(...).elapsed_ms < 500.0` over 200 entities, inside the
+default `pytest -n auto` run. On 2026-11-18 it measured 920 ms during a
+coverage-ratchet run while other projects' suites held the load average at
+60, and then passed three times in a row alone (0.47-0.54 s wall time for
+the whole test). Nothing in the change under test touched topology analysis.
+
+That is the shape this section exists for: a failure that reads as flakiness
+and gets retried. Deferred because the fix is a choice about what US-0022's
+bound means. Either move the bound to a marked benchmark that does not run
+under xdist, or assert something that load cannot move (the number of store
+reads, which is the cost the bound stands in for). Do not raise the number:
+a looser wall-clock bound fails the same way under more load.
 
 ### B125. The coverage ratchet measures a sampled quantity, so it ratchets to the luckiest run
 

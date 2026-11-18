@@ -2,9 +2,10 @@
 
 Two steps, and keeping them apart is the point:
 
-1. **Block.** `GraphStore.find_by_blocking_keys` returns everything sharing a
-   key with the subject. Cheap, lossy, and the only thing standing between
-   consolidation and a quadratic scan of the tenant.
+1. **Block.** `GraphStore.find_by_blocking_keys` returns what shares a key
+   with the subject, at most `MAX_BLOCK_READ` entities per key. Cheap, lossy,
+   and the only thing standing between consolidation and a quadratic scan of
+   the tenant.
 2. **Score.** Each candidate gets a name score always, an embedding score when
    a `VectorStore` is supplied and both entities have vectors, and a graph
    score when the neighbours are asked for.
@@ -50,6 +51,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from redstring.domain.blocking import MAX_BLOCK_READ
 from redstring.domain.normalization import normalize_name
 from redstring.domain.similarity import (
     FeatureWeights,
@@ -94,7 +96,8 @@ DEFAULT_MAX_CANDIDATES = 500
 
 #: The largest cap a caller may ask for. Above it, the per-subject read cost
 #: is the same order as a full tenant scan, which is what blocking exists to
-#: avoid.
+#: avoid. It does not exceed `MAX_BLOCK_READ`, so a block of one key is never
+#: read smaller than the cap a caller asked for.
 MAX_CANDIDATES = 10_000
 
 
@@ -219,7 +222,9 @@ class CandidateFinder:
         if not keys:
             return []
 
-        grouped = await self._graph.find_by_blocking_keys(keys, subject.tenant_id)
+        grouped = await self._graph.find_by_blocking_keys(
+            keys, subject.tenant_id, limit_per_key=MAX_BLOCK_READ
+        )
         # Deduplicated by id: an entity carrying three of the keys appears
         # under each, and scoring it three times would be wasted work and a
         # candidate list a caller has to deduplicate itself.
