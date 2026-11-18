@@ -467,11 +467,11 @@ class Neo4jGraphStore:
             f"OPTIONAL MATCH p = (a)-[:{ALIAS_EDGE}*1..]->(c:{ALIAS_NODE}) "
             "WHERE c.tenant_id = $tenant_id AND ALL(n IN nodes(p) WHERE n.tenant_id = $tenant_id) "
             f"  AND NOT EXISTS {{ (c)-[:{ALIAS_EDGE}]->(x:{ALIAS_NODE}) "
-            "    WHERE x.tenant_id = $tenant_id }} "
+            "    WHERE x.tenant_id = $tenant_id } "
             "RETURN wanted, "
             "  c.entity_id AS canonical, "
             f"  EXISTS {{ (a)-[:{ALIAS_EDGE}]->(x:{ALIAS_NODE}) "
-            "    WHERE x.tenant_id = $tenant_id }} AS is_alias",
+            "    WHERE x.tenant_id = $tenant_id } AS is_alias",
             tenant_id=str(tenant_id),
             entity_ids=[str(entity_id) for entity_id in wanted],
         )

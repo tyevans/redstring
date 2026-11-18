@@ -104,3 +104,20 @@ class TestTraversalPinsTheTenantOnTheFarEnd:
         # The outgoing checks name their far node `x` and constrain it.
         assert query.count("(x:AliasRef)") == 2
         assert query.count("x.tenant_id = $tenant_id") == 2
+
+    async def test_the_alias_query_has_no_doubled_braces(self):
+        """Every brace reaches Neo4j single and balanced.
+
+        An f-string writes `{{` as one brace, and a plain string does not. The
+        alias query mixes the two, and a `}}` in a plain fragment once reached
+        the server as two braces. Neo4j refused it with a syntax error, which
+        the assertions above could not see, because the tenant predicates were
+        all present in the broken text.
+        """
+        store = _RecordingStore()
+        await store.resolve_entity_ids([uuid4()], uuid4())
+
+        (query,) = store.queries
+        assert "{{" not in query
+        assert "}}" not in query
+        assert query.count("{") == query.count("}")
