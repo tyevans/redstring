@@ -13,7 +13,7 @@ This file had placeholder contacts (`security@example.com`) and a PGP fingerprin
 ## 3. Supply-chain controls
 
 - ADR-0009: `uv.lock` is committed. CI installs with `uv sync --locked`, and pre-commit runs `uv lock --check`.
-- ADR-0010: CI runs gitleaks over the full history (`ci.yml`, job `secrets`). Pre-commit runs `detect-private-key`.
+- ADR-0010: CI runs gitleaks over the full history (`ci.yml`, job `secrets`). Pre-commit runs gitleaks over the staged changes, at the same version, and `detect-private-key`.
 - Every GitHub Action and remote pre-commit hook is pinned to a commit SHA.
 
 ## 4. Autonomous Worker Execution Restrictions
