@@ -2,13 +2,13 @@
 
 ## Supported versions
 
-redstring is pre-1.0. Only the latest release receives fixes; there are no
-maintained branches for earlier versions.
+redstring is pre-1.0. Only the latest minor release receives fixes; there are
+no maintained branches for earlier versions.
 
 | Version | Supported |
 |---|---|
-| 0.1.x | ✅ |
-| < 0.1 | ❌ (none exist) |
+| 0.13.x | ✅ |
+| < 0.13 | ❌ |
 
 ## Reporting a vulnerability
 

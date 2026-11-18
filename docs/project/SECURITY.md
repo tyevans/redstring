@@ -1,23 +1,20 @@
 # Security Policy and Vulnerability Disclosure
 
-## 1. Vulnerability Disclosure Policy & Workflows
+## 1. How to report a vulnerability
 
-We take the security of this system seriously. If you identify a security vulnerability, we request that you disclose it responsibly:
-- **Private Reporting**: Do not disclose vulnerabilities in public issue trackers, pull requests, or discussion forums.
-- **Response Timeline**: The security team acknowledges vulnerability reports within 24 hours and provides triage within 72 hours.
-- **Coordinated Disclosure**: Fixes are developed in private security worktrees and published alongside advisories upon release.
+The policy is in the root [`SECURITY.md`](../../SECURITY.md). GitHub shows that file on the repository's Security tab. Use it to report a vulnerability. Do not use this file for that.
 
-## 2. Reporting Contacts & Incident Management
+Use GitHub private vulnerability reporting. Do not open a public issue, pull request or discussion.
 
-To report a vulnerability or security incident, contact the security team:
-- **Primary Security Contact**: security@example.com
-- **Incident Escalation**: security-incidents@example.com
+## 2. Why this file is short
 
-## 3. PGP Key Fingerprint
+This file had placeholder contacts (`security@example.com`) and a PGP fingerprint that was not a real key. A reporter who used them could not send or encrypt a report. One policy in one place prevents that.
 
-Submissions containing sensitive vulnerability descriptions should be encrypted using our PGP key:
-- **PGP Fingerprint**: `ABCD 1234 EF56 7890 ABCD 1234 EF56 7890 SPEC OPS1`
-- **Key Server**: `keys.openpgp.org`
+## 3. Supply-chain controls
+
+- ADR-0009: `uv.lock` is committed. CI installs with `uv sync --locked`, and pre-commit runs `uv lock --check`.
+- ADR-0010: CI runs gitleaks over the full history (`ci.yml`, job `secrets`). Pre-commit runs `detect-private-key`.
+- Every GitHub Action and remote pre-commit hook is pinned to a commit SHA.
 
 ## 4. Autonomous Worker Execution Restrictions
 
