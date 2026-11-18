@@ -1,6 +1,6 @@
 # CI
 #
-# Every job installs with `uv sync --all-extras` and runs tools through
+# Every job installs with `uv sync --locked --all-extras` and runs tools through
 # `uv run`, so CI executes the same versions the pre-commit gate uses locally.
 #
 # `--all-extras`, never `--extra dev`. The `dev` extra holds only tooling;
@@ -10,12 +10,15 @@
 # presented here as a mutation run reporting "0 survivors out of 426" and as
 # 47 phantom mypy errors in untouched files.
 #
-# There is deliberately no `--locked`: `uv.lock` is not committed (it is in
-# `.gitignore`), which is a defensible choice for a library -- resolving
-# runtime dependencies fresh is how you find out that a new `pydantic` broke
-# you, rather than finding out from a user.
+# Every job installs with `--locked`. `uv.lock` is committed (ADR-0009), so CI
+# installs the exact set that was reviewed, and `uv sync` fails if the lock
+# no longer matches `pyproject.toml`. Before, the lock was not committed, so
+# each run resolved a different transitive set, and `pip-audit` audited
+# whatever resolved that day. A new upstream release now reaches CI as a
+# Dependabot pull request that changes the lock -- a diff someone reads --
+# and not as a silent change under a branch that changed nothing.
 #
-# That argument covers runtime dependencies only. The `dev` and `docs` extras
+# The `dev` and `docs` extras
 # are **pinned exactly** in `pyproject.toml`, because a floating tool version
 # means this gate can change under a branch that changed nothing -- which is
 # not hypothetical here: a ruff release once turned five unrelated Dependabot
@@ -55,12 +58,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
           enable-cache: true
 
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
 
       - name: ruff check
         run: uv run ruff check .
@@ -78,12 +81,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
           enable-cache: true
 
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
 
       # No paths on the command line. Naming files explicitly bypasses the
       # configured file set and answers a different question than the run this
@@ -101,12 +104,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
           enable-cache: true
 
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
 
       - run: uv run lint-imports
 
@@ -120,12 +123,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
           enable-cache: true
 
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
 
       # `-r src/` scans the whole package. The pre-commit hook passes only the
       # filenames a commit touched, so it can be green for years without
@@ -137,6 +140,41 @@ jobs:
 
       - name: pip-audit
         run: uv run pip-audit
+
+  secrets:
+    # gitleaks over the full history. ADR-0010 requires secret scanning, and
+    # until this job nothing did it.
+    timeout-minutes: 10
+    name: gitleaks
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      # From gitleaks_8.30.1_checksums.txt on the release. Change the version
+      # and the digest together, after you read the release notes.
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history: a secret that a later commit deleted is still
+          # in the repository.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The release binary, checked against a pinned digest. This is in place
+      # of `gitleaks/gitleaks-action`: it removes one third-party action, and
+      # that action needs API permissions to read pull-request commits.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLo "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" gitleaks
+          rm "$archive"
+
+      - name: gitleaks
+        run: ./gitleaks git . --redact --no-banner --exit-code 1
 
   test:
     # pytest, observed 106s over recent runs; GitHub's default is 360
@@ -153,12 +191,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
 
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
 
       # `addopts` already deselects `integration` and `accuracy`, so this is
       # the whole unit suite.
@@ -233,12 +271,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
           enable-cache: true
 
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
 
       # Runs on every PR rather than only on docs paths: a link into `docs/`
       # breaks when the *target* moves, so a change that touches no markdown
@@ -313,12 +351,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
           enable-cache: true
 
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
 
       # Three constraints, each measured rather than assumed:
       #

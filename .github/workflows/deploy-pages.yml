@@ -5,10 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# No default permissions. The deploy job is the only job, and it gets the
+# three it needs. `id-token: write` is the grant that matters: it lets the job
+# ask for an OIDC token, so every action and tool that runs in this job is
+# pinned to a commit SHA.
+permissions: {}
 
 concurrency:
   group: "pages"
@@ -21,26 +22,37 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install uv and Python
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --locked --all-extras
 
       - name: Build Diataxis Documentation and Living Visualizer
-        run: uv tool run --from git+https://github.com/tyevans/spec-ops.git spec-ops docs build --base-url /${{ github.event.repository.name }}/
+        # spec-ops publishes no tags, so the tool is pinned to a commit. A bare
+        # `git+https://...` URL runs whatever the default branch holds at the
+        # time of the push, with this job's OIDC grant. Move the SHA on
+        # purpose, after you read the diff.
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: uv tool run --from "git+https://github.com/tyevans/spec-ops.git@2c8d073180eb558a57aeb500ffcc6210361c8ee7" spec-ops docs build --base-url "/${REPO_NAME}/"
 
       - name: Setup Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
