@@ -1,11 +1,12 @@
-"""Ergonomic container dunders and single-event append on InMemoryEventStore.
+"""Ergonomic container dunders and append on InMemoryEventStore.
 
-Asserts eventsource-py 0.15.0 container protocols:
+Asserts eventsource-py container protocols (added in 0.15.0):
 - `len(store)` and `bool(store)`
 - `event in store` and `event_id in store`
 - `store.clear()`
 - `store.stream_exists(stream_id)`
-- `store.append(event)` with default `ExpectedVersion.ANY`
+- `store.append(stream, events, expected)` -- since 0.16.0 `expected` is
+  required, and `None` no longer means "any version"
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from uuid import uuid4
 import pytest
 from eventsource.adapters.memory import InMemoryEventStore
 from eventsource.domain.tenant_context import tenant_scope
+from eventsource.ports.positions import ExpectedVersion
 
 from redstring.events.document import DocumentExtracted
 from redstring.events.streams import document_stream
@@ -47,8 +49,8 @@ async def test_in_memory_event_store_container_dunders(store, tenant_id):
     )
 
     async with tenant_scope(tenant_id):
-        # 0.15.0 single-event append with default expected_version
-        await store.append(stream, [event])
+        # 0.16.0 removed the default: the caller states what it expects.
+        await store.append(stream, [event], ExpectedVersion.no_stream())
 
     assert len(store) == 1
     assert await store.stream_exists(stream)
