@@ -62,6 +62,12 @@ document that the XML rules refuse.
 - Provenance is kept as the file states it. The `sourceId`, `observedAt`,
   `extractionMethod` and `confidence` values are written as found. The
   library does not check them against any source.
+- A provenance field that the file omits is not invented. The method
+  becomes `imported`, the confidence becomes `IMPORTED_CONFIDENCE` (0.5), and
+  the observation time becomes the import time. A relationship without a
+  confidence also gets 0.5. GraphML carries no provenance, so every GraphML
+  entity is marked this way. Pass `imported_at=` to record a fixed time
+  instead of the time of the call.
 - An entity whose id already exists in the target tenant is replaced. It is
   not merged. A field that the file does not state becomes empty. A
   description that the file omits is removed.

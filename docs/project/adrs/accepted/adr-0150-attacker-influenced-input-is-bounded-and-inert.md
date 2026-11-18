@@ -22,6 +22,11 @@ Accepted. Amends [ADR-0116](adr-0116-graph-store-is-five-capabilities.md),
 [ADR-0139](adr-0139-bounded-concurrency-over-chunks.md). Each amended record
 keeps its Decision. This record adds limits on top of it.
 
+Amended by
+[ADR-0151](adr-0151-missing-import-provenance-is-marked-not-invented.md),
+which separates the provenance an import file states from the provenance it
+omits (decision 5).
+
 ## Context
 
 redstring reads documents that the caller does not control, and the LLM output

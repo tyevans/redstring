@@ -42,6 +42,7 @@ from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from redstring.composition.build_graph import Consolidator
     from redstring.consolidation.protocols import MergeAdjudicator
@@ -172,14 +173,19 @@ class _RedstringDiagnosticsMixin:
         *,
         format: ExportFormat | str = ExportFormat.JSON_LD,
         tenant_id: TenantId | None = None,
+        imported_at: datetime | None = None,
     ) -> GraphImportReport:
-        """Import a JSON-LD or GraphML payload into the tenant's graph store."""
+        """Import a JSON-LD or GraphML payload into the tenant's graph store.
+
+        `imported_at` is passed to `import_graph`, which states its meaning.
+        """
         return await import_graph(
             payload,
             self._active_tenant(tenant_id),
             graph=self._graph_store,
             relationships=self._graph_store,
             format=format,
+            imported_at=imported_at,
         )
 
     async def analyze_topology(

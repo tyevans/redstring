@@ -44,6 +44,14 @@ supply chain. Some changes refuse input that was accepted before. Read
   entity declaration raises `ValueError`. CDATA text is kept. Malformed XML,
   an oversize payload and JSON-LD nested past the recursion limit raise
   `ValueError`.
+- **An import no longer invents provenance** (ADR-0151). A field that an
+  import file omits used to become `extraction_method=MANUAL`,
+  `confidence=1.0` and `observed_at=2026-01-01`. It now becomes the new
+  `ExtractionMethod.IMPORTED`, `IMPORTED_CONFIDENCE` (0.5) and the import
+  time, which `imported_at=` can fix. A relationship without a confidence
+  gets 0.5, not 1.0. Every GraphML entity is affected, because GraphML
+  carries no provenance. A store that holds `"imported"` cannot be read by an
+  earlier version.
 - **Model calls have explicit timeouts.** `openai_compatible` chat calls
   default to a 300 s timeout and embedding calls to 60 s, each with 2
   retries, and both are constructor parameters. Before, the SDK default of

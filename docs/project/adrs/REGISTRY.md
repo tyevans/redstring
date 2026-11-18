@@ -77,3 +77,4 @@ The architectural decisions governing Redstring's domain models, store ports, an
 | ADR-0148 | Entity Retraction on Re-extraction without delete_entity | Proposed | 2026-10-04 |
 | [ADR-0149](accepted/adr-0149-unified-redstring-client-facade-and-indexing.md) | 0149 | Unified Redstring Client Facade and In-Memory Indexing Architecture | Accepted | `composition` |
 | [ADR-0150](accepted/adr-0150-attacker-influenced-input-is-bounded-and-inert.md) | 0150 | Attacker-influenced input is bounded and inert | Accepted | `core` |
+| [ADR-0151](accepted/adr-0151-missing-import-provenance-is-marked-not-invented.md) | 0151 | Missing import provenance is marked, not invented | Accepted | `composition` |
