@@ -102,3 +102,5 @@ Strict sequential order of execution for engineering tasks.
 - **TASK-0065 (Complete)**: [`0065-bound-caller-supplied-work-parameters-in-batch-chu`](complete/0065-bound-caller-supplied-work-parameters-in-batch-chu.md)
 - **TASK-0066 (Complete)**: [`0066-validate-sql-identifiers-at-every-interpolation-si`](complete/0066-validate-sql-identifiers-at-every-interpolation-si.md)
 - **TASK-0067 (Complete)**: [`0067-pin-ci-and-hook-supply-chain-and-implement-adr-001`](complete/0067-pin-ci-and-hook-supply-chain-and-implement-adr-001.md)
+- **TASK-0068 (Complete)**: [`0068-mark-missing-import-provenance-as-imported-instead`](complete/0068-mark-missing-import-provenance-as-imported-instead.md)
+- **TASK-0069 (Complete)**: [`0069-cap-the-blocking-read-per-key-in-consolidation-and`](complete/0069-cap-the-blocking-read-per-key-in-consolidation-and.md)
