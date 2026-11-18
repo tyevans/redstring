@@ -91,6 +91,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DEFAULT_STRATEGIES",
+    "MAX_BLOCK_READ",
     "PREFIX_LENGTH",
     "BlockingKeyStrategy",
     "blocking_keys_for",
@@ -111,6 +112,18 @@ __all__ = [
 #: recomputing every entity's keys, which is a migration and not a call-site
 #: decision.
 PREFIX_LENGTH = 5
+
+#: The most entities one blocking key contributes to a single read.
+#:
+#: Consolidation and lexical retrieval pass it as `limit_per_key` to
+#: `GraphStore.find_by_blocking_keys`. A type key (`t:person`) holds every
+#: entity of that type, so without a cap one subject or one query reads a
+#: block the size of the tenant. A block at or below the cap is read whole,
+#: so the cap changes no result until a key is this common. Above it, the
+#: block is cut to its lowest ids, which is arbitrary with respect to the
+#: name and is the price of a bounded read. It is a backstop, not a tuning
+#: target: see ADR-0152.
+MAX_BLOCK_READ = 10_000
 
 _PREFIX = "p:"
 _TYPE = "t:"

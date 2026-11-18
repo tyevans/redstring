@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from redstring.domain.blocking import query_blocking_keys
+from redstring.domain.blocking import MAX_BLOCK_READ, query_blocking_keys
 from redstring.domain.chunk_ranking import rank_chunks
 from redstring.domain.chunk_retrieval import ChunkRetrievalResult, ScoredChunk
 from redstring.domain.exceptions import (
@@ -265,7 +265,9 @@ class Retriever:
         results than exist whenever a non-matching candidate outranks a
         matching one.
         """
-        groups = await self._graph.find_by_blocking_keys(query_blocking_keys(query), tenant_id)
+        groups = await self._graph.find_by_blocking_keys(
+            query_blocking_keys(query), tenant_id, limit_per_key=MAX_BLOCK_READ
+        )
 
         candidates: dict[EntityId, Entity] = {}
         for found in groups.values():

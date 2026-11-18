@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from redstring.domain.blocking import blocking_keys_for, query_blocking_keys
+from redstring.domain.blocking import MAX_BLOCK_READ, blocking_keys_for, query_blocking_keys
 from redstring.domain.bm25 import BM25_B, BM25_K1, CorpusStats, inverse_document_frequency
 from redstring.domain.chunk_ranking import rank_chunks
 from redstring.domain.exceptions import DimensionMismatchError
@@ -220,7 +220,7 @@ async def explain_entity_retrieval(
     lexical_scores: dict[EntityId, float] = {}
     lexical_entities: dict[EntityId, Entity] = {}
     if resolved_mode in (RetrievalMode.LEXICAL, RetrievalMode.HYBRID):
-        groups = await graph.find_by_blocking_keys(q_keys, tenant_id)
+        groups = await graph.find_by_blocking_keys(q_keys, tenant_id, limit_per_key=MAX_BLOCK_READ)
         candidates: dict[EntityId, Entity] = {}
         for found in groups.values():
             for entity in found:

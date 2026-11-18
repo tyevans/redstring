@@ -26,7 +26,7 @@ from redstring.domain.exceptions import AliasCycleError, MissingEntityError
 from redstring.ports.graph_store import MAX_TRAVERSAL_DEPTH
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
     from types import TracebackType
 
     from redstring.domain.alias import Alias
@@ -127,13 +127,24 @@ class InMemoryGraphStore:
         return [entities[eid].model_copy(deep=True) for eid in matching_ids if eid in entities]
 
     async def find_by_blocking_keys(
-        self, keys: Sequence[str], tenant_id: TenantId
+        self,
+        keys: Sequence[str],
+        tenant_id: TenantId,
+        *,
+        limit_per_key: int | None = None,
     ) -> dict[str, list[Entity]]:
+        if limit_per_key is not None and limit_per_key < 0:
+            raise ValueError(f"limit_per_key must be non-negative, got {limit_per_key}")
         grouped: dict[str, list[Entity]] = {key: [] for key in keys}
         tenant_idx = self._blocking_index.get(tenant_id, {})
         entities = self._entities.get(tenant_id, {})
         for key in keys:
-            matching_ids = tenant_idx.get(key, ())
+            matching_ids: Iterable[EntityId] = tenant_idx.get(key, ())
+            if limit_per_key is not None:
+                # The lowest ids by canonical string, the order the port
+                # states, so this adapter and Neo4j keep the same rows.
+                present = sorted((eid for eid in matching_ids if eid in entities), key=str)
+                matching_ids = present[:limit_per_key]
             if matching_ids:
                 grouped[key] = [
                     entities[eid].model_copy(deep=True) for eid in matching_ids if eid in entities

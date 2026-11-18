@@ -380,22 +380,46 @@ class Neo4jGraphStore:
         return [_entity_from(record["e"]) for record in records]
 
     async def find_by_blocking_keys(
-        self, keys: Sequence[str], tenant_id: TenantId
+        self,
+        keys: Sequence[str],
+        tenant_id: TenantId,
+        *,
+        limit_per_key: int | None = None,
     ) -> dict[str, list[Entity]]:
+        if limit_per_key is not None and limit_per_key < 0:
+            raise ValueError(f"limit_per_key must be non-negative, got {limit_per_key}")
         # Seeded with every requested key so absent ones map to [] rather than
         # being missing -- the caller iterates the result, not its request.
         grouped: dict[str, list[Entity]] = {key: [] for key in keys}
-        if not grouped:
+        if not grouped or limit_per_key == 0:
             return grouped
 
-        records = await self._run(
-            "UNWIND $keys AS wanted "
-            f"MATCH (k:{KEY_NODE} {{tenant_id: $tenant_id, key: wanted}})"
-            f"<-[:{KEY_EDGE}]-(e:Entity) "
-            "RETURN wanted AS key, e ORDER BY key, e.id",
-            tenant_id=str(tenant_id),
-            keys=list(grouped),
-        )
+        if limit_per_key is None:
+            records = await self._run(
+                "UNWIND $keys AS wanted "
+                f"MATCH (k:{KEY_NODE} {{tenant_id: $tenant_id, key: wanted}})"
+                f"<-[:{KEY_EDGE}]-(e:Entity) "
+                "RETURN wanted AS key, e ORDER BY key, e.id",
+                tenant_id=str(tenant_id),
+                keys=list(grouped),
+            )
+        else:
+            # The subquery runs once per key, so `LIMIT` caps each group in
+            # the store instead of the whole result. The importing `WITH`
+            # form, not `CALL (wanted)`, because the scope clause needs a
+            # 5.23 server and no minimum server version is documented.
+            records = await self._run(
+                "UNWIND $keys AS wanted "
+                "CALL { WITH wanted "
+                f"MATCH (k:{KEY_NODE} {{tenant_id: $tenant_id, key: wanted}})"
+                f"<-[:{KEY_EDGE}]-(e:Entity) "
+                "RETURN e ORDER BY e.id LIMIT $limit "
+                "} "
+                "RETURN wanted AS key, e ORDER BY key, e.id",
+                tenant_id=str(tenant_id),
+                keys=list(grouped),
+                limit=limit_per_key,
+            )
         for record in records:
             grouped[record["key"]].append(_entity_from(record["e"]))
         return grouped

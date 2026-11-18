@@ -111,9 +111,15 @@ class BlockingGraph(NoOpLifetime):
         ]
 
     async def find_by_blocking_keys(
-        self, keys: Any, tenant_id: TenantId
+        self, keys: Any, tenant_id: TenantId, *, limit_per_key: int | None = None
     ) -> dict[str, list[Entity]]:
-        return {key: await self.find_by_blocking_key(key, tenant_id) for key in keys}
+        grouped = {key: await self.find_by_blocking_key(key, tenant_id) for key in keys}
+        if limit_per_key is None:
+            return grouped
+        return {
+            key: sorted(found, key=lambda e: str(e.id))[:limit_per_key]
+            for key, found in grouped.items()
+        }
 
     # -- AliasStore -----------------------------------------------------
 

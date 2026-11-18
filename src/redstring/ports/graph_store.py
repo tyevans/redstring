@@ -108,7 +108,11 @@ class EntityReader(AsyncClosable, Protocol):
         ...
 
     async def find_by_blocking_keys(
-        self, keys: Sequence[str], tenant_id: TenantId
+        self,
+        keys: Sequence[str],
+        tenant_id: TenantId,
+        *,
+        limit_per_key: int | None = None,
     ) -> dict[str, list[Entity]]:
         """Group this tenant's entities by each of `keys`.
 
@@ -116,6 +120,13 @@ class EntityReader(AsyncClosable, Protocol):
         nothing carries it, so a caller can iterate the mapping without
         re-checking it against what it asked for. An entity carrying several
         of the keys appears under each.
+
+        `limit_per_key` caps each key's group separately, not the total.
+        `None` means no cap. When a group is capped, it holds the entities
+        with the lowest ids, in the order `find_entities` documents, so two
+        adapters cap one block identically. The adapter applies the cap before
+        rows leave the store, so a capped read never transfers or builds the
+        whole block. A negative `limit_per_key` raises `ValueError`.
 
         Blocking a whole tenant is the shape consolidation actually uses, and
         as a loop over `find_by_blocking_key` it is one query per key.

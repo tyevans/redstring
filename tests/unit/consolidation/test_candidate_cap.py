@@ -47,8 +47,8 @@ class _ReversedBlockStore(InMemoryGraphStore):
     would pass against the other.
     """
 
-    async def find_by_blocking_keys(self, keys, tenant_id):
-        grouped = await super().find_by_blocking_keys(keys, tenant_id)
+    async def find_by_blocking_keys(self, keys, tenant_id, *, limit_per_key=None):
+        grouped = await super().find_by_blocking_keys(keys, tenant_id, limit_per_key=limit_per_key)
         return {key: list(reversed(found)) for key, found in grouped.items()}
 
 

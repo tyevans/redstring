@@ -18,7 +18,9 @@ amended_by:
 *(Formerly legacy ADR 0016)*
 
 **Status:** accepted. Amended by [ADR-0150](adr-0150-attacker-influenced-input-is-bounded-and-inert.md), which gives `neighbors` an
-upper depth bound (`MAX_TRAVERSAL_DEPTH`) that every adapter enforces. Applied to `ChunkStore` and `Cache` by
+upper depth bound (`MAX_TRAVERSAL_DEPTH`) that every adapter enforces, and by
+[ADR-0152](adr-0152-a-blocking-read-is-capped-per-key.md), which gives `find_by_blocking_keys` a
+`limit_per_key`. Applied to `ChunkStore` and `Cache` by
 [ADR 0026](adr-0126-chunk-store-and-cache-are-capabilities-too.md), and to
 `VectorStore` by
 [ADR 0027](adr-0127-vector-store-is-three-capabilities-and-so-is-every-collaborator.md)

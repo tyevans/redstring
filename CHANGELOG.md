@@ -52,6 +52,12 @@ supply chain. Some changes refuse input that was accepted before. Read
   gets 0.5, not 1.0. Every GraphML entity is affected, because GraphML
   carries no provenance. A store that holds `"imported"` cannot be read by an
   earlier version.
+- **A blocking read is capped per key** (ADR-0152).
+  `GraphStore.find_by_blocking_keys` takes a keyword-only `limit_per_key`,
+  and consolidation and lexical retrieval pass
+  `redstring.domain.blocking.MAX_BLOCK_READ`. A block at or below the cap
+  gives the same results as before. A third-party adapter must accept the
+  keyword. The shipped compliance suite tests it.
 - **Model calls have explicit timeouts.** `openai_compatible` chat calls
   default to a 300 s timeout and embedding calls to 60 s, each with 2
   retries, and both are constructor parameters. Before, the SDK default of

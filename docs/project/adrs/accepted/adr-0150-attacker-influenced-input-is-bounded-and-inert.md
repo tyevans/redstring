@@ -25,7 +25,9 @@ keeps its Decision. This record adds limits on top of it.
 Amended by
 [ADR-0151](adr-0151-missing-import-provenance-is-marked-not-invented.md),
 which separates the provenance an import file states from the provenance it
-omits (decision 5).
+omits (decision 5), and by
+[ADR-0152](adr-0152-a-blocking-read-is-capped-per-key.md), which caps the
+block read that the Consequences below leave open.
 
 ## Context
 
@@ -104,7 +106,7 @@ work and the text an input causes have a known limit.
   constants are the single declaration site, and docstrings name the constant,
   not its value.
 - The consolidation candidate cap limits scoring. It does not limit the block
-  read before the cut, which BACKLOG B167 tracks.
+  read before the cut. ADR-0152 caps that read.
 
 ## Related records
 
