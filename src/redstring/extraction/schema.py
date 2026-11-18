@@ -52,9 +52,21 @@ two keys naming what was found at all.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from redstring.extraction.bounds import (
+    MAX_DESCRIPTION_CHARS,
+    MAX_ENTITIES_PER_EXTRACTION,
+    MAX_NAME_CHARS,
+    MAX_PROPERTY_KEYS,
+    MAX_PROPERTY_VALUE_CHARS,
+    MAX_RELATIONSHIPS_PER_EXTRACTION,
+    MAX_TYPE_CHARS,
+    clip,
+)
 
 #: What a model gets when it declines to say how sure it is.
 #:
@@ -100,6 +112,28 @@ class ExtractedEntity(BaseModel):
         ),
     )
 
+    # Clipped rather than rejected: see `redstring.extraction.bounds`. The
+    # JSON Schema is unchanged, so the model sees the same prompt as before.
+    @field_validator("name")
+    @classmethod
+    def _clip_name(cls, value: str) -> str:
+        return clip(value, MAX_NAME_CHARS)
+
+    @field_validator("entity_type")
+    @classmethod
+    def _clip_entity_type(cls, value: str) -> str:
+        return clip(value, MAX_TYPE_CHARS)
+
+    @field_validator("description")
+    @classmethod
+    def _clip_description(cls, value: str | None) -> str | None:
+        return None if value is None else clip(value, MAX_DESCRIPTION_CHARS)
+
+    @field_validator("properties")
+    @classmethod
+    def _bound_properties(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return bound_properties(value)
+
 
 class ExtractedRelationship(BaseModel):
     """A directed, typed connection between two entities the model found."""
@@ -116,6 +150,38 @@ class ExtractedRelationship(BaseModel):
     properties: dict[str, Any] = Field(
         default_factory=dict, description="Any other attributes the text states about this link"
     )
+
+    @field_validator("source_name", "target_name")
+    @classmethod
+    def _clip_endpoint(cls, value: str) -> str:
+        return clip(value, MAX_NAME_CHARS)
+
+    @field_validator("relationship_type")
+    @classmethod
+    def _clip_relationship_type(cls, value: str) -> str:
+        return clip(value, MAX_TYPE_CHARS)
+
+    @field_validator("properties")
+    @classmethod
+    def _bound_properties(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return bound_properties(value)
+
+
+def bound_properties(properties: dict[str, Any]) -> dict[str, Any]:
+    """Keep at most `MAX_PROPERTY_KEYS` keys, and drop any oversized value.
+
+    A value whose JSON text is longer than `MAX_PROPERTY_VALUE_CHARS` is
+    dropped whole. A clipped JSON value would be malformed, and a malformed
+    value is worse than an absent one. The keys kept are the first ones the
+    model gave, in order.
+    """
+    kept: dict[str, Any] = {}
+    for key, value in properties.items():
+        if len(kept) == MAX_PROPERTY_KEYS:
+            break
+        if len(json.dumps(value, default=str)) <= MAX_PROPERTY_VALUE_CHARS:
+            kept[key] = value
+    return kept
 
 
 def _require_extraction_keys(schema: dict[str, Any], _model: type[BaseModel]) -> None:
@@ -152,3 +218,16 @@ class Extraction(BaseModel):
         default_factory=list,
         description="Every relationship stated between entities you listed above",
     )
+
+    # Dropped past the count, keeping the first ones given. A relationship
+    # whose endpoint was dropped becomes unresolved, which the mapper already
+    # counts as a normal outcome.
+    @field_validator("entities")
+    @classmethod
+    def _cap_entities(cls, value: list[ExtractedEntity]) -> list[ExtractedEntity]:
+        return value[:MAX_ENTITIES_PER_EXTRACTION]
+
+    @field_validator("relationships")
+    @classmethod
+    def _cap_relationships(cls, value: list[ExtractedRelationship]) -> list[ExtractedRelationship]:
+        return value[:MAX_RELATIONSHIPS_PER_EXTRACTION]

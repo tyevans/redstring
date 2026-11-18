@@ -98,7 +98,7 @@ class TestConstruction:
         with pytest.raises(ValueError, match="identifier"):
             _store(table=table)
 
-    @pytest.mark.parametrize("table", ["kg_chunks", "_c", "kg_chunks_test_gw0", "x" * 63])
+    @pytest.mark.parametrize("table", ["kg_chunks", "_c", "kg_chunks_test_gw0", "x" * 45])
     def test_a_bare_identifier_is_accepted(self, table: str):
         assert _store(table=table).table == table
 

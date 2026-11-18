@@ -132,6 +132,7 @@ nav:
           - Drive projections from an event store: how-to/drive-projections-from-an-event-store.md
           - Rebuild a projection: how-to/rebuild-a-projection.md
           - Index documents without extracting them: how-to/index-documents.md
+          - Import and export a graph: how-to/import-and-export-a-graph.md
           - Use the pgvector store: how-to/use-the-pgvector-store.md
           - Implement a store adapter: how-to/implement-a-store-adapter.md
       - Development:

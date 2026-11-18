@@ -3,6 +3,13 @@
 Parses exported JSON-LD (`@context` + `@graph`) or GraphML XML payloads into
 domain `Entity` and `Relationship` objects and idempotently upserts them into
 narrow `EntityWriter` and `RelationshipStore` ports.
+
+Trust rule: an import file is trusted for provenance and entity identity.
+Provenance is kept as the file states it. An entity whose id already exists
+in the target tenant is replaced, not merged. The parser limits are the only
+defence against the file itself: payload size is bounded, JSON nesting that
+exceeds the interpreter limit is refused, and GraphML is read by
+`composition.graphml_reader`, which refuses DTDs and entity declarations.
 """
 
 from __future__ import annotations
@@ -11,11 +18,11 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from html.parser import HTMLParser
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from redstring.composition.export import ExportFormat
+from redstring.composition.graphml_reader import read_graphml_elements
 from redstring.domain.blocking import blocking_keys_for
 from redstring.domain.entity import Entity
 from redstring.domain.ids import EntityId, RelationshipId, SourceId, TenantId
@@ -29,6 +36,7 @@ if TYPE_CHECKING:
     from redstring.ports.graph_store import EntityWriter
 
 __all__ = [
+    "MAX_IMPORT_CHARACTERS",
     "GraphImportReport",
     "import_graph",
     "parse_graphml",
@@ -37,6 +45,21 @@ __all__ = [
 
 _ENTITY_URN_PREFIX = "urn:redstring:entity:"
 _REL_URN_PREFIX = "urn:redstring:relationship:"
+
+#: Largest JSON-LD or GraphML payload either parser accepts, in characters.
+#: The bound is checked before any parsing, so an oversize payload costs no
+#: memory beyond the string the caller already holds. It is a generous ceiling
+#: for one snapshot, not a figure measured against a workload. A payload above
+#: it raises `ValueError`; it is never truncated.
+MAX_IMPORT_CHARACTERS: Final = 64 * 1024 * 1024
+
+
+def _check_payload_size(payload: str, fmt: str) -> None:
+    if len(payload) > MAX_IMPORT_CHARACTERS:
+        raise ValueError(
+            f"{fmt} payload is {len(payload)} characters; "
+            f"the limit is {MAX_IMPORT_CHARACTERS} characters"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,11 +130,19 @@ def parse_json_ld(
     *,
     tenant_id: TenantId,
 ) -> tuple[list[Entity], list[Relationship]]:
-    """Parse a redstring JSON-LD document (`@context` + `@graph`) into domain records."""
+    """Parse a redstring JSON-LD document (`@context` + `@graph`) into domain records.
+
+    Raises `ValueError` for every malformed input, including a payload above
+    `MAX_IMPORT_CHARACTERS` and JSON nested past the interpreter's recursion
+    limit. Neither `json.JSONDecodeError` nor `RecursionError` escapes.
+    """
+    _check_payload_size(payload, "JSON-LD")
     try:
         doc = json.loads(payload)
     except json.JSONDecodeError as exc:
         raise ValueError(f"Malformed JSON-LD payload: {exc}") from exc
+    except RecursionError as exc:
+        raise ValueError("JSON-LD payload nests too deeply to parse") from exc
 
     if not isinstance(doc, dict) or not isinstance(doc.get("@graph"), list):
         raise ValueError("JSON-LD payload must be a JSON object containing a '@graph' list")
@@ -197,80 +228,25 @@ def parse_json_ld(
     return entities, relationships
 
 
-class _GraphMLParser(HTMLParser):
-    """Lightweight stdlib parser for GraphML `<node>`, `<edge>`, and `<data>` elements."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.saw_graphml = False
-        self.nodes: list[tuple[str, dict[str, str]]] = []
-        self.edges: list[tuple[str, str, str, dict[str, str]]] = []
-        self._curr_node: tuple[str, dict[str, str]] | None = None
-        self._curr_edge: tuple[str, str, str, dict[str, str]] | None = None
-        self._curr_key: str | None = None
-        self._buf: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attr_map = {k: (v or "") for k, v in attrs}
-        local = tag.rsplit(":", 1)[-1]
-        if local == "graphml":
-            self.saw_graphml = True
-        elif local == "node":
-            nid = attr_map.get("id", "")
-            if not nid:
-                raise ValueError("GraphML <node> missing 'id' attribute")
-            self._curr_node = (nid, {})
-        elif local == "edge":
-            eid = attr_map.get("id", "")
-            src = attr_map.get("source", "")
-            tgt = attr_map.get("target", "")
-            if not eid or not src or not tgt:
-                raise ValueError("GraphML <edge> requires 'id', 'source', and 'target'")
-            self._curr_edge = (eid, src, tgt, {})
-        elif local == "data":
-            self._curr_key = attr_map.get("key")
-            self._buf = []
-
-    def handle_data(self, data: str) -> None:
-        if self._curr_key is not None:
-            self._buf.append(data)
-
-    def handle_endtag(self, tag: str) -> None:
-        local = tag.rsplit(":", 1)[-1]
-        if local == "data" and self._curr_key is not None:
-            val = "".join(self._buf)
-            if self._curr_node is not None:
-                self._curr_node[1][self._curr_key] = val
-            elif self._curr_edge is not None:
-                self._curr_edge[3][self._curr_key] = val
-            self._curr_key = None
-            self._buf = []
-        elif local == "node" and self._curr_node is not None:
-            self.nodes.append(self._curr_node)
-            self._curr_node = None
-        elif local == "edge" and self._curr_edge is not None:
-            self.edges.append(self._curr_edge)
-            self._curr_edge = None
-
-
 def parse_graphml(
     payload: str,
     *,
     tenant_id: TenantId,
 ) -> tuple[list[Entity], list[Relationship]]:
-    """Parse a GraphML XML document into domain `Entity` and `Relationship` records."""
-    if "<graphml" not in payload or "</graphml>" not in payload:
-        raise ValueError("Malformed GraphML payload: missing <graphml> root element")
+    """Parse a GraphML XML document into domain `Entity` and `Relationship` records.
 
-    parser = _GraphMLParser()
-    parser.feed(payload)
-    parser.close()
+    Raises `ValueError` for DTDs, entity declarations, malformed XML, child
+    markup inside `<data>`, and payloads above `MAX_IMPORT_CHARACTERS`.
+    The XML rules are stated in `composition.graphml_reader`.
+    """
+    _check_payload_size(payload, "GraphML")
+    raw_nodes, raw_edges = read_graphml_elements(payload)
 
     default_prov = _parse_provenance(None)
     entities: list[Entity] = []
     entity_ids: set[EntityId] = set()
 
-    for raw_id, data in parser.nodes:
+    for raw_id, data in raw_nodes:
         eid = EntityId(_parse_uuid_urn(raw_id, "", "node"))
         name = data.get("d_name", "").strip()
         entity_type = data.get("d_type", "Entity").strip() or "Entity"
@@ -292,7 +268,7 @@ def parse_graphml(
         entity_ids.add(eid)
 
     relationships: list[Relationship] = []
-    for raw_id, raw_src, raw_tgt, data in parser.edges:
+    for raw_id, raw_src, raw_tgt, data in raw_edges:
         rid = RelationshipId(_parse_uuid_urn(raw_id, "", "edge"))
         src_id = EntityId(_parse_uuid_urn(raw_src, "", "edge source"))
         tgt_id = EntityId(_parse_uuid_urn(raw_tgt, "", "edge target"))

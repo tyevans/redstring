@@ -12,12 +12,13 @@ portable formats:
 from __future__ import annotations
 
 import json
+import re
 from collections import deque
 from enum import StrEnum
 from html import escape as xml_escape
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
-from redstring.composition.themes.models import DEFAULT_PAGE_SIZE
+from redstring.composition.themes.models import DEFAULT_PAGE_SIZE, validate_page_size
 from redstring.composition.themes.topology import read_topology
 from redstring.domain.normalization import normalize_name
 
@@ -37,6 +38,12 @@ __all__ = [
     "format_mermaid",
 ]
 
+#: Code points XML 1.0 cannot carry, not even as character references: the C0
+#: controls other than tab, LF and CR, the two non-characters U+FFFE and
+#: U+FFFF, and lone surrogates. A GraphML file containing one is rejected by
+#: conforming parsers, so the exporter refuses it rather than write it.
+_XML10_FORBIDDEN: Final = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
+
 
 class ExportFormat(StrEnum):
     """Supported portable knowledge graph serialization formats."""
@@ -53,8 +60,34 @@ def _node_token(entity_id: object) -> str:
 
 
 def _escape_mermaid(text: str) -> str:
-    """Escape characters that break quoted Mermaid labels."""
-    return text.replace("\\", "\\\\").replace('"', "'").replace("\n", " ").replace("\r", " ")
+    """Encode a label so a Mermaid viewer shows the text and never its markup.
+
+    Mermaid reads `#name;` as a named character. The characters `<`, `>`,
+    `&`, `#` and `"` are encoded as `#lt;`, `#gt;`, `#amp;`, `#35;` and
+    `#quot;`. `#` is encoded first: the codes contain one, so encoding it
+    later would encode the codes again and show a literal `#quot;` as `"`.
+    A viewer with a permissive `securityLevel` renders a raw `<` or `&` as
+    HTML, so no raw markup character reaches the output.
+    """
+    escaped = text.replace("\\", "\\\\").replace("#", "#35;")
+    escaped = escaped.replace("&", "#amp;").replace("<", "#lt;").replace(">", "#gt;")
+    return escaped.replace('"', "#quot;").replace("\n", " ").replace("\r", " ")
+
+
+def _xml_text(value: str, *, owner: str) -> str:
+    """Escape `value` for an XML text node, or refuse it.
+
+    The message names `owner` (an entity or relationship id and a field), so a
+    caller can find the record that cannot be exported. The file is never
+    written partly: the whole call raises before any output is returned.
+    """
+    match = _XML10_FORBIDDEN.search(value)
+    if match is not None:
+        raise ValueError(
+            f"{owner} contains U+{ord(match.group()):04X}, which XML 1.0 cannot represent; "
+            "GraphML export refused"
+        )
+    return xml_escape(value, quote=True)
 
 
 def _sort_relationships(
@@ -199,13 +232,13 @@ def format_graphml(
 
     for entity in sorted_entities:
         eid = xml_escape(str(entity.id), quote=True)
-        ename = xml_escape(entity.name, quote=True)
-        etype = xml_escape(entity.entity_type, quote=True)
+        ename = _xml_text(entity.name, owner=f"Entity {entity.id} field 'name'")
+        etype = _xml_text(entity.entity_type, owner=f"Entity {entity.id} field 'entity_type'")
         lines.append(f'    <node id="{eid}">')
         lines.append(f'      <data key="d_name">{ename}</data>')
         lines.append(f'      <data key="d_type">{etype}</data>')
         if entity.description is not None:
-            edesc = xml_escape(entity.description, quote=True)
+            edesc = _xml_text(entity.description, owner=f"Entity {entity.id} field 'description'")
             lines.append(f'      <data key="d_desc">{edesc}</data>')
         lines.append("    </node>")
 
@@ -213,7 +246,10 @@ def format_graphml(
         rid = xml_escape(str(rel.id), quote=True)
         src = xml_escape(str(rel.source_entity_id), quote=True)
         tgt = xml_escape(str(rel.target_entity_id), quote=True)
-        rtype = xml_escape(rel.relationship_type, quote=True)
+        rtype = _xml_text(
+            rel.relationship_type,
+            owner=f"Relationship {rel.id} field 'relationship_type'",
+        )
         lines.append(f'    <edge id="{rid}" source="{src}" target="{tgt}">')
         lines.append(f'      <data key="d_rel_type">{rtype}</data>')
         lines.append(f'      <data key="d_conf">{rel.confidence}</data>')
@@ -300,8 +336,7 @@ async def export_graph(
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> str:
     """Read a tenant's knowledge graph (or filtered subgraph) and serialize it into `format`."""
-    if page_size < 1:
-        raise ValueError(f"page_size must be at least 1, got {page_size}")
+    validate_page_size(page_size)
 
     resolved_format = ExportFormat(format)
     entities_by_id, edges, _ = await read_topology(tenant_id, graph, relationships, page_size)

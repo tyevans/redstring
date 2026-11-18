@@ -17,6 +17,7 @@ from redstring.domain.exceptions import (
     VectorProvenanceMismatchError,
 )
 from redstring.domain.vector import VectorProvenance
+from redstring.vector.adapters.pg_identifiers import PROVENANCE, check_table
 
 
 def verify_vector_provenance(
@@ -51,8 +52,9 @@ def verify_vector_provenance(
 
 def provenance_table_ddl(table: str) -> str:
     """DDL for the store's provenance tracking table."""
+    check_table(table)
     return (
-        f"CREATE TABLE IF NOT EXISTS {table}_provenance ("
+        f"CREATE TABLE IF NOT EXISTS {table}{PROVENANCE} ("
         "  id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),"
         "  model text,"
         "  dimension integer NOT NULL,"
@@ -78,9 +80,10 @@ async def ensure_pgvector_provenance(
     document_prefix: str | None,
 ) -> VectorProvenance | None:
     """Verify or record the provenance row for a pgvector store table."""
+    check_table(table)
     await connection.execute(provenance_table_ddl(table))
     row = await connection.fetchrow(
-        f"SELECT model, dimension, document_prefix FROM {table}_provenance WHERE id = 1"  # nosec B608
+        f"SELECT model, dimension, document_prefix FROM {table}{PROVENANCE} WHERE id = 1"  # nosec B608
     )
     if row is not None:
         stored_dim = int(str(row["dimension"]))
@@ -104,7 +107,7 @@ async def ensure_pgvector_provenance(
     if model is not None or document_prefix is not None:
         effective_prefix = document_prefix or ""
         await connection.execute(
-            f"INSERT INTO {table}_provenance (id, model, dimension, document_prefix) "  # nosec B608
+            f"INSERT INTO {table}{PROVENANCE} (id, model, dimension, document_prefix) "  # nosec B608
             "VALUES (1, $1, $2, $3) ON CONFLICT (id) DO NOTHING",
             model,
             dimension,

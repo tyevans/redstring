@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from redstring.composition.themes.models import DEFAULT_PAGE_SIZE
+from redstring.composition.themes.models import DEFAULT_PAGE_SIZE, validate_page_size
 from redstring.composition.themes.topology import read_topology
 from redstring.domain.normalization import normalize_name
 
@@ -134,8 +134,7 @@ async def trace_source_lineage(
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> SourceLineageReport:
     """Trace every entity, relationship, and chunk originating from ``source_id``."""
-    if page_size < 1:
-        raise ValueError(f"page_size must be >= 1, got {page_size}")
+    validate_page_size(page_size)
 
     started = time.perf_counter()
     entities_by_id, edges, _ = await read_topology(tenant_id, graph, relationships, page_size)
@@ -253,8 +252,7 @@ async def analyze_corpus(
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> CorpusHealthReport:
     """Compute provenance and chunk coverage health statistics across ``tenant_id``."""
-    if page_size < 1:
-        raise ValueError(f"page_size must be >= 1, got {page_size}")
+    validate_page_size(page_size)
 
     started = time.perf_counter()
     entities_by_id, edges, _ = await read_topology(tenant_id, graph, relationships, page_size)

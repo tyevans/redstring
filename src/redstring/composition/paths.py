@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from redstring.domain.normalization import normalize_name
-from redstring.ports.graph_store import RelationshipStore
+from redstring.ports.graph_store import MAX_TRAVERSAL_DEPTH, RelationshipStore
 
 if TYPE_CHECKING:
     from redstring.domain.chunk import ChunkId, StoredChunk
@@ -62,6 +62,8 @@ async def explain_path(
     """
     if max_depth < 1:
         raise ValueError(f"max_depth must be at least 1, got {max_depth}")
+    if max_depth > MAX_TRAVERSAL_DEPTH:
+        raise ValueError(f"max_depth must not exceed {MAX_TRAVERSAL_DEPTH}, got {max_depth}")
 
     rel_store: RelationshipStore
     if relationships is not None:
@@ -112,9 +114,15 @@ async def explain_path(
         for neighbor_id, rel in candidates:
             if neighbor_id in visited:
                 continue
-            neighbor_entity = await graph.get_entity(neighbor_id, tenant_id)
-            if neighbor_entity is None:
-                continue
+            # The target was fetched above, so compare its id before fetching
+            # any neighbour. Reaching the target then costs no store read.
+            if neighbor_id == end_entity.id:
+                neighbor_entity = end_entity
+            else:
+                fetched = await graph.get_entity(neighbor_id, tenant_id)
+                if fetched is None:
+                    continue
+                neighbor_entity = fetched
 
             next_entities = (*entity_path, neighbor_entity)
             next_rels = (*rel_path, rel)

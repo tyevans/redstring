@@ -10,6 +10,7 @@ import pytest
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.vector import VectorRecord
 from redstring.ports.vector_store import entity_type_of
+from redstring.vector.adapters.pg_identifiers import MAX_TABLE_NAME_BYTES
 from redstring.vector.adapters.pgvector import deduplicate, encode_vector
 
 from .conftest import DIMENSION, make_store, make_vector
@@ -49,7 +50,9 @@ class TestConstruction:
         with pytest.raises(ValueError, match="identifier"):
             make_store(table=table)
 
-    @pytest.mark.parametrize("table", ["kg_vectors", "_v", "kg_vectors_test_gw0", "x" * 63])
+    @pytest.mark.parametrize(
+        "table", ["kg_vectors", "_v", "kg_vectors_test_gw0", "x" * MAX_TABLE_NAME_BYTES]
+    )
     def test_a_bare_identifier_is_accepted(self, table: str):
         assert make_store(table=table).table == table
 

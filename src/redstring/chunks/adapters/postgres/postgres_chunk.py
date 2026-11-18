@@ -16,9 +16,9 @@ from redstring.domain.chunk import StoredChunk
 from redstring.domain.exceptions import DimensionMismatchError
 
 from .postgres_encode import deduplicate, encode, encode_terms, reject_zero_norm
+from .postgres_identifiers import check_table
 from .postgres_search import backfill_lexical, search_lexical, search_semantic
 from .postgres_sql import (
-    _IDENTIFIER,
     _SELECT_COLUMNS,
     backfill_sql,
     candidates_sql,
@@ -90,8 +90,7 @@ class PostgresChunkStore:
         the first write; see the port's `SemanticCandidateSource.dimension`
         docstring for why an optional width was rejected.
         """
-        if not _IDENTIFIER.fullmatch(table):
-            raise ValueError(f"table must be a bare lowercase identifier, not {table!r}")
+        check_table(table)
         if dimension <= 0:
             raise ValueError(f"dimension must be positive, not {dimension}")
         self._pool = pool
@@ -310,7 +309,12 @@ class PostgresChunkStore:
         return semantic_candidates_sql(self._table)
 
     async def backfill_lexical_index(self) -> int:
-        """Recompute `doc_length` and the term rows from stored `text`. Idempotent."""
+        """Recompute `doc_length` and the term rows from stored `text`. Idempotent.
+
+        This is an operator-only maintenance call. It reads the rows of **every
+        tenant**, not one, so no caller should reach it through a tenant-scoped
+        code path. Each row keeps its own `tenant_id` when it is written back.
+        """
         return await backfill_lexical(self._pool, self._table)
 
     def _backfill_sql(self) -> str:

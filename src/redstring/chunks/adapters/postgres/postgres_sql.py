@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import re
-
-#: Table names are interpolated into SQL -- Postgres has no parameter form for
-#: an identifier -- so the name is proved to be a bare lowercase identifier
-#: first, exactly as `PgVectorStore` does. Anything else, including a quoted or
-#: schema-qualified name, is rejected rather than escaped.
-#:
-#: This guard is what the `# nosec B608` markers below rest on: bandit sees an
-#: f-string in a SQL literal and cannot see that the only interpolated value
-#: was proved safe in `__init__`, nor that every caller-supplied value travels
-#: as a `$n` parameter.
-_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+from .postgres_identifiers import (
+    _ENTITY_IDS_IDX,
+    _TENANT_SOURCE_IDX,
+    _TERMS,
+    _TERMS_TERM_IDX,
+    check_table,
+)
 
 #: The record shape `jsonb_to_recordset` unpacks a payload into. Written once
 #: because `upsert_many` and `replace_source` must agree about it: a column
@@ -149,6 +144,7 @@ def schema_statements(table: str, dimension: int) -> tuple[str, ...]:
     against a table that already has the column, it is a statement never
     observed to do anything.
     """
+    check_table(table)
     return (
         f"CREATE TABLE IF NOT EXISTS {table} ("
         "  tenant_id   uuid    NOT NULL,"
@@ -166,10 +162,10 @@ def schema_statements(table: str, dimension: int) -> tuple[str, ...]:
         ")",
         f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS doc_length integer NOT NULL DEFAULT 0",
         f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS embedding vector({dimension})",
-        f"CREATE INDEX IF NOT EXISTS {table}_tenant_source_idx "
+        f"CREATE INDEX IF NOT EXISTS {table}{_TENANT_SOURCE_IDX} "
         f"ON {table} (tenant_id, source_id, chunk_index, id)",
-        f"CREATE INDEX IF NOT EXISTS {table}_entity_ids_idx ON {table} USING gin (entity_ids)",
-        f"CREATE TABLE IF NOT EXISTS {table}_terms ("
+        f"CREATE INDEX IF NOT EXISTS {table}{_ENTITY_IDS_IDX} ON {table} USING gin (entity_ids)",
+        f"CREATE TABLE IF NOT EXISTS {table}{_TERMS} ("
         "  tenant_id uuid    NOT NULL,"
         "  chunk_id  text    NOT NULL,"
         "  term      text    NOT NULL,"
@@ -178,7 +174,7 @@ def schema_statements(table: str, dimension: int) -> tuple[str, ...]:
         f"  FOREIGN KEY (tenant_id, chunk_id) REFERENCES {table} (tenant_id, id) "
         "    ON DELETE CASCADE"
         ")",
-        f"CREATE INDEX IF NOT EXISTS {table}_terms_term_idx ON {table}_terms (tenant_id, term)",
+        f"CREATE INDEX IF NOT EXISTS {table}{_TERMS_TERM_IDX} ON {table}{_TERMS} (tenant_id, term)",
     )
 
 
@@ -211,6 +207,7 @@ def insert_sql(table: str) -> str:
     `count(*) FILTER (WHERE inserted)` rather than `sum(inserted::int)`:
     both are correct, and the filter says what it means.
     """
+    check_table(table)
     return (
         f"WITH written AS ("  # nosec B608
         f"    INSERT INTO {table} ({_COLUMNS})"
@@ -218,7 +215,7 @@ def insert_sql(table: str) -> str:
         f"    {_ON_CONFLICT}"
         "    RETURNING (xmax = 0) AS inserted"
         "), terms_written AS ("
-        f"    INSERT INTO {table}_terms (tenant_id, chunk_id, term, tf)"
+        f"    INSERT INTO {table}{_TERMS} (tenant_id, chunk_id, term, tf)"
         f"    SELECT tenant_id, chunk_id, term, tf FROM jsonb_to_recordset($2::jsonb) "
         f"    AS {_TERMS_INCOMING} "
         f"    {_TERMS_ON_CONFLICT}"
@@ -254,6 +251,7 @@ def replace_sql(table: str) -> str:
     term row against a stale one, because a chunk id's terms cannot
     change.
     """
+    check_table(table)
     return (
         "WITH incoming AS ("  # nosec B608
         f"    SELECT * FROM jsonb_to_recordset($3::jsonb) AS {_INCOMING}"
@@ -268,7 +266,7 @@ def replace_sql(table: str) -> str:
         f"    {_ON_CONFLICT}"
         "    RETURNING 1"
         "), terms_written AS ("
-        f"    INSERT INTO {table}_terms (tenant_id, chunk_id, term, tf)"
+        f"    INSERT INTO {table}{_TERMS} (tenant_id, chunk_id, term, tf)"
         f"    SELECT tenant_id, chunk_id, term, tf FROM jsonb_to_recordset($4::jsonb) "
         f"    AS {_TERMS_INCOMING}"
         f"    {_TERMS_ON_CONFLICT}"
@@ -293,10 +291,11 @@ def candidates_sql(table: str) -> str:
     requested list, since a term with no match has no row here to
     aggregate.
     """
+    check_table(table)
     return (
         "WITH matched AS ("  # nosec B608
         f"    SELECT chunk_id, count(*) AS matched_terms, jsonb_object_agg(term, tf) AS tfs"
-        f"    FROM {table}_terms"
+        f"    FROM {table}{_TERMS}"
         "     WHERE tenant_id = $1 AND term = ANY ($2)"
         "     GROUP BY chunk_id"
         "     ORDER BY matched_terms DESC, chunk_id ASC"
@@ -326,6 +325,7 @@ def semantic_candidates_sql(table: str) -> str:
     this `WHERE`, before `LIMIT`, matching `VectorStore.search` and the
     port's own docstring for this method.
     """
+    check_table(table)
     return (
         "WITH matched AS ("  # nosec B608
         f"    SELECT id AS chunk_id, {_SCORE} AS score"
@@ -351,6 +351,7 @@ def backfill_sql(table: str) -> str:
     unreferenced CTEs. The count comes from `updated` rather than
     asyncpg's status string, matching every other counted write here.
     """
+    check_table(table)
     return (
         "WITH incoming AS ("  # nosec B608
         "    SELECT * FROM jsonb_to_recordset($1::jsonb) "
@@ -361,7 +362,7 @@ def backfill_sql(table: str) -> str:
         "     WHERE c.tenant_id = incoming.tenant_id AND c.id = incoming.id"
         "    RETURNING 1"
         "), terms_written AS ("
-        f"    INSERT INTO {table}_terms (tenant_id, chunk_id, term, tf)"
+        f"    INSERT INTO {table}{_TERMS} (tenant_id, chunk_id, term, tf)"
         f"    SELECT tenant_id, chunk_id, term, tf FROM jsonb_to_recordset($2::jsonb) "
         f"    AS {_TERMS_INCOMING}"
         f"    {_TERMS_ON_CONFLICT}"

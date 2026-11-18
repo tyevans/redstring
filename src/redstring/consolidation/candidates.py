@@ -66,9 +66,12 @@ if TYPE_CHECKING:
     from redstring.ports.vector_store import VectorReader
 
 __all__ = [
+    "DEFAULT_MAX_CANDIDATES",
     "EMBEDDING_SEARCH_K",
+    "MAX_CANDIDATES",
     "CandidateFinder",
     "ScoredCandidate",
+    "check_max_candidates",
 ]
 
 #: How many nearest vectors the embedding step asks for.
@@ -79,6 +82,32 @@ __all__ = [
 #: feature rather than a zero, which is the honest reading: the store was not
 #: asked about it.
 EMBEDDING_SEARCH_K = 50
+
+#: The most candidates one subject is scored against.
+#:
+#: Blocking is cheap and lossy, so a common key (a type, or a name prefix shared
+#: by many entities) can return a block of thousands. Each scored candidate
+#: costs store reads, so the block is cut to this many before scoring. The
+#: default is far above the size of any block in the tests, so it changes no
+#: result that a smaller graph produces.
+DEFAULT_MAX_CANDIDATES = 500
+
+#: The largest cap a caller may ask for. Above it, the per-subject read cost
+#: is the same order as a full tenant scan, which is what blocking exists to
+#: avoid.
+MAX_CANDIDATES = 10_000
+
+
+def check_max_candidates(value: int) -> None:
+    """Refuse a candidate cap outside `1..MAX_CANDIDATES`.
+
+    Raises:
+        ValueError: `value` is below 1 or above `MAX_CANDIDATES`.
+    """
+    if value < 1:
+        raise ValueError(f"max_candidates must be at least 1, got {value}")
+    if value > MAX_CANDIDATES:
+        raise ValueError(f"max_candidates must be at most {MAX_CANDIDATES}, got {value}")
 
 
 @dataclass(frozen=True)
@@ -106,8 +135,17 @@ class CandidateFinder:
         vector_store: VectorReader | None = None,
         weights: FeatureWeights | None = None,
         use_graph_signal: bool = True,
+        max_candidates: int = DEFAULT_MAX_CANDIDATES,
     ) -> None:
         """`vector_store` is optional and its absence is not an error.
+
+        `max_candidates` bounds how many blocked entities are scored for one
+        subject. When the block is larger, the candidates kept are the ones
+        with the highest name similarity to the subject, ties going to the
+        lower entity id as a string. That choice is cheap (no store read),
+        deterministic, and independent of the order the store returned rows.
+        Graph and embedding evidence do not take part in the cut; they are
+        read only for the candidates kept.
 
         A deployment without embeddings still consolidates on names and graph
         structure; requiring the store would make the cheap configuration
@@ -128,6 +166,8 @@ class CandidateFinder:
         self._vectors = vector_store
         self._weights = weights or FeatureWeights()
         self._use_graph_signal = use_graph_signal
+        check_max_candidates(max_candidates)
+        self._max_candidates = max_candidates
 
     async def candidates(
         self, subject: Entity, *, minimum_score: float = 0.0
@@ -139,7 +179,7 @@ class CandidateFinder:
         cutting through a tie -- or a caller taking `[0]` -- would depend on
         dictionary iteration.
         """
-        blocked = await self._block(subject)
+        blocked = self._cap(subject, await self._block(subject))
         if not blocked:
             return []
 
@@ -158,6 +198,20 @@ class CandidateFinder:
                 scored.append(ScoredCandidate(candidate, features, score))
 
         return sorted(scored, key=lambda found: (-found.score, str(found.entity.id)))
+
+    def _cap(self, subject: Entity, blocked: list[Entity]) -> list[Entity]:
+        """Keep at most `max_candidates` entities, those with the closest names.
+
+        Ties go to the lower id. The name score is computed here and again in
+        `candidates`; it reads no store, so the second computation is cheap.
+        """
+        if len(blocked) <= self._max_candidates:
+            return blocked
+        ranked = sorted(
+            blocked,
+            key=lambda entity: (-string_similarity(subject.name, entity.name), str(entity.id)),
+        )
+        return ranked[: self._max_candidates]
 
     async def _block(self, subject: Entity) -> list[Entity]:
         """The subject's block, with itself and every alias removed."""

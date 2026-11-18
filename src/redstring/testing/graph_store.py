@@ -70,8 +70,9 @@ from redstring.domain.ids import EntityId, RelationshipId, TenantId
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import DatePrecision, TemporalExtent, UncertaintyMarker
-from redstring.ports.graph_store import GraphStore
+from redstring.ports.graph_store import MAX_TRAVERSAL_DEPTH, GraphStore
 from redstring.testing import strategies as gen
+from redstring.testing.graph_store_bounds import GraphStoreTraversalBounds
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -91,10 +92,9 @@ if TYPE_CHECKING:
 #: implementing `new_store()`.
 DEFAULT_MAX_EXAMPLES = int(os.environ.get("KG_COMPLIANCE_MAX_EXAMPLES", "50"))
 
-# Store construction dominates the per-example cost for real backends, and a
-# slow adapter is a performance finding rather than a flaky test. The deadline
-# that would otherwise fire is off suite-wide, in `tests/conftest.py` -- this
-# file was one of the places that argued for it.
+# Store construction dominates per-example cost on real backends, and a slow
+# adapter is a performance finding, not a flaky test. The deadline is off
+# suite-wide, in `tests/conftest.py`; this file argued for it.
 compliance_settings = settings(
     max_examples=DEFAULT_MAX_EXAMPLES,
     suppress_health_check=[HealthCheck.too_slow],
@@ -130,7 +130,7 @@ def _mutate(entity: Entity) -> None:
             value.append("__nested_tamper__")
 
 
-class GraphStoreCompliance:
+class GraphStoreCompliance(GraphStoreTraversalBounds):
     """Tests every `GraphStore` implementation must pass."""
 
     async def new_store(self) -> GraphStore:
@@ -986,7 +986,7 @@ class GraphStoreCompliance:
             ]
         )
 
-        reached = {e.id for e in await store.neighbors(a.id, tenant, depth=99)}
+        reached = {e.id for e in await store.neighbors(a.id, tenant, depth=MAX_TRAVERSAL_DEPTH)}
         assert reached == {b.id, c.id}
 
     async def test_neighbours_traverse_both_directions(self, store: GraphStore) -> None:

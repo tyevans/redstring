@@ -12,8 +12,10 @@ from redstring.composition.build_graph import (
     build_graph,
 )
 from redstring.composition.coercion import coerce_document
+from redstring.composition.limits import check_build_limits
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.ids import SourceId
+from redstring.domain.limiter import check_concurrency
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 
 if TYPE_CHECKING:
@@ -95,7 +97,8 @@ async def build_graph_batch(
         provider: LLM provider for extraction.
         store: Graph store for extracted entities and relations.
         tenant_id: Applied to every entity, relationship and store call.
-        max_concurrency: Maximum number of documents extracted concurrently. Must be >= 1.
+        max_concurrency: Maximum number of documents extracted concurrently.
+            Must be between 1 and `MAX_CONCURRENCY`.
         continue_on_error: If True, document failures are recorded in `report.errors`
             while remaining documents continue processing. If False, the first
             exception is raised immediately.
@@ -113,13 +116,21 @@ async def build_graph_batch(
         chunks: Chunk store for document passages.
         event_store: Aggregate event store.
         observed_at: Observation timestamp stamped onto entities.
-        concurrency: Chunk-level concurrency within each document.
+        concurrency: Calls against `provider` in flight at once for each
+            document. Must be between 1 and `MAX_CONCURRENCY`.
 
     Returns:
         A BatchGraphReport aggregating outcomes and statistics across all documents.
+
+    The endpoint can see up to `max_concurrency * concurrency` calls at once,
+    because each of the `max_concurrency` documents runs its own pipeline with
+    up to `concurrency` calls in flight. Both factors are capped at
+    `MAX_CONCURRENCY`. Each document has its own limiter, so the product is the
+    ceiling; a shared limiter would have cut the default batch from four calls
+    in flight to one.
     """
-    if max_concurrency < 1:
-        raise ValueError("max_concurrency must be at least 1")
+    check_concurrency("max_concurrency", max_concurrency)
+    check_build_limits(concurrency, gleanings)
 
     if (
         embedding_provider is not None
@@ -199,7 +210,18 @@ async def build_graph_batch(
                     on_document_error(doc, exc)
                 return index, None, err
 
-    results = await asyncio.gather(*[_process_item(i, item) for i, item in enumerate(documents)])
+    tasks = [asyncio.ensure_future(_process_item(i, item)) for i, item in enumerate(documents)]
+    try:
+        results = await asyncio.gather(*tasks)
+    except BaseException:
+        # `gather` does not cancel its siblings when one raises, so under
+        # `continue_on_error=False` the remaining documents kept calling the
+        # provider after the caller had already been told the batch failed.
+        # Cancel them, and wait, so none is still running when this raises.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     results.sort(key=lambda r: r[0])
 
     reports: list[GraphBuildReport] = []
@@ -248,9 +270,13 @@ async def build_graph_stream(
     observed_at: datetime | None = None,
     concurrency: int = 1,
 ) -> AsyncIterator[GraphBuildReport | BatchDocumentError]:
-    """Stream `GraphBuildReport` items incrementally as each document completes."""
-    if max_concurrency < 1:
-        raise ValueError("max_concurrency must be at least 1")
+    """Stream `GraphBuildReport` items incrementally as each document completes.
+
+    The endpoint can see up to `max_concurrency * concurrency` calls at once.
+    Both factors are capped at `MAX_CONCURRENCY`. See `build_graph_batch`.
+    """
+    check_concurrency("max_concurrency", max_concurrency)
+    check_build_limits(concurrency, gleanings)
 
     semaphore = asyncio.Semaphore(max_concurrency)
 

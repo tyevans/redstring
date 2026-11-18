@@ -55,6 +55,7 @@ from eventsource.domain.tenant_context import tenant_scope
 
 from redstring.aggregates.document import Document
 from redstring.aggregates.repositories import document_repository
+from redstring.composition.limits import check_build_limits
 from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
 from redstring.consolidation.service import ConsolidationService
@@ -303,7 +304,7 @@ async def build_graph(
             what it missed. `0` -- the default -- is one model call per chunk.
             Each pass is one more call per chunk, so this is the one argument
             here that changes what the run costs rather than only what it
-            does. See `redstring.extraction.gleaning`.
+            does. Refused above `redstring.extraction.gleaning.MAX_GLEANINGS`.
         constrain_to_domain: Admit only the `domain`'s declared entity and
             relationship type ids, enforced by the server's structured
             decoding rather than asked for in prose. Off by default, and
@@ -323,6 +324,7 @@ async def build_graph(
             all. See `redstring.domain.limiter` and
             `redstring.extraction.pipeline.ExtractionPipeline`'s `concurrency`
             parameter, which this both configures and bounds jointly with.
+            Refused above `redstring.domain.limiter.MAX_CONCURRENCY`.
 
             **Raising this past the document's chunk count does nothing.**
             What runs at once is `min(concurrency, chunks in the batch)`, so a
@@ -364,6 +366,7 @@ async def build_graph(
             runs, so it cannot itself cause the gap it prevents.
         LlmProviderError: A model call failed and `skip_failed_chunks` is off.
     """
+    check_build_limits(concurrency, gleanings)
     _check_embedding_wiring(embedding_provider, vector_store)
 
     _check_vocabulary_wiring(domain, constrain_to_domain)
@@ -377,6 +380,7 @@ async def build_graph(
     # would bound extraction and embedding separately at `concurrency` each
     # rather than jointly, which is exactly the gap this parameter exists to
     # close.
+    #
     limiter = CallLimiter(concurrency)
 
     resolved = await _resolve_prompt(domain, document, provider, limiter)

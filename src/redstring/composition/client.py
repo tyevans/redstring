@@ -49,6 +49,13 @@ class Redstring(_RedstringDiagnosticsMixin):
     """Unified client facade coordinating graph, vector, and chunk storage,
 
     entity extraction, concurrent batch ingestion, hybrid retrieval, and consolidation.
+
+    Tenant isolation: every method that takes `tenant_id=` accepts a per-call
+    override. That parameter is a trusted-caller parameter. Redstring does no
+    authorisation. It does not check that the caller may act for the tenant it
+    names. The caller must make that check before the call. A caller that
+    passes a tenant id from an untrusted request can read and write another
+    tenant's data.
     """
 
     def __init__(

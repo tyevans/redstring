@@ -32,6 +32,7 @@ __all__ = [
     "UnknownMergeError",
     "UnstructuredCompletionError",
     "VectorProvenanceMismatchError",
+    "describe_failure",
 ]
 
 
@@ -289,3 +290,35 @@ class TaskPrefixMismatchError(VectorProvenanceMismatchError):
             f"expected task prefix {expected!r}, got {actual!r}; "
             f"vectors embedded under different prefixes are incomparable"
         )
+
+
+#: Characters of exception text a log record may carry. See `describe_failure`.
+FAILURE_EXCERPT_CHARS = 200
+
+
+def describe_failure(error: BaseException, *, limit: int = FAILURE_EXCERPT_CHARS) -> str:
+    """One log-safe line naming an exception: its type, then a bounded excerpt.
+
+    Exception text is not trusted to be safe to log. A model failure echoes
+    model output, and a schema failure echoes the document it was given, so
+    a log line built as `f"...: {error}"` can carry arbitrary text, control
+    characters included, into a log stream that other tools parse by line.
+
+    The excerpt is cut to `limit` characters *before* it is escaped, so the
+    result is bounded in length. `repr` then escapes newlines, carriage
+    returns, tabs and other control characters, so the record stays on one
+    line whatever the text contained.
+
+    Args:
+        error: The exception to describe.
+        limit: How many characters of `str(error)` to keep before escaping.
+
+    Returns:
+        `"<TypeName>: '<escaped excerpt>'"`, with `...` after the excerpt
+        when the message was longer than `limit`.
+    """
+    text = str(error)
+    excerpt = repr(text[:limit])
+    if len(text) > limit:
+        excerpt += "..."
+    return f"{type(error).__name__}: {excerpt}"

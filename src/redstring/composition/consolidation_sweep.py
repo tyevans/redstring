@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from redstring.composition.build_graph import ConsolidationReport, Consolidator
-from redstring.composition.themes.models import DEFAULT_PAGE_SIZE, MAX_PAGES
+from redstring.composition.themes.models import DEFAULT_PAGE_SIZE, MAX_PAGES, validate_page_size
 from redstring.consolidation.candidates import CandidateFinder
 from redstring.consolidation.policy import (
     HIGH_SIMILARITY,
@@ -132,8 +132,7 @@ async def preview_consolidation(
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> ConsolidationPreview:
     """Evaluate blocked candidate pairs in ``tenant_id`` without mutating any store."""
-    if page_size < 1:
-        raise ValueError(f"page_size must be >= 1, got {page_size}")
+    validate_page_size(page_size)
 
     started = time.perf_counter()
     if subject is not None:
@@ -215,8 +214,7 @@ async def consolidate_tenant(
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> TenantConsolidationReport:
     """Sweep all canonical entities in ``tenant_id`` and execute confirmed merges."""
-    if page_size < 1:
-        raise ValueError(f"page_size must be >= 1, got {page_size}")
+    validate_page_size(page_size)
 
     started = time.perf_counter()
     canonicals, aliases_skipped = await _list_canonical_entities(tenant_id, store, page_size)

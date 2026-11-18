@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from redstring.temporal.query import CursorStalledError
 
-from .models import MAX_PAGES
+from .models import MAX_PAGES, validate_page_size
 
 if TYPE_CHECKING:
     from redstring.domain.entity import Entity
@@ -31,6 +31,7 @@ async def read_topology(
     Deduplicating after the fact would be the same thing; doing it here is
     what makes the weight independent of `page_size`.
     """
+    validate_page_size(page_size)
     entities: dict[EntityId, Entity] = {}
     by_id: dict[RelationshipId, Relationship] = {}
     cursor: EntityId | None = None
