@@ -31,3 +31,4 @@
 | `US-0027` | Tenant Corpus Health and Entity-to-Chunk Coverage Reporting | Accepted | Liam | FEAT-COMP-27 | `PRD-0011` |
 | `US-0028` | Non-Destructive Consolidation Dry-Run Preview and Tenant-Wide Sweep | Accepted | Kieran | FEAT-COMP-28 | `PRD-0012` |
 | `US-0029` | Post-Extraction Ontology Schema Conformance Auditing and Schema Mermaid Visualization | Accepted | Kieran | FEAT-COMP-29 | `PRD-0012` |
+| `US-0030` | Ingest untrusted documents without resource exhaustion or injection | Accepted | Jordan | FEAT-CORE-30 | `PRD-0013` |

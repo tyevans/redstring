@@ -10,12 +10,15 @@ governing_stories:
 legacy_id: '0016'
 amends:
 - ADR-0102
+amended_by:
+- ADR-0150
 ---
 
 # ADR-0116: `GraphStore` is five capability protocols, composed
 *(Formerly legacy ADR 0016)*
 
-**Status:** accepted. Applied to `ChunkStore` and `Cache` by
+**Status:** accepted. Amended by [ADR-0150](adr-0150-attacker-influenced-input-is-bounded-and-inert.md), which gives `neighbors` an
+upper depth bound (`MAX_TRAVERSAL_DEPTH`) that every adapter enforces. Applied to `ChunkStore` and `Cache` by
 [ADR 0026](adr-0126-chunk-store-and-cache-are-capabilities-too.md), and to
 `VectorStore` by
 [ADR 0027](adr-0127-vector-store-is-three-capabilities-and-so-is-every-collaborator.md)

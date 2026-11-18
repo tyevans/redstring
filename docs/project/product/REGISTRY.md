@@ -14,3 +14,4 @@
 | `PRD-0010` | Explainable Hybrid Retrieval Diagnostics and Channel Attribution | Accepted |
 | `PRD-0011` | Reverse Provenance Lineage Tracing and Corpus Coverage Reporting | Accepted |
 | `PRD-0012` | Consolidation Dry-Run Preview, Tenant Sweep, and Ontology Schema Conformance Auditing | Accepted |
+| `PRD-0013` | Security Hardening of Untrusted Input Boundaries and Supply Chain | Accepted |

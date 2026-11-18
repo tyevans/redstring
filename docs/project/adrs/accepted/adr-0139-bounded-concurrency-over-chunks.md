@@ -11,6 +11,7 @@ legacy_id: 0039
 amends:
 - ADR-0110
 amended_by:
+- ADR-0150
 - ADR-0141
 ---
 
@@ -20,7 +21,8 @@ amended_by:
 **Status:** accepted. Amended by [`0041` the consolidation pass is
 decide-then-emit](adr-0141-the-consolidation-pass-is-decide-then-emit.md), which
 moves `CallLimiter` from `extraction` to `domain` so consolidation can share
-one ceiling with the pipeline. The Decision below stands unchanged.
+one ceiling with the pipeline. Amended by [ADR-0150](adr-0150-attacker-influenced-input-is-bounded-and-inert.md), which caps `concurrency`
+and documents the batch product. The Decision below stands unchanged.
 
 **Decision:** `ExtractionPipeline` and `build_graph` take a `concurrency`
 parameter (default `1`). Chunks are extracted in consecutive wavefront

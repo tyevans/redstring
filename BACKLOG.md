@@ -1032,6 +1032,25 @@ with a *reported* symptom shape (a shared limiter starving extraction); B123
 and B124 corrupt a similarity score rather than a timing; the rest are growth
 curves nobody has climbed.
 
+### B167. The consolidation candidate cap bounds scoring, not the block read
+
+TASK-0065 capped the candidates that `consolidation/candidates.py` scores per
+subject (`DEFAULT_MAX_CANDIDATES`, selected by name similarity with ties to
+the lower id). The read before the cut is not bounded.
+`find_by_blocking_keys` still returns the whole block, and
+`domain/blocking.py` includes an `ENTITY_TYPE` strategy in
+`DEFAULT_STRATEGIES`, so the `t:<type>` block is every entity of that type in
+the tenant. A tenant with 100 000 `person` entities reads 100 000 entities
+for each subject, then scores 500 of them.
+
+Deferred because both fixes change consolidation recall, and the 2026-11-17
+security sweep had no measurement to decide that with. The options are a
+`limit` on `find_by_blocking_keys` (a port change, owed to both adapters and
+the compliance suite), or the removal of `ENTITY_TYPE` from the default
+strategies (cheaper, but it removes the only key two differently spelled
+names of one type always share). Measure recall on the accuracy corpus
+before you choose.
+
 ### B140. The endpoint ceiling is per pass, not per model call
 
 `ConsolidationService.resolve_many` acquires its `CallLimiter` once, around
@@ -2910,6 +2929,26 @@ someone who thinks to open a config file.
 ---
 
 ## 6. Tooling, packaging and hygiene
+
+### B166. Secret scanning runs in CI only, not in the local pre-commit hook
+
+ADR-0010 asks for secret scanning in pre-commit and in CI. TASK-0067 added
+the CI half: job `secrets` in `.github/workflows/ci.yml` runs gitleaks 8.30.1
+over the full history, from the release binary checked against a pinned
+SHA-256. Locally, `.pre-commit-config.yaml` runs only `detect-private-key`,
+which finds PEM private-key blocks and nothing else (no tokens, no API keys).
+
+Deferred, not done, because the full hook runs a downloaded binary on every
+developer machine. The gitleaks pre-commit hook builds gitleaks from source
+with a Go toolchain that pre-commit downloads. During the 2026-11-17 sweep
+the session's permission policy refused to run the downloaded gitleaks
+binary locally, and that is the same action the hook would take on each
+commit. A maintainer must accept it. It is not an agent's choice.
+
+To close it: add `repo: https://github.com/gitleaks/gitleaks`, `rev:
+83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1`, hook id
+`gitleaks`, under the SHA-pinning rule in the same file. Then delete the
+`detect-private-key`-only note in `docs/project/SECURITY.md` section 3.
 
 ### B158. The task prefixes are absent from every how-to that configures a model
 
