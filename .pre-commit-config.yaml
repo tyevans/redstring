@@ -34,9 +34,20 @@ repos:
         args: [--fix=lf]
       - id: check-ast
       - id: check-docstring-first
-      # ADR-0010. This finds private-key blocks only. The full-history
-      # gitleaks scan runs in CI (`ci.yml`, job `secrets`).
+      # ADR-0010. This finds private-key blocks only. The gitleaks hook
+      # below finds tokens and API keys too.
       - id: detect-private-key
+
+  # ADR-0010. gitleaks scans the staged changes on each commit. CI scans the
+  # full history with the same version (`ci.yml`, job `secrets`). Change the
+  # two versions together.
+  #
+  # pre-commit builds gitleaks from source at this commit with a Go
+  # toolchain, so no release binary is downloaded here.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1
+    hooks:
+      - id: gitleaks
 
   # Everything below runs out of the project's uv environment so the versions
   # match what `uv run` uses locally and in CI.

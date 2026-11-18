@@ -2928,26 +2928,6 @@ someone who thinks to open a config file.
 
 ## 6. Tooling, packaging and hygiene
 
-### B166. Secret scanning runs in CI only, not in the local pre-commit hook
-
-ADR-0010 asks for secret scanning in pre-commit and in CI. TASK-0067 added
-the CI half: job `secrets` in `.github/workflows/ci.yml` runs gitleaks 8.30.1
-over the full history, from the release binary checked against a pinned
-SHA-256. Locally, `.pre-commit-config.yaml` runs only `detect-private-key`,
-which finds PEM private-key blocks and nothing else (no tokens, no API keys).
-
-Deferred, not done, because the full hook runs a downloaded binary on every
-developer machine. The gitleaks pre-commit hook builds gitleaks from source
-with a Go toolchain that pre-commit downloads. During the 2026-11-17 sweep
-the session's permission policy refused to run the downloaded gitleaks
-binary locally, and that is the same action the hook would take on each
-commit. A maintainer must accept it. It is not an agent's choice.
-
-To close it: add `repo: https://github.com/gitleaks/gitleaks`, `rev:
-83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1`, hook id
-`gitleaks`, under the SHA-pinning rule in the same file. Then delete the
-`detect-private-key`-only note in `docs/project/SECURITY.md` section 3.
-
 ### B158. The task prefixes are absent from every how-to that configures a model
 
 ADR 0043 added `document_prefix` and `query_prefix` to both embedding adapters,
