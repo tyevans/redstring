@@ -82,6 +82,9 @@ def read_graphml_elements(payload: str) -> tuple[list[GraphMLNode], list[GraphML
             src = element.get("source", "")
             tgt = element.get("target", "")
             if not eid or not src or not tgt:
-                raise ValueError("GraphML <edge> requires 'id', 'source', and 'target'")
+                raise ValueError(
+                    "GraphML <edge> requires 'id', 'source', and 'target'; "
+                    f"got id={eid!r}, source={src!r}, target={tgt!r}"
+                )
             edges.append((eid, src, tgt, _data_values(element)))
     return nodes, edges

@@ -128,6 +128,28 @@ Ordered by whether a caller doing an ordinary thing meets it: B43 needs only a
 merge and a re-extraction, B32 needs a second extraction run, and B35 fails
 loudly.
 
+### B168. A portable import invents a confident, manual provenance when the file has none
+
+`composition/import_graph.py`, `_parse_provenance`: when a JSON-LD node or a
+GraphML node has no provenance, the importer builds
+`Provenance(observed_at=2026-01-01, extraction_method=MANUAL,
+confidence=1.0)`. A file with no provenance thus imports as hand-curated,
+fully confident data, dated to an arbitrary day. A consumer that filters on
+`extraction_method` or `confidence` (consolidation tie-breaks, retrieval
+diagnostics) treats it as the most trustworthy data in the tenant.
+
+ADR-0150 records that an import file is trusted for the provenance it
+*states*. This default is provenance the file did not state, which is a
+different thing, and it was found twice in the 2026-11-17 sweep (the
+parsing review and the coverage pass).
+
+Deferred because the right fix adds a value. The honest default is an
+`ExtractionMethod.IMPORTED` with a low confidence, plus an `observed_at` taken
+from the import call, not a constant. `ExtractionMethod` values are a wire
+format (`tests/unit/test_enum_values_are_a_wire_format.py`), and persisted
+events carry them, so a new value needs its own ADR. Also decide whether a
+missing provenance should be refused instead of defaulted.
+
 ### B43. A merge plans against a graph read outside its concurrency window
 
 `consolidation/service.py::merge` reads `get_relationships_for` *before*

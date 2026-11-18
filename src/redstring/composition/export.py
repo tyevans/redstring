@@ -276,8 +276,6 @@ def _filter_subgraph(
 
     allowed_ids = set(entities_by_id.keys())
     if center_entity_id is not None:
-        if max_depth < 0:
-            raise ValueError(f"max_depth must be non-negative, got {max_depth}")
         center_id: EntityId | None = None
         if isinstance(center_entity_id, str):
             norm = normalize_name(center_entity_id)
@@ -337,6 +335,11 @@ async def export_graph(
 ) -> str:
     """Read a tenant's knowledge graph (or filtered subgraph) and serialize it into `format`."""
     validate_page_size(page_size)
+    # Refused with or without a centre, before any store read. Without a
+    # centre the value has no effect, but a negative depth is still a caller
+    # error, and accepting it there would hide the error until a centre is set.
+    if max_depth < 0:
+        raise ValueError(f"max_depth must be non-negative, got {max_depth}")
 
     resolved_format = ExportFormat(format)
     entities_by_id, edges, _ = await read_topology(tenant_id, graph, relationships, page_size)

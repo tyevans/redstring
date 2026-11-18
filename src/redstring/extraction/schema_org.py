@@ -288,8 +288,3 @@ def extract_entities_from_open_graph(og_data: dict[str, Any]) -> list[dict[str, 
         logger.warning("Failed to extract entity from Open Graph data: %s", describe_failure(e))
 
     return entities
-
-
-def _map_og_type(og_type: str) -> str:
-    """Map Open Graph type to entity type (backwards-compatible alias)."""
-    return map_open_graph_type(og_type)

@@ -56,7 +56,8 @@ async def explain_path(
     """Find the shortest relationship path between `source` and `target` within `max_depth` hops.
 
     Traverses relationships bidirectionally via breadth-first search (BFS) with
-    deterministic tie-breaking by neighbor `EntityId` and `RelationshipId`.
+    deterministic tie-breaking by neighbor `EntityId`, then relationship type,
+    then `RelationshipId`.
     When `chunks` is provided, attaches supporting `StoredChunk` passages citing
     the entities along the discovered path.
     """

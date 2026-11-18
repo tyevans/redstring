@@ -350,9 +350,10 @@ async def explain_chunk_retrieval(
     fused = reciprocal_rank_fusion([list(semantic_scores), list(lexical_scores)])[:k]
     known = {**semantic_chunks, **lexical_chunks}
     explained_matches: list[ExplainedChunkMatch] = []
+    # Every fused id is a key of `semantic_scores` or `lexical_scores`, and
+    # each of those has the same keys as its `*_chunks` map, so `known[cid]`
+    # cannot miss.
     for cid, fused_score in fused:
-        if cid not in known:
-            continue
         s_rank, l_rank = semantic_ranks.get(cid), lexical_ranks.get(cid)
         explained_matches.append(
             ExplainedChunkMatch(
