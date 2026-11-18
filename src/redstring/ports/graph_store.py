@@ -12,7 +12,7 @@ authority; stores are derived, disposable, and rebuildable by replay.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Final, Literal, Protocol, runtime_checkable
 
 from redstring.ports.lifecycle import AsyncClosable
 
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "MAX_TRAVERSAL_DEPTH",
     "AliasStore",
     "EntityReader",
     "EntityWriter",
@@ -33,6 +34,9 @@ __all__ = [
     "RelationshipStore",
     "TenantPurge",
 ]
+
+#: The deepest `neighbors` depth every adapter accepts. Deeper raises `ValueError`.
+MAX_TRAVERSAL_DEPTH: Final = 6
 
 
 @runtime_checkable
@@ -344,7 +348,7 @@ class RelationshipStore(AsyncClosable, Protocol):
         when given, restricts traversal to edges of those types. Cycles
         terminate. The origin entity is never in the result, and neither is
         any entity of another tenant. An unknown `entity_id` yields `[]`.
-        `depth=0` yields `[]`; a negative `depth` raises `ValueError`.
+        `depth=0` yields `[]`. A `depth` below 0 or above `MAX_TRAVERSAL_DEPTH` raises `ValueError`.
 
         Hop distance is deliberately **not** returned. Slice 8's temporal work
         may want it; adding it now would widen the contract on speculation,

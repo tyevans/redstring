@@ -51,6 +51,9 @@ from a concrete goal rather than from a concept — for the concepts, see
 - [**Index documents without extracting them**](index-documents.md) — build a
   corpus of passages with no model call, what an empty `entity_ids` means, and
   the extract-then-index case that is lossy.
+- [**Import and export a graph**](import-and-export-a-graph.md) — Mermaid,
+  JSON-LD and GraphML, the trust rule for an import file, the payload limits,
+  and what the GraphML parser refuses.
 - [**Use the pgvector store**](use-the-pgvector-store.md) — schema, the score
   expression, and why there is deliberately no ANN index.
 - [**Implement a store adapter**](implement-a-store-adapter.md) — writing a

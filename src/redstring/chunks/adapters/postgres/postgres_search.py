@@ -14,6 +14,7 @@ from redstring.domain.tokenize import tokenize
 from redstring.domain.vector import clamp_score, has_zero_norm
 
 from .postgres_encode import encode_vector
+from .postgres_identifiers import _TERMS, check_table
 from .postgres_sql import backfill_sql, candidates_sql, semantic_candidates_sql
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ async def search_lexical(
     chunk_from: Callable[[Any], StoredChunk],
 ) -> LexicalCandidates:
     """Retrieve lexical candidates and corpus stats for given terms."""
+    check_table(table)
     # Rejected before any query, matching the in-memory adapter: a
     # rejected call must not have counted a corpus.
     if limit < 0:
@@ -62,7 +64,7 @@ async def search_lexical(
             tenant_id,
         )
         frequency_rows = await connection.fetch(
-            f"SELECT term, count(*) AS df FROM {table}_terms "  # nosec B608
+            f"SELECT term, count(*) AS df FROM {table}{_TERMS} "  # nosec B608
             "WHERE tenant_id = $1 AND term = ANY ($2) GROUP BY term",
             tenant_id,
             distinct_terms,
@@ -107,6 +109,7 @@ async def search_semantic(
     min_score: float | None = None,
 ) -> list[SemanticCandidate]:
     """Retrieve semantic nearest neighbor candidates."""
+    check_table(table)
     # Same guard order as `InMemoryChunkStore` and `PgVectorStore._check`:
     # limit before width, width before zero-norm, so a rejected call
     # never reaches a query and a zero-norm check never runs against a
@@ -133,7 +136,13 @@ async def search_semantic(
 
 
 async def backfill_lexical(pool: asyncpg.Pool[Any], table: str) -> int:
-    """Recompute `doc_length` and the term rows from stored `text`. Idempotent."""
+    """Recompute `doc_length` and the term rows from stored `text`. Idempotent.
+
+    This is an operator-only maintenance call. It reads the rows of **every
+    tenant**, not one, so no caller should reach it through a tenant-scoped
+    code path. Each row keeps its own `tenant_id` when it is written back.
+    """
+    check_table(table)
     rows = await pool.fetch(f"SELECT id, tenant_id, text FROM {table}")  # nosec B608
     if not rows:
         return 0

@@ -13,7 +13,7 @@ replacement is a string and not another enum.
 
 Two shapes CLAUDE.md warns about are avoided deliberately:
 
-- Every `_map_og_type` branch is asserted **and** a type in none of them, so a
+- Every `map_open_graph_type` branch is asserted **and** a type in none of them, so a
   test cannot pass against an implementation that collapsed to the fallback.
   Asserting only `"article" -> "document"` cannot distinguish the first branch
   from the `else`.

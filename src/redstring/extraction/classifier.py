@@ -35,12 +35,13 @@ dropped: `GraphBuildReport.domain_confidence` is where it surfaces.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import TYPE_CHECKING
 
 # Import directly from submodules to avoid circular imports through __init__
-from redstring.domain.exceptions import LlmProviderError
+from redstring.domain.exceptions import LlmProviderError, describe_failure
 from redstring.domain.limiter import CallLimiter
 from redstring.extraction.domains.models import ClassificationResult
 from redstring.extraction.domains.registry import get_domain_registry
@@ -76,11 +77,31 @@ MAX_CONTENT_FOR_CLASSIFICATION = 4000  # Characters
 # Default confidence threshold below which we use fallback
 DEFAULT_CONFIDENCE_THRESHOLD = 0.5
 
+#: Longest `reasoning` a `ClassificationResult` accepts. Text built around a
+#: model answer must be clipped to it, or the model's own answer makes the
+#: fallback itself raise a validation error.
+MAX_REASONING_CHARS = 1000
+
 # Default domain to use as fallback
 DEFAULT_FALLBACK_DOMAIN = "encyclopedia_wiki"
 
+#: Characters read past the classification limit before sanitising. A personal
+#: data token that straddles the limit is then redacted whole, not left as a
+#: fragment in the part that is sent. An email address is at most 254
+#: characters (RFC 5321), so the margin covers every token this module redacts.
+SANITISE_MARGIN = 320
+
 # Patterns for content sanitization
-EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+#
+# The email pattern is linear. A word boundary before the local part was not:
+# it let every position inside a run of `a.a.a.` start a fresh backtracking
+# attempt, which was quadratic on text with no `@` at all. The lookbehind
+# admits a match only where the local part begins, and the lookahead refuses a
+# domain that continues, so each candidate position is tried once.
+EMAIL_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*"
+    r"\.[A-Za-z]{2,}(?![A-Za-z0-9-])"
+)
 PHONE_PATTERN = re.compile(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b")
 SSN_PATTERN = re.compile(r"\b\d{3}[-]?\d{2}[-]?\d{4}\b")
 # Credit card patterns (basic - catches most formats)
@@ -184,15 +205,16 @@ class ContentClassifier:
             )
             return self._fallback_result("Content too short")
 
-        # Sanitize and truncate content
-        sanitized = self._sanitize_content(content_stripped)
-        truncated = sanitized[:MAX_CONTENT_FOR_CLASSIFICATION]
+        # Bound the input before sanitising it, so a whole book never reaches
+        # the regexes, then cut to the limit that is sent.
+        window = content_stripped[: MAX_CONTENT_FOR_CLASSIFICATION + SANITISE_MARGIN]
+        truncated = self._sanitize_content(window)[:MAX_CONTENT_FOR_CLASSIFICATION]
 
         # Build classification prompt
         prompt = self._build_prompt(truncated)
 
         try:
-            async with self._limiter:
+            async with self._limiter, asyncio.timeout(self._timeout):
                 result = await self._provider.extract(
                     prompt,
                     ClassificationResult,
@@ -222,7 +244,7 @@ class ContentClassifier:
                         f"Low confidence classification ({result.confidence:.2f} < "
                         f"{self._confidence_threshold:.2f}). "
                         f"Original: {result.domain}. {result.reasoning or ''}"
-                    ),
+                    )[:MAX_REASONING_CHARS],
                     alternatives=[{"domain": result.domain, "confidence": result.confidence}],
                 )
 
@@ -245,9 +267,11 @@ class ContentClassifier:
             # answer that looks like a real one.
             logger.warning(
                 "Classification failed; using the fallback domain",
-                extra={"tenant_id": tenant_id, "error": str(error)},
+                extra={"tenant_id": tenant_id, "error": describe_failure(error)},
             )
-            return self._fallback_result(f"Classification failed: {error}")
+            # Described, not formatted in: the text of a model failure can be
+            # long, and it can echo the model's own output.
+            return self._fallback_result(f"Classification failed: {describe_failure(error)}")
 
         except TimeoutError:
             logger.warning(

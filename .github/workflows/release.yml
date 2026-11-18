@@ -158,6 +158,15 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF#refs/tags/v}"
+          # A git ref name can hold `$`, `(`, `;` and quotes. This output goes
+          # to later steps and to the release body, so it must be a plain
+          # version before it leaves this step. The pattern accepts the forms
+          # that the branches below classify (including `a1rc1`, which they
+          # route by its `rc`), and nothing else.
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b)[0-9]+)?(rc[0-9]+)?$ ]]; then
+            echo "::error::Tag v${TAG} is not a release version (X.Y.Z, then optionally aN or bN, then optionally rcN)."
+            exit 1
+          fi
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
           # Order matters: `rc` must be tested before the `(a|b)` pattern,
@@ -204,26 +213,33 @@ jobs:
             echo "install_cmd=pip install redstring==$TAG" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
 
+      # Step outputs reach the shell through `env:`, never through `${{ }}`
+      # inside `run:`. An expression is pasted into the script text before the
+      # shell parses it, so a value with a quote in it becomes code.
       - name: Tag must match pyproject.toml
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           PROJECT_VERSION=$(uv run --no-project python -c \
             'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')
-          if [[ "${{ steps.version.outputs.version }}" != "$PROJECT_VERSION" ]]; then
-            echo "::error::Tag v${{ steps.version.outputs.version }} does not match pyproject.toml ($PROJECT_VERSION)"
+          if [[ "$VERSION" != "$PROJECT_VERSION" ]]; then
+            echo "::error::Tag v${VERSION} does not match pyproject.toml ($PROJECT_VERSION)"
             exit 1
           fi
           echo "Version validated: $PROJECT_VERSION"
 
       - name: CHANGELOG must have a section for this version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          if ! grep -q "^## \[${{ steps.version.outputs.version }}\]" CHANGELOG.md; then
-            echo "::error::CHANGELOG.md has no '## [${{ steps.version.outputs.version }}]' section"
+          if ! grep -q "^## \[${VERSION}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [${VERSION}]' section"
             exit 1
           fi
 
@@ -241,7 +257,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
 
@@ -327,7 +343,7 @@ jobs:
       # No `password:`. Absent one, the action performs the OIDC exchange and
       # attaches PEP 740 attestations. Adding a token would silently turn both
       # off.
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
 
   publish-testpypi:
     # upload to TestPyPI
@@ -346,7 +362,7 @@ jobs:
           name: dist
           path: dist/
 
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -365,6 +381,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write        # create the release
+      id-token: write        # sign the build provenance attestation
+      attestations: write    # store it
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -377,9 +395,10 @@ jobs:
 
       - name: Extract this version's changelog section
         id: changelog
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ needs.validate.outputs.version }}"
           # Everything between this version's heading and the next one.
           # `validate` has already proved the section exists.
           {
@@ -392,7 +411,17 @@ jobs:
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      # PyPI gets PEP 740 attestations from the publish action. The files on
+      # the GitHub release had none, so a download from there could not be
+      # tied to this workflow run. The attestation is made here and not in
+      # `build`: `build` runs `uv build` and the build backend, and this job
+      # runs no project code. Check with `gh attestation verify <file>
+      # --repo tyevans/redstring`.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: dist/*
           prerelease: ${{ needs.validate.outputs.is_prerelease }}
@@ -425,7 +454,7 @@ jobs:
       && (needs.publish-pypi.result == 'success' || needs.publish-testpypi.result == 'success')
     runs-on: ubuntu-latest
     steps:
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.13'
 

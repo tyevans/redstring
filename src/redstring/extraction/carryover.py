@@ -64,6 +64,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from redstring.domain.normalization import normalize_name
+from redstring.extraction.bounds import MAX_NAME_CHARS, MAX_TYPE_CHARS, prompt_safe
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -158,5 +159,11 @@ class Carryover:
         mentions = self.mentions()
         if not mentions:
             return ""
-        listed = "\n".join(f"- {name} ({entity_type})" for name, entity_type in mentions)
+        # Flattened here, at the point of entry to the prompt. A name that
+        # carries a line break would otherwise start a line of the system
+        # prompt, and the text after it would read as an instruction.
+        listed = "\n".join(
+            f"- {prompt_safe(name, MAX_NAME_CHARS)} ({prompt_safe(entity_type, MAX_TYPE_CHARS)})"
+            for name, entity_type in mentions
+        )
         return f"\n\n{_HEADING}\n{listed}\n\n{_INSTRUCTION}"

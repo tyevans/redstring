@@ -128,6 +128,28 @@ Ordered by whether a caller doing an ordinary thing meets it: B43 needs only a
 merge and a re-extraction, B32 needs a second extraction run, and B35 fails
 loudly.
 
+### B168. A portable import invents a confident, manual provenance when the file has none
+
+`composition/import_graph.py`, `_parse_provenance`: when a JSON-LD node or a
+GraphML node has no provenance, the importer builds
+`Provenance(observed_at=2026-01-01, extraction_method=MANUAL,
+confidence=1.0)`. A file with no provenance thus imports as hand-curated,
+fully confident data, dated to an arbitrary day. A consumer that filters on
+`extraction_method` or `confidence` (consolidation tie-breaks, retrieval
+diagnostics) treats it as the most trustworthy data in the tenant.
+
+ADR-0150 records that an import file is trusted for the provenance it
+*states*. This default is provenance the file did not state, which is a
+different thing, and it was found twice in the 2026-11-17 sweep (the
+parsing review and the coverage pass).
+
+Deferred because the right fix adds a value. The honest default is an
+`ExtractionMethod.IMPORTED` with a low confidence, plus an `observed_at` taken
+from the import call, not a constant. `ExtractionMethod` values are a wire
+format (`tests/unit/test_enum_values_are_a_wire_format.py`), and persisted
+events carry them, so a new value needs its own ADR. Also decide whether a
+missing provenance should be refused instead of defaulted.
+
 ### B43. A merge plans against a graph read outside its concurrency window
 
 `consolidation/service.py::merge` reads `get_relationships_for` *before*
@@ -1031,6 +1053,25 @@ Ordered by how close each is to a caller who would notice. B140 is the only one
 with a *reported* symptom shape (a shared limiter starving extraction); B123
 and B124 corrupt a similarity score rather than a timing; the rest are growth
 curves nobody has climbed.
+
+### B167. The consolidation candidate cap bounds scoring, not the block read
+
+TASK-0065 capped the candidates that `consolidation/candidates.py` scores per
+subject (`DEFAULT_MAX_CANDIDATES`, selected by name similarity with ties to
+the lower id). The read before the cut is not bounded.
+`find_by_blocking_keys` still returns the whole block, and
+`domain/blocking.py` includes an `ENTITY_TYPE` strategy in
+`DEFAULT_STRATEGIES`, so the `t:<type>` block is every entity of that type in
+the tenant. A tenant with 100 000 `person` entities reads 100 000 entities
+for each subject, then scores 500 of them.
+
+Deferred because both fixes change consolidation recall, and the 2026-11-17
+security sweep had no measurement to decide that with. The options are a
+`limit` on `find_by_blocking_keys` (a port change, owed to both adapters and
+the compliance suite), or the removal of `ENTITY_TYPE` from the default
+strategies (cheaper, but it removes the only key two differently spelled
+names of one type always share). Measure recall on the accuracy corpus
+before you choose.
 
 ### B140. The endpoint ceiling is per pass, not per model call
 
@@ -2910,6 +2951,26 @@ someone who thinks to open a config file.
 ---
 
 ## 6. Tooling, packaging and hygiene
+
+### B166. Secret scanning runs in CI only, not in the local pre-commit hook
+
+ADR-0010 asks for secret scanning in pre-commit and in CI. TASK-0067 added
+the CI half: job `secrets` in `.github/workflows/ci.yml` runs gitleaks 8.30.1
+over the full history, from the release binary checked against a pinned
+SHA-256. Locally, `.pre-commit-config.yaml` runs only `detect-private-key`,
+which finds PEM private-key blocks and nothing else (no tokens, no API keys).
+
+Deferred, not done, because the full hook runs a downloaded binary on every
+developer machine. The gitleaks pre-commit hook builds gitleaks from source
+with a Go toolchain that pre-commit downloads. During the 2026-11-17 sweep
+the session's permission policy refused to run the downloaded gitleaks
+binary locally, and that is the same action the hook would take on each
+commit. A maintainer must accept it. It is not an agent's choice.
+
+To close it: add `repo: https://github.com/gitleaks/gitleaks`, `rev:
+83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1`, hook id
+`gitleaks`, under the SHA-pinning rule in the same file. Then delete the
+`detect-private-key`-only note in `docs/project/SECURITY.md` section 3.
 
 ### B158. The task prefixes are absent from every how-to that configures a model
 

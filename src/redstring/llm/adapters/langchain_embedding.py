@@ -44,9 +44,16 @@ store: a provider that promises 768 and returns 1536 raises
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from redstring.domain.exceptions import EmbeddingProviderError
+
+#: Seconds one embeddings request may take. Shorter than the chat default: a
+#: batch of short entity names is cheap, so a long wait means a stalled endpoint.
+DEFAULT_EMBEDDING_REQUEST_TIMEOUT: Final = 60.0
+
+#: Retries the client makes after a failed request. Matches the SDK default.
+DEFAULT_EMBEDDING_MAX_RETRIES: Final = 2
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -103,12 +110,18 @@ class LangChainEmbeddingProvider:
         provider: str = "openai-compatible",
         document_prefix: str = "",
         query_prefix: str = "",
+        request_timeout: float = DEFAULT_EMBEDDING_REQUEST_TIMEOUT,
+        max_retries: int = DEFAULT_EMBEDDING_MAX_RETRIES,
     ) -> LangChainEmbeddingProvider:
         """Build a provider against any OpenAI-compatible embeddings endpoint.
 
         Covers Ollama, llama.cpp, vLLM, LM Studio and OpenAI itself. The
         `api_key` default exists because most local servers require the field
         and ignore its value.
+
+        `request_timeout` (seconds per request) and `max_retries` are passed to
+        the client unchanged, so a stalled endpoint cannot hold a caller
+        indefinitely.
 
         `document_prefix` and `query_prefix` are the asymmetric-model task
         prefixes, threaded through unchanged -- most callers reach a model
@@ -144,6 +157,8 @@ class LangChainEmbeddingProvider:
             base_url=base_url,
             api_key=api_key,
             check_embedding_ctx_length=False,
+            request_timeout=request_timeout,
+            max_retries=max_retries,
         )
         return cls(
             client,

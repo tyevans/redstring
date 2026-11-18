@@ -34,6 +34,7 @@ from functools import lru_cache
 from threading import Lock
 from typing import TYPE_CHECKING
 
+from redstring.domain.exceptions import describe_failure
 from redstring.extraction.domains.catalog import DomainCatalog
 from redstring.extraction.domains.loader import (
     SchemaLoadError,
@@ -203,7 +204,7 @@ class DomainSchemaRegistry:
                 return len(self._schemas)
 
             except SchemaLoadError as e:
-                logger.error("Failed to load schemas: %s", e)
+                logger.error("Failed to load schemas: %s", describe_failure(e))
                 raise
 
     def reload_schemas(self) -> int:

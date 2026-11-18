@@ -14,6 +14,7 @@ from .models import (
     DEFAULT_SYSTEM_PROMPT,
     Theme,
     ThemeReport,
+    validate_page_size,
 )
 from .ranking import describe_community, prompt_for
 from .topology import node_degrees, read_topology
@@ -96,8 +97,7 @@ async def summarize_themes(
         CursorStalledError: The entity scan did not finish in `MAX_PAGES`.
         LlmProviderError: A model call failed and `skip_failed` is off.
     """
-    if page_size < 1:
-        raise ValueError(f"page_size must be at least 1, got {page_size}")
+    validate_page_size(page_size)
     if min_size < 1:
         raise ValueError(f"min_size must be at least 1, got {min_size}")
     if max_members_shown < 1:

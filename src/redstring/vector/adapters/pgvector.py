@@ -63,7 +63,6 @@ source of truth and the column is a projection of it.
 from __future__ import annotations
 
 import json
-import re
 from typing import TYPE_CHECKING, Any, Self
 
 from redstring.domain.exceptions import DimensionMismatchError
@@ -75,6 +74,7 @@ from redstring.domain.vector import (
     has_zero_norm,
 )
 from redstring.ports.vector_store import entity_type_of
+from redstring.vector.adapters.pg_identifiers import TENANT_TYPE_IDX, check_table
 from redstring.vector.provenance import ensure_pgvector_provenance, provenance_table_ddl
 
 if TYPE_CHECKING:
@@ -84,9 +84,6 @@ if TYPE_CHECKING:
     import asyncpg
 
     from redstring.domain.ids import EntityId, TenantId
-
-#: Table names are validated as bare identifiers before interpolation (# nosec B608).
-_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 #: The score expression: `(1 + cosine) / 2` mapped from pgvector distance `<=>`.
 SCORE_SQL = "1 - (embedding <=> $2::vector) / 2"
@@ -113,8 +110,7 @@ class PgVectorStore:
         """Wrap an existing pool. `close()` will not close it."""
         if dimension <= 0:
             raise ValueError(f"dimension must be positive, not {dimension}")
-        if not _IDENTIFIER.fullmatch(table):
-            raise ValueError(f"table must be a bare lowercase identifier, not {table!r}")
+        check_table(table)
         self._pool = pool
         self._dimension = dimension
         self._table = table
@@ -227,7 +223,7 @@ class PgVectorStore:
             "  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,"
             "  PRIMARY KEY (tenant_id, entity_id)"
             ")",
-            f"CREATE INDEX IF NOT EXISTS {self._table}_tenant_type_idx "
+            f"CREATE INDEX IF NOT EXISTS {self._table}{TENANT_TYPE_IDX} "
             f"ON {self._table} (tenant_id, entity_type)",
             provenance_table_ddl(self._table),
         )

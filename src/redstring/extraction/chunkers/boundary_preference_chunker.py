@@ -47,8 +47,8 @@ from __future__ import annotations
 import re
 from bisect import bisect_right
 
+from redstring.extraction.chunkers.limits import check_window
 from redstring.extraction.chunking import Chunk, ChunkingResult
-from redstring.extraction.errors import ChunkSizeError
 
 #: Runs of whitespace: the only places a split can avoid landing mid-word.
 _WHITESPACE = re.compile(r"\s+")
@@ -118,13 +118,9 @@ class BoundaryPreferenceChunker:
 
     @staticmethod
     def _validate(chunk_size: int, overlap: int) -> None:
-        if chunk_size < 1:
-            raise ChunkSizeError(f"chunk size ({chunk_size}) must be at least 1")
-        if overlap < 0:
-            raise ChunkSizeError(f"overlap ({overlap}) must be >= 0")
-        if overlap >= chunk_size:
-            # Otherwise a chunk could rewind at least as far as it advanced.
-            raise ChunkSizeError(f"overlap ({overlap}) must be < chunk size ({chunk_size})")
+        # Overlap below the chunk size is what stops a chunk rewinding at least
+        # as far as it advanced; `check_window` enforces it with the rest.
+        check_window(chunk_size, overlap, size_name="chunk size", overlap_name="overlap")
 
     @property
     def chunker_type(self) -> str:

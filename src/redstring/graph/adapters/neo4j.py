@@ -52,6 +52,7 @@ from redstring.domain.ids import EntityId, RelationshipId, TenantId
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.domain.relationship import Relationship
 from redstring.domain.temporal import TemporalExtent
+from redstring.ports.graph_store import MAX_TRAVERSAL_DEPTH
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -99,11 +100,11 @@ _DIRECTIONS = ("out", "in", "both")
 
 #: Cypher patterns for each `direction`, relative to the anchored entity `e`.
 _PATTERNS: dict[str, str] = {
-    "out": f"(e)-[r:{EDGE}]->()",
-    "in": f"(e)<-[r:{EDGE}]-()",
+    "out": f"(e)-[r:{EDGE}]->(o:Entity)",
+    "in": f"(e)<-[r:{EDGE}]-(o:Entity)",
     # Undirected between *distinct* nodes yields each edge once, and
     # `Relationship` forbids self-loops, so this cannot double-count.
-    "both": f"(e)-[r:{EDGE}]-()",
+    "both": f"(e)-[r:{EDGE}]-(o:Entity)",
 }
 
 #: Run once per connect. `IF NOT EXISTS` makes each idempotent.
@@ -460,16 +461,17 @@ class Neo4jGraphStore:
         records = await self._run(
             "UNWIND $entity_ids AS wanted "
             f"OPTIONAL MATCH (a:{ALIAS_NODE} {{tenant_id: $tenant_id, entity_id: wanted}}) "
-            # Variable-length, because chains form: merging `B` into `A` and
-            # then `A` into `C` is two legal merges and `B` must give `C`.
-            # Cypher's relationship-uniqueness rule terminates a cycle, so this
-            # cannot hang -- it returns nothing, which is what `is_alias`
-            # below turns into a loud error rather than a wrong answer.
-            f"OPTIONAL MATCH (a)-[:{ALIAS_EDGE}*1..]->(c:{ALIAS_NODE}) "
-            f"WHERE NOT EXISTS {{ (c)-[:{ALIAS_EDGE}]->() }} "
+            # Variable-length: `B` into `A` into `C` must resolve to `C`. A cycle
+            # returns nothing, and `is_alias` turns that into an error.
+            # Interior nodes have no name, so `nodes(p)` tenant-checks them.
+            f"OPTIONAL MATCH p = (a)-[:{ALIAS_EDGE}*1..]->(c:{ALIAS_NODE}) "
+            "WHERE c.tenant_id = $tenant_id AND ALL(n IN nodes(p) WHERE n.tenant_id = $tenant_id) "
+            f"  AND NOT EXISTS {{ (c)-[:{ALIAS_EDGE}]->(x:{ALIAS_NODE}) "
+            "    WHERE x.tenant_id = $tenant_id } "
             "RETURN wanted, "
             "  c.entity_id AS canonical, "
-            f"  EXISTS {{ (a)-[:{ALIAS_EDGE}]->() }} AS is_alias",
+            f"  EXISTS {{ (a)-[:{ALIAS_EDGE}]->(x:{ALIAS_NODE}) "
+            "    WHERE x.tenant_id = $tenant_id } AS is_alias",
             tenant_id=str(tenant_id),
             entity_ids=[str(entity_id) for entity_id in wanted],
         )
@@ -596,7 +598,7 @@ class Neo4jGraphStore:
             "UNWIND $entity_ids AS wanted "
             "MATCH (e:Entity {tenant_id: $tenant_id, id: wanted}) "
             f"MATCH {_PATTERNS[direction]} "
-            "WHERE r.tenant_id = $tenant_id "
+            "WHERE r.tenant_id = $tenant_id AND o.tenant_id = $tenant_id "
             "  AND ($any_type OR r.relationship_type IN $relationship_types) "
             # An edge with both endpoints in `entity_ids` is matched twice; the
             # result is a set of edges, so it must appear once.
@@ -632,23 +634,21 @@ class Neo4jGraphStore:
         depth: int = 1,
         relationship_types: Sequence[str] | None = None,
     ) -> list[Entity]:
-        # A variable-length pattern cannot take a parameter, so `depth` is the
-        # one value in this module formatted into a query string. It is proved
-        # to be a plain integer first -- `bool` excluded because it is an `int`
-        # subclass that would render as `True`.
+        # `depth` is the one value formatted into Cypher: a variable-length
+        # pattern cannot take a parameter. It is proved a plain int first;
+        # `bool` is excluded because it would render as `True`.
         if isinstance(depth, bool) or not isinstance(depth, int):
             raise TypeError(f"depth must be an int, not {type(depth).__name__}")
-        if depth < 0:
-            raise ValueError("depth must not be negative")
+        if not 0 <= depth <= MAX_TRAVERSAL_DEPTH:
+            raise ValueError(f"depth must be 0 to {MAX_TRAVERSAL_DEPTH}, got {depth}")
         if depth == 0:
             # `*1..0` is not a legal pattern, and the answer is [] regardless.
             return []
 
         records = await self._run(
             "MATCH (origin:Entity {tenant_id: $tenant_id, id: $entity_id}) "
-            # One variable-length path rather than `depth` rounds of
-            # expansion. Cypher's relationship-uniqueness rule -- no edge
-            # twice in one path -- is what terminates a cycle.
+            # One variable-length path, not `depth` rounds of expansion.
+            # Relationship-uniqueness (no edge twice) terminates a cycle.
             f"MATCH (origin)-[rels:{EDGE}*1..{depth}]-(e:Entity) "
             "WHERE e.tenant_id = $tenant_id "
             "  AND e.id <> $entity_id "

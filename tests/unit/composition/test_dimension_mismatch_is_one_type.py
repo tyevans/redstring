@@ -24,11 +24,15 @@ from redstring.chunks.adapters.memory import InMemoryChunkStore
 from redstring.composition import (
     BatchDocumentError,
     BatchGraphReport,
+    ChunkRetrievalExplanation,
     ChunkRetriever,
+    EntityRetrievalExplanation,
     Redstring,
     Retriever,
     build_graph,
     build_graph_batch,
+    explain_chunk_retrieval,
+    explain_entity_retrieval,
     index_documents,
 )
 from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
@@ -36,6 +40,7 @@ from redstring.domain.entity import Entity
 from redstring.domain.exceptions import DimensionMismatchError
 from redstring.domain.ids import EntityId, SourceId, TenantId
 from redstring.domain.merge_strategy import PropertyMergePolicy
+from redstring.domain.retrieval import RetrievalMode
 from redstring.domain.source import SourceDocument
 from redstring.events.document import DocumentExtracted
 from redstring.events.merge import EntitiesMerged, MergeUndone
@@ -75,11 +80,14 @@ _COMPOSITION_NAMESPACE: dict[str, object] = {
     "MergeUndone": MergeUndone,
     "DomainSchema": DomainSchema,
     "Chunker": Chunker,
+    "ChunkRetrievalExplanation": ChunkRetrievalExplanation,
     "ChunkRetriever": ChunkRetriever,
     "ChunkStore": ChunkStore,
     "EntityReader": EntityReader,
+    "EntityRetrievalExplanation": EntityRetrievalExplanation,
     "GraphStore": GraphStore,
     "LlmProvider": LlmProvider,
+    "RetrievalMode": RetrievalMode,
     "VectorReader": VectorReader,
     "VectorStore": VectorStore,
     "Redstring": Redstring,
@@ -171,12 +179,43 @@ def _build_graph_batch_mismatch() -> None:
     asyncio.run(_run())
 
 
+def _explain_entity_retrieval_mismatch() -> None:
+    async def _run() -> None:
+        await explain_entity_retrieval(
+            "Ada Lovelace",
+            TENANT_ID,
+            graph=InMemoryGraphStore(),
+            embeddings=FakeEmbeddingProvider(dimension=DIMENSION),
+            vectors=InMemoryVectorStore(dimension=384),
+        )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def _explain_chunk_retrieval_mismatch() -> None:
+    async def _run() -> None:
+        await explain_chunk_retrieval(
+            "Ada Lovelace",
+            TENANT_ID,
+            chunks=InMemoryChunkStore(dimension=384),
+            embeddings=FakeEmbeddingProvider(dimension=DIMENSION),
+        )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
 CASES = {
     "ChunkRetriever": _chunk_retriever_mismatch,
     "Redstring": _redstring_mismatch,
     "Retriever": _retriever_mismatch,
     "build_graph": _build_graph_mismatch,
     "build_graph_batch": _build_graph_batch_mismatch,
+    "explain_chunk_retrieval": _explain_chunk_retrieval_mismatch,
+    "explain_entity_retrieval": _explain_entity_retrieval_mismatch,
     "index_documents": _index_documents_mismatch,
 }
 

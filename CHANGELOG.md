@@ -14,6 +14,70 @@ under **Removed** or **Changed**. See
 
 ## [Unreleased]
 
+A security release. The 2026-11-17 sweep (PRD-0013, ADR-0150) bounds the work
+and the text that an untrusted document or LLM output can cause, and pins the
+supply chain. Some changes refuse input that was accepted before. Read
+**Changed** before you upgrade.
+
+### Changed
+
+- **`eventsource-py` 0.16.0 is required** (`>=0.16.0,<0.17`). It is a security
+  release with breaking changes in tenant scoping. Read its changelog if you
+  use `eventsource` directly: an explicit `tenant_id` that differs from the
+  active `tenant_scope` now raises `TenantMismatchError`, and
+  `InMemoryEventStore.append` requires `expected`.
+- **Traversal depth has a maximum.** `GraphStore.neighbors(depth=...)` and
+  `explain_path(max_depth=...)` raise `ValueError` above
+  `redstring.ports.graph_store.MAX_TRAVERSAL_DEPTH`, on every adapter. The
+  compliance suite tests the limit, so a third-party adapter inherits it.
+- **Work parameters have maximums.** `concurrency` and `max_concurrency`
+  (`MAX_CONCURRENCY`), `gleanings`, `page_size`, chunk size and overlap, and
+  the consolidation candidates scored per subject. A value above a maximum
+  raises before any work starts. A batch has up to
+  `max_concurrency * concurrency` provider calls in flight, as before; both
+  factors are now capped.
+- **Postgres table names are shorter.** The chunk and pgvector adapters refuse
+  a base table name whose derived index names would pass the 63-byte
+  Postgres identifier limit. Postgres truncated those names with no error,
+  so two of them could collide.
+- **GraphML import uses `defusedxml`**, a new runtime dependency. A DTD or an
+  entity declaration raises `ValueError`. CDATA text is kept. Malformed XML,
+  an oversize payload and JSON-LD nested past the recursion limit raise
+  `ValueError`.
+- **Model calls have explicit timeouts.** `openai_compatible` chat calls
+  default to a 300 s timeout and embedding calls to 60 s, each with 2
+  retries, and both are constructor parameters. Before, the SDK default of
+  600 s with 2 retries applied. The content classifier now applies its
+  `timeout_seconds`, which it stored and never used.
+- **LLM output has size limits.** Extracted names, types, descriptions and
+  properties are clipped to fixed lengths, and a completion keeps at most a
+  fixed number of entities and relationships. `with_retry` no longer
+  retries `LlmProviderError` by default.
+- **GraphML export refuses characters that XML forbids**, with `ValueError`
+  naming the entity, and Mermaid labels encode `<`, `>`, `&`, `#` and `"`.
+
+### Fixed
+
+- **Content sanitisation is linear.** The email pattern in the content
+  classifier was quadratic: 40 000 characters with no `@` took about three
+  seconds on the event loop.
+- **A carried-over entity name cannot add lines to a later prompt.** Names
+  are clipped and have control characters replaced before they enter the
+  carryover or gleaning prompt.
+- **A fail-fast batch cancels the remaining documents.** Before, the error
+  reached the caller while the other documents kept calling the provider.
+
+### Security
+
+- `uv.lock` is committed, and CI installs it with `uv sync --locked`.
+- Every GitHub Action and remote pre-commit hook is pinned to a commit SHA,
+  including a documentation tool that ran from a moving branch with an OIDC
+  grant.
+- CI runs gitleaks over the full history.
+- Release tags are checked against a version pattern before use, and release
+  assets carry a build provenance attestation.
+- The release workflow passes step outputs to the shell only through `env:`.
+
 ## [0.13.0] - 2026-10-15
 
 Adoption of `eventsource-py 0.15.0`, including repository and aggregate

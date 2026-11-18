@@ -1,50 +1,28 @@
 """redstring: build a knowledge graph from documents you already have.
 
-```python
-from redstring import FakeLlmProvider, InMemoryGraphStore, SourceDocument, build_graph
-
-store = InMemoryGraphStore()
-report = await build_graph(
-    SourceDocument(id="notes", text="Ada Lovelace worked with Charles Babbage."),
-    provider=FakeLlmProvider(by_substring={"Ada": {...}}),
-    store=store,
-    tenant_id=tenant_id,
-)
-entities = await store.find_entities(tenant_id, entity_type="Person")
-```
-
-`docs/examples/build_a_graph.py` is runnable and verified by
-`tests/unit/test_end_to_end_example.py`.
+`docs/examples/build_a_graph.py` is runnable and verified by the unit test suite.
 
 ## What is supported
 
-Everything named in `__all__` below is the supported public surface. Dotted paths
-are internal and may change without notice, with four exceptions for deployed adapters:
+Everything named in `__all__` below is the supported public surface (ADR 0106). Dotted paths
+are internal and may change without notice, with four exceptions for deployed adapters (ADR 0147):
 
     redstring.graph.adapters.neo4j.Neo4jGraphStore
     redstring.vector.adapters.pgvector.PgVectorStore
     redstring.llm.adapters.langchain.LangChainLlmProvider
     redstring.llm.adapters.langchain_embedding.LangChainEmbeddingProvider
 
-These four import paths are stable (ADR 0147) and tested by
-`tests/unit/test_deployed_adapter_paths_are_stable.py`. They are not exported here
-to avoid mandatory runtime dependencies on optional adapter packages (`neo4j`, `pgvector`, `llm`).
+They are not exported here to avoid mandatory runtime dependencies on optional extras
+(`neo4j`, `pgvector`, `llm`).
 
-The public surface is closed and self-contained (ADR 0106):
 - **Composition & Retrieval:** `build_graph`, `index_documents`, `summarize_themes`,
-  `Retriever`, `ChunkRetriever`, and report types.
+  `Retriever`, `ChunkRetriever`, `Redstring`, and diagnostic/report types.
 - **Ports & Protocols:** `GraphStore`, `VectorStore`, `ChunkStore`, `Cache`,
   `LlmProvider`, `EmbeddingProvider`, `Chunker`, and capability protocols (`AsyncClosable`).
 - **Domain & Events:** `SourceDocument`, `Entity`, `Relationship`, `StoredChunk`,
   `DocumentExtracted`, `EntitiesEmbedded`, `DocumentChunked`, `EntitiesMerged`.
-- **Adapters & Providers:** In-memory stores (`InMemoryGraphStore`, `InMemoryVectorStore`,
-  `InMemoryChunkStore`) and test doubles (`FakeLlmProvider`, `FakeEmbeddingProvider`).
-- **Domain Schemas & Extraction:** `DomainSchema`, `load_schema_from_file`,
-  `load_schema_from_string`, `domain_system_prompt`, `ExtractionPipeline`.
-- **Exceptions:** `RedstringError` and all public domain and provider error subtypes.
-
-The write model is event-sourced: extraction emits events folded into stores by projections.
-For replay, use `from eventsource import replay`.
+- **Adapters & Providers:** In-memory stores and test doubles (`FakeLlmProvider`).
+- **Domain Schemas & Exceptions:** `DomainSchema`, `ExtractionPipeline`, `RedstringError`.
 """
 
 from redstring.aggregates.document import Document
@@ -54,23 +32,63 @@ from redstring.composition import (
     AutoDomain,
     BatchDocumentError,
     BatchGraphReport,
+    ChunkRetrievalExplanation,
     ChunkRetriever,
+    ConsolidationPreview,
     ConsolidationReport,
     Consolidator,
+    CorpusHealthReport,
+    EntityHub,
+    EntityLineageReport,
+    EntityModification,
+    EntityRetrievalExplanation,
+    ExplainedChunkMatch,
+    ExplainedEntityMatch,
+    ExportFormat,
     GraphBuildReport,
+    GraphDiffReport,
+    GraphImportReport,
+    GraphTopologyReport,
     IndexReport,
+    PathExplanation,
+    PreviewCandidate,
     Redstring,
+    RelationshipModification,
     Retriever,
+    SchemaConformanceReport,
+    SchemaViolation,
+    SourceLineageReport,
+    TenantConsolidationReport,
     Theme,
     ThemeReport,
+    analyze_corpus,
+    analyze_topology,
+    audit_schema_conformance,
     build_graph,
     build_graph_batch,
+    build_graph_stream,
     coerce_document,
+    consolidate_tenant,
+    diff_graphs,
+    explain_chunk_retrieval,
+    explain_entity_retrieval,
+    explain_path,
+    export_graph,
+    format_graphml,
+    format_json_ld,
+    format_mermaid,
+    format_schema_mermaid,
+    import_graph,
     index_documents,
+    parse_graphml,
+    parse_json_ld,
+    preview_consolidation,
     summarize_themes,
+    trace_entity_lineage,
+    trace_source_lineage,
 )
 from redstring.consolidation.candidates import CandidateFinder, ScoredCandidate
-from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator
+from redstring.consolidation.policy import AdjudicationVerdict, Adjudicator, MergeDecision
 from redstring.consolidation.protocols import CandidateSource, ConsolidationGraph, MergeAdjudicator
 from redstring.domain.alias import Alias
 from redstring.domain.bm25 import CorpusStats
@@ -81,11 +99,7 @@ from redstring.domain.chunk_ranking import (
     RankedChunk,
     rank_chunks,
 )
-from redstring.domain.chunk_retrieval import (
-    ChunkRetrievalResult,
-    ScoredChunk,
-    SemanticCandidate,
-)
+from redstring.domain.chunk_retrieval import ChunkRetrievalResult, ScoredChunk, SemanticCandidate
 from redstring.domain.consolidation import (
     MergeableFields,
     PropertyResolution,
@@ -205,6 +219,7 @@ __all__ = [
     "ChunkProjection",
     "ChunkPurge",
     "ChunkReader",
+    "ChunkRetrievalExplanation",
     "ChunkRetrievalResult",
     "ChunkRetriever",
     "ChunkSizeError",
@@ -217,8 +232,10 @@ __all__ = [
     "ConfidenceThresholds",
     "ConsolidationGraph",
     "ConsolidationInvariantError",
+    "ConsolidationPreview",
     "ConsolidationReport",
     "Consolidator",
+    "CorpusHealthReport",
     "CorpusStats",
     "CursorStalledError",
     "DatePrecision",
@@ -235,10 +252,17 @@ __all__ = [
     "EntitiesEmbedded",
     "EntitiesMerged",
     "Entity",
+    "EntityHub",
     "EntityId",
+    "EntityLineageReport",
+    "EntityModification",
     "EntityReader",
+    "EntityRetrievalExplanation",
     "EntityTypeSchema",
     "EntityWriter",
+    "ExplainedChunkMatch",
+    "ExplainedEntityMatch",
+    "ExportFormat",
     "ExtractedEntity",
     "ExtractedRelationship",
     "Extraction",
@@ -248,8 +272,11 @@ __all__ = [
     "FakeLlmProvider",
     "FeatureWeights",
     "GraphBuildReport",
+    "GraphDiffReport",
+    "GraphImportReport",
     "GraphProjection",
     "GraphStore",
+    "GraphTopologyReport",
     "HitWindow",
     "InMemoryChunkStore",
     "InMemoryGraphStore",
@@ -264,12 +291,15 @@ __all__ = [
     "LlmProviderError",
     "MalformedCompletionError",
     "MergeAdjudicator",
+    "MergeDecision",
     "MergeIntoAliasError",
     "MergeUndone",
     "MergeableFields",
     "MissingEntityError",
     "PartialExtractionError",
+    "PathExplanation",
     "PipelineResult",
+    "PreviewCandidate",
     "PropertyMergePolicy",
     "PropertyMergeStrategy",
     "PropertyResolution",
@@ -281,6 +311,7 @@ __all__ = [
     "RefusedCompletionError",
     "Relationship",
     "RelationshipId",
+    "RelationshipModification",
     "RelationshipRedirection",
     "RelationshipStore",
     "RelationshipTypeSchema",
@@ -288,6 +319,8 @@ __all__ = [
     "RetrievalMode",
     "RetrievalResult",
     "Retriever",
+    "SchemaConformanceReport",
+    "SchemaViolation",
     "ScoredCandidate",
     "ScoredChunk",
     "ScoredEntity",
@@ -297,11 +330,13 @@ __all__ = [
     "SlidingWindowChunker",
     "SourceDocument",
     "SourceId",
+    "SourceLineageReport",
     "StoredChunk",
     "TaskPrefixMismatchError",
     "TemporalExtent",
     "TemporalQuery",
     "TemporalRelation",
+    "TenantConsolidationReport",
     "TenantId",
     "TenantPurge",
     "Theme",
@@ -320,17 +355,37 @@ __all__ = [
     "VectorStore",
     "VectorWriter",
     "__version__",
+    "analyze_corpus",
+    "analyze_topology",
+    "audit_schema_conformance",
     "build_graph",
     "build_graph_batch",
+    "build_graph_stream",
     "coerce_document",
+    "consolidate_tenant",
+    "diff_graphs",
     "document_stream",
     "domain_system_prompt",
+    "explain_chunk_retrieval",
+    "explain_entity_retrieval",
+    "explain_path",
+    "export_graph",
+    "format_graphml",
+    "format_json_ld",
+    "format_mermaid",
+    "format_schema_mermaid",
+    "import_graph",
     "index_documents",
     "infer_relations",
     "list_available_domains",
     "load_schema_from_file",
     "load_schema_from_string",
+    "parse_graphml",
+    "parse_json_ld",
+    "preview_consolidation",
     "rank_chunks",
     "summarize_themes",
     "tokenize",
+    "trace_entity_lineage",
+    "trace_source_lineage",
 ]

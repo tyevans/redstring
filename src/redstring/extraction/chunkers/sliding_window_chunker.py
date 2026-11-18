@@ -10,8 +10,8 @@ import logging
 import re
 from collections.abc import Iterator
 
+from redstring.extraction.chunkers.limits import check_window
 from redstring.extraction.chunking import Chunk, ChunkingResult
-from redstring.extraction.errors import ChunkSizeError
 
 logger = logging.getLogger(__name__)
 
@@ -71,18 +71,13 @@ class SlidingWindowChunker:
         Raises:
             ChunkSizeError: If configuration is invalid
         """
-        if default_chunk_size < min_chunk_size:
-            raise ChunkSizeError(
-                f"default_chunk_size ({default_chunk_size}) must be "
-                f">= min_chunk_size ({min_chunk_size})"
-            )
-        if default_overlap >= default_chunk_size:
-            raise ChunkSizeError(
-                f"default_overlap ({default_overlap}) must be "
-                f"< default_chunk_size ({default_chunk_size})"
-            )
-        if default_overlap < 0:
-            raise ChunkSizeError(f"default_overlap ({default_overlap}) must be >= 0")
+        check_window(
+            default_chunk_size,
+            default_overlap,
+            size_name="default_chunk_size",
+            overlap_name="default_overlap",
+            min_chunk_size=min_chunk_size,
+        )
 
         self._default_chunk_size = default_chunk_size
         self._default_overlap = default_overlap
@@ -124,15 +119,20 @@ class SlidingWindowChunker:
         Raises:
             ChunkSizeError: If provided configuration is invalid
         """
-        chunk_size = max_chunk_size or self._default_chunk_size
-        overlap = overlap_size if overlap_size is not None else self._default_overlap
+        # `is None`, not `or`: a caller passing 0 gets the refusal below, not
+        # the default. `or` read 0 as "unset" and chunked at 3000 characters.
+        chunk_size = self._default_chunk_size if max_chunk_size is None else max_chunk_size
+        overlap = self._default_overlap if overlap_size is None else overlap_size
         original_length = len(text)
 
-        # Validate runtime configuration
-        if overlap >= chunk_size:
-            raise ChunkSizeError(
-                f"overlap_size ({overlap}) must be < max_chunk_size ({chunk_size})"
-            )
+        # The same rules as `__init__`, for a runtime override.
+        check_window(
+            chunk_size,
+            overlap,
+            size_name="max_chunk_size",
+            overlap_name="overlap_size",
+            min_chunk_size=self._min_chunk_size,
+        )
 
         # Handle edge cases
         if not text or not text.strip():

@@ -15,10 +15,12 @@ __all__ = [
     "DEFAULT_PAGE_SIZE",
     "DEFAULT_SYSTEM_PROMPT",
     "MAX_PAGES",
+    "MAX_PAGE_SIZE",
     "CommunityReport",
     "PromptContext",
     "Theme",
     "ThemeReport",
+    "validate_page_size",
 ]
 
 #: Entities per `find_entities` round trip. A tuning knob and not a limit on
@@ -33,6 +35,27 @@ DEFAULT_PAGE_SIZE: Final = 500
 #: scans over one port giving two different diagnoses would be a second
 #: mechanism to keep in step with the first.
 MAX_PAGES: Final = 10_000
+
+#: The largest `page_size` any paged scan accepts. A page is one read of up to
+#: this many entities, and each one is held in memory with its edges, so the
+#: value bounds a single round trip's memory. `MAX_PAGES` bounds the number of
+#: round trips; this bounds each one.
+MAX_PAGE_SIZE: Final = 1_000
+
+
+def validate_page_size(page_size: int) -> None:
+    """Refuse a `page_size` outside `1..MAX_PAGE_SIZE`.
+
+    Every paged entry point calls this, so the range is stated once.
+
+    Raises:
+        ValueError: `page_size` is below 1 or above `MAX_PAGE_SIZE`.
+    """
+    if page_size < 1:
+        raise ValueError(f"page_size must be at least 1, got {page_size}")
+    if page_size > MAX_PAGE_SIZE:
+        raise ValueError(f"page_size must be at most {MAX_PAGE_SIZE}, got {page_size}")
+
 
 DEFAULT_SYSTEM_PROMPT: Final = (
     "You are summarising one cluster of a knowledge graph. You are given the "

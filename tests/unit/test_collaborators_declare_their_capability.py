@@ -148,11 +148,26 @@ WHOLE_PORT_IS_HONEST: dict[str, str] = {
         "caller-supplied graph, vector, and chunk stores directly to build_graph, "
         "spanning the same capabilities as the single-document entry point."
     ),
+    "redstring.composition.batch:build_graph_stream": (
+        "Streaming batch ingestion wrapper over build_graph. Forwards "
+        "caller-supplied graph, vector, and chunk stores directly to build_graph, "
+        "spanning the same capabilities as the single-document entry point."
+    ),
     "redstring.composition.client:Redstring": (
         "Unified top-level client facade coordinating graph, vector, and chunk "
         "stores across ingestion (build_graph), retrieval (retrieve_entities, "
         "retrieve_passages), and maintenance (consolidate). Spans the full "
         "capabilities across the stores."
+    ),
+    "redstring.composition.consolidation_sweep:consolidate_tenant": (
+        "Tenant-wide consolidation sweep entry point that constructs a "
+        "Consolidator over the caller's GraphStore (which folds merges through "
+        "GraphProjection[GraphStore]) and forwards optional VectorStore."
+    ),
+    "redstring.composition.retrieval_diagnostics:explain_chunk_retrieval": (
+        "Diagnostic chunk retrieval entry point calling both "
+        "LexicalCandidateSource and SemanticCandidateSource on ChunkStore -- "
+        "identical capability span and typing rationale to ChunkRetriever."
     ),
 }
 

@@ -31,6 +31,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from redstring.domain.exceptions import describe_failure
 from redstring.extraction.domains.models import DomainSchema
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ def load_schema_from_string(yaml_content: str, source_name: str = "<string>") ->
     try:
         data = yaml.safe_load(yaml_content)
     except yaml.YAMLError as e:
-        logger.error("Failed to parse YAML from %s: %s", source_name, e)
+        logger.error("Failed to parse YAML from %s: %s", source_name, describe_failure(e))
         raise SchemaLoadError(
             f"Invalid YAML syntax in {source_name}: {e}",
             file_path=source_name,
@@ -114,7 +115,7 @@ def load_schema_from_string(yaml_content: str, source_name: str = "<string>") ->
         logger.debug("Successfully loaded schema '%s' from %s", schema.domain_id, source_name)
         return schema
     except ValidationError as e:
-        logger.error("Schema validation failed for %s: %s", source_name, e)
+        logger.error("Schema validation failed for %s: %s", source_name, describe_failure(e))
         raise SchemaLoadError(
             f"Schema validation failed for {source_name}: {e}",
             file_path=source_name,
@@ -163,7 +164,7 @@ def load_schema_from_file(
     try:
         content = path.read_text(encoding="utf-8")
     except OSError as e:
-        logger.error("Failed to read schema file %s: %s", path, e)
+        logger.error("Failed to read schema file %s: %s", path, describe_failure(e))
         raise SchemaLoadError(
             f"Failed to read schema file {path}: {e}",
             file_path=path,
@@ -222,7 +223,7 @@ def load_all_schemas(
                     file_path=file_path,
                 )
                 if ignore_errors:
-                    logger.warning(str(error))
+                    logger.warning("Duplicate schema skipped: %s", describe_failure(error))
                     errors.append(error)
                 else:
                     raise error
@@ -231,7 +232,7 @@ def load_all_schemas(
                 logger.debug("Loaded schema '%s' from %s", schema.domain_id, file_path)
         except SchemaLoadError as e:
             if ignore_errors:
-                logger.warning("Skipping invalid schema %s: %s", file_path, e)
+                logger.warning("Skipping invalid schema %s: %s", file_path, describe_failure(e))
                 errors.append(e)
             else:
                 raise

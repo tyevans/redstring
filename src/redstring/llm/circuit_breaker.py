@@ -31,6 +31,16 @@ does **not** refresh a TTL on later increments. Without that decay, five
 failures spread over an hour would open the circuit exactly as five failures
 in a second do -- and the first is a healthy service having a bad day while
 the second is an outage.
+
+## Scope: endpoint-wide, not per tenant
+
+The breaker holds one state per `key_prefix`, and no key carries a tenant. A
+tenant id is not an argument to any method here. That is correct for its
+purpose: the breaker guards an *endpoint*, and an endpoint that is down is down
+for every tenant that calls it. A failure caused by one tenant's content trips
+the circuit for all of them, so a caller that needs isolation between tenants
+must give each one its own `key_prefix` (and its own endpoint, if the endpoint
+itself is shared and cannot be isolated).
 """
 
 from __future__ import annotations

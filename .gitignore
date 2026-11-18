@@ -25,7 +25,6 @@ htmlcov/
 mutants/
 .cosmic-ray/
 cosmic-ray.sqlite*
-uv.lock
 .claude/worktrees/
 site/
 

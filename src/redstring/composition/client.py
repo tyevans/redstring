@@ -6,13 +6,19 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from redstring.chunks.adapters.memory import InMemoryChunkStore
-from redstring.composition.batch import BatchGraphReport, build_graph_batch
+from redstring.composition.batch import (
+    BatchDocumentError,
+    BatchGraphReport,
+    build_graph_batch,
+    build_graph_stream,
+)
 from redstring.composition.build_graph import (
     ConsolidationReport,
     Consolidator,
     GraphBuildReport,
     build_graph,
 )
+from redstring.composition.client_diagnostics import _RedstringDiagnosticsMixin
 from redstring.composition.coercion import coerce_document
 from redstring.composition.retrieval import ChunkRetriever, Retriever
 from redstring.consolidation.policy import HIGH_SIMILARITY, LOW_SIMILARITY
@@ -24,7 +30,7 @@ from redstring.ports.lifecycle import AsyncClosable
 from redstring.vector.adapters.memory import InMemoryVectorStore
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import AsyncIterator, Sequence
 
     from redstring.consolidation.protocols import CandidateSource, MergeAdjudicator
     from redstring.domain.chunk_retrieval import ChunkRetrievalResult
@@ -39,10 +45,17 @@ if TYPE_CHECKING:
 __all__ = ["Redstring"]
 
 
-class Redstring:
+class Redstring(_RedstringDiagnosticsMixin):
     """Unified client facade coordinating graph, vector, and chunk storage,
 
     entity extraction, concurrent batch ingestion, hybrid retrieval, and consolidation.
+
+    Tenant isolation: every method that takes `tenant_id=` accepts a per-call
+    override. That parameter is a trusted-caller parameter. Redstring does no
+    authorisation. It does not check that the caller may act for the tenant it
+    names. The caller must make that check before the call. A caller that
+    passes a tenant id from an untrusted request can read and write another
+    tenant's data.
     """
 
     def __init__(
@@ -61,8 +74,7 @@ class Redstring:
         self._chunk_store = chunk_store
         self._embeddings = embeddings
         self._tenant_id = tenant_id if tenant_id is not None else TenantId(uuid4())
-
-        self._consolidator = Consolidator(self._graph_store)
+        self._consolidator = Consolidator(self._graph_store, vector_store=self._vector_store)
 
         if self._embeddings is not None and self._vector_store is not None:
             self._retriever = Retriever(
@@ -149,53 +161,46 @@ class Redstring:
 
     @property
     def tenant_id(self) -> TenantId:
-        """The default tenant ID for this client."""
         return self._tenant_id
 
     @property
     def graph_store(self) -> GraphStore:
-        """The underlying graph store."""
         return self._graph_store
 
     @property
     def graph(self) -> GraphStore:
-        """Convenience alias for graph_store."""
         return self._graph_store
 
     @property
     def vector_store(self) -> VectorStore | None:
-        """The underlying vector store, if configured."""
         return self._vector_store
 
     @property
     def vectors(self) -> VectorStore | None:
-        """Convenience alias for vector_store."""
         return self._vector_store
 
     @property
     def chunk_store(self) -> ChunkStore | None:
-        """The underlying chunk store, if configured."""
         return self._chunk_store
 
     @property
     def chunks(self) -> ChunkStore | None:
-        """Convenience alias for chunk_store."""
         return self._chunk_store
 
     @property
     def provider(self) -> LlmProvider:
-        """The configured LLM provider."""
         return self._provider
 
     @property
     def embeddings(self) -> EmbeddingProvider | None:
-        """The configured embedding provider."""
         return self._embeddings
 
     @property
     def consolidator(self) -> Consolidator:
-        """The entity consolidator."""
         return self._consolidator
+
+    def _active_tenant(self, tenant_id: TenantId | None) -> TenantId:
+        return tenant_id if tenant_id is not None else self._tenant_id
 
     async def build_graph(
         self,
@@ -204,17 +209,12 @@ class Redstring:
         tenant_id: TenantId | None = None,
         **kwargs: Any,  # noqa: ANN401
     ) -> GraphBuildReport:
-        """Extract a document or text and write into the graph and vector stores.
-
-        Plain strings and dictionaries are automatically coerced into SourceDocuments.
-        """
-        doc = coerce_document(doc_or_text)
-        active_tenant = tenant_id if tenant_id is not None else self._tenant_id
+        """Extract a document or text and write into the graph and vector stores."""
         return await build_graph(
-            doc,
+            coerce_document(doc_or_text),
             provider=self._provider,
             store=self._graph_store,
-            tenant_id=active_tenant,
+            tenant_id=self._active_tenant(tenant_id),
             vector_store=self._vector_store,
             embedding_provider=self._embeddings,
             chunks=self._chunk_store,
@@ -231,12 +231,34 @@ class Redstring:
         **kwargs: Any,  # noqa: ANN401
     ) -> BatchGraphReport:
         """Ingest a collection of documents concurrently with bounded concurrency."""
-        active_tenant = tenant_id if tenant_id is not None else self._tenant_id
         return await build_graph_batch(
             docs_or_texts,
             provider=self._provider,
             store=self._graph_store,
-            tenant_id=active_tenant,
+            tenant_id=self._active_tenant(tenant_id),
+            vector_store=self._vector_store,
+            embedding_provider=self._embeddings,
+            chunks=self._chunk_store,
+            max_concurrency=max_concurrency,
+            continue_on_error=continue_on_error,
+            **kwargs,
+        )
+
+    def build_graph_stream(
+        self,
+        docs_or_texts: Sequence[SourceDocument | str | dict[str, Any]],
+        *,
+        max_concurrency: int = 4,
+        continue_on_error: bool = True,
+        tenant_id: TenantId | None = None,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> AsyncIterator[GraphBuildReport | BatchDocumentError]:
+        """Stream `GraphBuildReport` results incrementally as each document completes."""
+        return build_graph_stream(
+            docs_or_texts,
+            provider=self._provider,
+            store=self._graph_store,
+            tenant_id=self._active_tenant(tenant_id),
             vector_store=self._vector_store,
             embedding_provider=self._embeddings,
             chunks=self._chunk_store,
@@ -255,10 +277,9 @@ class Redstring:
         tenant_id: TenantId | None = None,
     ) -> RetrievalResult:
         """Retrieve ranked entities matching the query."""
-        active_tenant = tenant_id if tenant_id is not None else self._tenant_id
         return await self._retriever.retrieve(
             query,
-            active_tenant,
+            self._active_tenant(tenant_id),
             k=k,
             entity_types=entity_types,
             mode=mode,
@@ -275,12 +296,8 @@ class Redstring:
         """Retrieve ranked passages matching the query from the chunk store."""
         if self._chunk_retriever is None:
             raise ValueError("No chunk store configured for this Redstring client")
-        active_tenant = tenant_id if tenant_id is not None else self._tenant_id
         return await self._chunk_retriever.retrieve_chunks(
-            query,
-            active_tenant,
-            k=k,
-            mode=mode,
+            query, self._active_tenant(tenant_id), k=k, mode=mode
         )
 
     async def neighbors(
@@ -292,7 +309,7 @@ class Redstring:
         tenant_id: TenantId | None = None,
     ) -> list[Entity]:
         """Return entities reachable from entity_id or name within depth hops."""
-        active_tenant = tenant_id if tenant_id is not None else self._tenant_id
+        active_tenant = self._active_tenant(tenant_id)
         if isinstance(entity_id_or_name, str):
             matches = await self._graph_store.find_entities(
                 active_tenant, name=normalize_name(entity_id_or_name), limit=1
@@ -304,10 +321,7 @@ class Redstring:
             target_id = entity_id_or_name
 
         return await self._graph_store.neighbors(
-            target_id,
-            active_tenant,
-            depth=depth,
-            relationship_types=relationship_types,
+            target_id, active_tenant, depth=depth, relationship_types=relationship_types
         )
 
     async def consolidate(
@@ -322,8 +336,7 @@ class Redstring:
     ) -> ConsolidationReport | None:
         """Resolve duplicate candidate entities for subject."""
         if not isinstance(subject, Entity):
-            active_tenant = tenant_id if tenant_id is not None else self._tenant_id
-            entity = await self._graph_store.get_entity(subject, active_tenant)
+            entity = await self._graph_store.get_entity(subject, self._active_tenant(tenant_id))
             if entity is None:
                 return None
             subject_entity = entity
@@ -331,22 +344,19 @@ class Redstring:
             subject_entity = subject
 
         return await self._consolidator.resolve(
-            subject_entity,
-            finder=finder,
-            adjudicator=adjudicator,
-            high=high,
-            low=low,
+            subject_entity, finder=finder, adjudicator=adjudicator, high=high, low=low
         )
 
     async def close(self) -> None:
         """Close any open stores and providers implementing AsyncClosable."""
-        for resource in (
+        resources = (
             self._graph_store,
             self._vector_store,
             self._chunk_store,
             self._embeddings,
             self._provider,
-        ):
+        )
+        for resource in resources:
             if isinstance(resource, AsyncClosable):
                 await resource.close()
 

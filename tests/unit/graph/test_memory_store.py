@@ -16,7 +16,7 @@ from redstring.domain.entity import Entity
 from redstring.domain.exceptions import AliasCycleError
 from redstring.domain.provenance import ExtractionMethod, Provenance
 from redstring.graph.adapters.memory import InMemoryGraphStore
-from redstring.ports.graph_store import GraphStore
+from redstring.ports.graph_store import MAX_TRAVERSAL_DEPTH, GraphStore
 from redstring.testing.graph_store import GraphStoreCompliance
 
 #: A fixed observation instant. Never `datetime.now(UTC)`: a fixture that
@@ -144,6 +144,21 @@ class TestAliasResolutionIsBounded:
 
 
 class TestMemoryStoreSpecifics:
+    async def test_an_absurd_depth_is_refused_without_walking(self):
+        """A depth far past the cap is rejected, not walked.
+
+        The memory adapter is breadth-first and stops at `depth`, so an
+        unbounded value is not a hang here. It is still a contract breach, and
+        the check must run before the origin lookup: an unknown origin would
+        otherwise answer `[]` and the bad depth would pass unnoticed.
+        """
+        with pytest.raises(ValueError, match=str(MAX_TRAVERSAL_DEPTH)):
+            await InMemoryGraphStore().neighbors(uuid4(), uuid4(), depth=10**6)
+
+    async def test_the_cap_names_its_own_value_in_the_message(self):
+        with pytest.raises(ValueError, match=rf"depth must not exceed {MAX_TRAVERSAL_DEPTH}"):
+            await InMemoryGraphStore().neighbors(uuid4(), uuid4(), depth=MAX_TRAVERSAL_DEPTH + 1)
+
     async def test_two_stores_share_nothing(self):
         one, two = InMemoryGraphStore(), InMemoryGraphStore()
         tenant = uuid4()

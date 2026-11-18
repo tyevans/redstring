@@ -144,11 +144,11 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Final, NamedTuple
 
 from redstring.domain.exceptions import LlmProviderError, RedstringError
-from redstring.domain.limiter import CallLimiter
+from redstring.domain.limiter import CallLimiter, check_concurrency
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES, Carryover
 from redstring.extraction.chunkers import SlidingWindowChunker
 from redstring.extraction.corpus import chunking_digest, stored_chunks
-from redstring.extraction.gleaning import combine, found_nothing, gleaning_prompt
+from redstring.extraction.gleaning import check_gleanings, combine, found_nothing, gleaning_prompt
 from redstring.extraction.mapping import MappedExtraction, map_extraction
 from redstring.extraction.merging import mention_counts, merge_extractions
 from redstring.extraction.schema import Extraction
@@ -378,8 +378,7 @@ class ExtractionPipeline:
         self._chunker = chunker if chunker is not None else SlidingWindowChunker()
         self._system_prompt = system_prompt
         self._skip_failed = skip_failed_chunks
-        if concurrency < 1:
-            raise ValueError(f"concurrency must be >= 1, got {concurrency}")
+        check_concurrency("concurrency", concurrency)
         self._concurrency = concurrency
         # Constructed and discarded, purely so a bad limit is refused here
         # rather than on the first `extract` -- a constructor argument that
@@ -388,8 +387,7 @@ class ExtractionPipeline:
         # `Carryover`; this only makes it fire early.
         Carryover(carryover_entities)
         self._carryover_entities = carryover_entities
-        if gleanings < 0:
-            raise ValueError(f"gleanings must be >= 0, got {gleanings}")
+        check_gleanings(gleanings)
         self._gleanings = gleanings
         self._schema = schema
         self._limiter = limiter if limiter is not None else CallLimiter(concurrency)

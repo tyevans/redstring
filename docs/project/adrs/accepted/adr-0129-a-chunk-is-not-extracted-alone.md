@@ -8,6 +8,8 @@ governing_prds:
 governing_stories:
 - US-0001
 legacy_id: '0029'
+amended_by:
+- ADR-0150
 ---
 
 # ADR-0129: A chunk is not extracted alone
@@ -15,7 +17,9 @@ legacy_id: '0029'
 
 ## Status
 
-Accepted. [`0011` domain schemas prompt but do not
+Accepted. Amended by [ADR-0150](adr-0150-attacker-influenced-input-is-bounded-and-inert.md): a carried-over or gleaning name is
+clipped and has its control characters replaced before it enters a prompt.
+The mechanisms below are unchanged. [`0011` domain schemas prompt but do not
 constrain](adr-0111-domain-schemas-prompt-but-do-not-constrain.md) **stands, and
 is extended**: both mechanisms here are prompt content and neither validates
 anything, which is the same position that ADR takes about a domain's

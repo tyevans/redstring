@@ -80,6 +80,17 @@ if TYPE_CHECKING:
 #: Room for a reasoning model to think and *then* answer. See the module docstring.
 DEFAULT_MAX_TOKENS: Final = 8192
 
+#: Seconds one HTTP request may take before it is abandoned. Generous, because a
+#: reasoning model with thinking on can run for minutes on modest hardware. The
+#: SDK default is 600 s, and a stalled endpoint then holds a `CallLimiter` slot
+#: for that long on every attempt.
+DEFAULT_REQUEST_TIMEOUT: Final = 300.0
+
+#: Retries the SDK makes after a failed request, before the error propagates.
+#: The SDK default is also 2. Stated here so a caller can see the total wait:
+#: `DEFAULT_REQUEST_TIMEOUT * (DEFAULT_MAX_RETRIES_SDK + 1)` in the worst case.
+DEFAULT_MAX_RETRIES_SDK: Final = 2
+
 #: What `openai_compatible` sends to stop a reasoning model reasoning.
 #:
 #: `chat_template_kwargs` is a *chat template* variable rather than a sampling
@@ -180,6 +191,8 @@ class LangChainLlmProvider:
         temperature: float = 0.0,
         provider: str = "openai-compatible",
         thinking: bool = False,
+        request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES_SDK,
     ) -> LangChainLlmProvider:
         """Build a provider against any OpenAI-compatible server.
 
@@ -205,6 +218,11 @@ class LangChainLlmProvider:
                 `NO_THINKING` below. Pass `True` to restore the server's own
                 behaviour, which is also what a backend that rejects unknown
                 request fields needs.
+            request_timeout: Seconds before one HTTP request is abandoned.
+                Passed to the client as `request_timeout`. See
+                `DEFAULT_REQUEST_TIMEOUT`.
+            max_retries: Retries the client makes after a failed request.
+                Passed to the client as `max_retries`. Zero disables them.
 
         Note:
             Deliberately not a passthrough for arbitrary `ChatOpenAI` kwargs.
@@ -246,6 +264,8 @@ class LangChainLlmProvider:
             max_tokens=max_tokens,
             temperature=temperature,
             extra_body=None if thinking else dict(NO_THINKING),
+            request_timeout=request_timeout,
+            max_retries=max_retries,
         )
         return cls(chat, model=f"{provider}/{model}")
 

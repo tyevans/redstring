@@ -53,6 +53,7 @@ a `Provenance` at that point, the way `extraction/mapping.py` does.
 import logging
 from typing import Any
 
+from redstring.domain.exceptions import describe_failure
 from redstring.domain.provenance import ExtractionMethod
 from redstring.extraction.schema_org_types import (
     SCHEMA_NESTED_FIELDS,
@@ -98,10 +99,10 @@ def extract_entities_from_schema_org(schema_data: list[Any]) -> list[dict[str, A
             entities.extend(nested)
 
         except Exception as e:
-            logger.warning(f"Failed to extract entity from schema item: {e}")
+            logger.warning("Failed to extract entity from schema item: %s", describe_failure(e))
             continue
 
-    logger.debug(f"Extracted {len(entities)} entities from Schema.org data")
+    logger.debug("Extracted %d entities from Schema.org data", len(entities))
     return entities
 
 
@@ -284,11 +285,6 @@ def extract_entities_from_open_graph(og_data: dict[str, Any]) -> list[dict[str, 
         entities.append(entity)
 
     except Exception as e:
-        logger.warning(f"Failed to extract entity from Open Graph data: {e}")
+        logger.warning("Failed to extract entity from Open Graph data: %s", describe_failure(e))
 
     return entities
-
-
-def _map_og_type(og_type: str) -> str:
-    """Map Open Graph type to entity type (backwards-compatible alias)."""
-    return map_open_graph_type(og_type)

@@ -23,6 +23,7 @@ from collections import deque
 from typing import TYPE_CHECKING, Literal, Self
 
 from redstring.domain.exceptions import AliasCycleError, MissingEntityError
+from redstring.ports.graph_store import MAX_TRAVERSAL_DEPTH
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -322,6 +323,8 @@ class InMemoryGraphStore:
     ) -> list[Entity]:
         if depth < 0:
             raise ValueError("depth must not be negative")
+        if depth > MAX_TRAVERSAL_DEPTH:
+            raise ValueError(f"depth must not exceed {MAX_TRAVERSAL_DEPTH}, got {depth}")
 
         entities = self._entities.get(tenant_id, {})
         if entity_id not in entities:

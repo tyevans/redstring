@@ -97,6 +97,17 @@ CONFINEMENTS = (
         directories=("llm/cache",),
         port="redstring.ports.cache",
     ),
+    # `defusedxml` parses GraphML, the one place untrusted XML enters the
+    # library. The directory guard cannot name a file, so this row names
+    # `composition/`; `test_only_the_graphml_reader_imports_defusedxml` below
+    # narrows it to the one module. Stdlib `xml.etree` is not listed: it is
+    # stdlib, and the unsafe parse it would allow is what this row keeps out
+    # of every other module.
+    Confinement(
+        packages=("defusedxml",),
+        directories=("composition",),
+        port="redstring.composition.graphml_reader (read_graphml_elements)",
+    ),
     # The one row that is not about an adapter, and the one where a leak is
     # worst. `redstring.testing` ships the port compliance suites, so it
     # imports `pytest` and `hypothesis` at module scope -- neither of which
@@ -180,7 +191,7 @@ def files_outside(permitted: Sequence[Path]) -> list[Path]:
     ]
 
 
-def test_the_walk_finds_the_library():
+def test_the_walk_finds_the_library() -> None:
     """Guards every check below: a wrong `SOURCE_ROOT` would pass vacuously.
 
     The leak checks are searches for something that should not be there, so
@@ -197,7 +208,7 @@ def test_the_walk_finds_the_library():
     PERMITTED_DIRECTORIES,
     ids=PERMITTED_DIRECTORY_IDS,
 )
-def test_the_permitted_directory_exists(confinement: Confinement, directory: str):
+def test_the_permitted_directory_exists(confinement: Confinement, directory: str) -> None:
     """A directory that is not there excludes nothing, and the leak check
     below would still pass -- while silently no longer exempting the one place
     the import belongs."""
@@ -211,7 +222,9 @@ def test_the_permitted_directory_exists(confinement: Confinement, directory: str
     PERMITTED_DIRECTORIES,
     ids=PERMITTED_DIRECTORY_IDS,
 )
-def test_the_permitted_directory_really_does_import_it(confinement: Confinement, directory: str):
+def test_the_permitted_directory_really_does_import_it(
+    confinement: Confinement, directory: str
+) -> None:
     """The staleness guard CLAUDE.md requires of every exemption list.
 
     An entry naming a library nobody imports any more passes forever and
@@ -243,7 +256,7 @@ def test_the_permitted_directory_really_does_import_it(confinement: Confinement,
 
 
 @pytest.mark.parametrize("confinement", CONFINEMENTS, ids=str)
-def test_nothing_outside_the_permitted_directory_imports_it(confinement: Confinement):
+def test_nothing_outside_the_permitted_directory_imports_it(confinement: Confinement) -> None:
     offenders = {
         str(path.relative_to(SOURCE_ROOT)): sorted(
             module
@@ -262,7 +275,23 @@ def test_nothing_outside_the_permitted_directory_imports_it(confinement: Confine
     )
 
 
-def test_belongs_to_does_not_match_by_bare_prefix():
+def test_only_the_graphml_reader_imports_defusedxml() -> None:
+    """The directory row above lets any `composition/` module import the
+    XML parser. This pins the one module that should, so a second importer
+    fails rather than passing inside the directory."""
+    importers = {
+        path.relative_to(SOURCE_ROOT).as_posix()
+        for path in python_files_under(SOURCE_ROOT)
+        if any(belongs_to(module, "defusedxml") for module in imported_modules(path))
+    }
+
+    assert importers == {"composition/graphml_reader.py"}, (
+        "defusedxml must be imported only by composition/graphml_reader.py; "
+        f"found {sorted(importers)}"
+    )
+
+
+def test_belongs_to_does_not_match_by_bare_prefix() -> None:
     """Pins the rule the matcher exists for, because getting it wrong is silent
     in one direction and noisy in the other.
 
@@ -310,7 +339,7 @@ def third_party_roots() -> set[str]:
     return roots
 
 
-def test_every_third_party_import_is_accounted_for():
+def test_every_third_party_import_is_accounted_for() -> None:
     """The gap `CONFINEMENTS` cannot see: a **fifth** library with no row.
 
     Each row above is guarded in both directions, so the rows that exist
@@ -348,7 +377,7 @@ def test_every_third_party_import_is_accounted_for():
     )
 
 
-def test_the_detector_finds_third_party_imports():
+def test_the_detector_finds_third_party_imports() -> None:
     """A checker over an empty set passes vacuously, and this one would: if
     `third_party_roots` stopped finding anything -- a stdlib-detection change,
     a wrong `SOURCE_ROOT` -- the assertion above would go quiet while looking

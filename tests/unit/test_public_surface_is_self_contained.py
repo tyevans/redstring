@@ -103,6 +103,7 @@ DOCUMENTED_FOREIGN_TYPES = {
 _NOT_A_TYPE_REFERENCE = frozenset(
     {
         "Any",
+        "AsyncIterator",
         "BaseException",
         "Exception",
         "Callable",

@@ -161,3 +161,40 @@ def test_a_pypi_tag_never_advertises_the_rehearsal_package(tmp_path: Path):
         written = _classify(tag, tmp_path)
         if target == "pypi":
             assert "redstring-test" not in written["install_cmd"], tag
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        'v1.0.0";touch /tmp/x;"',
+        "v1.0.0$(id)",
+        "v1.0.0\nversion=9.9.9",
+        "v1.0",
+        "v1.0.0-rc1",
+        "v1.0.0rc",
+        "vX.Y.Z",
+    ],
+)
+def test_a_tag_that_is_not_a_release_version_is_refused(tag: str, tmp_path: Path):
+    """The classifier refuses the tag and writes no output.
+
+    The version output reaches later steps and the release body. A git ref
+    name can hold quotes, `$(...)` and newlines, so the step must stop on any
+    tag that the pattern does not accept. Each case is one way a tag differs
+    from a version; the first three are shell or output injection.
+    """
+    output = tmp_path / "github_output"
+    output.touch()
+    result = subprocess.run(
+        ["bash", "-c", _classifier_script()],
+        env={
+            "PATH": "/usr/bin:/bin",
+            "GITHUB_REF": f"refs/tags/{tag}",
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode != 0
+    assert output.read_text() == ""

@@ -4,12 +4,15 @@ Transport concern, which is why it sits in `llm/` beside the adapters rather
 than in `extraction/`: what is being retried is a network call, and extraction
 should not know that one happened.
 
-**Which exceptions are retryable is the caller's decision, always.** This
-module names none of them. Retrying is only safe for a failure the provider
-may answer differently next time -- a dropped connection, a timeout, a 503 --
-and never for one it will answer identically, such as a malformed request or a
-refused key. Passing too wide a tuple turns a permanent failure into the same
-failure `max_retries` times slower.
+**Which exceptions are retryable is the caller's decision, always.** The
+default `retryable_exceptions` is `(Exception,)`, which is broad on purpose,
+so one exception family is excluded by default: `LlmProviderError` and its
+subclasses are never retried, through `never_retry`. A refusal or a malformed
+completion is one the provider answers identically next time, so retrying it
+only spends tokens. Retrying is safe for a failure the provider may answer
+differently next time -- a dropped connection, a timeout, a 503. Passing too
+wide a tuple turns a permanent failure into the same failure `max_retries`
+times slower.
 
 Example, against whatever exception type your provider's client raises:
 
@@ -36,6 +39,8 @@ import random
 from collections.abc import Awaitable, Callable, Coroutine
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar
+
+from redstring.domain.exceptions import LlmProviderError, describe_failure
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +215,7 @@ def with_retry(
     policy: LlmRetryPolicy | None = None,
     *,
     sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    never_retry: tuple[type[Exception], ...] = (LlmProviderError,),
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Coroutine[Any, Any, T]]]:
     """Decorator for retry with exponential backoff.
 
@@ -222,6 +228,10 @@ def with_retry(
             propagate immediately. Defaults to (Exception,) which retries all.
         policy: Retry policy configuration. If not provided, uses default
             LlmRetryPolicy with settings from configuration.
+        sleeper: Awaitable sleep used between attempts. Injected by tests.
+        never_retry: Exception types that propagate at once, even when they
+            match `retryable_exceptions`. Defaults to `LlmProviderError`, so a
+            refusal or malformed completion is called exactly once.
 
     Returns:
         Decorated async function with retry behavior
@@ -262,6 +272,8 @@ def with_retry(
                 try:
                     return await func(*args, **kwargs)
                 except retryable_exceptions as e:
+                    if isinstance(e, never_retry):
+                        raise
                     last_exception = e
                     current_attempt = attempt + 1
 
@@ -272,14 +284,14 @@ def with_retry(
                             current_attempt,
                             total_attempts,
                             func.__name__,
-                            str(e),
+                            describe_failure(e),
                             delay,
                             extra={
                                 "function": func.__name__,
                                 "attempt": current_attempt,
                                 "total_attempts": total_attempts,
                                 "delay_seconds": delay,
-                                "error": str(e),
+                                "error": describe_failure(e),
                                 "error_type": type(e).__name__,
                             },
                         )
@@ -292,7 +304,7 @@ def with_retry(
                             extra={
                                 "function": func.__name__,
                                 "total_attempts": total_attempts,
-                                "final_error": str(e),
+                                "final_error": describe_failure(e),
                                 "error_type": type(e).__name__,
                             },
                         )

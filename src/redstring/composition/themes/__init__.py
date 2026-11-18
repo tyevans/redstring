@@ -5,6 +5,7 @@ from __future__ import annotations
 from .models import (
     DEFAULT_PAGE_SIZE,
     DEFAULT_SYSTEM_PROMPT,
+    MAX_PAGE_SIZE,
     MAX_PAGES,
     CommunityReport,
     Theme,
@@ -16,6 +17,7 @@ __all__ = [
     "DEFAULT_PAGE_SIZE",
     "DEFAULT_SYSTEM_PROMPT",
     "MAX_PAGES",
+    "MAX_PAGE_SIZE",
     "CommunityReport",
     "Theme",
     "ThemeReport",

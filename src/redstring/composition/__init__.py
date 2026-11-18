@@ -43,7 +43,12 @@ order settles it.
 
 from __future__ import annotations
 
-from redstring.composition.batch import BatchDocumentError, BatchGraphReport, build_graph_batch
+from redstring.composition.batch import (
+    BatchDocumentError,
+    BatchGraphReport,
+    build_graph_batch,
+    build_graph_stream,
+)
 from redstring.composition.build_graph import (
     AUTO,
     AutoDomain,
@@ -54,28 +59,120 @@ from redstring.composition.build_graph import (
 )
 from redstring.composition.client import Redstring
 from redstring.composition.coercion import coerce_document, content_addressed_source_id
+from redstring.composition.consolidation_sweep import (
+    ConsolidationPreview,
+    PreviewCandidate,
+    TenantConsolidationReport,
+    consolidate_tenant,
+    preview_consolidation,
+)
+from redstring.composition.export import (
+    ExportFormat,
+    export_graph,
+    format_graphml,
+    format_json_ld,
+    format_mermaid,
+)
+from redstring.composition.import_graph import (
+    GraphImportReport,
+    import_graph,
+    parse_graphml,
+    parse_json_ld,
+)
 from redstring.composition.index_documents import IndexReport, index_documents
+from redstring.composition.lineage import (
+    CorpusHealthReport,
+    EntityLineageReport,
+    SourceLineageReport,
+    analyze_corpus,
+    trace_entity_lineage,
+    trace_source_lineage,
+)
+from redstring.composition.paths import PathExplanation, explain_path
 from redstring.composition.retrieval import ChunkRetriever, Retriever
+from redstring.composition.retrieval_diagnostics import (
+    ChunkRetrievalExplanation,
+    EntityRetrievalExplanation,
+    ExplainedChunkMatch,
+    ExplainedEntityMatch,
+    explain_chunk_retrieval,
+    explain_entity_retrieval,
+)
+from redstring.composition.schema_audit import (
+    SchemaConformanceReport,
+    SchemaViolation,
+    audit_schema_conformance,
+    format_schema_mermaid,
+)
 from redstring.composition.themes import Theme, ThemeReport, summarize_themes
+from redstring.composition.topology_diagnostics import (
+    EntityHub,
+    EntityModification,
+    GraphDiffReport,
+    GraphTopologyReport,
+    RelationshipModification,
+    analyze_topology,
+    diff_graphs,
+)
 
 __all__ = [
     "AUTO",
     "AutoDomain",
     "BatchDocumentError",
     "BatchGraphReport",
+    "ChunkRetrievalExplanation",
     "ChunkRetriever",
+    "ConsolidationPreview",
     "ConsolidationReport",
     "Consolidator",
+    "CorpusHealthReport",
+    "EntityHub",
+    "EntityLineageReport",
+    "EntityModification",
+    "EntityRetrievalExplanation",
+    "ExplainedChunkMatch",
+    "ExplainedEntityMatch",
+    "ExportFormat",
     "GraphBuildReport",
+    "GraphDiffReport",
+    "GraphImportReport",
+    "GraphTopologyReport",
     "IndexReport",
+    "PathExplanation",
+    "PreviewCandidate",
     "Redstring",
+    "RelationshipModification",
     "Retriever",
+    "SchemaConformanceReport",
+    "SchemaViolation",
+    "SourceLineageReport",
+    "TenantConsolidationReport",
     "Theme",
     "ThemeReport",
+    "analyze_corpus",
+    "analyze_topology",
+    "audit_schema_conformance",
     "build_graph",
     "build_graph_batch",
+    "build_graph_stream",
     "coerce_document",
+    "consolidate_tenant",
     "content_addressed_source_id",
+    "diff_graphs",
+    "explain_chunk_retrieval",
+    "explain_entity_retrieval",
+    "explain_path",
+    "export_graph",
+    "format_graphml",
+    "format_json_ld",
+    "format_mermaid",
+    "format_schema_mermaid",
+    "import_graph",
     "index_documents",
+    "parse_graphml",
+    "parse_json_ld",
+    "preview_consolidation",
     "summarize_themes",
+    "trace_entity_lineage",
+    "trace_source_lineage",
 ]

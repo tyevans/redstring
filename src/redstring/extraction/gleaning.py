@@ -45,6 +45,7 @@ large fraction of what a second pass is for.
 
 from __future__ import annotations
 
+from redstring.extraction.bounds import MAX_NAME_CHARS, MAX_TYPE_CHARS, prompt_safe
 from redstring.extraction.schema import Extraction
 
 #: How many already-found entities are named back to the model.
@@ -56,6 +57,27 @@ from redstring.extraction.schema import Extraction
 #: chunk that genuinely holds more than this many entities is past the point
 #: where a second pass is the right tool.
 MAX_LISTED = 100
+
+#: The most gleaning passes one chunk may receive.
+#:
+#: Each pass is one more model call per chunk, so the cost of a document grows
+#: as `1 + gleanings` times its chunk count. GraphRAG ships one pass as its
+#: default. Five is a ceiling for experiments, not a setting to tune into:
+#: past that, later passes mostly re-find what earlier ones found.
+MAX_GLEANINGS = 5
+
+
+def check_gleanings(gleanings: int) -> None:
+    """Refuse a gleaning count outside `0..MAX_GLEANINGS`.
+
+    Raises:
+        ValueError: `gleanings` is below 0 or above `MAX_GLEANINGS`.
+    """
+    if gleanings < 0:
+        raise ValueError(f"gleanings must be >= 0, got {gleanings}")
+    if gleanings > MAX_GLEANINGS:
+        raise ValueError(f"gleanings must be <= {MAX_GLEANINGS}, got {gleanings}")
+
 
 _INSTRUCTION = (
     "You have already extracted the following from this text:\n"
@@ -99,9 +121,17 @@ def _describe(found: Extraction) -> str:
     is present crowds out the text it is supposed to be re-reading. Both lists
     are bounded for the same reason.
     """
-    lines = [f"- {entity.name} ({entity.entity_type})" for entity in found.entities[:MAX_LISTED]]
+    # Every name and type passes through `prompt_safe`: a name from a model
+    # answer is untrusted, and this list is written into the system prompt.
+    lines = [
+        f"- {prompt_safe(entity.name, MAX_NAME_CHARS)} "
+        f"({prompt_safe(entity.entity_type, MAX_TYPE_CHARS)})"
+        for entity in found.entities[:MAX_LISTED]
+    ]
     lines += [
-        f"- {edge.source_name} -{edge.relationship_type}-> {edge.target_name}"
+        f"- {prompt_safe(edge.source_name, MAX_NAME_CHARS)} "
+        f"-{prompt_safe(edge.relationship_type, MAX_TYPE_CHARS)}-> "
+        f"{prompt_safe(edge.target_name, MAX_NAME_CHARS)}"
         for edge in found.relationships[:MAX_LISTED]
     ]
     return "\n".join(lines) if lines else _NOTHING

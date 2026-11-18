@@ -22,7 +22,30 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from types import TracebackType
 
-__all__ = ["CallLimiter"]
+__all__ = ["MAX_CONCURRENCY", "CallLimiter", "check_concurrency"]
+
+#: The most calls one caller may hold in flight, and the most documents or
+#: chunks it may run at once. Every `concurrency` and `max_concurrency`
+#: parameter in the library is refused above this value.
+#:
+#: The number is a backstop, not a tuning target. Past a few dozen concurrent
+#: requests an inference backend is queue-bound, and each in-flight task
+#: holds a prompt, a response and a connection. A caller who genuinely needs
+#: more should shard the work across processes, not raise one process's
+#: ceiling without limit.
+MAX_CONCURRENCY = 32
+
+
+def check_concurrency(name: str, value: int) -> None:
+    """Refuse a concurrency value outside `1..MAX_CONCURRENCY`.
+
+    Raises:
+        ValueError: `value` is below 1 or above `MAX_CONCURRENCY`.
+    """
+    if value < 1:
+        raise ValueError(f"{name} must be at least 1, got {value}")
+    if value > MAX_CONCURRENCY:
+        raise ValueError(f"{name} must be at most {MAX_CONCURRENCY}, got {value}")
 
 
 class CallLimiter:
