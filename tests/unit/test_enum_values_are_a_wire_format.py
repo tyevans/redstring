@@ -34,6 +34,7 @@ import pkgutil
 import pytest
 
 import redstring
+from redstring.composition.export import ExportFormat
 from redstring.consolidation.policy import MergeDecision
 from redstring.domain.blocking import BlockingKeyStrategy
 from redstring.domain.interval import TemporalRelation
@@ -62,6 +63,11 @@ WIRE_FORMAT: dict[type[enum.Enum], dict[str, str]] = {
         "DAY": "day",
         "HOUR": "hour",
         "MINUTE": "minute",
+    },
+    ExportFormat: {
+        "MERMAID": "mermaid",
+        "JSON_LD": "json-ld",
+        "GRAPHML": "graphml",
     },
     ExtractionMethod: {
         "LLM": "llm",

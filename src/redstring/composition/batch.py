@@ -17,7 +17,7 @@ from redstring.domain.ids import SourceId
 from redstring.extraction.carryover import DEFAULT_CARRYOVER_ENTITIES
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import AsyncIterator, Callable, Sequence
     from datetime import datetime
 
     from eventsource.ports.store import AggregateStore
@@ -36,6 +36,7 @@ __all__ = [
     "BatchDocumentError",
     "BatchGraphReport",
     "build_graph_batch",
+    "build_graph_stream",
 ]
 
 
@@ -223,3 +224,78 @@ async def build_graph_batch(
         reports=tuple(reports),
         errors=tuple(errors),
     )
+
+
+async def build_graph_stream(
+    documents: Sequence[SourceDocument | str | dict[str, Any]],
+    *,
+    provider: LlmProvider,
+    store: GraphStore,
+    tenant_id: TenantId,
+    max_concurrency: int = 4,
+    continue_on_error: bool = True,
+    domain: str | DomainSchema | AutoDomain | None = None,
+    chunker: Chunker | None = None,
+    skip_failed_chunks: bool = False,
+    allow_partial: bool = False,
+    carryover_entities: int = DEFAULT_CARRYOVER_ENTITIES,
+    gleanings: int = 0,
+    constrain_to_domain: bool = False,
+    embedding_provider: EmbeddingProvider | None = None,
+    vector_store: VectorStore | None = None,
+    chunks: ChunkStore | None = None,
+    event_store: AggregateStore | None = None,
+    observed_at: datetime | None = None,
+    concurrency: int = 1,
+) -> AsyncIterator[GraphBuildReport | BatchDocumentError]:
+    """Stream `GraphBuildReport` items incrementally as each document completes."""
+    if max_concurrency < 1:
+        raise ValueError("max_concurrency must be at least 1")
+
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _run_one(
+        index: int,
+        item: SourceDocument | str | dict[str, Any],
+    ) -> GraphBuildReport | BatchDocumentError:
+        async with semaphore:
+            try:
+                doc = coerce_document(item)
+            except Exception as exc:
+                if not continue_on_error:
+                    raise
+                return BatchDocumentError(source_id=SourceId(f"item-{index}"), error=exc)
+
+            try:
+                return await build_graph(
+                    doc,
+                    provider=provider,
+                    store=store,
+                    tenant_id=tenant_id,
+                    domain=domain,
+                    chunker=chunker,
+                    skip_failed_chunks=skip_failed_chunks,
+                    allow_partial=allow_partial,
+                    carryover_entities=carryover_entities,
+                    gleanings=gleanings,
+                    constrain_to_domain=constrain_to_domain,
+                    embedding_provider=embedding_provider,
+                    vector_store=vector_store,
+                    chunks=chunks,
+                    event_store=event_store,
+                    observed_at=observed_at,
+                    concurrency=concurrency,
+                )
+            except Exception as exc:
+                if not continue_on_error:
+                    raise
+                return BatchDocumentError(source_id=doc.id, error=exc)
+
+    tasks = [asyncio.create_task(_run_one(i, item)) for i, item in enumerate(documents)]
+    try:
+        for completed in asyncio.as_completed(tasks):
+            yield await completed
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
