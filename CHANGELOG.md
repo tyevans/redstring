@@ -14,10 +14,45 @@ under **Removed** or **Changed**. See
 
 ## [Unreleased]
 
-A security release. The 2026-11-17 sweep (PRD-0013, ADR-0150) bounds the work
-and the text that an untrusted document or LLM output can cause, and pins the
-supply chain. Some changes refuse input that was accepted before. Read
-**Changed** before you upgrade.
+## [0.14.0] - 2026-11-18
+
+This release adds a client facade and a set of diagnostic, portability and
+governance functions. It is also a security release. The 2026-11-17 sweep
+(PRD-0013, ADR-0150) bounds the work and the text that an untrusted document
+or LLM output can cause, and pins the supply chain. Some changes refuse input
+that was accepted before. Read **Changed** before you upgrade.
+
+### Added
+
+- **`Redstring`, a client facade** (ADR-0149). `Redstring.in_memory(...)` and
+  `Redstring.connect(...)` hold the stores and the providers, and expose
+  ingestion, retrieval, consolidation and the diagnostics below as methods.
+  See `docs/how-to/unified-client-and-batch-ingestion.md`.
+- **Batch and streaming ingestion.** `build_graph_batch` ingests documents
+  concurrently under a bound and returns a `BatchGraphReport`, with each
+  failure as a `BatchDocumentError`. `build_graph_stream` yields a report as
+  each document completes. `coerce_document` accepts a `SourceDocument`, a
+  string or a dictionary.
+- **Export and import.** `export_graph` writes a tenant's graph, or a
+  filtered subgraph, as Mermaid, JSON-LD or GraphML (`ExportFormat`).
+  `import_graph`, `parse_json_ld` and `parse_graphml` read JSON-LD and
+  GraphML back. `format_mermaid`, `format_json_ld` and `format_graphml` are
+  the serializers.
+- **Diagnostics.** `explain_path` finds the shortest relationship path
+  between two entities, with citations. `explain_entity_retrieval` and
+  `explain_chunk_retrieval` show the contribution of each retrieval channel.
+  `analyze_topology` reports structure and hubs, and `diff_graphs` compares
+  two tenants.
+- **Lineage and corpus health.** `trace_source_lineage`,
+  `trace_entity_lineage` and `analyze_corpus`.
+- **Tenant-wide consolidation.** `preview_consolidation` scores candidate
+  merges and changes nothing. `consolidate_tenant` sweeps the tenant and
+  executes confirmed merges.
+- **Schema audit.** `audit_schema_conformance` checks stored entities and
+  relationships against a `DomainSchema`, and `format_schema_mermaid` draws
+  the schema.
+- **Faster in-memory stores.** `InMemoryGraphStore` maintains its indexes
+  incrementally, and `InMemoryVectorStore` caches query norms.
 
 ### Changed
 
@@ -1394,7 +1429,8 @@ First release.
   extraction *quality* is backed by anything in this repository — correct and
   accurate are different properties (`BACKLOG.md` B12).
 
-[Unreleased]: https://github.com/tyevans/redstring/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/tyevans/redstring/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/tyevans/redstring/releases/tag/v0.14.0
 [0.13.0]: https://github.com/tyevans/redstring/releases/tag/v0.13.0
 [0.12.0]: https://github.com/tyevans/redstring/releases/tag/v0.12.0
 [0.11.0]: https://github.com/tyevans/redstring/releases/tag/v0.11.0
